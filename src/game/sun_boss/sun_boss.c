@@ -241,7 +241,8 @@ static void dive_update(Boss *b, float dt)
         if (b->pos[1] <= s.groundY + REST_H) {
             b->pos[1] = s.groundY + REST_H;
             float dx, dz;
-            if (to_player(b, &dx, &dz) < 26.0f) character_apply_damage(20.0f);
+            // A shockwave along the floor: wide, but jumping over it (Moon Blade Dance) avoids it
+            if (to_player(b, &dx, &dz) < 34.0f && character.pos[1] - s.groundY < 6.0f) character_apply_damage(20.0f);
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.0f);
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.5f);
             screen_shake_set_shake_mag(14.0f);

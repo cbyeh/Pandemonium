@@ -758,7 +758,7 @@ void character_reset(void)
     footstepTimer = 0.0f;
 
     character.health = character.maxHealth;
-    character.healthPotions = skillsEnabled ? 5 : 3;    // the skills fight is longer (2x boss HP)
+    character.healthPotions = 3;
     character.stamina = character.maxStamina;
     character.staminaRegenDelay = 0.0f;
     character.damageFlashTimer = 0.0f;
@@ -1205,7 +1205,7 @@ static const float MBD_AIM_DIST = 60.0f;           // ground distance of the aim
 static const float HALFMOON_CHARGE = 2.0f;         // rooted; a hit cancels it and hurts more
 static const float HALFMOON_END = 3.2f;
 static const float HALFMOON_RADIUS = 85.0f;
-static const float HALFMOON_DAMAGE = 45.0f;
+static const float HALFMOON_DAMAGE = 25.0f;        // < 2 strong attacks
 static const float HALFMOON_CHARGE_DAMAGE_MULT = 1.5f;
 static const float CLEAVE_RELEASE = 0.85f;         // interruptible wind-up (the SkillCleave upswing)
 static const float CLEAVE_END = 1.7f;
@@ -1314,7 +1314,7 @@ static void skill_fire_moon_blade(void)
     float len = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
     if (len < 1.0f) len = 1.0f;
     float vel[3] = { d[0] / len * MBD_WAVE_SPEED, d[1] / len * MBD_WAVE_SPEED, d[2] / len * MBD_WAVE_SPEED };
-    skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, 4.0f, 1, 0.0f, len / MBD_WAVE_SPEED,
+    skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, 2.5f, 1, 0.0f, len / MBD_WAVE_SPEED,   // 5 waves ~ one strong attack
                         skillStep == MBD_WAVES - 1);
     character_play_swing();
 
@@ -1379,7 +1379,7 @@ static void update_skill(float dt)
             float dx = -fm_sinf(a), dz = fm_cosf(a);
             float origin[3] = { character.pos[0] + dx * dist, groundY, character.pos[2] + dz * dist };
             skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 30.0f, 0.0f, dz * 30.0f },
-                                1.5f, 4, 0.3f, 1.6f, false);
+                                1.0f, 4, 0.3f, 1.6f, false);
             skill_fx_spawn_burst(origin, a);
             if (skillStep == 0) {
                 screen_shake_set_shake_mag(6.0f);

@@ -25,7 +25,7 @@ Hold Z trigger + left/right on Cpad: Change z target
 ## New in this fork
 
 ### Skills (D-pad)
-Optional sword skills inspired by Dragon Nest's Sword Master, on the D-pad with cooldowns shown on the HUD. Turn them on or off from **Settings > Skills** on the title screen (on by default). With skills on, bosses have double health and you carry 5 potions instead of 3.
+Optional sword skills inspired by Dragon Nest's Sword Master, on the D-pad with cooldowns shown on the HUD. Turn them on or off from **Settings > Skills** on the title screen (on by default). With skills on, bosses have double health.
 
 | Moon Blade Dance (D-Up) | Halfmoon Slash (D-Right) | Crescent Cleave (D-Down) |
 |---|---|---|
