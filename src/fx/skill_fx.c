@@ -224,7 +224,7 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
         r = 7.0f;
     } else {
         memcpy(c, f->pos, sizeof(c));
-        r = 12.0f;
+        r = f->hostile ? 12.0f : 14.0f;     // the player's crosses are wider
     }
     if (f->hostile) {
         if (!sphere_hits_player(c, r)) return;
@@ -411,6 +411,25 @@ static void draw_xwave(const SkillFx *f)
         float e[3] = { s[0]*ca + u[0]*sa, s[1]*ca + u[1]*sa, s[2]*ca + u[2]*sa };
         float outer[N][3], inner[N][3];
         uint32_t co[N], ci[N];
+        if (!f->hostile) {
+            // The player's: wide blades whose width lies across the arm (so the X reads
+            // from behind), bright down the middle and fading to the edges
+            float n[3] = { s[0]*ca - u[0]*sa, s[1]*ca - u[1]*sa, s[2]*ca - u[2]*sa };
+            for (int side = -1; side <= 1; side += 2) {
+                for (int i = 0; i < N; i++) {
+                    float t = -1.0f + 2.0f * i / (N - 1);
+                    float bulge = 1.0f - t * t;
+                    for (int c = 0; c < 3; c++) {
+                        inner[i][c] = f->pos[c] + e[c] * t * 28.0f + d[c] * bulge * 4.0f;
+                        outer[i][c] = inner[i][c] + n[c] * side * (0.8f + bulge * 3.5f);
+                    }
+                    ci[i] = rgba(240, 252, 255, a);
+                    co[i] = rgba(90, 200, 255, a * 0.25f);
+                }
+                build_ribbon(outer, inner, co, ci, N);
+            }
+            continue;
+        }
         for (int i = 0; i < N; i++) {
             float t = -1.0f + 2.0f * i / (N - 1);
             float bulge = 1.0f - t * t;
