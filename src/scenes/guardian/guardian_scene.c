@@ -54,6 +54,10 @@
 #include "systems/particle_system.h"
 #include "fx/dust_particles_fx.h"
 #include "fx/blood_particles_fx.h"
+#include "fx/skill_fx.h"
+#include "game/fallen_knight/fallen_knight.h"
+#include "game/sun_boss/sun_boss.h"
+#include "guardian_ending.h"
 //#include "boulder_hazard.h" // close-range ground-boulder hazard
 
 // Forward declaration: scene_init() and scene_restart() start the Guardian intro.
@@ -175,6 +179,11 @@ static const float POST_BOSS_PROMPT_DIST  = 140.0f;   // show A prompt and allow
 // ------------------------------------------------------------
 static bool s_pendingBossLoopMusic = false;
 static const char *s_bossLoopMusicPath = "rom:/audio/music/boss_phase1-looping-22k.wav64";
+static const char *s_boss2LoopMusicPath = "rom:/audio/music/boss_phase2_cutscene2-22k.wav64";   // Guardian Unbound
+static const char *s_boss3LoopMusicPath = "rom:/audio/music/demonous-22k.wav64";                 // Fallen Knight
+static BonusFight s_bonusFight = BONUS_NONE;   // set by the title Bonus menu
+static int   s_bonusBeat;                     // bonus intro/outro script step
+static float s_bonusEndTimer;
 
 // Require the character to be facing the boss for post-boss interaction.
 // The third-person camera orbits independently of the character's body yaw,
@@ -361,12 +370,11 @@ static void scene_update_video_preroll(void)
 
         // IMPORTANT: ensure audio controller stops touching CHANNEL_MUSIC
         // (and doesn't later mixer_ch_stop it mid-video)
-        gameState = GAME_STATE_VIDEO;
-        video_player_request("rom:/video.h264");
-
-        audio_set_music_volume(10);
-
+        // The ending plays live in the hall (it used to be a video)
         videoPreroll = VIDEO_PREROLL_NONE;
+        audio_set_music_volume(10);
+        cutsceneState = CUTSCENE_ENDING;
+        scene_init_cutscene();
     }
 }
 
@@ -529,7 +537,7 @@ void scene_load_environment(void)
 
     // Global/system-level effect. Keep loaded if it is used outside one cutscene,
     // or move it later if it is phase-2-only.
-    // lightning_fx_system_init("rom:/boss/boss_back_sword_lightning2.t3dm");
+    lightning_fx_system_init("rom:/boss/boss_back_sword_lightning2.t3dm");
 }
 
 void scene_init(void)
@@ -592,6 +600,7 @@ void scene_init(void)
     particle_system_init();
     dust_particles_fx_init();
     blood_particles_fx_init();
+    skill_fx_init();
 
     character_ui_init();
     boss_ui_init();
@@ -606,11 +615,17 @@ void scene_init(void)
     dust_particles_fx_reset();
     blood_particles_fx_reset();
 
-    //msa_init();
+    msa_init();
 
-    // Guardian scene normal startup: entering the scene starts the phase-1 intro.
+    // A new run from the title: clear per-run state left by the previous one (phase
+    // triggers, end-portal trigger, ...). Without this, a second run in the same
+    // session skipped phase 2 and the end portal never fired.
+    scene_reset();
+
+    // Guardian scene normal startup: entering the scene starts the phase-1 intro
+    // (or a Bonus fight's intro).
     gameState = GAME_STATE_PLAYING;
-    cutsceneState = CUTSCENE_PHASE1_INTRO;
+    cutsceneState = s_bonusFight ? CUTSCENE_BONUS_INTRO : CUTSCENE_PHASE1_INTRO;
     cutsceneTimer = 0.0f;
     cutsceneCameraTimer = 0.0f;
     scene_init_cutscene();
@@ -687,6 +702,11 @@ void scene_reset(void)
         boss_deactivate(g_boss);
     }
     phase2CutsceneTriggered = false;
+    bossWasDead = false;
+    boss_ui_set_form(1);
+    s_bonusEndTimer = 0.0f;
+    fallen_knight_free();
+    sun_boss_free();
     gameState = GAME_STATE_PLAYING;
     lastMenuActive = false;
     lastAPressed = false;
@@ -735,7 +755,7 @@ void scene_reset(void)
     // mid-phase-2 death leaks state into the new run: leftover MSA swords keep
     // falling during phase 1, the BNW lightning ring stays armed, and the
     // shackled-sun screen shake never clears.
-    //msa_init();
+    msa_init();
     lightning_fx_system_ring_enable(false);
     screen_shake_set_shake_mag(0.0f);
 
@@ -748,6 +768,7 @@ void scene_reset(void)
 
     dust_particles_fx_reset();
     blood_particles_fx_reset();
+    skill_fx_reset();
     boss_ground_crush_reset();
 }
 
@@ -883,7 +904,7 @@ void scene_restart(void)
 
     // 5) Re-enter Guardian intro runtime state (NO allocations / NO frees)
     gameState = GAME_STATE_PLAYING;
-    cutsceneState = CUTSCENE_PHASE1_INTRO;
+    cutsceneState = s_bonusFight ? CUTSCENE_BONUS_INTRO : CUTSCENE_PHASE1_INTRO;
     cutsceneTimer = 0.0f;
     cutsceneCameraTimer = 0.0f;
     scene_init_cutscene();
@@ -895,7 +916,7 @@ void scene_restart(void)
            cameraState, dialog_controller_speaking() ? "true" : "false");
 }
 
-void scene_init_playing(bool skippedCutscene)
+static void scene_place_character(void)
 {
     character.pos[0] = -320.43f;
     character.pos[1] = 4.0f;
@@ -911,6 +932,11 @@ void scene_init_playing(bool skippedCutscene)
     character_update_position();
     character_set_state(CHAR_STATE_NORMAL);
     character_set_velocity_xz(0.0f, 0.0f);
+}
+
+void scene_init_playing(bool skippedCutscene)
+{
+    scene_place_character();
 
     // Skip dialog and cutscene
     dialog_controller_stop_speaking();
@@ -1012,6 +1038,8 @@ static void scene_finish_phase2_cutscene(void)
         boss_activate_combat(g_boss);
 
         g_boss->phaseIndex = 2;
+        g_boss->name = "Guardian Unbound";
+        g_boss->health = g_boss->maxHealth;
         g_boss->handAttackColliderActive = false;
         g_boss->sphereAttackColliderActive = false;
         g_boss->velX = 0.0f;
@@ -1033,11 +1061,12 @@ static void scene_finish_phase2_cutscene(void)
     cutsceneState = CUTSCENE_NONE;
     skipButtonVisible = false;
 
-    bossUiIntro = 1.0f;
-    boss_ui_set_intro(1.0f);
-    if (g_boss && g_boss->maxHealth > 0.0f) {
-        boss_ui_snap_health_trail(g_boss->health / g_boss->maxHealth);
-    }
+    // A new boss: replay the name title and grow a fresh health bar
+    boss_ui_set_form(2);
+    bossTitleFade = 1.0f;
+    bossUiIntro = 0.0f;
+    boss_ui_set_intro(0.0f);
+    boss_ui_snap_health_trail(1.0f);
 
     character_reset_button_state();
     scene_sync_input_edge_state();
@@ -1095,6 +1124,161 @@ static void scene_update_context(void)
     sceneContext.finish_phase2_cutscene = scene_finish_phase2_cutscene;
 }
 
+// ---- Title-menu Bonus fights ----
+
+void scene_set_bonus_fight(BonusFight fight) { s_bonusFight = fight; }
+
+#define BONUS_SPAWN_X (-160.0f)         // the boss comes down between the player and the hall
+#define BONUS_GATHER_S 3.5f             // the light gathers this long before the descent
+#define BONUS_LAND_S   2.0f             // the descent plays this long before the next line
+#define BONUS_HOLD_S   1.4f             // a line stays this long once typed
+
+// Each Bonus fight: its intro lines (the boss comes down before line `dropAt`), its
+// outro lines, and the boss it turns g_boss into. Lines follow each other as soon as
+// the previous one has been typed and held, so the timing follows the text.
+typedef struct {
+    const char *intro[6], *outro[4];
+    int dropAt;
+    void (*begin)(Boss*), (*skip)(Boss*);
+    int phase;
+    const char *music;
+} BonusDef;
+
+static const BonusDef BONUS_DEFS[] = {
+    [BONUS_FALLEN_KNIGHT] = {
+        .intro = {
+            "^Another knight...~\n^another oath,~ ^sworn\nto a dying sun.",
+            "^I knelt where you stand.~\n^I spoke the words\nyou spoke.",
+            "^I wore this steel~\n^until it wore me.",
+            ">Rise, then...~ ^and learn\nwhat your oath is worth!",
+        },
+        .outro = {
+            "^Ah...~ ^so this is how\nthe oath ends.",
+            "^Not in glory...~\n<but on my knees.",
+            "^Carry it, knight...~\n<better than I did.",
+        },
+        .dropAt = 3,
+        .begin = fallen_knight_begin, .skip = fallen_knight_skip_intro, .phase = FALLEN_KNIGHT_PHASE,
+        .music = "rom:/audio/music/demonous-22k.wav64",
+    },
+    [BONUS_SHACKLED_SUN] = {
+        .intro = {
+            "^Little knight...~\n^you have walked beneath\nme all your life.",
+            "^I warmed your fields.~\n^I gilded your king's\nthrone.",
+            "^And for my light~\n^he forged these chains.",
+            "^Now my Guardian lies\nbroken~ ^at your feet...",
+            ">So look upon me,~\n^thief of dawns...~ <and\nBURN.",
+        },
+        .outro = {
+            "^You think this...~\n^is victory?",
+            "^Every dawn you see~\n^will be my corpse,\n<rising.",
+            ">Freeze in the dark,~\n^knight...~ <without me.",
+        },
+        .dropAt = 4,
+        .begin = sun_boss_begin, .skip = sun_boss_skip_intro, .phase = SUN_BOSS_PHASE,
+        .music = "rom:/audio/music/boss_phase2_cutscene2-22k.wav64",
+    },
+};
+
+// The current script's schedule: when each line starts, the descent, and the end
+static float s_bonusLineT[6], s_bonusDropT, s_bonusEndT;
+static int s_bonusLine;
+
+static void scene_bonus_schedule(const char *const *lines, int max, int dropAt, float t)
+{
+    s_bonusDropT = -1.0f;
+    for (int i = 0; i < max && lines[i]; i++) {
+        if (i == dropAt) { s_bonusDropT = t; t += BONUS_LAND_S; }
+        s_bonusLineT[i] = t;
+        t += dialog_controller_type_time(lines[i]) + BONUS_HOLD_S;
+    }
+    s_bonusEndT = t;
+    s_bonusLine = 0;
+}
+
+static void scene_bonus_speak(const char *const *lines, int max, float t)
+{
+    if (s_bonusLine < max && lines[s_bonusLine] && t >= s_bonusLineT[s_bonusLine]) {
+        cutscene_manager_begin_dialog(lines[s_bonusLine], 0.0f);
+        s_bonusLine++;
+    }
+}
+
+static void scene_bonus_begin_boss(void)
+{
+    const BonusDef *d = &BONUS_DEFS[s_bonusFight];
+    d->begin(g_boss);
+    boss_ui_set_form(d->phase);
+    if (!audio_is_music_playing()) audio_play_music(d->music, true);   // a skip before the intro started it
+}
+
+static void scene_bonus_start_fight(void)
+{
+    const BonusDef *d = &BONUS_DEFS[s_bonusFight];
+    cutscene_manager_clear_dialog();
+    if (g_boss->phaseIndex != d->phase) scene_bonus_begin_boss();
+    d->skip(g_boss);
+    scene_init_playing(false);          // the boss music is already looping
+    s_pendingBossLoopMusic = false;
+    character_reset_button_state();
+    scene_sync_input_edge_state();
+}
+
+static void scene_bonus_intro_update(bool aJustPressed)
+{
+    const BonusDef *d = &BONUS_DEFS[s_bonusFight];
+    float t = cutsceneTimer;
+    cutscene_manager_update_dialog();
+
+    if (aJustPressed) {
+        if (skipButtonVisible) { scene_bonus_start_fight(); return; }
+        skipButtonVisible = true;
+    }
+    scene_bonus_speak(d->intro, 6, t);
+
+    switch (s_bonusBeat) {
+    case 0:     // the empty hall; a voice from nowhere
+        cutscene_manager_update_camera(s_bonusDropT - BONUS_GATHER_S);
+        if (t >= s_bonusDropT - BONUS_GATHER_S) {     // looking up where crimson light gathers
+            cutscene_manager_set_camera_shot(&sceneContext,
+                (T3DVec3){{ BONUS_SPAWN_X - 62.0f, 8.0f, 38.0f }}, (T3DVec3){{ BONUS_SPAWN_X - 50.0f, 12.0f, 24.0f }},
+                (T3DVec3){{ BONUS_SPAWN_X, 70.0f, 0.0f }});
+            s_bonusBeat = 1;
+        }
+        break;
+    case 1: {
+        cutscene_manager_update_camera(BONUS_GATHER_S);
+        static float pulse;
+        pulse -= deltaTime;
+        if (pulse <= 0.0f) {
+            skill_fx_spawn_burst_hostile((float[3]){ BONUS_SPAWN_X, character.pos[1], 0.0f }, t * 2.0f);
+            pulse = 0.45f;
+        }
+        if (t >= s_bonusDropT) {     // it comes down from the dark
+            scene_bonus_begin_boss();
+            cutscene_manager_set_camera_shot(&sceneContext,
+                (T3DVec3){{ BONUS_SPAWN_X - 80.0f, 16.0f, -6.0f }}, (T3DVec3){{ BONUS_SPAWN_X - 66.0f, 20.0f, 14.0f }},
+                (T3DVec3){{ BONUS_SPAWN_X, 26.0f, 0.0f }});
+            s_bonusBeat = 2;
+        }
+    } break;
+    default:
+        cutscene_manager_update_camera(3.0f);
+        boss_update(g_boss);
+        if (t >= s_bonusEndT) scene_bonus_start_fight();
+        break;
+    }
+}
+
+static void scene_bonus_outro_update(bool aJustPressed)
+{
+    const BonusDef *d = &BONUS_DEFS[s_bonusFight];
+    float t = cutsceneTimer;
+    cutscene_manager_update_dialog();
+    scene_bonus_speak(d->outro, 4, t);
+    if (t >= s_bonusEndT + 1.0f || (aJustPressed && t > 1.0f)) scene_controller_switch_to_title();
+}
+
 void scene_init_cutscene(void)
 {
     scene_update_context();
@@ -1107,6 +1291,45 @@ void scene_init_cutscene(void)
     }
 
     switch (cutsceneState) {
+        case CUTSCENE_BONUS_INTRO: {
+            // An empty hall: the boss descends at its dropT
+            scene_place_character();
+            if (g_boss) {
+                g_boss->visible = false;
+                g_boss->pos[0] = BONUS_SPAWN_X;
+                g_boss->pos[2] = 0.0f;
+            }
+            s_bonusBeat = 0;
+            scene_bonus_schedule(BONUS_DEFS[s_bonusFight].intro, 6, BONUS_DEFS[s_bonusFight].dropAt, 0.8f);
+            cutsceneTimer = 0.0f;
+            audio_stop_music();
+            audio_play_music(BONUS_DEFS[s_bonusFight].music, true);     // the boss theme plays under its intro
+            cutscene_manager_set_camera_shot(&sceneContext,
+                (T3DVec3){{ -372.0f, 30.0f, 58.0f }}, (T3DVec3){{ -352.0f, 26.0f, 40.0f }},
+                (T3DVec3){{ BONUS_SPAWN_X, 24.0f, 0.0f }});
+        } break;
+
+        case CUTSCENE_ENDING: {
+            if (g_boss) g_boss->visible = false;
+            cameraLockOnActive = false;
+            letterbox_show(false);
+            ending_begin();
+        } break;
+
+        case CUTSCENE_BONUS_OUTRO: {
+            // The boss lies defeated; the camera turns to it
+            s_bonusBeat = 0;
+            cutsceneTimer = 0.0f;
+            character_set_velocity_xz(0.0f, 0.0f);
+            letterbox_show(true);
+            customCamPos = camPos;
+            customCamTarget = (T3DVec3){{ g_boss->pos[0], g_boss->pos[1] + 14.0f, g_boss->pos[2] }};
+            camera_mode_smooth(CAMERA_CUSTOM, 1.0f);
+            scene_bonus_schedule(BONUS_DEFS[s_bonusFight].outro, 4, -1, 0.0f);
+            audio_stop_music();
+            audio_play_music("rom:/audio/music/boss_phase1_cutscene1-22k.wav64", false);
+        } break;
+
         case CUTSCENE_POST_BOSS_RESTORED: {
             // Post-boss dialog: keep the current gameplay camera position,
             // but retarget it to face the boss.
@@ -1213,6 +1436,35 @@ void scene_cutscene_update(void)
             }
         } break;
 
+        case CUTSCENE_ENDING: {
+            bool aJustPressed = (btn.a || btn.start) && !lastCutsceneAPressed;
+            lastCutsceneAPressed = btn.a || btn.start;
+            if (aJustPressed && !skipButtonVisible) skipButtonVisible = true;
+            else if (aJustPressed || !ending_update(deltaTime)) {
+                cutscene_manager_clear_dialog();
+                screen_shake_set_shake_mag(0.0f);
+                scene_controller_switch_to_title();
+            }
+            return;
+        }
+
+        case CUTSCENE_BONUS_INTRO:
+        case CUTSCENE_BONUS_OUTRO: {
+            bool aJustPressed = btn.a && !lastCutsceneAPressed;
+            lastCutsceneAPressed = btn.a;
+            cutsceneTimer += deltaTime;
+            cutsceneCameraTimer += deltaTime;
+            character_update_cinematic();
+            skill_fx_update(deltaTime);
+            if (cutsceneState == CUTSCENE_BONUS_INTRO) {
+                scene_bonus_intro_update(aJustPressed);
+            } else {
+                if (boss_is_active(g_boss)) boss_update(g_boss);
+                scene_bonus_outro_update(aJustPressed);
+            }
+            return;
+        }
+
         default:
             break;
     }
@@ -1231,7 +1483,8 @@ void scene_update(void) {
     if (s_pendingBossLoopMusic) {
         if (!audio_is_music_playing() && g_boss->health > 0) {
             s_pendingBossLoopMusic = false;
-            audio_play_music(s_bossLoopMusicPath, true);
+            audio_play_music((g_boss->phaseIndex == FALLEN_KNIGHT_PHASE) ? s_boss3LoopMusicPath :
+                             (g_boss->phaseIndex == 2) ? s_boss2LoopMusicPath : s_bossLoopMusicPath, true);
         }
     }
 
@@ -1240,7 +1493,7 @@ void scene_update(void) {
             bossDeathMusicFadeStarted = true;
             audio_stop_music_fade(2);
         }
-        scene_update_video_trigger();
+        if (!s_bonusFight) scene_update_video_trigger();   // bonus fights have no ending portal
     }
 
     scene_update_video_preroll();  // always safe; it early-outs
@@ -1320,6 +1573,7 @@ void scene_update(void) {
         character_update();
         // Update character transform after constraint
         character_update_position();
+        skill_fx_update(deltaTime);
 
         boss_ground_crush_update(deltaTime);
 
@@ -1328,13 +1582,25 @@ void scene_update(void) {
             // Boss death no longer forces GAME_STATE_VICTORY.
             // The boss will play its collapse and remain still; the player can keep moving.
 
-            // Phase 2 transition: trigger cutscene when boss health drops to 40%.
+            // Second fight: when the Guardian falls the first time, it rises again as
+            // Guardian Unbound (phase-2 cutscene). Refill its health in this same frame
+            // so the ending (music fade, video trigger, clear time) does not start.
 #if PHASE_2_ENABLED
-            if (boss_is_combat_active(g_boss)
-                && !phase2CutsceneTriggered && g_boss->phaseIndex == 1
-                && g_boss->health <= g_boss->maxHealth * 0.4f
-                && g_boss->health > 0.0f) {
+            if (s_bonusFight && g_boss->state == BOSS_STATE_DEAD) {
+                s_bonusEndTimer += deltaTime;
+                if (s_bonusEndTimer >= 2.5f) {     // let the death play out, then the outro
+                    cutsceneState = CUTSCENE_BONUS_OUTRO;
+                    scene_init_cutscene();
+                    return;
+                }
+            }
+            if (!phase2CutsceneTriggered && g_boss->phaseIndex == 1 && g_boss->health <= 0.0f) {
                 phase2CutsceneTriggered = true;
+                g_boss->health = g_boss->maxHealth;
+                g_boss->state = BOSS_STATE_INTRO;
+                g_boss->mode = BOSS_MODE_CINEMATIC;
+                cameraLockOnActive = false;
+                skill_fx_reset();
                 cutsceneTimer = 0.0f;
                 cutsceneCameraTimer = 0.0f;
                 cutsceneState = CUTSCENE_PHASE2_INTRO;
@@ -1393,7 +1659,7 @@ void scene_update(void) {
         bool bossDeadNow = (g_boss->state == BOSS_STATE_DEAD);
         if (bossDeadNow && !bossWasDead) {
             // Record fastest clear time per save slot (once, on death edge).
-            if (s_bossRunActive && s_bossRunStartS > 0.0) {
+            if (s_bossRunActive && s_bossRunStartS > 0.0 && !s_bonusFight) {
                 double dt = nowS - s_bossRunStartS;
                 if (dt > 0.0) {
                     uint32_t ms = (uint32_t)(dt * 1000.0);
@@ -1430,9 +1696,9 @@ void scene_update(void) {
     bool cLeftJustPressed = cLeftHeld && !lastCLeftHeld;
     bool cRightJustPressed = cRightHeld && !lastCRightHeld;
 
-    // C-left is reserved for the health potion (when not holding Z for lock-on cycling).
+    // D-left is the health potion (the other D-pad directions are skills, see character.c).
     // Avoid consuming during cutscenes / dialog sequences.
-    if (cutsceneState == CUTSCENE_NONE && cLeftJustPressed && !zHeld) {
+    if (cutsceneState == CUTSCENE_NONE && btn.d_left) {
         (void)character_try_use_health_potion();
     }
 
@@ -1484,9 +1750,9 @@ void scene_update(void) {
         }
     }
 
-    // if (cutsceneState == CUTSCENE_NONE) {
-    //    msa_update(deltaTime); // multi sword attack
-    // }
+    if (cutsceneState == CUTSCENE_NONE) {
+        msa_update(deltaTime); // multi sword attack (Guardian Unbound)
+    }
     //boulder_hazard_update(deltaTime); // close-range ground boulders
 
     lastZPressed = zHeld;
@@ -1507,6 +1773,88 @@ static void draw_lockon_indicator(T3DViewport *viewport)
     boss_ui_draw_lockon_marker(viewport, &worldPos, visible);
 }
 
+// The hall with the knight and the boss (cutscenes that keep the gameplay view).
+static void scene_draw_hall(void)
+{
+    rdpq_sync_pipe();
+    rdpq_mode_zbuf(false, false);
+
+    // No-depth environment first.
+    t3d_matrix_push_pos(1);
+        if (windowsMatrix && windowsDpl) {
+            t3d_matrix_set(windowsMatrix, true);
+            rspq_block_run(windowsDpl);
+        }
+
+        if (mapMatrix && mapDpl) {
+            t3d_matrix_set(mapMatrix, true);
+            rspq_block_run(mapDpl);
+        }
+    t3d_matrix_pop(1);
+
+    // Floor.
+    rdpq_sync_pipe();
+    rdpq_mode_zbuf(true, true);
+
+    t3d_matrix_push_pos(1);
+        if (roomFloorMatrix && roomFloorDpl) {
+            t3d_matrix_set(roomFloorMatrix, true);
+            rspq_block_run(roomFloorDpl);
+        }
+    t3d_matrix_pop(1);
+
+    // Shadows.
+    rdpq_sync_pipe();
+    rdpq_mode_zbuf(false, false);
+
+    t3d_matrix_push_pos(1);
+        character_draw_shadow();
+
+        if (g_boss) {
+            boss_draw_shadow(g_boss);
+        }
+    t3d_matrix_pop(1);
+
+    // Room pieces.
+    rdpq_sync_pipe();
+    rdpq_mode_zbuf(true, true);
+
+    t3d_matrix_push_pos(1);
+        if (roomLedgeMatrix && roomLedgeDpl) {
+            t3d_matrix_set(roomLedgeMatrix, true);
+            rspq_block_run(roomLedgeDpl);
+        }
+
+        if (pillarsMatrix && pillarsDpl) {
+            t3d_matrix_set(pillarsMatrix, true);
+            rspq_block_run(pillarsDpl);
+        }
+
+        if (pillarsFrontMatrix && pillarsFrontDpl) {
+            t3d_matrix_set(pillarsFrontMatrix, true);
+            rspq_block_run(pillarsFrontDpl);
+        }
+    t3d_matrix_pop(1);
+
+    // Characters.
+    t3d_matrix_push_pos(1);
+        character_draw();
+
+        if (g_boss) {
+            boss_draw(g_boss);
+        }
+    t3d_matrix_pop(1);
+
+    // Persistent gameplay chains only.
+    // cinematicChains moved into cutscene_guardian_phase1.c and should not be referenced here.
+    t3d_matrix_push_pos(1);
+        if (chainsMatrix && chainsDpl) {
+            t3d_matrix_set(chainsMatrix, true);
+            rspq_block_run(chainsDpl);
+        }
+    t3d_matrix_pop(1);
+}
+
 void scene_draw_cutscene(T3DViewport *viewport)
 {
     scene_update_context();
@@ -1517,89 +1865,23 @@ void scene_draw_cutscene(T3DViewport *viewport)
     }
 
     switch (cutsceneState) {
+        case CUTSCENE_ENDING: {
+            if (ending_room_visible()) scene_draw_hall();
+            ending_draw_world();
+            ending_draw_overlay();
+        } break;
+
+        case CUTSCENE_BONUS_INTRO:
+        case CUTSCENE_BONUS_OUTRO:
         case CUTSCENE_POST_BOSS_RESTORED: {
             /*
              * Render the normal scene while the post-boss dialog is active.
              * This avoids a black screen because this cutscene is camera/dialog only.
              */
 
-            rdpq_sync_pipe();
-            rdpq_mode_zbuf(false, false);
+            scene_draw_hall();
 
-            // No-depth environment first.
-            t3d_matrix_push_pos(1);
-                if (windowsMatrix && windowsDpl) {
-                    t3d_matrix_set(windowsMatrix, true);
-                    rspq_block_run(windowsDpl);
-                }
-
-                if (mapMatrix && mapDpl) {
-                    t3d_matrix_set(mapMatrix, true);
-                    rspq_block_run(mapDpl);
-                }
-            t3d_matrix_pop(1);
-
-            // Floor.
-            rdpq_sync_pipe();
-            rdpq_mode_zbuf(true, true);
-
-            t3d_matrix_push_pos(1);
-                if (roomFloorMatrix && roomFloorDpl) {
-                    t3d_matrix_set(roomFloorMatrix, true);
-                    rspq_block_run(roomFloorDpl);
-                }
-            t3d_matrix_pop(1);
-
-            // Shadows.
-            rdpq_sync_pipe();
-            rdpq_mode_zbuf(false, false);
-
-            t3d_matrix_push_pos(1);
-                character_draw_shadow();
-
-                if (g_boss) {
-                    boss_draw_shadow(g_boss);
-                }
-            t3d_matrix_pop(1);
-
-            // Room pieces.
-            rdpq_sync_pipe();
-            rdpq_mode_zbuf(true, true);
-
-            t3d_matrix_push_pos(1);
-                if (roomLedgeMatrix && roomLedgeDpl) {
-                    t3d_matrix_set(roomLedgeMatrix, true);
-                    rspq_block_run(roomLedgeDpl);
-                }
-
-                if (pillarsMatrix && pillarsDpl) {
-                    t3d_matrix_set(pillarsMatrix, true);
-                    rspq_block_run(pillarsDpl);
-                }
-
-                if (pillarsFrontMatrix && pillarsFrontDpl) {
-                    t3d_matrix_set(pillarsFrontMatrix, true);
-                    rspq_block_run(pillarsFrontDpl);
-                }
-            t3d_matrix_pop(1);
-
-            // Characters.
-            t3d_matrix_push_pos(1);
-                character_draw();
-
-                if (g_boss) {
-                    boss_draw(g_boss);
-                }
-            t3d_matrix_pop(1);
-
-            // Persistent gameplay chains only.
-            // cinematicChains moved into cutscene_guardian_phase1.c and should not be referenced here.
-            t3d_matrix_push_pos(1);
-                if (chainsMatrix && chainsDpl) {
-                    t3d_matrix_set(chainsMatrix, true);
-                    rspq_block_run(chainsDpl);
-                }
-            t3d_matrix_pop(1);
+            skill_fx_draw();
 
             // 2D dialog overlay.
             if (cutsceneDialogActive) {
@@ -1662,7 +1944,7 @@ void scene_draw(T3DViewport *viewport)
     t3d_screen_clear_color(RGBA32(0, 0, 0, 0xFF));
     t3d_screen_clear_depth();
 
-    if(cutsceneState != CUTSCENE_NONE){
+    if(cutscene_manager_handles_guardian_cutscene(cutsceneState)){
         cutscene_manager_draw_fog();
     }else{
         t3d_fog_set_range(450.0f, 800.0f);
@@ -1744,7 +2026,7 @@ void scene_draw(T3DViewport *viewport)
         boss_draw(g_boss);
     }
 
-    //msa_draw_visuals(viewport); // multi sword attack
+    msa_draw_visuals(viewport); // multi sword attack (Guardian Unbound)
     //boulder_hazard_draw(viewport); // close-range ground boulders
 
     // Fog door (transparent): depth test ON, depth write OFF so it can be drawn late.
@@ -1775,6 +2057,9 @@ void scene_draw(T3DViewport *viewport)
     // Blood splatters from boss hits (drawn after dust so red reads on top of puffs)
     blood_particles_fx_update(deltaTime);
     blood_particles_fx_draw(viewport);
+
+    // Player skill waves, arches, pillars and bursts
+    skill_fx_draw();
 
     // ===== DRAW 2D =====
     // Post-boss interaction prompt ("A") above the defeated boss when close enough to interact
@@ -2034,9 +2319,19 @@ void scene_delete_environment(void)
     if (roomFloorMatrix) { free_uncached(roomFloorMatrix); roomFloorMatrix = NULL; }
 }
 
+#ifdef HLE_TEST_ENDING
+void scene_test_start_ending(void)     // test aid: straight to the ending
+{
+    cutsceneState = CUTSCENE_ENDING;
+    scene_init_cutscene();
+}
+#endif
+
 void scene_cleanup(void)
 {
     rspq_wait();
+    ending_free();
+    sun_boss_free();
     //collision_mesh_cleanup();
     scene_delete_environment();
     boss_ground_crush_cleanup();
@@ -2054,6 +2349,9 @@ void scene_cleanup(void)
     blood_particles_fx_cleanup();
     dust_particles_fx_cleanup();
     particle_system_cleanup();
+    msa_shutdown();
+    lightning_fx_system_shutdown();
+    fallen_knight_free();
 
     dialog_controller_free();
     audio_scene_unload_sfx();

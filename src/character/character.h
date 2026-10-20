@@ -33,6 +33,8 @@ typedef enum {
     ANIM_WALK_BACK,
     ANIM_RUN_BACK,
     ANIM_DEATH,
+    ANIM_SKILL_CLEAVE,      // built by tools/compose_anims.py
+    ANIM_SKILL_HALFMOON,
     ANIM_COUNT,
 } CharacterAnimState;
 
@@ -47,7 +49,16 @@ typedef enum {
     CHAR_STATE_FOG_WALK,
     CHAR_STATE_KNOCKDOWN,
     CHAR_STATE_DEAD,
+    CHAR_STATE_SKILL,
 } CharacterState;
+
+// D-pad skills (D-left is the health potion)
+typedef enum {
+    SKILL_MOON_BLADE_DANCE,     // D-up: jump in the move direction, rain X-waves
+    SKILL_HALFMOON_SLASH,       // D-right: long rooted charge, huge 180-degree slash
+    SKILL_CRESCENT_CLEAVE,      // D-down: 5 blades rising from the ground that keep hitting
+    SKILL_COUNT,
+} CharacterSkill;
 
 typedef struct {
     T3DVec3 localCapA;
@@ -145,5 +156,12 @@ void character_apply_damage(float amount);
 // Health potion API.
 int character_get_health_potion_count(void);
 bool character_try_use_health_potion(void);
+
+// Skill API (cooldowns for the HUD).
+float character_get_skill_cooldown(CharacterSkill skill);         // seconds left
+float character_get_skill_cooldown_ratio(CharacterSkill skill);   // 1 = just used, 0 = ready
+bool character_can_afford_skill(CharacterSkill skill);            // enough stamina
+bool character_skills_enabled(void);                              // Settings toggle
+void character_set_skills_enabled(bool enabled);
 
 #endif // CHARACTER_H

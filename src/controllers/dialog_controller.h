@@ -9,6 +9,8 @@ void dialog_controller_free(void);
 // Dialog management
 void dialog_controller_speak(const char* text, int style, float activeTime, bool interactable, bool end);
 bool dialog_controller_speaking(void);
+// Seconds `text` takes to type out, from its speed markers (for scripting cutscenes).
+float dialog_controller_type_time(const char* text);
 void dialog_controller_stop_speaking(void);
 // Immediately end the current dialog line (so callers can advance to the next line).
 void dialog_controller_skip(void);

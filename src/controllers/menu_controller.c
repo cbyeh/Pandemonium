@@ -7,6 +7,7 @@
 #include "audio_controller.h"
 #include "../scenes/guardian/guardian_scene.h"
 #include "../utilities/save_controller.h"
+#include "../character/character.h"
 
 #include "../utilities/globals.h"
 #include "../utilities/video_layout.h"
@@ -41,6 +42,7 @@ static sprite_t *iconZ = NULL;
 static sprite_t *iconStart = NULL;
 static sprite_t *iconStick = NULL;
 static sprite_t *iconCLeft = NULL;
+static sprite_t *iconDpad = NULL;
 
 // Input handling for edge detection
 static bool lastStartPressed = false;
@@ -69,6 +71,7 @@ static const char* mainMenuOptions[MENU_MAIN_COUNT] = {
 static const char* titleMenuOptions[MENU_TITLE_COUNT] = {
     "Continue",
     "Load Game",
+    "Bonus",
     "Settings",
     "Credits",
 };
@@ -77,6 +80,7 @@ static const char* settingsMenuOptions[MENU_SETTINGS_COUNT] = {
     "Audio",
     "Video",
     "Controls",
+    "Skills: %s",
     "Back",
 };
 
@@ -93,6 +97,12 @@ static const char* audioMenuOptions[MENU_AUDIO_COUNT] = {
 static const char* videoMenuOptions[MENU_VIDEO_COUNT] = {
     "Aspect: %s",
     "Calibrate Overscan",
+    "Back",
+};
+
+static const char* bonusMenuOptions[MENU_BONUS_COUNT] = {
+    "Fallen Knight",
+    "The Shackled Sun",
     "Back",
 };
 
@@ -128,6 +138,7 @@ static int get_menu_option_count(MenuState menu)
         case MENU_AUDIO:     return MENU_AUDIO_COUNT;
         case MENU_VIDEO:     return MENU_VIDEO_COUNT;
         case MENU_LOAD_GAME: return MENU_LOAD_GAME_COUNT;
+        case MENU_BONUS:     return MENU_BONUS_COUNT;
         case MENU_CONTROLS:  return 1;
         case MENU_CREDITS:   return 1;
         default:             return 1;
@@ -235,6 +246,7 @@ void menu_controller_init(void)
     iconStart = sprite_load("rom:/buttons/Start.sprite");
     iconStick = sprite_load("rom:/buttons/StickTexture.sprite");
     iconCLeft = sprite_load("rom:/buttons/CLeft.sprite");
+    iconDpad = sprite_load("rom:/buttons/Dpad.sprite");
 }
 
 MenuAction menu_controller_consume_action(void)
@@ -397,10 +409,18 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                     save_controller_set_active_slot(slotToLoad);
                     save_controller_update_last_played_timestamp();
 
+                    scene_set_bonus_fight(BONUS_NONE);
                     menu_controller_close();
                     pendingAction = MENU_ACTION_TITLE_START_GAME;
                     break;
                 }
+
+                case MENU_TITLE_BONUS:
+                    parentMenu = MENU_TITLE;
+                    parentSelectedOption = MENU_TITLE_BONUS;
+                    currentMenu = MENU_BONUS;
+                    selectedOption = 0;
+                    break;
 
                 case MENU_TITLE_LOAD_GAME:
                     parentMenu = MENU_TITLE;
@@ -451,6 +471,14 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                     parentSelectedOption = MENU_SETTINGS_CONTROLS;
                     currentMenu = MENU_CONTROLS;
                     selectedOption = 0;
+                    break;
+
+                case MENU_SETTINGS_SKILLS:
+                    // Only from the title screen: no switching mid-battle
+                    if (settingsHubReturnMenu == MENU_TITLE) {
+                        character_set_skills_enabled(!character_skills_enabled());
+                        (void)save_controller_save_settings();
+                    }
                     break;
 
                 case MENU_SETTINGS_BACK:
@@ -620,6 +648,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                 save_controller_set_active_slot(selectedOption);
                 save_controller_update_last_played_timestamp();
 
+                scene_set_bonus_fight(BONUS_NONE);
                 menu_controller_close();
                 pendingAction = MENU_ACTION_TITLE_START_GAME;
             } else if (selectedOption == MENU_LOAD_GAME_BACK) {
@@ -629,6 +658,19 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
         }
 
         if (bJustPressed) {
+            currentMenu = parentMenu;
+            selectedOption = parentSelectedOption;
+        }
+    } else if (currentMenu == MENU_BONUS) {
+        if (aJustPressed && selectedOption != MENU_BONUS_BACK) {
+            // Bonus fights use the last played slot for settings and run stats
+            int lastPlayedSlot = save_controller_get_last_played_slot();
+            save_controller_set_active_slot((lastPlayedSlot >= 0) ? lastPlayedSlot : 0);
+
+            scene_set_bonus_fight(selectedOption == MENU_BONUS_SHACKLED_SUN ? BONUS_SHACKLED_SUN : BONUS_FALLEN_KNIGHT);
+            menu_controller_close();
+            pendingAction = MENU_ACTION_TITLE_START_GAME;
+        } else if (bJustPressed || (aJustPressed && selectedOption == MENU_BONUS_BACK)) {
             currentMenu = parentMenu;
             selectedOption = parentSelectedOption;
         }
@@ -998,7 +1040,8 @@ void menu_controller_draw(void)
         currentMenu == MENU_SETTINGS ||
         currentMenu == MENU_AUDIO ||
         currentMenu == MENU_VIDEO ||
-        currentMenu == MENU_CREDITS
+        currentMenu == MENU_CREDITS ||
+        currentMenu == MENU_BONUS
     ) {
         dialogWidth = 260;
     }
@@ -1078,8 +1121,42 @@ void menu_controller_draw(void)
         y += (lineHeight * 3) + titleYOffset;
 
         for (int i = 0; i < MENU_SETTINGS_COUNT; i++) {
-            const char *optionText = settingsMenuOptions[i] ? settingsMenuOptions[i] : "";
+            char optionText[64];
+            bool locked = (i == MENU_SETTINGS_SKILLS && settingsHubReturnMenu != MENU_TITLE);
+            snprintf(optionText, sizeof(optionText), settingsMenuOptions[i] ? settingsMenuOptions[i] : "",
+                     locked ? (character_skills_enabled() ? "ON (title only)" : "OFF (title only)")
+                            : (character_skills_enabled() ? "ON" : "OFF"));
 
+            if (i == selectedOption) {
+                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
+                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+            } else {
+                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
+            }
+            if (locked) rdpq_set_prim_color(RGBA32(130, 130, 130, 255));   // greyed out
+
+            rdpq_text_printf(&(rdpq_textparms_t){
+                .align = ALIGN_CENTER,
+                .width = contentW,
+                .height = contentH,
+                .wrap = WRAP_WORD,
+            }, FONT_UNBALANCED, x, y, "%s", optionText);
+
+            y += lineHeight + 2;
+        }
+
+        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+    } else if (currentMenu == MENU_BONUS) {
+        rdpq_text_printf(&(rdpq_textparms_t){
+            .align = ALIGN_CENTER,
+            .width = contentW,
+            .height = contentH,
+            .wrap = WRAP_WORD,
+        }, FONT_UNBALANCED, x, y + titleYOffset, "BONUS");
+
+        y += (lineHeight * 3) + titleYOffset;
+
+        for (int i = 0; i < MENU_BONUS_COUNT; i++) {
             if (i == selectedOption) {
                 draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
                 rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
@@ -1092,7 +1169,7 @@ void menu_controller_draw(void)
                 .width = contentW,
                 .height = contentH,
                 .wrap = WRAP_WORD,
-            }, FONT_UNBALANCED, x, y, "%s", optionText);
+            }, FONT_UNBALANCED, x, y, "%s", bonusMenuOptions[i]);
 
             y += lineHeight + 2;
         }
@@ -1222,6 +1299,9 @@ void menu_controller_draw(void)
         y += lineHeight + 6;
 
         draw_icon_line(iconCLeft, listX, y, lineHeight, listW, "Move Camera");
+        y += lineHeight + 6;
+
+        draw_icon_line(iconDpad, listX, y, lineHeight, listW, "Skills / Potion");
     } else if (currentMenu == MENU_CREDITS) {
         rdpq_text_printf(&(rdpq_textparms_t){
             .align = ALIGN_CENTER,
@@ -1299,6 +1379,11 @@ void menu_controller_free(void)
     if (iconCLeft) {
         sprite_free(iconCLeft);
         iconCLeft = NULL;
+    }
+
+    if (iconDpad) {
+        sprite_free(iconDpad);
+        iconDpad = NULL;
     }
 }
 

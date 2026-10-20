@@ -18,6 +18,14 @@ extern bool hdAspect;
 // Positive values move edge-anchored UI further inward to avoid CRT clipping.
 // Negative values widen UI toward the screen edges (min = widest).
 #define UI_OVERSCAN_MIN -15
+#ifdef HLE_BUILD
+// Emulator front-ends (e.g. Delta skins) often crop/zoom the picture: start with wider margins
+#define UI_OVERSCAN_DEFAULT_X -7
+#define UI_OVERSCAN_DEFAULT_Y -5
+#else
+#define UI_OVERSCAN_DEFAULT_X UI_OVERSCAN_MIN
+#define UI_OVERSCAN_DEFAULT_Y UI_OVERSCAN_MIN
+#endif
 
 extern int8_t uiOverscanX;
 extern int8_t uiOverscanY;

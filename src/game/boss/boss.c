@@ -3,6 +3,8 @@
 #include "boss_anim.h"
 #include "boss_render.h"
 #include "boss_attacks.h"
+#include "game/fallen_knight/fallen_knight.h"
+#include "game/sun_boss/sun_boss.h"
 
 #include <libdragon.h>
 #include <t3d/t3dmath.h>
@@ -95,6 +97,7 @@ bool boss_get_bone_world_pos(const Boss* boss, int boneIndex, T3DVec3 *outWorld)
     if (!boss) return false;
     if (!boss->skeleton || !boss->modelMat) return false;
     if (boneIndex < 0) return false;
+    if (boss->phaseIndex >= FALLEN_KNIGHT_PHASE) return false;     // bonus bosses: not the Guardian's skeleton
 
     T3DSkeleton *skel = (T3DSkeleton*)boss->skeleton;
 
@@ -144,7 +147,8 @@ T3DVec3 boss_get_fallback_lock_focus_point(const Boss* boss)
         return (T3DVec3){{0.0f, 0.0f, 0.0f}};
     }
 
-    return (T3DVec3){{boss->pos[0], boss->pos[1] + 40.0f, boss->pos[2]}};
+    float lift = (boss->phaseIndex == SUN_BOSS_PHASE) ? 0.0f : (boss->phaseIndex == FALLEN_KNIGHT_PHASE) ? 18.0f : 40.0f;
+    return (T3DVec3){{boss->pos[0], boss->pos[1] + lift, boss->pos[2]}};
 }
 
 // Apply intent from AI to animation system
@@ -457,7 +461,9 @@ bool boss_is_post_defeat(const Boss* boss)
 
 bool boss_is_interactable(const Boss* boss)
 {
-    return boss && boss->mode == BOSS_MODE_POST_DEFEAT && boss->state == BOSS_STATE_DEAD;
+    // The post-fight chat is the Guardian's; the bonus bosses have none
+    return boss && boss->mode == BOSS_MODE_POST_DEFEAT && boss->state == BOSS_STATE_DEAD &&
+           boss->phaseIndex < FALLEN_KNIGHT_PHASE;
 }
 
 static inline void boss_update_shadow_mat(Boss* boss)
@@ -493,9 +499,39 @@ static inline void boss_update_shadow_mat(Boss* boss)
     t3d_mat4fp_from_srt_euler((T3DMat4FP*)boss->shadowMat, shadowScale, shadowRot, shadowPos);
 }
 
+// Health per fight without skills; the D-pad skills double it. The bonus bosses are
+// sized to the same difficulty as the Guardian's two phases together (measured damage
+// against a dummy + a binomial dodge model): they hit softer but more often.
+static inline float boss_target_max_health(int phase)
+{
+    float base = (phase == FALLEN_KNIGHT_PHASE) ? 300.0f : (phase == SUN_BOSS_PHASE) ? 325.0f : 100.0f;
+    return character_skills_enabled() ? base * 2.0f : base;
+}
+
+/** Follows the Skills setting, keeping the health percentage (it can change mid-fight). */
+static void boss_sync_max_health(Boss* boss)
+{
+    float target = boss_target_max_health(boss->phaseIndex);
+    if (boss->maxHealth == target) return;
+    if (boss->maxHealth > 0.0f) boss->health *= target / boss->maxHealth;
+    boss->maxHealth = target;
+}
+
 void boss_update(Boss* boss)
 {
     if (!boss) return;
+    boss_sync_max_health(boss);
+#ifdef HLE_TEST_FREEZE_BOSS
+    if (boss->mode == BOSS_MODE_COMBAT) return;     // test aid: keep the boss out of the way
+#endif
+    if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) {
+        fallen_knight_update(boss, deltaTime);
+        return;
+    }
+    if (boss->phaseIndex == SUN_BOSS_PHASE) {
+        sun_boss_update(boss, deltaTime);
+        return;
+    }
 
     float dt = deltaTime;
 
@@ -570,6 +606,21 @@ void boss_update(Boss* boss)
 void boss_draw(Boss* boss)
 {
     if (!boss) return;
+    if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) {
+        fallen_knight_draw(boss);
+        return;
+    }
+    if (boss->phaseIndex == SUN_BOSS_PHASE) {
+        sun_boss_draw(boss);
+        return;
+    }
+    if (boss->phaseIndex == 2) {
+        // Guardian Unbound: corrupted violet cast
+        t3d_light_set_ambient((uint8_t[4]){ 200, 110, 230, 255 });
+        boss_render_draw(boss);
+        t3d_light_set_ambient((uint8_t[4]){ 255, 255, 255, 255 });
+        return;
+    }
     boss_render_draw(boss);
 }
 
@@ -790,8 +841,8 @@ void boss_init(Boss* boss)
     boss->shadowMat = shadowMat;
 
     boss->name = "Guardian of the Shackled Sun";
-    boss->maxHealth = 100.0f;
-    boss->health = 100.0f;
+    boss->maxHealth = boss_target_max_health(1);
+    boss->health = boss->maxHealth;
     boss->phaseIndex = 1;
 
     boss->velX = 0.0f;
@@ -903,6 +954,8 @@ void boss_reset(Boss* boss)
     boss->scale[2] = MODEL_SCALE;
 
     boss->state = BOSS_STATE_INTRO;
+    boss->name = "Guardian of the Shackled Sun";
+    boss->maxHealth = boss_target_max_health(1);
     boss->health = boss->maxHealth;
     boss->phaseIndex = 1;
 

@@ -1250,7 +1250,9 @@ void msa_draw_visuals(T3DViewport *viewport) {
     if (!swordDpl || !swordMatrix || !floorGlowModel || !floorGlowMatrix) return;
 
     // 1) Swords (zbuf ON)
-    t3d_matrix_push_pos(1);
+    // The sword/glow matrices are world-space, like every scene object: set them on
+    // the current scene slot (on top of the camera) instead of pushing a new slot, which
+    // would multiply them by whatever was drawn last (the boss: tiny, invisible swords).
     for (int i = 0; i < gCount; i++) {
         const MsaSword *s = &gSwords[i];
         if (s->state == SW_INACTIVE) continue;
@@ -1313,13 +1315,11 @@ void msa_draw_visuals(T3DViewport *viewport) {
         t3d_matrix_set(&swordMatrix[i], true);
         rspq_block_run(swordDpl);
     }
-    t3d_matrix_pop(1);
 
     // Lightning FX (system-owned)
     lightning_fx_system_draw();
 
     // Glows
-    t3d_matrix_push_pos(1);
     for (int i = 0; i < gCount; i++) {
         const MsaSword *s = &gSwords[i];
         if (s->state == SW_INACTIVE) continue;
@@ -1342,7 +1342,6 @@ void msa_draw_visuals(T3DViewport *viewport) {
             .tileCb   = tile_scroll,
         });
     }
-    t3d_matrix_pop(1);
 
     // Crack + Wall
     for (int i = 0; i < MSA_MAX_SWORDS; i++) {

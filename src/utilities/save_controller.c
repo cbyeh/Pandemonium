@@ -9,6 +9,7 @@
 #include "joypad_utility.h"
 #include "globals.h"
 #include "video_controller.h"
+#include "../character/character.h"
 
 /*
  * EEPROMFS notes:
@@ -87,7 +88,7 @@ static int clampi(int v, int lo, int hi)
 
 static int8_t saved_overscan_x(const SaveData *d)
 {
-    if (!d) return UI_OVERSCAN_MIN;
+    if (!d) return UI_OVERSCAN_DEFAULT_X;
     // Stored in padding to keep save size stable across versions.
     int8_t v = (int8_t)d->_pad[0];
     int maxX = (SCREEN_WIDTH / 2) - 2;
@@ -96,7 +97,7 @@ static int8_t saved_overscan_x(const SaveData *d)
 
 static int8_t saved_overscan_y(const SaveData *d)
 {
-    if (!d) return UI_OVERSCAN_MIN;
+    if (!d) return UI_OVERSCAN_DEFAULT_Y;
     int8_t v = (int8_t)d->_pad[1];
     int maxY = (SCREEN_HEIGHT / 2) - 2;
     return (int8_t)clampi((int)v, UI_OVERSCAN_MIN, maxY);
@@ -140,6 +141,18 @@ static void save_set_hd_aspect(SaveData *d, bool enabled)
     d->_pad[3] = enabled ? 1 : 0;
 }
 
+// Stored inverted so saves from before the skills existed read as enabled.
+static bool saved_skills_enabled(const SaveData *d)
+{
+    return !d || d->_pad[4] == 0;
+}
+
+static void save_set_skills_enabled(SaveData *d, bool enabled)
+{
+    if (!d) return;
+    d->_pad[4] = enabled ? 0 : 1;
+}
+
 static void save_defaults_for_slot(SaveData *d, int slot) {
     memset(d, 0, sizeof(*d));
 
@@ -155,7 +168,7 @@ static void save_defaults_for_slot(SaveData *d, int slot) {
     d->stereoMode   = (uint8_t)(audio_get_stereo_mode() ? 1 : 0);
 
     // UI overscan defaults: minimum extra padding (widest UI in calibrated range)
-    save_set_overscan(d, UI_OVERSCAN_MIN, UI_OVERSCAN_MIN);
+    save_set_overscan(d, UI_OVERSCAN_DEFAULT_X, UI_OVERSCAN_DEFAULT_Y);
     save_set_rumble_enabled(d, true);
     save_set_hd_aspect(d, false);
 
@@ -312,6 +325,9 @@ bool save_controller_set_active_slot(int slot) {
         return false;
     }
 
+    // Persist pending (debounced) setting changes first: the re-read below would drop them
+    if (s_dirty) (void)blob_write_now();
+
     // Ensure we have a valid blob loaded
     (void)blob_read_or_seed_defaults();
 
@@ -345,6 +361,7 @@ bool save_controller_load_settings(void) {
 
     joypad_set_rumble_enabled(saved_rumble_enabled(d));
     hdAspect = saved_hd_aspect(d);
+    character_set_skills_enabled(saved_skills_enabled(d));
     return true;
 }
 
@@ -362,6 +379,7 @@ bool save_controller_save_settings(void) {
     save_set_overscan(d, uiOverscanX, uiOverscanY);
     save_set_rumble_enabled(d, joypad_is_rumble_enabled());
     save_set_hd_aspect(d, hdAspect);
+    save_set_skills_enabled(d, character_skills_enabled());
 
     d->checksum     = compute_slot_checksum(d);
 

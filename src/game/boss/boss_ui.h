@@ -11,6 +11,8 @@ void boss_ui_cleanup(void);
 void boss_ui_reset(void);
 
 void boss_ui_set_intro(float progress);
+// Name plate for the boss phase: 1 Guardian, 2 Guardian Unbound, 3 Fallen Knight.
+void boss_ui_set_form(int phase);
 void boss_ui_snap_health_trail(float ratio);
 
 void boss_ui_draw_health_bar(const char *name, float ratio, float flash);

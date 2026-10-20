@@ -66,4 +66,12 @@ bool scene_is_menu_active(void);
 void scene_dev_warp_to_fight(void);
 void scene_dev_warp_to_pre_phase2(void);
 
+// Title-menu Bonus fights: the next scene_init runs one of these instead of the story.
+typedef enum {
+    BONUS_NONE,
+    BONUS_FALLEN_KNIGHT,
+    BONUS_SHACKLED_SUN,
+} BonusFight;
+void scene_set_bonus_fight(BonusFight fight);
+
 #endif

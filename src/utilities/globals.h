@@ -21,7 +21,7 @@
 #define PAL_MODE false
 #define DRAW_CRT_SAFE_AREA false
 
-#define PHASE_2_ENABLED false
+#define PHASE_2_ENABLED true   // second fight: Guardian Unbound
 
 #define DITHER_ENABLED false
 #define ARES_AA_ENABLED false

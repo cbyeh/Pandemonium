@@ -85,6 +85,22 @@ static int count_printable_glyphs(const char* str)
     return count;
 }
 
+float dialog_controller_type_time(const char* text)
+{
+    float speed = FAST_SPEED, t = 0.0f;     // dialog_controller_speak starts fast
+    for (const char *c = text; c && *c; c++) {
+        switch (*c) {
+            case '<': speed = SLOW_SPEED; break;
+            case '^': speed = NORMAL_SPEED; break;
+            case '>': speed = FAST_SPEED; break;
+            case '~': speed = BREATH_SPEED; break;
+            case '@': break;
+            default:  t += speed; break;
+        }
+    }
+    return t;
+}
+
 void dialog_controller_speak(
     const char* text,
     int style,

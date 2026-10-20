@@ -158,6 +158,8 @@ static void boss_ui_update_bar_trails(float ratio, BossUiBarTrailState *s)
     }
 }
 
+static int s_form = 1;     // boss phase whose name plate is loaded
+
 static void boss_ui_load_sprite(sprite_t **sprite, surface_t *surface, const char *path)
 {
     if (!sprite || !surface || !path) return;
@@ -480,6 +482,7 @@ static void boss_ui_draw_health_name(const BossUiHealthLayout *layout)
 
 void boss_ui_init(void)
 {
+    s_form = 1;
     s_bossUiIntro = 1.0f;
     boss_ui_reset_bar_trail(&s_bossHealthBarState, 1.0f);
 
@@ -509,6 +512,21 @@ void boss_ui_init(void)
         &s_bossHealthBarNameSurf,
         "rom:/ui/healthbars/boss/guardian_of_the_shackled_sun.ia4.sprite"
     );
+}
+
+void boss_ui_set_form(int phase)
+{
+    static const char *plates[] = {
+        "rom:/ui/healthbars/boss/guardian_of_the_shackled_sun.ia4.sprite",
+        "rom:/ui/healthbars/boss/guardian_unbound.ia4.sprite",
+        "rom:/ui/healthbars/boss/fallen_knight.ia4.sprite",
+        "rom:/ui/healthbars/boss/the_shackled_sun.ia4.sprite",
+    };
+    if (phase < 1 || phase > 4 || phase == s_form) return;
+    s_form = phase;
+    rspq_wait();    // the old plate may still be referenced by queued draws
+    boss_ui_free_sprite(&s_bossHealthBarNameSprite, &s_bossHealthBarNameSurf);
+    boss_ui_load_sprite(&s_bossHealthBarNameSprite, &s_bossHealthBarNameSurf, plates[phase - 1]);
 }
 
 void boss_ui_cleanup(void)

@@ -1,5 +1,7 @@
 # Pandemonium
 
+<img width="1000" alt="Pandemonium cover art" src="metadata/cover.jpg">
+
 ## Story
 A century long darkness has been cast on the land by the Demon King. The king is guarded by knights, tormented and broken. You are one of them, cast into setvitude, forced to bend to the kings will. Pandemonium is an original dark-fantasy souls game inspired by Elden Ring.
 
@@ -12,11 +14,38 @@ B button: Attack
 
 C-Pad: Look
 
+D-Pad: Skills (Up / Right / Down) and health potion (Left)
+
 Start button: Pause Menu
 
 Z trigger: Toggle z targetting
 
 Hold Z trigger + left/right on Cpad: Change z target
+
+## New in this fork
+
+### Skills (D-pad)
+Optional sword skills inspired by Dragon Nest's Sword Master, on the D-pad with cooldowns shown on the HUD. Turn them on or off from **Settings > Skills** on the title screen (on by default). With skills on, bosses have double health.
+
+| Moon Blade Dance (D-Up) | Halfmoon Slash (D-Right) | Crescent Cleave (D-Down) |
+|---|---|---|
+| <img src="docs/media/skill_moon_blade_dance.gif" width="320"> | <img src="docs/media/skill_halfmoon_slash.gif" width="320"> | <img src="docs/media/skill_crescent_cleave.gif" width="320"> |
+| Leap high in the direction you are moving (in place when standing still) and rain five X-shaped sword waves on the target, one per swing. Without lock-on they land where the camera looks. | High risk nuke: a long rooted charge (a hit cancels it and hurts more), then a huge 180-degree slash that rolls outward as a wave. | Medium risk: crouch, then a rising swing that raises five light blades in a fan that surge outward, each hitting repeatedly. |
+
+### New boss fights
+Defeating the Guardian of the Shackled Sun is no longer the end: it rises again as Guardian Unbound. Two Bonus fights, picked from **Bonus** on the title screen, each have their own intro and ending cutscenes.
+
+| Guardian Unbound | Fallen Knight (Bonus) |
+|---|---|
+| <img src="docs/media/boss_guardian_unbound.png" width="420"> | <img src="docs/media/boss_fallen_knight.png" width="420"> |
+| The Guardian rises again, corrupted: a fresh health bar, an aerial sword barrage and ground sweeps. | A dark, larger mirror of the knight that combos, rolls away from your swings and turns your own skills against you. |
+
+| The Shackled Sun (Bonus) | The ending, rendered live |
+|---|---|
+| <img src="docs/media/boss_shackled_sun.png" width="420"> | <img src="docs/media/ending_king.png" width="420"> |
+| The chained sun itself, a floating eye: it glares crossed waves, rains pillars of light, sweeps a ring of fire you must roll through, and dives onto you (then rests, open to attack). At half health it breaks its shackles and burns hotter and faster. | The ending used to be a pre-rendered video. It now plays in the engine: the King on his throne of gold, the Shackled Sun, and the fall through the vortex (the ROMs are 1-4.6 MB smaller). |
+
+The animations for Crescent Cleave and Halfmoon Slash are spliced from existing knight clips by `tools/compose_anims.py` (rerun it after re-exporting `knight.glb`).
 
 ## 2025 N64brew Game Jam - Pandemonium
 - December 1st - Feburary 1st
@@ -57,6 +86,13 @@ Hold Z trigger + left/right on Cpad: Change z target
 - Install libdragon (preview)
 - Install Tiny3D (main)
 - run make file
+
+### Emulator build (Delta, Mupen64Plus HLE)
+`make HLE=1` builds `pandemonium-hle.z64` for emulators that only emulate the RSP at a high level (Delta on iOS, Mupen64Plus with GLideN64 + rsp-hle). These can't run libdragon's RSP microcode, so this build replaces it with CPU code in `hle/`. Graphics become F3DEX2 display lists that the emulator's graphics plugin draws, audio is mixed on the CPU, and the intro video is re-encoded to a CPU-decodable format.
+
+- Needs `ffmpeg` on the PATH (to re-encode the video).
+- `hle/` is tied to the libdragon preview commit in `hle/internal/LIBDRAGON_COMMIT` and Tiny3D `6f5ac0b`; update it if you update either.
+- Not for real hardware or accurate (LLE) emulators: use the normal `make` ROM for those.
 
 ## SummerCart64
 
