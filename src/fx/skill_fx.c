@@ -160,9 +160,10 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
     if (f->hitTimer > 0.0f) return;
     float c[3], contact[3];
     float r;
-    if (f->shape == SKILL_WAVE_ARCH) {
-        c[0] = f->pos[0]; c[1] = f->pos[1] + 8.0f; c[2] = f->pos[2];
-        r = 12.0f;
+    if (f->shape == SKILL_WAVE_BLADE) {
+        if (f->age < 0.2f) return;      // still rising out of the ground
+        c[0] = f->pos[0]; c[1] = f->pos[1] + 14.0f; c[2] = f->pos[2];
+        r = 8.0f;
     } else {
         memcpy(c, f->pos, sizeof(c));
         r = 9.0f;
@@ -354,28 +355,40 @@ static void draw_xwave(const SkillFx *f)
     }
 }
 
-static void draw_arch(const SkillFx *f)
+/** Crescent Cleave blade: a tall, slightly curved sliver rising out of the ground. */
+static void draw_blade(const SkillFx *f)
 {
-    enum { N = 13 };
+    enum { N = 9 };
     float d[3], s[3], u[3];
     float flat[3] = { f->vel[0], 0.0f, f->vel[2] };
     dir_basis(flat, d, s, u);
-    float rise = fminf(1.0f, f->age / 0.15f);
-    float a = fade(f, 0.0f, 0.35f);
-    const float W = 14.0f, H = 20.0f, TH = 4.0f;
+    float rise = fminf(1.0f, f->age / 0.4f);
+    float a = fade(f, 0.0f, 0.3f);
+    const float H = 32.0f, BOW = 4.0f, W = 5.0f;
     float outer[N][3], inner[N][3];
     uint32_t co[N], ci[N];
     for (int i = 0; i < N; i++) {
-        float ph = T3D_PI * i / (N - 1);
-        float cx = cosf(ph), sy = sinf(ph);
+        float t = (float)i / (N - 1);           // 0 at the ground, 1 at the tip
+        float bow = sinf(T3D_PI * t);           // curves forward like ")" seen from the side
+        float w = W * sinf(T3D_PI * (0.15f + 0.85f * t));
         for (int c = 0; c < 3; c++) {
             float up = (c == 1) ? 1.0f : 0.0f;
-            outer[i][c] = f->pos[c] + s[c] * cx * W + up * sy * H * rise;
-            inner[i][c] = f->pos[c] + s[c] * cx * (W - TH) + up * sy * (H - TH) * rise;
+            float base = f->pos[c] + up * t * H * rise + d[c] * bow * BOW;
+            outer[i][c] = base + s[c] * w * 0.5f;
+            inner[i][c] = base - s[c] * w * 0.5f;
         }
-        float top = sy;     // brighter at the crown
-        co[i] = rgba(110 + (int)(130 * top), 210 + (int)(40 * top), 255, a);
-        ci[i] = rgba(60, 150, 255, a * 0.35f);
+        co[i] = rgba(150 + (int)(90 * t), 225 + (int)(25 * t), 255, a * (0.4f + 0.6f * t));
+        ci[i] = co[i];
+    }
+    build_ribbon(outer, inner, co, ci, N);
+    // Bright core line
+    for (int i = 0; i < N; i++) {
+        for (int c = 0; c < 3; c++) {
+            float mid = (outer[i][c] + inner[i][c]) * 0.5f;
+            outer[i][c] = mid + s[c] * 0.6f;
+            inner[i][c] = mid - s[c] * 0.6f;
+        }
+        co[i] = ci[i] = rgba(245, 252, 255, a);
     }
     build_ribbon(outer, inner, co, ci, N);
 }
@@ -452,7 +465,7 @@ void skill_fx_draw(void)
         const SkillFx *f = &s_fx[i];
         switch (f->type) {
             case FX_ARC:    draw_arc(f); break;
-            case FX_WAVE:   if (f->shape == SKILL_WAVE_X) draw_xwave(f); else draw_arch(f); break;
+            case FX_WAVE:   if (f->shape == SKILL_WAVE_X) draw_xwave(f); else draw_blade(f); break;
             case FX_PILLAR: draw_pillar(f); break;
             case FX_BURST:  draw_burst(f); break;
             default: break;

@@ -1187,24 +1187,27 @@ typedef struct {
 
 static const SkillDef SKILL_DEFS[SKILL_COUNT] = {
     [SKILL_MOON_BLADE_DANCE] = { 15.0f, 30.0f },
-    [SKILL_HALFMOON_SLASH]   = { 30.0f, 40.0f },
+    [SKILL_HALFMOON_SLASH]   = { 30.0f, 60.0f },
     [SKILL_CRESCENT_CLEAVE]  = { 18.0f, 30.0f },
 };
 
-static const float GRAVITY = 170.0f;
-static const float MBD_JUMP_VELOCITY = 125.0f;     // apex ~46 units, above the boss's head
-static const float MBD_AIR_SPEED = 45.0f;
-static const float MBD_WAVE_SPEED = 170.0f;
-static const float MBD_FIRST_WAVE = 0.45f;
-static const float MBD_WAVE_GAP = 0.09f;
+static const float GRAVITY = 120.0f;
+static const float MBD_JUMP_VELOCITY = 110.0f;     // apex ~50 units, above the boss's head
+static const float MBD_AIR_SPEED = 40.0f;
+static const float MBD_HOVER_GRAVITY = 0.15f;      // gravity scale while the waves are fired
+static const float MBD_WAVE_SPEED = 70.0f;
+static const float MBD_FIRST_WAVE = 0.6f;
+static const float MBD_WAVE_GAP = 0.25f;
 static const int   MBD_WAVES = 5;
-static const float HALFMOON_CHARGE = 1.3f;         // rooted and interruptible until the release
-static const float HALFMOON_END = 2.2f;
+static const float MBD_AIM_DIST = 60.0f;           // ground distance of the aim point without lock-on
+static const float HALFMOON_CHARGE = 2.0f;         // rooted; a hit cancels it and hurts more
+static const float HALFMOON_END = 3.2f;
 static const float HALFMOON_RADIUS = 70.0f;
 static const float HALFMOON_DAMAGE = 45.0f;
-static const float CLEAVE_RELEASE = 0.45f;
-static const float CLEAVE_END = 1.05f;
-static const int   CLEAVE_ARCHES = 5;
+static const float HALFMOON_CHARGE_DAMAGE_MULT = 1.5f;
+static const float CLEAVE_RELEASE = 0.8f;          // interruptible wind-up
+static const float CLEAVE_END = 1.7f;
+static const int   CLEAVE_BLADES = 5;
 
 float character_get_skill_cooldown(CharacterSkill skill)
 {
@@ -1216,6 +1219,11 @@ float character_get_skill_cooldown_ratio(CharacterSkill skill)
     if (skill >= SKILL_COUNT) return 0.0f;
     return skillCooldowns[skill] / SKILL_DEFS[skill].cooldown;
 }
+
+static bool skillsEnabled = true;
+
+bool character_skills_enabled(void) { return skillsEnabled; }
+void character_set_skills_enabled(bool enabled) { skillsEnabled = enabled; }
 
 bool character_can_afford_skill(CharacterSkill skill)
 {
@@ -1246,7 +1254,7 @@ static void try_start_skill(const joypad_buttons_t *buttons)
     int s = buttons->d_up ? SKILL_MOON_BLADE_DANCE :
             buttons->d_right ? SKILL_HALFMOON_SLASH :
             buttons->d_down ? SKILL_CRESCENT_CLEAVE : -1;
-    if (s < 0 || characterState != CHAR_STATE_NORMAL || airborne) return;
+    if (s < 0 || !skillsEnabled || characterState != CHAR_STATE_NORMAL || airborne) return;
     if (skillCooldowns[s] > 0.0f || !character_can_afford_skill(s)) return;
 
     character_consume_stamina(SKILL_DEFS[s].stamina);
@@ -1278,14 +1286,20 @@ static void try_start_skill(const joypad_buttons_t *buttons)
     }
 }
 
-static void skill_fire_moon_blade(float fx, float fz)
+static void skill_fire_moon_blade(void)
 {
-    // Aim at the lock-on target, or at the ground ahead; the waves fan out sideways
+    // Aim at the lock-on target, or at the ground where the camera looks; the waves
+    // fan out sideways. The knight turns to face the aim point.
     float tgt[3];
+    float fx, fz;
     if (cameraLockOnActive) {
+        skill_face(&fx, &fz);
         tgt[0] = cameraLockOnTarget.v[0]; tgt[1] = groundY + 8.0f; tgt[2] = cameraLockOnTarget.v[2];
     } else {
-        tgt[0] = character.pos[0] + fx * 55.0f; tgt[1] = groundY; tgt[2] = character.pos[2] + fz * 55.0f;
+        float rx, rz;
+        compute_camera_vectors(cameraAngleX, &fx, &fz, &rx, &rz);
+        character.rot[1] = atan2f(-fx, fz);
+        tgt[0] = character.pos[0] + fx * MBD_AIM_DIST; tgt[1] = groundY; tgt[2] = character.pos[2] + fz * MBD_AIM_DIST;
     }
     float side = (float)(skillStep - MBD_WAVES / 2) * 7.0f;
     tgt[0] += fz * side;
@@ -1310,8 +1324,7 @@ static void update_skill(float dt)
     switch (activeSkill) {
     case SKILL_MOON_BLADE_DANCE:
         if (skillStep < MBD_WAVES && skillTime >= MBD_FIRST_WAVE + skillStep * MBD_WAVE_GAP) {
-            if (cameraLockOnActive) skill_face(&fx, &fz);
-            skill_fire_moon_blade(fx, fz);
+            skill_fire_moon_blade();
             skillStep++;
         }
         if (!airborne && skillTime > 0.3f) end_skill();
@@ -1325,7 +1338,7 @@ static void update_skill(float dt)
             if (pulse <= 0.0f) {
                 skill_fx_spawn_burst((float[3]){ character.pos[0], groundY, character.pos[2] },
                                      yaw + skillTime * 3.0f);
-                pulse = 0.4f - 0.25f * (skillTime / HALFMOON_CHARGE);
+                pulse = 0.45f - 0.3f * (skillTime / HALFMOON_CHARGE);
             }
         }
         if (skillStep == 0 && skillTime >= HALFMOON_CHARGE) {
@@ -1346,12 +1359,12 @@ static void update_skill(float dt)
 
     case SKILL_CRESCENT_CLEAVE:
         if (skillStep == 0 && skillTime >= CLEAVE_RELEASE) {
-            for (int k = 0; k < CLEAVE_ARCHES; k++) {
-                float a = yaw + (k - CLEAVE_ARCHES / 2) * 0.35f;
+            for (int k = 0; k < CLEAVE_BLADES; k++) {
+                float a = yaw + (k - CLEAVE_BLADES / 2) * 0.3f;
                 float dx = -fm_sinf(a), dz = fm_cosf(a);
-                float origin[3] = { character.pos[0] + dx * 10.0f, groundY, character.pos[2] + dz * 10.0f };
-                skill_fx_spawn_wave(SKILL_WAVE_ARCH, origin, (float[3]){ dx * 75.0f, 0.0f, dz * 75.0f },
-                                    2.0f, 5, 0.15f, 0.9f, false);
+                float origin[3] = { character.pos[0] + dx * 12.0f, groundY, character.pos[2] + dz * 12.0f };
+                skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 40.0f, 0.0f, dz * 40.0f },
+                                    1.5f, 4, 0.2f, 1.4f, false);
                 skill_fx_spawn_burst(origin, a);
             }
             screen_shake_set_shake_mag(6.0f);
@@ -1373,7 +1386,7 @@ static inline bool skill_trail_emitting(void)
     switch (activeSkill) {
         case SKILL_MOON_BLADE_DANCE: return skillTime >= 0.35f && skillTime <= 1.0f;
         case SKILL_HALFMOON_SLASH:   return skillTime >= HALFMOON_CHARGE - 0.1f && skillTime <= HALFMOON_CHARGE + 0.3f;
-        case SKILL_CRESCENT_CLEAVE:  return skillTime >= 0.3f && skillTime <= 0.7f;
+        case SKILL_CRESCENT_CLEAVE:  return skillTime >= CLEAVE_RELEASE - 0.2f && skillTime <= CLEAVE_RELEASE + 0.2f;
         default: return false;
     }
 }
@@ -1385,7 +1398,10 @@ static void update_vertical(float dt)
         groundY = character.pos[1];
         return;
     }
-    velocityY -= GRAVITY * dt;
+    bool hovering = characterState == CHAR_STATE_SKILL && activeSkill == SKILL_MOON_BLADE_DANCE &&
+                    skillStep < MBD_WAVES && velocityY < 15.0f;
+    velocityY -= GRAVITY * (hovering ? MBD_HOVER_GRAVITY : 1.0f) * dt;
+    if (hovering && velocityY < -6.0f) velocityY = -6.0f;
     character.pos[1] += velocityY * dt;
     if (character.pos[1] <= groundY && velocityY < 0.0f) {
         character.pos[1] = groundY;
@@ -2429,7 +2445,7 @@ static inline void update_animations(float speedRatio, CharacterState state, flo
         } else if (state == CHAR_STATE_ATTACKING_STRONG) {
             animSpeed = 0.8f;
         } else if (state == CHAR_STATE_SKILL && activeSkill == SKILL_HALFMOON_SLASH && skillStep == 0) {
-            animSpeed = 0.35f;     // slow wind-up so the swing lands on the release
+            animSpeed = 0.25f;     // slow wind-up so the swing lands on the release
         } else if (state == CHAR_STATE_ROLLING) {
             animSpeed = ROLL_ANIM_SPEED;
         }
@@ -3247,8 +3263,10 @@ void character_apply_damage(float amount)
     if (amount <= 0.0f) return;
     if (character_is_invulnerable()) return;
 
-    // A hit during the Halfmoon charge cancels it (the cooldown is still spent)
-    if (characterState == CHAR_STATE_SKILL && activeSkill == SKILL_HALFMOON_SLASH && skillStep == 0) {
+    // A hit during a wind-up cancels the skill (the cooldown is still spent);
+    // the Halfmoon charge also leaves the player exposed to extra damage
+    if (characterState == CHAR_STATE_SKILL && skillStep == 0 && activeSkill != SKILL_MOON_BLADE_DANCE) {
+        if (activeSkill == SKILL_HALFMOON_SLASH) amount *= HALFMOON_CHARGE_DAMAGE_MULT;
         end_skill();
     }
 

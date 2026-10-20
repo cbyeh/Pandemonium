@@ -415,14 +415,16 @@ void character_ui_draw_c_buttons(void)
     rdpq_mode_alphacompare(0);
     rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
     rdpq_mode_filter(FILTER_BILINEAR);
-    character_ui_draw_icon(s_keySprite, &s_keySurf, upX, upY, keyPx);
-    character_ui_draw_icon(s_keySprite, &s_keySurf, rightX, rightY, keyPx);
-    character_ui_draw_icon(s_keySprite, &s_keySurf, downX, downY, keyPx);
     character_ui_draw_icon(s_keySprite, &s_keySurf, leftX, leftY, keyPx);
+    if (character_skills_enabled()) {
+        character_ui_draw_icon(s_keySprite, &s_keySurf, upX, upY, keyPx);
+        character_ui_draw_icon(s_keySprite, &s_keySurf, rightX, rightY, keyPx);
+        character_ui_draw_icon(s_keySprite, &s_keySurf, downX, downY, keyPx);
 
-    character_ui_draw_skill(SKILL_MOON_BLADE_DANCE, s_skillMoonBladeSprite, &s_skillMoonBladeSurf, upX, upY, keyPx);
-    character_ui_draw_skill(SKILL_HALFMOON_SLASH, s_skillHalfmoonSprite, &s_skillHalfmoonSurf, rightX, rightY, keyPx);
-    character_ui_draw_skill(SKILL_CRESCENT_CLEAVE, s_skillCleaveSprite, &s_skillCleaveSurf, downX, downY, keyPx);
+        character_ui_draw_skill(SKILL_MOON_BLADE_DANCE, s_skillMoonBladeSprite, &s_skillMoonBladeSurf, upX, upY, keyPx);
+        character_ui_draw_skill(SKILL_HALFMOON_SLASH, s_skillHalfmoonSprite, &s_skillHalfmoonSurf, rightX, rightY, keyPx);
+        character_ui_draw_skill(SKILL_CRESCENT_CLEAVE, s_skillCleaveSprite, &s_skillCleaveSurf, downX, downY, keyPx);
+    }
 
     // Only show the potion bottle + count while the player has potions.
     int potionCount = character_get_health_potion_count();

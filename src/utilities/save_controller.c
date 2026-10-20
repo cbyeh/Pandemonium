@@ -9,6 +9,7 @@
 #include "joypad_utility.h"
 #include "globals.h"
 #include "video_controller.h"
+#include "../character/character.h"
 
 /*
  * EEPROMFS notes:
@@ -138,6 +139,18 @@ static void save_set_hd_aspect(SaveData *d, bool enabled)
 {
     if (!d) return;
     d->_pad[3] = enabled ? 1 : 0;
+}
+
+// Stored inverted so saves from before the skills existed read as enabled.
+static bool saved_skills_enabled(const SaveData *d)
+{
+    return !d || d->_pad[4] == 0;
+}
+
+static void save_set_skills_enabled(SaveData *d, bool enabled)
+{
+    if (!d) return;
+    d->_pad[4] = enabled ? 0 : 1;
 }
 
 static void save_defaults_for_slot(SaveData *d, int slot) {
@@ -345,6 +358,7 @@ bool save_controller_load_settings(void) {
 
     joypad_set_rumble_enabled(saved_rumble_enabled(d));
     hdAspect = saved_hd_aspect(d);
+    character_set_skills_enabled(saved_skills_enabled(d));
     return true;
 }
 
@@ -362,6 +376,7 @@ bool save_controller_save_settings(void) {
     save_set_overscan(d, uiOverscanX, uiOverscanY);
     save_set_rumble_enabled(d, joypad_is_rumble_enabled());
     save_set_hd_aspect(d, hdAspect);
+    save_set_skills_enabled(d, character_skills_enabled());
 
     d->checksum     = compute_slot_checksum(d);
 

@@ -54,7 +54,7 @@ typedef enum {
 typedef enum {
     SKILL_MOON_BLADE_DANCE,     // D-up: jump in the move direction, rain X-waves
     SKILL_HALFMOON_SLASH,       // D-right: long rooted charge, huge 180-degree slash
-    SKILL_CRESCENT_CLEAVE,      // D-down: 5 ground arches that keep hitting
+    SKILL_CRESCENT_CLEAVE,      // D-down: 5 blades rising from the ground that keep hitting
     SKILL_COUNT,
 } CharacterSkill;
 
@@ -159,5 +159,7 @@ bool character_try_use_health_potion(void);
 float character_get_skill_cooldown(CharacterSkill skill);         // seconds left
 float character_get_skill_cooldown_ratio(CharacterSkill skill);   // 1 = just used, 0 = ready
 bool character_can_afford_skill(CharacterSkill skill);            // enough stamina
+bool character_skills_enabled(void);                              // Settings toggle
+void character_set_skills_enabled(bool enabled);
 
 #endif // CHARACTER_H

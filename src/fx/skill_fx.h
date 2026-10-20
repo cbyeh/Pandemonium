@@ -3,13 +3,13 @@
 
 #include <stdbool.h>
 
-// Player skill effects (D-pad skills): sword waves and ground arches that hit
+// Player skill effects (D-pad skills): sword waves and ground blades that hit
 // the boss, plus purely visual light pillars and ground bursts. Drawn as
 // alpha-blended world-space geometry, like the sword trail.
 
 typedef enum {
     SKILL_WAVE_X,       // Moon Blade Dance: two crossed crescents
-    SKILL_WAVE_ARCH,    // Crescent Cleave: wide arch rising out of the ground
+    SKILL_WAVE_BLADE,   // Crescent Cleave: tall, slightly curved blade rising out of the ground
 } SkillWaveShape;
 
 void skill_fx_init(void);

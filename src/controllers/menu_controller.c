@@ -7,6 +7,7 @@
 #include "audio_controller.h"
 #include "../scenes/guardian/guardian_scene.h"
 #include "../utilities/save_controller.h"
+#include "../character/character.h"
 
 #include "../utilities/globals.h"
 #include "../utilities/video_layout.h"
@@ -78,6 +79,7 @@ static const char* settingsMenuOptions[MENU_SETTINGS_COUNT] = {
     "Audio",
     "Video",
     "Controls",
+    "Skills: %s",
     "Back",
 };
 
@@ -453,6 +455,11 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                     parentSelectedOption = MENU_SETTINGS_CONTROLS;
                     currentMenu = MENU_CONTROLS;
                     selectedOption = 0;
+                    break;
+
+                case MENU_SETTINGS_SKILLS:
+                    character_set_skills_enabled(!character_skills_enabled());
+                    (void)save_controller_save_settings();
                     break;
 
                 case MENU_SETTINGS_BACK:
@@ -1080,7 +1087,9 @@ void menu_controller_draw(void)
         y += (lineHeight * 3) + titleYOffset;
 
         for (int i = 0; i < MENU_SETTINGS_COUNT; i++) {
-            const char *optionText = settingsMenuOptions[i] ? settingsMenuOptions[i] : "";
+            char optionText[64];
+            snprintf(optionText, sizeof(optionText), settingsMenuOptions[i] ? settingsMenuOptions[i] : "",
+                     character_skills_enabled() ? "ON" : "OFF");
 
             if (i == selectedOption) {
                 draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
