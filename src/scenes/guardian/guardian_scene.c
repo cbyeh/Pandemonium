@@ -179,7 +179,9 @@ static bool s_pendingBossLoopMusic = false;
 static const char *s_bossLoopMusicPath = "rom:/audio/music/boss_phase1-looping-22k.wav64";
 static const char *s_boss2LoopMusicPath = "rom:/audio/music/boss_phase2_cutscene2-22k.wav64";   // Guardian Unbound
 static const char *s_boss3LoopMusicPath = "rom:/audio/music/demonous-22k.wav64";                 // Fallen Knight
-static bool phase3Triggered = false;
+static BonusFight s_bonusFight = BONUS_NONE;   // set by the title Bonus menu
+static int   s_bonusBeat;                     // bonus intro/outro script step
+static float s_bonusEndTimer;
 
 // Require the character to be facing the boss for post-boss interaction.
 // The third-person camera orbits independently of the character's body yaw,
@@ -619,9 +621,10 @@ void scene_init(void)
     // session skipped phase 2 and the end portal never fired.
     scene_reset();
 
-    // Guardian scene normal startup: entering the scene starts the phase-1 intro.
+    // Guardian scene normal startup: entering the scene starts the phase-1 intro
+    // (or a Bonus fight's intro).
     gameState = GAME_STATE_PLAYING;
-    cutsceneState = CUTSCENE_PHASE1_INTRO;
+    cutsceneState = s_bonusFight ? CUTSCENE_BONUS_INTRO : CUTSCENE_PHASE1_INTRO;
     cutsceneTimer = 0.0f;
     cutsceneCameraTimer = 0.0f;
     scene_init_cutscene();
@@ -700,7 +703,7 @@ void scene_reset(void)
     phase2CutsceneTriggered = false;
     bossWasDead = false;
     boss_ui_set_form(1);
-    phase3Triggered = false;
+    s_bonusEndTimer = 0.0f;
     fallen_knight_free();
     gameState = GAME_STATE_PLAYING;
     lastMenuActive = false;
@@ -899,7 +902,7 @@ void scene_restart(void)
 
     // 5) Re-enter Guardian intro runtime state (NO allocations / NO frees)
     gameState = GAME_STATE_PLAYING;
-    cutsceneState = CUTSCENE_PHASE1_INTRO;
+    cutsceneState = s_bonusFight ? CUTSCENE_BONUS_INTRO : CUTSCENE_PHASE1_INTRO;
     cutsceneTimer = 0.0f;
     cutsceneCameraTimer = 0.0f;
     scene_init_cutscene();
@@ -911,7 +914,7 @@ void scene_restart(void)
            cameraState, dialog_controller_speaking() ? "true" : "false");
 }
 
-void scene_init_playing(bool skippedCutscene)
+static void scene_place_character(void)
 {
     character.pos[0] = -320.43f;
     character.pos[1] = 4.0f;
@@ -927,6 +930,11 @@ void scene_init_playing(bool skippedCutscene)
     character_update_position();
     character_set_state(CHAR_STATE_NORMAL);
     character_set_velocity_xz(0.0f, 0.0f);
+}
+
+void scene_init_playing(bool skippedCutscene)
+{
+    scene_place_character();
 
     // Skip dialog and cutscene
     dialog_controller_stop_speaking();
@@ -1114,6 +1122,104 @@ static void scene_update_context(void)
     sceneContext.finish_phase2_cutscene = scene_finish_phase2_cutscene;
 }
 
+// ---- Title-menu Bonus fights ----
+
+void scene_set_bonus_fight(BonusFight fight) { s_bonusFight = fight; }
+
+#define BONUS_FK_X   (-160.0f)          // the knight lands between the player and the hall
+#define BONUS_DROP_T 8.0f               // intro time when it starts its descent
+
+static void scene_bonus_begin_knight(void)
+{
+    fallen_knight_begin(g_boss);
+    boss_ui_set_form(3);
+    audio_stop_music();
+    audio_play_music(s_boss3LoopMusicPath, true);
+}
+
+static void scene_bonus_start_fight(void)
+{
+    cutscene_manager_clear_dialog();
+    if (g_boss->phaseIndex != FALLEN_KNIGHT_PHASE) scene_bonus_begin_knight();
+    fallen_knight_skip_intro(g_boss);
+    scene_init_playing(false);          // the knight's music is already looping
+    s_pendingBossLoopMusic = false;
+    character_reset_button_state();
+    scene_sync_input_edge_state();
+}
+
+static void scene_bonus_intro_update(bool aJustPressed)
+{
+    float t = cutsceneTimer;
+    cutscene_manager_update_dialog();
+
+    if (aJustPressed) {
+        if (skipButtonVisible) { scene_bonus_start_fight(); return; }
+        skipButtonVisible = true;
+    }
+
+    switch (s_bonusBeat) {
+    case 0:     // the empty hall; a voice from nowhere
+        cutscene_manager_update_camera(4.5f);
+        if (t >= 0.8f) {
+            cutscene_manager_begin_dialog("^Another knight...~\n^come to swear the oath\nI broke?", 0.0f);
+            s_bonusBeat = 1;
+        }
+        break;
+    case 1:
+        cutscene_manager_update_camera(4.5f);
+        if (t >= 4.5f) {     // looking up where crimson light gathers
+            cutscene_manager_set_camera_shot(&sceneContext,
+                (T3DVec3){{ BONUS_FK_X - 62.0f, 8.0f, 38.0f }}, (T3DVec3){{ BONUS_FK_X - 50.0f, 12.0f, 24.0f }},
+                (T3DVec3){{ BONUS_FK_X, 70.0f, 0.0f }});
+            cutscene_manager_begin_dialog("<I wore the same steel.~\n<I served the same sun.", 0.0f);
+            s_bonusBeat = 2;
+        }
+        break;
+    case 2: {
+        cutscene_manager_update_camera(3.5f);
+        static float pulse;
+        pulse -= deltaTime;
+        if (pulse <= 0.0f) {
+            skill_fx_spawn_burst_hostile((float[3]){ BONUS_FK_X, character.pos[1], 0.0f }, t * 2.0f);
+            pulse = 0.45f;
+        }
+        if (t >= BONUS_DROP_T) {     // it falls from the dark and lands
+            scene_bonus_begin_knight();
+            cutscene_manager_set_camera_shot(&sceneContext,
+                (T3DVec3){{ BONUS_FK_X - 80.0f, 16.0f, -6.0f }}, (T3DVec3){{ BONUS_FK_X - 66.0f, 20.0f, 14.0f }},
+                (T3DVec3){{ BONUS_FK_X, 26.0f, 0.0f }});
+            cutscene_manager_clear_dialog();
+            s_bonusBeat = 3;
+        }
+    } break;
+    case 3:
+        cutscene_manager_update_camera(3.0f);
+        boss_update(g_boss);
+        if (t >= BONUS_DROP_T + 1.0f) {
+            cutscene_manager_begin_dialog(">Then kneel...~ ^or fall\nbeside me!", 0.0f);
+            s_bonusBeat = 4;
+        }
+        break;
+    default:
+        cutscene_manager_update_camera(3.0f);
+        boss_update(g_boss);
+        if (t >= BONUS_DROP_T + 3.2f) scene_bonus_start_fight();
+        break;
+    }
+}
+
+static void scene_bonus_outro_update(bool aJustPressed)
+{
+    float t = cutsceneTimer;
+    cutscene_manager_update_dialog();
+    if (s_bonusBeat == 0 && t >= 4.5f) {
+        cutscene_manager_begin_dialog("<Carry it better~\n<than I did...", 0.0f);
+        s_bonusBeat = 1;
+    }
+    if (t >= 10.5f || (aJustPressed && t > 1.0f)) scene_controller_switch_to_title();
+}
+
 void scene_init_cutscene(void)
 {
     scene_update_context();
@@ -1126,6 +1232,34 @@ void scene_init_cutscene(void)
     }
 
     switch (cutsceneState) {
+        case CUTSCENE_BONUS_INTRO: {
+            // An empty hall: the knight descends at BONUS_DROP_T
+            scene_place_character();
+            if (g_boss) {
+                g_boss->visible = false;
+                g_boss->pos[0] = BONUS_FK_X;
+                g_boss->pos[2] = 0.0f;
+            }
+            s_bonusBeat = 0;
+            cutsceneTimer = 0.0f;
+            audio_stop_music();
+            cutscene_manager_set_camera_shot(&sceneContext,
+                (T3DVec3){{ -372.0f, 30.0f, 58.0f }}, (T3DVec3){{ -352.0f, 26.0f, 40.0f }},
+                (T3DVec3){{ BONUS_FK_X, 24.0f, 0.0f }});
+        } break;
+
+        case CUTSCENE_BONUS_OUTRO: {
+            // The knight lies defeated; the camera turns to it
+            s_bonusBeat = 0;
+            cutsceneTimer = 0.0f;
+            character_set_velocity_xz(0.0f, 0.0f);
+            letterbox_show(true);
+            customCamPos = camPos;
+            customCamTarget = (T3DVec3){{ g_boss->pos[0], g_boss->pos[1] + 14.0f, g_boss->pos[2] }};
+            camera_mode_smooth(CAMERA_CUSTOM, 1.0f);
+            cutscene_manager_begin_dialog("^At last...~\n^the oath lets me go.", 0.0f);
+        } break;
+
         case CUTSCENE_POST_BOSS_RESTORED: {
             // Post-boss dialog: keep the current gameplay camera position,
             // but retarget it to face the boss.
@@ -1232,6 +1366,23 @@ void scene_cutscene_update(void)
             }
         } break;
 
+        case CUTSCENE_BONUS_INTRO:
+        case CUTSCENE_BONUS_OUTRO: {
+            bool aJustPressed = btn.a && !lastCutsceneAPressed;
+            lastCutsceneAPressed = btn.a;
+            cutsceneTimer += deltaTime;
+            cutsceneCameraTimer += deltaTime;
+            character_update_cinematic();
+            skill_fx_update(deltaTime);
+            if (cutsceneState == CUTSCENE_BONUS_INTRO) {
+                scene_bonus_intro_update(aJustPressed);
+            } else {
+                if (boss_is_active(g_boss)) boss_update(g_boss);
+                scene_bonus_outro_update(aJustPressed);
+            }
+            return;
+        }
+
         default:
             break;
     }
@@ -1260,7 +1411,7 @@ void scene_update(void) {
             bossDeathMusicFadeStarted = true;
             audio_stop_music_fade(2);
         }
-        scene_update_video_trigger();
+        if (!s_bonusFight) scene_update_video_trigger();   // bonus fights have no ending portal
     }
 
     scene_update_video_preroll();  // always safe; it early-outs
@@ -1353,20 +1504,13 @@ void scene_update(void) {
             // Guardian Unbound (phase-2 cutscene). Refill its health in this same frame
             // so the ending (music fade, video trigger, clear time) does not start.
 #if PHASE_2_ENABLED
-            // Final fight: when Guardian Unbound falls, the Fallen Knight descends.
-            if (!phase3Triggered && g_boss->phaseIndex == 2 && g_boss->health <= 0.0f) {
-                phase3Triggered = true;
-                msa_set_enabled(false);
-                skill_fx_reset();
-                fallen_knight_begin(g_boss);        // refills health and starts its intro
-                cameraLockOnActive = false;
-                boss_ui_set_form(3);
-                bossTitleFade = 1.0f;
-                bossUiIntro = 0.0f;
-                boss_ui_set_intro(0.0f);
-                boss_ui_snap_health_trail(1.0f);
-                audio_play_music(s_boss3LoopMusicPath, true);
-                return;
+            if (s_bonusFight && g_boss->state == BOSS_STATE_DEAD) {
+                s_bonusEndTimer += deltaTime;
+                if (s_bonusEndTimer >= 2.5f) {     // let the death play out, then the outro
+                    cutsceneState = CUTSCENE_BONUS_OUTRO;
+                    scene_init_cutscene();
+                    return;
+                }
             }
             if (!phase2CutsceneTriggered && g_boss->phaseIndex == 1 && g_boss->health <= 0.0f) {
                 phase2CutsceneTriggered = true;
@@ -1433,7 +1577,7 @@ void scene_update(void) {
         bool bossDeadNow = (g_boss->state == BOSS_STATE_DEAD);
         if (bossDeadNow && !bossWasDead) {
             // Record fastest clear time per save slot (once, on death edge).
-            if (s_bossRunActive && s_bossRunStartS > 0.0) {
+            if (s_bossRunActive && s_bossRunStartS > 0.0 && !s_bonusFight) {
                 double dt = nowS - s_bossRunStartS;
                 if (dt > 0.0) {
                     uint32_t ms = (uint32_t)(dt * 1000.0);
@@ -1557,6 +1701,8 @@ void scene_draw_cutscene(T3DViewport *viewport)
     }
 
     switch (cutsceneState) {
+        case CUTSCENE_BONUS_INTRO:
+        case CUTSCENE_BONUS_OUTRO:
         case CUTSCENE_POST_BOSS_RESTORED: {
             /*
              * Render the normal scene while the post-boss dialog is active.
@@ -1641,6 +1787,8 @@ void scene_draw_cutscene(T3DViewport *viewport)
                 }
             t3d_matrix_pop(1);
 
+            skill_fx_draw();
+
             // 2D dialog overlay.
             if (cutsceneDialogActive) {
                 int height = 70;
@@ -1702,7 +1850,7 @@ void scene_draw(T3DViewport *viewport)
     t3d_screen_clear_color(RGBA32(0, 0, 0, 0xFF));
     t3d_screen_clear_depth();
 
-    if(cutsceneState != CUTSCENE_NONE){
+    if(cutscene_manager_handles_guardian_cutscene(cutsceneState)){
         cutscene_manager_draw_fog();
     }else{
         t3d_fog_set_range(450.0f, 800.0f);

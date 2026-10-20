@@ -30,10 +30,10 @@ Optional sword skills inspired by Dragon Nest's Sword Master, on the D-pad with 
 | Moon Blade Dance (D-Up) | Halfmoon Slash (D-Right) | Crescent Cleave (D-Down) |
 |---|---|---|
 | <img src="docs/media/skill_moon_blade_dance.gif" width="320"> | <img src="docs/media/skill_halfmoon_slash.gif" width="320"> | <img src="docs/media/skill_crescent_cleave.gif" width="320"> |
-| Leap high in the direction you are moving (in place when standing still) and rain five X-shaped sword waves on the target, one per swing. Without lock-on they land where the camera looks. | High risk nuke: a long rooted charge (a hit cancels it and hurts more), then a huge 180-degree slash that rolls outward as a wave. | Medium risk: crouch, then a rising swing that raises five light pillars in a fan, each hitting repeatedly. |
+| Leap high in the direction you are moving (in place when standing still) and rain five X-shaped sword waves on the target, one per swing. Without lock-on they land where the camera looks. | High risk nuke: a long rooted charge (a hit cancels it and hurts more), then a huge 180-degree slash that rolls outward as a wave. | Medium risk: crouch, then a rising swing that raises five light blades in a fan that surge outward, each hitting repeatedly. |
 
 ### Two new boss fights
-Defeating the Guardian of the Shackled Sun is no longer the end.
+Defeating the Guardian of the Shackled Sun is no longer the end: it rises again as Guardian Unbound. The Fallen Knight is a Bonus fight, picked from **Bonus** on the title screen, with its own intro and ending cutscenes.
 
 | Guardian Unbound | Fallen Knight |
 |---|---|

@@ -15,6 +15,7 @@ typedef enum {
     MENU_CONTROLS,
     MENU_CREDITS,
     MENU_LOAD_GAME,
+    MENU_BONUS,
 } MenuState;
 
 typedef enum {
@@ -28,6 +29,7 @@ typedef enum {
 typedef enum {
     MENU_TITLE_CONTINUE,
     MENU_TITLE_LOAD_GAME,
+    MENU_TITLE_BONUS,
     MENU_TITLE_SETTINGS,
     MENU_TITLE_CREDITS,
     MENU_TITLE_COUNT
@@ -67,6 +69,12 @@ typedef enum {
     MENU_LOAD_GAME_BACK,
     MENU_LOAD_GAME_COUNT
 } LoadGameMenuOption;
+
+typedef enum {
+    MENU_BONUS_FALLEN_KNIGHT,
+    MENU_BONUS_BACK,
+    MENU_BONUS_COUNT
+} BonusMenuOption;
 
 typedef enum {
     MENU_ACTION_NONE = 0,

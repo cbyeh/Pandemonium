@@ -38,6 +38,10 @@ typedef enum {
 
     // After the boss is defeated
     CUTSCENE_POST_BOSS_RESTORED,
+
+    // Title-menu Bonus fights (scene-owned, like the post-boss dialog)
+    CUTSCENE_BONUS_INTRO,
+    CUTSCENE_BONUS_OUTRO,
 } CutsceneState;
 
 // ----------------------------------------------------------------------------

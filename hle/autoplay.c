@@ -4,7 +4,7 @@
  */
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS)
 #include "character.h"
 #include "game/boss/boss.h"
 #include "controllers/menu_controller.h"
@@ -40,6 +40,41 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     extern void video_player_request(const char *rom_video_path);
     if (frame == 30) video_player_request("rom:/video.h264");
     return;
+#endif
+#ifdef HLE_TEST_BONUS
+    // Title -> Bonus -> Fallen Knight; watch the intro, stand still (it leaps at range),
+    // kill it, watch the outro and the return to the title
+    {
+        static int phase = 0, t0 = 0, step = 0;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0;
+        if (frame % 60 == 0) debugf("[bonus] f%d phase %d boss %d mode %d state %d hp %.0f\n", frame, phase,
+                                    boss ? boss->phaseIndex : -1, boss ? boss->mode : -1, boss ? boss->state : -1,
+                                    boss ? (double)boss->health : 0.0);
+        if (phase == 0) {               // tap A until the title menu opens
+            if (menu_controller_is_active()) { phase = 1; t0 = frame; }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 1) {        // Down, Down (Bonus), A, A (Fallen Knight)
+            static const char seq[] = "DDAA";
+            if (t >= 20 && step < 4) {
+                if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; }
+                step++; t0 = frame;
+            }
+            if (step == 4 && boss) { phase = 2; t0 = frame; debugf("[bonus] scene at %d\n", frame); }
+        } else if (phase == 2) {
+            if (boss && boss->phaseIndex == 3 && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) {
+                phase = 3; t0 = frame; debugf("[bonus] fight at %d\n", frame);
+            }
+        } else if (phase == 3) {
+#ifdef HLE_TEST_FK_LEAP
+            in->stick_x = 70;       // circle it (locked on) for a side view
+#endif
+            if (t == 900) { boss_apply_damage(boss, boss->maxHealth * 2.0f); debugf("[bonus] killed at %d\n", frame); phase = 4; t0 = frame; }
+        } else if (phase == 4) {
+            if (!boss) { debugf("[bonus] back at the title at %d\n", frame); phase = 5; }
+        }
+        return;
+    }
 #endif
 #ifdef HLE_TEST_TWO_RUNS
     // Run 1: kill the Guardian, reach phase 2, die, back to the title. Run 2: kill the

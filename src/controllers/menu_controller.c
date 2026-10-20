@@ -71,6 +71,7 @@ static const char* mainMenuOptions[MENU_MAIN_COUNT] = {
 static const char* titleMenuOptions[MENU_TITLE_COUNT] = {
     "Continue",
     "Load Game",
+    "Bonus",
     "Settings",
     "Credits",
 };
@@ -96,6 +97,11 @@ static const char* audioMenuOptions[MENU_AUDIO_COUNT] = {
 static const char* videoMenuOptions[MENU_VIDEO_COUNT] = {
     "Aspect: %s",
     "Calibrate Overscan",
+    "Back",
+};
+
+static const char* bonusMenuOptions[MENU_BONUS_COUNT] = {
+    "Fallen Knight",
     "Back",
 };
 
@@ -131,6 +137,7 @@ static int get_menu_option_count(MenuState menu)
         case MENU_AUDIO:     return MENU_AUDIO_COUNT;
         case MENU_VIDEO:     return MENU_VIDEO_COUNT;
         case MENU_LOAD_GAME: return MENU_LOAD_GAME_COUNT;
+        case MENU_BONUS:     return MENU_BONUS_COUNT;
         case MENU_CONTROLS:  return 1;
         case MENU_CREDITS:   return 1;
         default:             return 1;
@@ -401,10 +408,18 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                     save_controller_set_active_slot(slotToLoad);
                     save_controller_update_last_played_timestamp();
 
+                    scene_set_bonus_fight(BONUS_NONE);
                     menu_controller_close();
                     pendingAction = MENU_ACTION_TITLE_START_GAME;
                     break;
                 }
+
+                case MENU_TITLE_BONUS:
+                    parentMenu = MENU_TITLE;
+                    parentSelectedOption = MENU_TITLE_BONUS;
+                    currentMenu = MENU_BONUS;
+                    selectedOption = 0;
+                    break;
 
                 case MENU_TITLE_LOAD_GAME:
                     parentMenu = MENU_TITLE;
@@ -632,6 +647,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                 save_controller_set_active_slot(selectedOption);
                 save_controller_update_last_played_timestamp();
 
+                scene_set_bonus_fight(BONUS_NONE);
                 menu_controller_close();
                 pendingAction = MENU_ACTION_TITLE_START_GAME;
             } else if (selectedOption == MENU_LOAD_GAME_BACK) {
@@ -641,6 +657,19 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
         }
 
         if (bJustPressed) {
+            currentMenu = parentMenu;
+            selectedOption = parentSelectedOption;
+        }
+    } else if (currentMenu == MENU_BONUS) {
+        if (aJustPressed && selectedOption == MENU_BONUS_FALLEN_KNIGHT) {
+            // Bonus fights use the last played slot for settings and run stats
+            int lastPlayedSlot = save_controller_get_last_played_slot();
+            save_controller_set_active_slot((lastPlayedSlot >= 0) ? lastPlayedSlot : 0);
+
+            scene_set_bonus_fight(BONUS_FALLEN_KNIGHT);
+            menu_controller_close();
+            pendingAction = MENU_ACTION_TITLE_START_GAME;
+        } else if (bJustPressed || (aJustPressed && selectedOption == MENU_BONUS_BACK)) {
             currentMenu = parentMenu;
             selectedOption = parentSelectedOption;
         }
@@ -1010,7 +1039,8 @@ void menu_controller_draw(void)
         currentMenu == MENU_SETTINGS ||
         currentMenu == MENU_AUDIO ||
         currentMenu == MENU_VIDEO ||
-        currentMenu == MENU_CREDITS
+        currentMenu == MENU_CREDITS ||
+        currentMenu == MENU_BONUS
     ) {
         dialogWidth = 260;
     }
@@ -1110,6 +1140,35 @@ void menu_controller_draw(void)
                 .height = contentH,
                 .wrap = WRAP_WORD,
             }, FONT_UNBALANCED, x, y, "%s", optionText);
+
+            y += lineHeight + 2;
+        }
+
+        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+    } else if (currentMenu == MENU_BONUS) {
+        rdpq_text_printf(&(rdpq_textparms_t){
+            .align = ALIGN_CENTER,
+            .width = contentW,
+            .height = contentH,
+            .wrap = WRAP_WORD,
+        }, FONT_UNBALANCED, x, y + titleYOffset, "BONUS");
+
+        y += (lineHeight * 3) + titleYOffset;
+
+        for (int i = 0; i < MENU_BONUS_COUNT; i++) {
+            if (i == selectedOption) {
+                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
+                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+            } else {
+                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
+            }
+
+            rdpq_text_printf(&(rdpq_textparms_t){
+                .align = ALIGN_CENTER,
+                .width = contentW,
+                .height = contentH,
+                .wrap = WRAP_WORD,
+            }, FONT_UNBALANCED, x, y, "%s", bonusMenuOptions[i]);
 
             y += lineHeight + 2;
         }

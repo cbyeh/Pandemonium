@@ -3,7 +3,7 @@
 
 #include "game/boss/boss.h"
 
-// The Fallen Knight: final fight after Guardian Unbound (boss phase 3). A dark,
+// The Fallen Knight: Bonus fight from the title menu (boss phase 3). A dark,
 // larger mirror of the player built from the knight model and animations, with
 // melee combos, rolls and hostile versions of the player's skills.
 //
@@ -14,6 +14,8 @@
 
 // Turns `boss` into the Fallen Knight (descends from above, then fights).
 void fallen_knight_begin(Boss* boss);
+// Lands it at once and starts the fight (cutscene skip).
+void fallen_knight_skip_intro(Boss* boss);
 void fallen_knight_update(Boss* boss, float dt);
 void fallen_knight_draw(Boss* boss);
 // Frees the knight instance (skeleton/animations); safe to call any time.

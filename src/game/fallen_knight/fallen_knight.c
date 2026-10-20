@@ -72,6 +72,7 @@ static void play(int a, bool restart)
     s.anim = a;
     t3d_anim_attach(&s.anims[a], &s.skel);
     t3d_anim_set_time(&s.anims[a], 0.0f);
+    t3d_anim_set_speed(&s.anims[a], 1.0f);
     t3d_anim_set_playing(&s.anims[a], true);
 }
 
@@ -178,6 +179,15 @@ void fallen_knight_begin(Boss* boss)
     enter(FK_INTRO);
 }
 
+void fallen_knight_skip_intro(Boss* boss)
+{
+    if (!s.ready || s.state != FK_INTRO) return;
+    boss->pos[1] = s.groundY;
+    boss->mode = BOSS_MODE_COMBAT;
+    boss->state = BOSS_STATE_NEUTRAL;
+    enter(FK_CHASE);
+}
+
 // ---- Skills (hostile versions of the player's) ----
 
 static void cleave_update(Boss *b)
@@ -243,7 +253,11 @@ static void moonblade_update(Boss *b, float dt)
         skill_fx_spawn_wave_hostile(SKILL_WAVE_X, o, (float[3]){ d[0] / len * SPEED, d[1] / len * SPEED, d[2] / len * SPEED },
                                     8.0f, 1, 0.0f, len / SPEED, s.step == 5);
         swing_sfx();
-        play((s.step & 1) ? FKA_ATTACK1 : FKA_ATTACK2, true);
+        // One full swing per cross, like the player's: cycle the three clips, sped up
+        // to fit the gap between waves
+        static const int swings[3] = { FKA_ATTACK1, FKA_ATTACK2, FKA_ATTACK3 };
+        play(swings[(s.step - 1) % 3], true);
+        t3d_anim_set_speed(&s.anims[s.anim], 1.6f);
         s.step++;
     }
     if (b->pos[1] <= s.groundY && s.velY < 0.0f) {
@@ -259,6 +273,9 @@ static void moonblade_update(Boss *b, float dt)
 static void choose(Boss *b, float dist)
 {
     // Skills off cooldown come first, by range; otherwise close in and combo
+#ifdef HLE_TEST_FK_LEAP
+    if (s.cdMoonblade <= 0.0f) { s.cdMoonblade = 4.0f; enter(FK_MOONBLADE); debugf("[fk] leap\n"); return; }   // test aid: leap often
+#endif
     if (s.cdHalfmoon <= 0.0f && dist < 70.0f) { s.cdHalfmoon = 16.0f; enter(FK_HALFMOON); play(FKA_HALFMOON, true); return; }
     if (s.cdMoonblade <= 0.0f && dist > 40.0f) { s.cdMoonblade = 12.0f; enter(FK_MOONBLADE); return; }
     if (s.cdCleave <= 0.0f && dist < 60.0f) { s.cdCleave = 9.0f; enter(FK_CLEAVE); play(FKA_CLEAVE, true); return; }
