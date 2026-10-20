@@ -25,12 +25,12 @@ Hold Z trigger + left/right on Cpad: Change z target
 ## New in this fork
 
 ### Skills (D-pad)
-Optional sword skills inspired by Dragon Nest's Sword Master, on the D-pad with cooldowns shown on the HUD. Turn them on or off from **Settings > Skills** on the title screen (on by default). With skills on, bosses have double health.
+Optional sword skills inspired by Dragon Nest's Moonlord, on the D-pad with cooldowns shown on the HUD. Turn them on or off from **Settings > Skills** on the title screen (on by default). With skills on, bosses have double health.
 
 | Moon Blade Dance (D-Up) | Halfmoon Slash (D-Right) | Crescent Cleave (D-Down) |
 |---|---|---|
 | <img src="docs/media/skill_moon_blade_dance.gif" width="320"> | <img src="docs/media/skill_halfmoon_slash.gif" width="320"> | <img src="docs/media/skill_crescent_cleave.gif" width="320"> |
-| Leap high in the direction you are moving (in place when standing still) and rain five X-shaped sword waves on the target, one per swing. Without lock-on they land where the camera looks. | High risk nuke: a long rooted charge (a hit cancels it and hurts more), then a huge 180-degree slash that rolls outward as a wave. | Medium risk: crouch, then a rising swing that raises five light blades in a fan that surge outward, each hitting repeatedly. |
+| Backflip high in the direction you are moving (in place when standing still) and rain five X-shaped sword waves on the target, one per swing. Without lock-on they land where the camera looks. | High risk nuke: a long rooted charge (a hit cancels it and hurts more), then a huge 180-degree slash that rolls outward as a wave. | Medium risk: crouch, then a rising swing that raises five light blades close around you that fan outward, each hitting repeatedly. |
 
 ### New boss fights
 Defeating the Guardian of the Shackled Sun is no longer the end: it rises again as Guardian Unbound. Two Bonus fights, picked from **Bonus** on the title screen, each have their own intro and ending cutscenes.

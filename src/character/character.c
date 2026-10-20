@@ -1240,7 +1240,7 @@ static void try_start_skill(const joypad_buttons_t *buttons)
         }
         velocityY = MBD_JUMP_VELOCITY;
         airborne = true;
-        skillAnim = ANIM_ROLL;          // a flip on the way up
+        skillAnim = ANIM_SKILL_BACKFLIP;    // a backflip on the way up
         skill_fx_spawn_burst((float[3]){ character.pos[0], groundY, character.pos[2] }, character.rot[1]);
     } else {
         movementVelocityX = movementVelocityZ = 0.0f;
@@ -2485,6 +2485,7 @@ void character_init(void)
         "Death",
         "SkillCleave",
         "SkillHalfmoon",
+        "SkillBackflip",
     };
 
     const bool animationsLooping[] = {
@@ -2513,6 +2514,7 @@ void character_init(void)
         false,  // Death
         false,  // SkillCleave
         false,  // SkillHalfmoon
+        false,  // SkillBackflip
     };
 
     T3DAnim** animations = malloc_uncached(animationCount * sizeof(T3DAnim*));

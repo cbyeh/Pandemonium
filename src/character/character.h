@@ -35,6 +35,7 @@ typedef enum {
     ANIM_DEATH,
     ANIM_SKILL_CLEAVE,      // built by tools/compose_anims.py
     ANIM_SKILL_HALFMOON,
+    ANIM_SKILL_BACKFLIP,
     ANIM_COUNT,
 } CharacterAnimState;
 
