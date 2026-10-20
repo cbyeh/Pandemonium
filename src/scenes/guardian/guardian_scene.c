@@ -614,6 +614,11 @@ void scene_init(void)
 
     msa_init();
 
+    // A new run from the title: clear per-run state left by the previous one (phase
+    // triggers, end-portal trigger, ...). Without this, a second run in the same
+    // session skipped phase 2 and the end portal never fired.
+    scene_reset();
+
     // Guardian scene normal startup: entering the scene starts the phase-1 intro.
     gameState = GAME_STATE_PLAYING;
     cutsceneState = CUTSCENE_PHASE1_INTRO;
@@ -693,6 +698,7 @@ void scene_reset(void)
         boss_deactivate(g_boss);
     }
     phase2CutsceneTriggered = false;
+    bossWasDead = false;
     boss_ui_set_form(1);
     phase3Triggered = false;
     fallen_knight_free();

@@ -4,7 +4,7 @@
  */
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS)
 #include "character.h"
 #include "game/boss/boss.h"
 #include "controllers/menu_controller.h"
@@ -40,6 +40,35 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     extern void video_player_request(const char *rom_video_path);
     if (frame == 30) video_player_request("rom:/video.h264");
     return;
+#endif
+#ifdef HLE_TEST_TWO_RUNS
+    // Run 1: kill the Guardian, reach phase 2, die, back to the title. Run 2: kill the
+    // Guardian again; phase 2 must start again.
+    {
+        static int run = 1, phase = 0, t0 = 0;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0;
+        if (frame % 60 == 0) debugf("[2r] f%d run %d phase %d boss %d mode %d hp %.0f\n", frame, run, phase,
+                                    boss ? boss->phaseIndex : -1, boss ? boss->mode : -1, boss ? (double)boss->health : 0.0);
+        if (phase == 0) {               // menus / intro: tap A until the phase-1 fight
+            if (boss && boss->mode == BOSS_MODE_COMBAT && boss->phaseIndex == 1) { phase = 1; t0 = frame; }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 1) {
+            if (t == 60) boss_apply_damage(boss, boss->maxHealth * 2.0f);
+            if (t > 60 && boss->phaseIndex == 2 && boss->mode == BOSS_MODE_COMBAT) {
+                debugf("[2r] run %d: phase 2 fight OK\n", run);
+                phase = 2; t0 = frame;
+            } else if (t > 90 && frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
+            if (t > 3000 && t % 300 == 0) debugf("[2r] run %d: phase 2 NOT started\n", run);
+        } else if (phase == 2 && run == 1) {
+            if (character_get_state() != CHAR_STATE_DEAD) { if (t % 10 == 0) character_apply_damage(50.0f); }
+            else { run = 2; phase = 3; t0 = frame; }
+        } else if (phase == 3) {        // death screen -> title -> Continue
+            if (!boss_get_instance() || boss->phaseIndex != 2) { phase = 0; t0 = frame; }
+            else if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        }
+        return;
+    }
 #endif
 #ifdef HLE_TEST_BOSS2
     // Kill the Guardian, skip the transformation, fight Guardian Unbound, kill it too
