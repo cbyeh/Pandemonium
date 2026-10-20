@@ -141,27 +141,10 @@ static void build_gold(void)
 
 #define SUN_R 16.0f      // built at this radius (proc meshes store 1/8 units)
 
-// The Sun: a glowing ball whose eye (a black pupil with a red iris) looks down -y
 static void build_sun(void)
 {
-    enum { LAT = 9, LON = 14 };
     proc_mesh_begin();
-    for (int i = 0; i < LAT; i++) {
-        float a0 = T3D_PI * i / LAT, a1 = T3D_PI * (i + 1) / LAT;   // 0 at the eye (-y)
-        for (int j = 0; j < LON; j++) {
-            float b0 = 2.0f * T3D_PI * j / LON, b1 = 2.0f * T3D_PI * (j + 1) / LON;
-            float p[4][3] = {
-                { sinf(a0) * cosf(b0), -cosf(a0), sinf(a0) * sinf(b0) }, { sinf(a0) * cosf(b1), -cosf(a0), sinf(a0) * sinf(b1) },
-                { sinf(a1) * cosf(b1), -cosf(a1), sinf(a1) * sinf(b1) }, { sinf(a1) * cosf(b0), -cosf(a1), sinf(a1) * sinf(b0) },
-            };
-            float m = (a0 + a1) * 0.5f / T3D_PI;    // 0 eye .. 1 back
-            uint32_t c = (i == 0) ? proc_rgb(8, 4, 4) : (i == 1) ? proc_rgb(200, 50, 20)
-                       : proc_rgb(255, (int)(225 - 120 * m), (int)(110 - 90 * m));
-            if (i > 1 && ((j * 7 + i * 3) % 11) == 0) c = proc_rgb(220, 70, 30);   // a few veins
-            for (int k = 0; k < 4; k++) for (int q = 0; q < 3; q++) p[k][q] *= SUN_R;
-            proc_mesh_quad(p[0], p[1], p[2], p[3], c, true);
-        }
-    }
+    proc_mesh_eye_sphere(SUN_R, false, false);
     proc_mesh_end(&s_sun);
 }
 

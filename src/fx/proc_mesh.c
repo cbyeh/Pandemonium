@@ -100,6 +100,32 @@ void proc_mesh_frustum(const float b[3], float r0, float r1, float h, int sides,
     }
 }
 
+void proc_mesh_eye_sphere(float radius, bool facingZ, bool hot)
+{
+    enum { LAT = 9, LON = 14 };
+    for (int i = 0; i < LAT; i++) {
+        float a0 = T3D_PI * i / LAT, a1 = T3D_PI * (i + 1) / LAT;   // 0 at the eye
+        for (int j = 0; j < LON; j++) {
+            float b0 = 2.0f * T3D_PI * j / LON, b1 = 2.0f * T3D_PI * (j + 1) / LON;
+            float p[4][3] = {
+                { sinf(a0) * cosf(b0), -cosf(a0), sinf(a0) * sinf(b0) }, { sinf(a0) * cosf(b1), -cosf(a0), sinf(a0) * sinf(b1) },
+                { sinf(a1) * cosf(b1), -cosf(a1), sinf(a1) * sinf(b1) }, { sinf(a1) * cosf(b0), -cosf(a1), sinf(a1) * sinf(b0) },
+            };
+            for (int k = 0; k < 4; k++) {
+                float x = p[k][0], y = p[k][1], z = p[k][2];
+                if (facingZ) { p[k][1] = z; p[k][2] = -y; }     // eye (-y) -> +z
+                p[k][0] = x * radius; p[k][1] *= radius; p[k][2] = (facingZ ? -y : z) * radius;
+            }
+            float m = (a0 + a1) * 0.5f / T3D_PI;    // 0 eye .. 1 back
+            uint32_t c = (i == 0) ? proc_rgb(8, 4, 4) : (i == 1) ? proc_rgb(200, 50, 20)
+                       : hot ? proc_rgb(255, (int)(120 - 80 * m), (int)(70 - 50 * m))
+                             : proc_rgb(255, (int)(225 - 120 * m), (int)(110 - 90 * m));
+            if (i > 1 && ((j * 7 + i * 3) % 11) == 0) c = proc_rgb(220, 70, 30);   // a few veins
+            proc_mesh_quad(p[0], p[1], p[2], p[3], c, true);
+        }
+    }
+}
+
 void proc_mesh_end(ProcMesh *out)
 {
     memset(out, 0, sizeof(*out));

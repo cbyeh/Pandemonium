@@ -56,6 +56,7 @@
 #include "fx/blood_particles_fx.h"
 #include "fx/skill_fx.h"
 #include "game/fallen_knight/fallen_knight.h"
+#include "game/sun_boss/sun_boss.h"
 #include "guardian_ending.h"
 //#include "boulder_hazard.h" // close-range ground-boulder hazard
 
@@ -705,6 +706,7 @@ void scene_reset(void)
     boss_ui_set_form(1);
     s_bonusEndTimer = 0.0f;
     fallen_knight_free();
+    sun_boss_free();
     gameState = GAME_STATE_PLAYING;
     lastMenuActive = false;
     lastAPressed = false;
@@ -1126,23 +1128,48 @@ static void scene_update_context(void)
 
 void scene_set_bonus_fight(BonusFight fight) { s_bonusFight = fight; }
 
-#define BONUS_FK_X   (-160.0f)          // the knight lands between the player and the hall
-#define BONUS_DROP_T 8.0f               // intro time when it starts its descent
+#define BONUS_SPAWN_X (-160.0f)         // the boss comes down between the player and the hall
+#define BONUS_DROP_T  8.0f              // intro time when it starts its descent
 
-static void scene_bonus_begin_knight(void)
+// Each Bonus fight: the intro lines (empty hall, the light gathering, after the
+// descent), the outro lines, and the boss it turns g_boss into
+typedef struct {
+    const char *intro[3], *outro[2];
+    void (*begin)(Boss*), (*skip)(Boss*);
+    int phase;
+    const char *music;
+} BonusDef;
+
+static const BonusDef BONUS_DEFS[] = {
+    [BONUS_FALLEN_KNIGHT] = {
+        { "^Another knight...~\n^come to swear the oath\nI broke?", "<I wore the same steel.~\n<I served the same sun.",
+          ">Then kneel...~ ^or fall\nbeside me!" },
+        { "^At last...~\n^the oath lets me go.", "<Carry it better~\n<than I did..." },
+        fallen_knight_begin, fallen_knight_skip_intro, FALLEN_KNIGHT_PHASE, "rom:/audio/music/demonous-22k.wav64",
+    },
+    [BONUS_SHACKLED_SUN] = {
+        { "^Little knight...~\n^you freed my Guardian.", "<But who will free~\n<the sun?", ">Then BURN~ ^with me!" },
+        { "<My light...~\n<dims at last...", "^The chains...~ ^are\nyours to break now." },
+        sun_boss_begin, sun_boss_skip_intro, SUN_BOSS_PHASE, "rom:/audio/music/boss_phase2_cutscene2-22k.wav64",
+    },
+};
+
+static void scene_bonus_begin_boss(void)
 {
-    fallen_knight_begin(g_boss);
-    boss_ui_set_form(3);
+    const BonusDef *d = &BONUS_DEFS[s_bonusFight];
+    d->begin(g_boss);
+    boss_ui_set_form(d->phase);
     audio_stop_music();
-    audio_play_music(s_boss3LoopMusicPath, true);
+    audio_play_music(d->music, true);
 }
 
 static void scene_bonus_start_fight(void)
 {
+    const BonusDef *d = &BONUS_DEFS[s_bonusFight];
     cutscene_manager_clear_dialog();
-    if (g_boss->phaseIndex != FALLEN_KNIGHT_PHASE) scene_bonus_begin_knight();
-    fallen_knight_skip_intro(g_boss);
-    scene_init_playing(false);          // the knight's music is already looping
+    if (g_boss->phaseIndex != d->phase) scene_bonus_begin_boss();
+    d->skip(g_boss);
+    scene_init_playing(false);          // the boss music is already looping
     s_pendingBossLoopMusic = false;
     character_reset_button_state();
     scene_sync_input_edge_state();
@@ -1162,7 +1189,7 @@ static void scene_bonus_intro_update(bool aJustPressed)
     case 0:     // the empty hall; a voice from nowhere
         cutscene_manager_update_camera(4.5f);
         if (t >= 0.8f) {
-            cutscene_manager_begin_dialog("^Another knight...~\n^come to swear the oath\nI broke?", 0.0f);
+            cutscene_manager_begin_dialog(BONUS_DEFS[s_bonusFight].intro[0], 0.0f);
             s_bonusBeat = 1;
         }
         break;
@@ -1170,9 +1197,9 @@ static void scene_bonus_intro_update(bool aJustPressed)
         cutscene_manager_update_camera(4.5f);
         if (t >= 4.5f) {     // looking up where crimson light gathers
             cutscene_manager_set_camera_shot(&sceneContext,
-                (T3DVec3){{ BONUS_FK_X - 62.0f, 8.0f, 38.0f }}, (T3DVec3){{ BONUS_FK_X - 50.0f, 12.0f, 24.0f }},
-                (T3DVec3){{ BONUS_FK_X, 70.0f, 0.0f }});
-            cutscene_manager_begin_dialog("<I wore the same steel.~\n<I served the same sun.", 0.0f);
+                (T3DVec3){{ BONUS_SPAWN_X - 62.0f, 8.0f, 38.0f }}, (T3DVec3){{ BONUS_SPAWN_X - 50.0f, 12.0f, 24.0f }},
+                (T3DVec3){{ BONUS_SPAWN_X, 70.0f, 0.0f }});
+            cutscene_manager_begin_dialog(BONUS_DEFS[s_bonusFight].intro[1], 0.0f);
             s_bonusBeat = 2;
         }
         break;
@@ -1181,14 +1208,14 @@ static void scene_bonus_intro_update(bool aJustPressed)
         static float pulse;
         pulse -= deltaTime;
         if (pulse <= 0.0f) {
-            skill_fx_spawn_burst_hostile((float[3]){ BONUS_FK_X, character.pos[1], 0.0f }, t * 2.0f);
+            skill_fx_spawn_burst_hostile((float[3]){ BONUS_SPAWN_X, character.pos[1], 0.0f }, t * 2.0f);
             pulse = 0.45f;
         }
         if (t >= BONUS_DROP_T) {     // it falls from the dark and lands
-            scene_bonus_begin_knight();
+            scene_bonus_begin_boss();
             cutscene_manager_set_camera_shot(&sceneContext,
-                (T3DVec3){{ BONUS_FK_X - 80.0f, 16.0f, -6.0f }}, (T3DVec3){{ BONUS_FK_X - 66.0f, 20.0f, 14.0f }},
-                (T3DVec3){{ BONUS_FK_X, 26.0f, 0.0f }});
+                (T3DVec3){{ BONUS_SPAWN_X - 80.0f, 16.0f, -6.0f }}, (T3DVec3){{ BONUS_SPAWN_X - 66.0f, 20.0f, 14.0f }},
+                (T3DVec3){{ BONUS_SPAWN_X, 26.0f, 0.0f }});
             cutscene_manager_clear_dialog();
             s_bonusBeat = 3;
         }
@@ -1197,7 +1224,7 @@ static void scene_bonus_intro_update(bool aJustPressed)
         cutscene_manager_update_camera(3.0f);
         boss_update(g_boss);
         if (t >= BONUS_DROP_T + 1.0f) {
-            cutscene_manager_begin_dialog(">Then kneel...~ ^or fall\nbeside me!", 0.0f);
+            cutscene_manager_begin_dialog(BONUS_DEFS[s_bonusFight].intro[2], 0.0f);
             s_bonusBeat = 4;
         }
         break;
@@ -1214,7 +1241,7 @@ static void scene_bonus_outro_update(bool aJustPressed)
     float t = cutsceneTimer;
     cutscene_manager_update_dialog();
     if (s_bonusBeat == 0 && t >= 4.5f) {
-        cutscene_manager_begin_dialog("<Carry it better~\n<than I did...", 0.0f);
+        cutscene_manager_begin_dialog(BONUS_DEFS[s_bonusFight].outro[1], 0.0f);
         s_bonusBeat = 1;
     }
     if (t >= 10.5f || (aJustPressed && t > 1.0f)) scene_controller_switch_to_title();
@@ -1233,11 +1260,11 @@ void scene_init_cutscene(void)
 
     switch (cutsceneState) {
         case CUTSCENE_BONUS_INTRO: {
-            // An empty hall: the knight descends at BONUS_DROP_T
+            // An empty hall: the boss descends at BONUS_DROP_T
             scene_place_character();
             if (g_boss) {
                 g_boss->visible = false;
-                g_boss->pos[0] = BONUS_FK_X;
+                g_boss->pos[0] = BONUS_SPAWN_X;
                 g_boss->pos[2] = 0.0f;
             }
             s_bonusBeat = 0;
@@ -1245,7 +1272,7 @@ void scene_init_cutscene(void)
             audio_stop_music();
             cutscene_manager_set_camera_shot(&sceneContext,
                 (T3DVec3){{ -372.0f, 30.0f, 58.0f }}, (T3DVec3){{ -352.0f, 26.0f, 40.0f }},
-                (T3DVec3){{ BONUS_FK_X, 24.0f, 0.0f }});
+                (T3DVec3){{ BONUS_SPAWN_X, 24.0f, 0.0f }});
         } break;
 
         case CUTSCENE_ENDING: {
@@ -1256,7 +1283,7 @@ void scene_init_cutscene(void)
         } break;
 
         case CUTSCENE_BONUS_OUTRO: {
-            // The knight lies defeated; the camera turns to it
+            // The boss lies defeated; the camera turns to it
             s_bonusBeat = 0;
             cutsceneTimer = 0.0f;
             character_set_velocity_xz(0.0f, 0.0f);
@@ -1264,7 +1291,7 @@ void scene_init_cutscene(void)
             customCamPos = camPos;
             customCamTarget = (T3DVec3){{ g_boss->pos[0], g_boss->pos[1] + 14.0f, g_boss->pos[2] }};
             camera_mode_smooth(CAMERA_CUSTOM, 1.0f);
-            cutscene_manager_begin_dialog("^At last...~\n^the oath lets me go.", 0.0f);
+            cutscene_manager_begin_dialog(BONUS_DEFS[s_bonusFight].outro[0], 0.0f);
         } break;
 
         case CUTSCENE_POST_BOSS_RESTORED: {
@@ -2268,6 +2295,7 @@ void scene_cleanup(void)
 {
     rspq_wait();
     ending_free();
+    sun_boss_free();
     //collision_mesh_cleanup();
     scene_delete_environment();
     boss_ground_crush_cleanup();

@@ -70,6 +70,7 @@ void scene_dev_warp_to_pre_phase2(void);
 typedef enum {
     BONUS_NONE,
     BONUS_FALLEN_KNIGHT,
+    BONUS_SHACKLED_SUN,
 } BonusFight;
 void scene_set_bonus_fight(BonusFight fight);
 

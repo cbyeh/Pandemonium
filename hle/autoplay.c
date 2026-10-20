@@ -72,19 +72,27 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (menu_controller_is_active()) { phase = 1; t0 = frame; }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {        // Down, Down (Bonus), A, A (Fallen Knight)
-            static const char seq[] = "DDAA";
-            if (t >= 20 && step < 4) {
+#ifdef HLE_TEST_BONUS_SUN
+            static const char seq[] = "DDADA";      // Bonus > The Shackled Sun
+#else
+            static const char seq[] = "DDAA";       // Bonus > Fallen Knight
+#endif
+            int n = (int)sizeof(seq) - 1;
+            if (t >= 20 && step < n) {
                 if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; }
                 step++; t0 = frame;
             }
-            if (step == 4 && boss) { phase = 2; t0 = frame; debugf("[bonus] scene at %d\n", frame); }
+            if (step == n && boss) { phase = 2; t0 = frame; debugf("[bonus] scene at %d\n", frame); }
         } else if (phase == 2) {
-            if (boss && boss->phaseIndex == 3 && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) {
+            if (boss && boss->phaseIndex >= 3 && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) {
                 phase = 3; t0 = frame; debugf("[bonus] fight at %d\n", frame);
             }
         } else if (phase == 3) {
 #ifdef HLE_TEST_FK_LEAP
             in->stick_x = 70;       // circle it (locked on) for a side view
+#endif
+#ifdef HLE_TEST_BONUS_SUN
+            if (t == 450) { boss_apply_damage(boss, boss->maxHealth * 0.55f); debugf("[bonus] half at %d\n", frame); }
 #endif
             if (t == 900) { boss_apply_damage(boss, boss->maxHealth * 2.0f); debugf("[bonus] killed at %d\n", frame); phase = 4; t0 = frame; }
         } else if (phase == 4) {

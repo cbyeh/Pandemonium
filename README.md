@@ -32,13 +32,18 @@ Optional sword skills inspired by Dragon Nest's Sword Master, on the D-pad with 
 | <img src="docs/media/skill_moon_blade_dance.gif" width="320"> | <img src="docs/media/skill_halfmoon_slash.gif" width="320"> | <img src="docs/media/skill_crescent_cleave.gif" width="320"> |
 | Leap high in the direction you are moving (in place when standing still) and rain five X-shaped sword waves on the target, one per swing. Without lock-on they land where the camera looks. | High risk nuke: a long rooted charge (a hit cancels it and hurts more), then a huge 180-degree slash that rolls outward as a wave. | Medium risk: crouch, then a rising swing that raises five light blades in a fan that surge outward, each hitting repeatedly. |
 
-### Two new boss fights
-Defeating the Guardian of the Shackled Sun is no longer the end: it rises again as Guardian Unbound. The Fallen Knight is a Bonus fight, picked from **Bonus** on the title screen, with its own intro and ending cutscenes.
+### New boss fights
+Defeating the Guardian of the Shackled Sun is no longer the end: it rises again as Guardian Unbound. Two Bonus fights, picked from **Bonus** on the title screen, each have their own intro and ending cutscenes.
 
-| Guardian Unbound | Fallen Knight |
+| Guardian Unbound | Fallen Knight (Bonus) |
 |---|---|
 | <img src="docs/media/boss_guardian_unbound.png" width="420"> | <img src="docs/media/boss_fallen_knight.png" width="420"> |
 | The Guardian rises again, corrupted: a fresh health bar, an aerial sword barrage and ground sweeps. | A dark, larger mirror of the knight that combos, rolls away from your swings and turns your own skills against you. |
+
+| The Shackled Sun (Bonus) | The ending, rendered live |
+|---|---|
+| <img src="docs/media/boss_shackled_sun.png" width="420"> | <img src="docs/media/ending_king.png" width="420"> |
+| The chained sun itself, a floating eye: it glares crossed waves, rains pillars of light, sweeps a ring of fire you must roll through, and dives onto you (then rests, open to attack). At half health it breaks its shackles and burns hotter and faster. | The ending used to be a pre-rendered video. It now plays in the engine: the King on his throne of gold, the Shackled Sun, and the fall through the vortex (the ROMs are 1-4.6 MB smaller). |
 
 The animations for Crescent Cleave and Halfmoon Slash are spliced from existing knight clips by `tools/compose_anims.py` (rerun it after re-exporting `knight.glb`).
 

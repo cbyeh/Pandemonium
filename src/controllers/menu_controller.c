@@ -102,6 +102,7 @@ static const char* videoMenuOptions[MENU_VIDEO_COUNT] = {
 
 static const char* bonusMenuOptions[MENU_BONUS_COUNT] = {
     "Fallen Knight",
+    "The Shackled Sun",
     "Back",
 };
 
@@ -661,12 +662,12 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             selectedOption = parentSelectedOption;
         }
     } else if (currentMenu == MENU_BONUS) {
-        if (aJustPressed && selectedOption == MENU_BONUS_FALLEN_KNIGHT) {
+        if (aJustPressed && selectedOption != MENU_BONUS_BACK) {
             // Bonus fights use the last played slot for settings and run stats
             int lastPlayedSlot = save_controller_get_last_played_slot();
             save_controller_set_active_slot((lastPlayedSlot >= 0) ? lastPlayedSlot : 0);
 
-            scene_set_bonus_fight(BONUS_FALLEN_KNIGHT);
+            scene_set_bonus_fight(selectedOption == MENU_BONUS_SHACKLED_SUN ? BONUS_SHACKLED_SUN : BONUS_FALLEN_KNIGHT);
             menu_controller_close();
             pendingAction = MENU_ACTION_TITLE_START_GAME;
         } else if (bJustPressed || (aJustPressed && selectedOption == MENU_BONUS_BACK)) {

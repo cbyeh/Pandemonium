@@ -25,6 +25,9 @@ void proc_mesh_box(const float center[3], const float half[3], uint32_t rgba);
 void proc_mesh_spike(const float base[3], const float tip[3], float radius, int sides, uint32_t rgba);
 // Upright prism/frustum: radius r0 at base[1], r1 at base[1] + h.
 void proc_mesh_frustum(const float base[3], float r0, float r1, float h, int sides, uint32_t rgba);
+// A glowing ball with an eye (black pupil, red iris) looking down -y, or +z with
+// `facingZ`. `hot` shifts it to crimson.
+void proc_mesh_eye_sphere(float radius, bool facingZ, bool hot);
 void proc_mesh_end(ProcMesh *out);
 
 void proc_mesh_set_transform(ProcMesh *m, const float scale, const float rot[3], const float pos[3]);

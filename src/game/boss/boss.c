@@ -4,6 +4,7 @@
 #include "boss_render.h"
 #include "boss_attacks.h"
 #include "game/fallen_knight/fallen_knight.h"
+#include "game/sun_boss/sun_boss.h"
 
 #include <libdragon.h>
 #include <t3d/t3dmath.h>
@@ -96,7 +97,7 @@ bool boss_get_bone_world_pos(const Boss* boss, int boneIndex, T3DVec3 *outWorld)
     if (!boss) return false;
     if (!boss->skeleton || !boss->modelMat) return false;
     if (boneIndex < 0) return false;
-    if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) return false;     // not the Guardian's skeleton
+    if (boss->phaseIndex >= FALLEN_KNIGHT_PHASE) return false;     // bonus bosses: not the Guardian's skeleton
 
     T3DSkeleton *skel = (T3DSkeleton*)boss->skeleton;
 
@@ -146,7 +147,7 @@ T3DVec3 boss_get_fallback_lock_focus_point(const Boss* boss)
         return (T3DVec3){{0.0f, 0.0f, 0.0f}};
     }
 
-    float lift = (boss->phaseIndex == FALLEN_KNIGHT_PHASE) ? 18.0f : 40.0f;
+    float lift = (boss->phaseIndex == SUN_BOSS_PHASE) ? 0.0f : (boss->phaseIndex == FALLEN_KNIGHT_PHASE) ? 18.0f : 40.0f;
     return (T3DVec3){{boss->pos[0], boss->pos[1] + lift, boss->pos[2]}};
 }
 
@@ -460,9 +461,9 @@ bool boss_is_post_defeat(const Boss* boss)
 
 bool boss_is_interactable(const Boss* boss)
 {
-    // The post-fight chat is the Guardian's; the Fallen Knight has none
+    // The post-fight chat is the Guardian's; the bonus bosses have none
     return boss && boss->mode == BOSS_MODE_POST_DEFEAT && boss->state == BOSS_STATE_DEAD &&
-           boss->phaseIndex != FALLEN_KNIGHT_PHASE;
+           boss->phaseIndex < FALLEN_KNIGHT_PHASE;
 }
 
 static inline void boss_update_shadow_mat(Boss* boss)
@@ -525,6 +526,10 @@ void boss_update(Boss* boss)
 #endif
     if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) {
         fallen_knight_update(boss, deltaTime);
+        return;
+    }
+    if (boss->phaseIndex == SUN_BOSS_PHASE) {
+        sun_boss_update(boss, deltaTime);
         return;
     }
 
@@ -603,6 +608,10 @@ void boss_draw(Boss* boss)
     if (!boss) return;
     if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) {
         fallen_knight_draw(boss);
+        return;
+    }
+    if (boss->phaseIndex == SUN_BOSS_PHASE) {
+        sun_boss_draw(boss);
         return;
     }
     if (boss->phaseIndex == 2) {
