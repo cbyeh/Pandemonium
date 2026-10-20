@@ -97,6 +97,10 @@ N64_CFLAGS += $(HLE_EXTRA_CFLAGS) -DHLE_BUILD -Ihle -Ihle/internal -Ihle/interna
 N64_LDFLAGS += --wrap sys_hw_memset --wrap sys_hw_memset16 --wrap sys_hw_memset32 --wrap sys_hw_memset64
 # libdragon IPL3 patched to boot on emulators without RDRAM chip emulation (hle/ipl3/)
 $(ROM): N64_ROM_HEADER=hle/ipl3/ipl3_hle.z64
+# Region-free ROMs have country code 0, which Delta treats as PAL (50 Hz pacing): the
+# game then runs at 5/6 speed and audio underruns. Declare NTSC (North America).
+$(ROM): N64_ROM_REGIONFREE=
+$(ROM): N64_ROM_REGION=E
 # Delta's 2019 core halts on libdragon's EMUX probe opcodes: patch them out after linking
 $(ROM): $(BUILD_DIR)/$(TARGET).elf.emux
 $(BUILD_DIR)/$(TARGET).elf.emux: $(BUILD_DIR)/$(TARGET).elf
