@@ -32,17 +32,25 @@ static bool hbv_next(hbv_t *v)
         return false;
     int bw = v->w / 4, nb = bw * (v->h / 4);
     const uint8_t *bitmap = v->buf;
-    const uint32_t *blk = (const uint32_t*)(v->buf + (nb + 31) / 32 * 4);
+    const uint16_t *blk = (const uint16_t*)(v->buf + (nb + 31) / 32 * 4);
     uint16_t *pix = v->pic.buffer;
     int stride = v->pic.stride / 2;
     for (int b = 0; b < nb; b++) {
         if (!(bitmap[b >> 3] & (0x80 >> (b & 7)))) continue;
-        uint32_t c = blk[0], idx = blk[1];
-        blk += 2;
-        uint16_t pal[4] = { c >> 16, c, 0, 0 };
+        uint16_t *dst = pix + (b / bw) * 4 * stride + (b % bw) * 4;
+        uint16_t c0 = *blk++;
+        if (!(c0 & 1)) {            // flat block
+            uint32_t c2 = ((uint32_t)(c0 | 1) << 16) | (c0 | 1);
+            for (int y = 0; y < 4; y++, dst += stride) {
+                ((uint32_t*)dst)[0] = c2; ((uint32_t*)dst)[1] = c2;
+            }
+            continue;
+        }
+        uint16_t pal[4] = { c0, blk[0], 0, 0 };
+        uint32_t idx = ((uint32_t)blk[1] << 16) | blk[2];
+        blk += 3;
         pal[2] = mix5551(pal[0], pal[1], 2, 1);
         pal[3] = mix5551(pal[0], pal[1], 1, 2);
-        uint16_t *dst = pix + (b / bw) * 4 * stride + (b % bw) * 4;
         for (int y = 0; y < 4; y++, dst += stride) {
             dst[0] = pal[(idx >> 30) & 3]; dst[1] = pal[(idx >> 28) & 3];
             dst[2] = pal[(idx >> 26) & 3]; dst[3] = pal[(idx >> 24) & 3];
@@ -55,10 +63,10 @@ static bool hbv_next(hbv_t *v)
 static bool hbv_open(hbv_t *v, const char *fn)
 {
     memset(v, 0, sizeof(*v));
-    v->f = fopen(fn, "rb");
+    v->f = asset_fopen(fn, NULL);     // APLIB-compressed (mkasset -c 2), streamed
     if (!v->f) return false;
     uint8_t hdr[16];
-    if (fread(hdr, 1, 16, v->f) != 16 || memcmp(hdr, "HBV1", 4) != 0) {
+    if (fread(hdr, 1, 16, v->f) != 16 || memcmp(hdr, "HBV2", 4) != 0) {
         fclose(v->f);
         return false;
     }

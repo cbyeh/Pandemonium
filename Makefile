@@ -75,9 +75,10 @@ $(HBVENC): hle/tools/hbvenc.c
 	@mkdir -p $(dir $@)
 	cc -O2 -o $@ $<
 $(FILESYSTEMDIR)/%.hbv: $(ASSDIR)/%.mp4 $(HBVENC)
-	@mkdir -p $(dir $@)
+	@mkdir -p $(dir $@) $(BUILD_DIR)/hbv/$(dir $*)
 	@echo "    [VIDEO-HBV] $@"
-	ffmpeg -v error -i "$<" -vf scale=320:240,fps=15 -f rawvideo -pix_fmt rgb24 - | $(HBVENC) 320 240 15 $@
+	ffmpeg -v error -i "$<" -vf scale=320:240,fps=15 -f rawvideo -pix_fmt rgb24 - | $(HBVENC) 320 240 15 $(BUILD_DIR)/hbv/$*.hbv
+	$(N64_BINDIR)/mkasset -c 2 -w 32 -o $(dir $@) $(BUILD_DIR)/hbv/$*.hbv
 endif
 
 # TODO:

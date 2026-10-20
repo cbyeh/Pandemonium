@@ -2,11 +2,13 @@
  * hbvenc: encodes raw RGB24 frames (stdin, e.g. from ffmpeg) into the HLE build's
  * block video format, which the N64 CPU can decode in real time:
  *
- *   header: "HBV1" u16 width, u16 height, u16 fps, u16 frames, u32 0   (big endian)
+ *   header: "HBV2" u16 width, u16 height, u16 fps, u16 frames, u32 0   (big endian)
  *   frame:  u32 payload size, then the payload:
  *             bitmap of coded 4x4 blocks (1 bit each, MSB first, padded to 4 bytes)
- *             per coded block: u16 c0, u16 c1 (RGBA5551), u32 2-bit indices
- *             (pixel 0 in the top bits); palette = c0, c1, (2c0+c1)/3, (c0+2c1)/3
+ *             per coded block, u16 c0 (RGB555 + flag in bit 0):
+ *               flag 0: flat block, all 16 pixels are c0 | 1
+ *               flag 1: followed by u16 c1 (RGBA5551) and u32 2-bit indices
+ *                       (pixel 0 in the top bits); palette = c0, c1, (2c0+c1)/3, (c0+2c1)/3
  *   Uncoded blocks keep the previous frame's pixels.
  *
  * usage: ffmpeg -i in.mp4 -vf scale=W:H,fps=F -f rawvideo -pix_fmt rgb24 - | hbvenc W H F out.hbv
@@ -17,7 +19,9 @@
 #include <string.h>
 
 // Max average squared error per pixel channel (8-bit scale) to keep a block.
-#define SKIP_THRESHOLD 48
+#define SKIP_THRESHOLD 72
+// Same, to code a block as a single flat color.
+#define FLAT_THRESHOLD 32
 
 static void put16(FILE *f, unsigned v) { fputc(v >> 8, f); fputc(v, f); }
 static void put32(FILE *f, unsigned v) { put16(f, v >> 16); put16(f, v); }
@@ -64,8 +68,9 @@ int main(int argc, char **argv)
     uint16_t *prev = calloc(w * h, 2);          // decoder-side picture
     uint8_t *bitmap = malloc(bitmap_bytes);
     uint8_t *blocks = malloc(nb * 8);
+    int nflat = 0;
 
-    fwrite("HBV1", 1, 4, out);
+    fwrite("HBV2", 1, 4, out);
     put16(out, w); put16(out, h); put16(out, fps);
     long nframes_pos = ftell(out);
     put16(out, 0); put32(out, 0);
@@ -74,7 +79,7 @@ int main(int argc, char **argv)
     long total = 0;
     while (fread(rgb, 1, w * h * 3, stdin) == (size_t)(w * h * 3)) {
         memset(bitmap, 0, bitmap_bytes);
-        int ncoded = 0;
+        int ncoded = 0, nbytes = 0;
         for (int b = 0; b < nb; b++) {
             int x0 = (b % bw) * 4, y0 = (b / bw) * 4;
             int px[16][3];
@@ -87,6 +92,22 @@ int main(int argc, char **argv)
             }
             if (nframes > 0 && keep_err <= SKIP_THRESHOLD * 16 * 3)
                 continue;
+
+            // Flat block: the average color
+            int avg[3] = {0, 0, 0};
+            for (int i = 0; i < 16; i++) for (int c = 0; c < 3; c++) avg[c] += px[i][c];
+            for (int c = 0; c < 3; c++) avg[c] = (avg[c] + 8) / 16;
+            uint16_t flat = to5551(avg);
+            int flatc[3]; from5551(flat, flatc);
+            int flat_err = 0;
+            for (int i = 0; i < 16; i++) flat_err += sqerr(px[i], flatc);
+            if (flat_err <= FLAT_THRESHOLD * 16 * 3) {
+                for (int i = 0; i < 16; i++) prev[(y0 + i/4) * w + x0 + i%4] = flat;
+                bitmap[b >> 3] |= 0x80 >> (b & 7);
+                blocks[nbytes++] = flat >> 8; blocks[nbytes++] = flat & ~1;
+                ncoded++; nflat++;
+                continue;
+            }
 
             // Endpoints: darkest and brightest pixel
             int lo = 0, hi = 0;
@@ -112,20 +133,21 @@ int main(int argc, char **argv)
                 prev[(y0 + i/4) * w + x0 + i%4] = pal[best];
             }
             bitmap[b >> 3] |= 0x80 >> (b & 7);
-            uint8_t *o = blocks + ncoded * 8;
+            uint8_t *o = blocks + nbytes;
             o[0] = pal[0] >> 8; o[1] = pal[0]; o[2] = pal[1] >> 8; o[3] = pal[1];
             o[4] = idx >> 24; o[5] = idx >> 16; o[6] = idx >> 8; o[7] = idx;
+            nbytes += 8;
             ncoded++;
         }
-        put32(out, bitmap_bytes + ncoded * 8);
+        put32(out, bitmap_bytes + nbytes);
         fwrite(bitmap, 1, bitmap_bytes, out);
-        fwrite(blocks, 1, ncoded * 8, out);
-        total += 4 + bitmap_bytes + ncoded * 8;
+        fwrite(blocks, 1, nbytes, out);
+        total += 4 + bitmap_bytes + nbytes;
         nframes++;
     }
     fseek(out, nframes_pos, SEEK_SET);
     put16(out, nframes);
     fclose(out);
-    fprintf(stderr, "hbvenc: %d frames, %ld KB\n", nframes, total / 1024);
+    fprintf(stderr, "hbvenc: %d frames, %ld KB, %d flat blocks\n", nframes, total / 1024, nflat);
     return nframes ? 0 : 1;
 }

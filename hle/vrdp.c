@@ -241,6 +241,11 @@ static int translate(const uint64_t *c)
     case 0x31:              // rdpq debug command (collides with G_RDPHALF_2)
         return 8;
     case 0x26 ... 0x28: case 0x2A ... 0x30: case 0x32 ... 0x3F:
+        // rdpq "detaches" by pointing the color/Z image past the end of RDRAM
+        // (RDPQ_VALIDATE_DETACH_ADDR). GLideN64 sizes those buffers to 0 rows,
+        // which GLES (Delta on iOS) rejects with a fatal error: drop it.
+        if ((op == 0x3E || op == 0x3F) && (w1 & 0xFFFFFF) >= (uint32_t)get_memory_size())
+            return 8;
         gbi_reserve(1, 0);
         // rdpq keeps the image height in bits 10-18 of SET_TEXTURE/COLOR_IMAGE
         // (ignored by the RDP); GBI decoders read a 12-bit width there.
