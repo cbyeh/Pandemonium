@@ -56,6 +56,7 @@
 #include "fx/blood_particles_fx.h"
 #include "fx/skill_fx.h"
 #include "game/fallen_knight/fallen_knight.h"
+#include "guardian_ending.h"
 //#include "boulder_hazard.h" // close-range ground-boulder hazard
 
 // Forward declaration: scene_init() and scene_restart() start the Guardian intro.
@@ -368,12 +369,11 @@ static void scene_update_video_preroll(void)
 
         // IMPORTANT: ensure audio controller stops touching CHANNEL_MUSIC
         // (and doesn't later mixer_ch_stop it mid-video)
-        gameState = GAME_STATE_VIDEO;
-        video_player_request("rom:/video.h264");
-
-        audio_set_music_volume(10);
-
+        // The ending plays live in the hall (it used to be a video)
         videoPreroll = VIDEO_PREROLL_NONE;
+        audio_set_music_volume(10);
+        cutsceneState = CUTSCENE_ENDING;
+        scene_init_cutscene();
     }
 }
 
@@ -1248,6 +1248,13 @@ void scene_init_cutscene(void)
                 (T3DVec3){{ BONUS_FK_X, 24.0f, 0.0f }});
         } break;
 
+        case CUTSCENE_ENDING: {
+            if (g_boss) g_boss->visible = false;
+            cameraLockOnActive = false;
+            letterbox_show(false);
+            ending_begin();
+        } break;
+
         case CUTSCENE_BONUS_OUTRO: {
             // The knight lies defeated; the camera turns to it
             s_bonusBeat = 0;
@@ -1365,6 +1372,18 @@ void scene_cutscene_update(void)
                 }
             }
         } break;
+
+        case CUTSCENE_ENDING: {
+            bool aJustPressed = (btn.a || btn.start) && !lastCutsceneAPressed;
+            lastCutsceneAPressed = btn.a || btn.start;
+            if (aJustPressed && !skipButtonVisible) skipButtonVisible = true;
+            else if (aJustPressed || !ending_update(deltaTime)) {
+                cutscene_manager_clear_dialog();
+                screen_shake_set_shake_mag(0.0f);
+                scene_controller_switch_to_title();
+            }
+            return;
+        }
 
         case CUTSCENE_BONUS_INTRO:
         case CUTSCENE_BONUS_OUTRO: {
@@ -1691,6 +1710,88 @@ static void draw_lockon_indicator(T3DViewport *viewport)
     boss_ui_draw_lockon_marker(viewport, &worldPos, visible);
 }
 
+// The hall with the knight and the boss (cutscenes that keep the gameplay view).
+static void scene_draw_hall(void)
+{
+    rdpq_sync_pipe();
+    rdpq_mode_zbuf(false, false);
+
+    // No-depth environment first.
+    t3d_matrix_push_pos(1);
+        if (windowsMatrix && windowsDpl) {
+            t3d_matrix_set(windowsMatrix, true);
+            rspq_block_run(windowsDpl);
+        }
+
+        if (mapMatrix && mapDpl) {
+            t3d_matrix_set(mapMatrix, true);
+            rspq_block_run(mapDpl);
+        }
+    t3d_matrix_pop(1);
+
+    // Floor.
+    rdpq_sync_pipe();
+    rdpq_mode_zbuf(true, true);
+
+    t3d_matrix_push_pos(1);
+        if (roomFloorMatrix && roomFloorDpl) {
+            t3d_matrix_set(roomFloorMatrix, true);
+            rspq_block_run(roomFloorDpl);
+        }
+    t3d_matrix_pop(1);
+
+    // Shadows.
+    rdpq_sync_pipe();
+    rdpq_mode_zbuf(false, false);
+
+    t3d_matrix_push_pos(1);
+        character_draw_shadow();
+
+        if (g_boss) {
+            boss_draw_shadow(g_boss);
+        }
+    t3d_matrix_pop(1);
+
+    // Room pieces.
+    rdpq_sync_pipe();
+    rdpq_mode_zbuf(true, true);
+
+    t3d_matrix_push_pos(1);
+        if (roomLedgeMatrix && roomLedgeDpl) {
+            t3d_matrix_set(roomLedgeMatrix, true);
+            rspq_block_run(roomLedgeDpl);
+        }
+
+        if (pillarsMatrix && pillarsDpl) {
+            t3d_matrix_set(pillarsMatrix, true);
+            rspq_block_run(pillarsDpl);
+        }
+
+        if (pillarsFrontMatrix && pillarsFrontDpl) {
+            t3d_matrix_set(pillarsFrontMatrix, true);
+            rspq_block_run(pillarsFrontDpl);
+        }
+    t3d_matrix_pop(1);
+
+    // Characters.
+    t3d_matrix_push_pos(1);
+        character_draw();
+
+        if (g_boss) {
+            boss_draw(g_boss);
+        }
+    t3d_matrix_pop(1);
+
+    // Persistent gameplay chains only.
+    // cinematicChains moved into cutscene_guardian_phase1.c and should not be referenced here.
+    t3d_matrix_push_pos(1);
+        if (chainsMatrix && chainsDpl) {
+            t3d_matrix_set(chainsMatrix, true);
+            rspq_block_run(chainsDpl);
+        }
+    t3d_matrix_pop(1);
+}
+
 void scene_draw_cutscene(T3DViewport *viewport)
 {
     scene_update_context();
@@ -1701,6 +1802,12 @@ void scene_draw_cutscene(T3DViewport *viewport)
     }
 
     switch (cutsceneState) {
+        case CUTSCENE_ENDING: {
+            if (ending_room_visible()) scene_draw_hall();
+            ending_draw_world();
+            ending_draw_overlay();
+        } break;
+
         case CUTSCENE_BONUS_INTRO:
         case CUTSCENE_BONUS_OUTRO:
         case CUTSCENE_POST_BOSS_RESTORED: {
@@ -1709,83 +1816,7 @@ void scene_draw_cutscene(T3DViewport *viewport)
              * This avoids a black screen because this cutscene is camera/dialog only.
              */
 
-            rdpq_sync_pipe();
-            rdpq_mode_zbuf(false, false);
-
-            // No-depth environment first.
-            t3d_matrix_push_pos(1);
-                if (windowsMatrix && windowsDpl) {
-                    t3d_matrix_set(windowsMatrix, true);
-                    rspq_block_run(windowsDpl);
-                }
-
-                if (mapMatrix && mapDpl) {
-                    t3d_matrix_set(mapMatrix, true);
-                    rspq_block_run(mapDpl);
-                }
-            t3d_matrix_pop(1);
-
-            // Floor.
-            rdpq_sync_pipe();
-            rdpq_mode_zbuf(true, true);
-
-            t3d_matrix_push_pos(1);
-                if (roomFloorMatrix && roomFloorDpl) {
-                    t3d_matrix_set(roomFloorMatrix, true);
-                    rspq_block_run(roomFloorDpl);
-                }
-            t3d_matrix_pop(1);
-
-            // Shadows.
-            rdpq_sync_pipe();
-            rdpq_mode_zbuf(false, false);
-
-            t3d_matrix_push_pos(1);
-                character_draw_shadow();
-
-                if (g_boss) {
-                    boss_draw_shadow(g_boss);
-                }
-            t3d_matrix_pop(1);
-
-            // Room pieces.
-            rdpq_sync_pipe();
-            rdpq_mode_zbuf(true, true);
-
-            t3d_matrix_push_pos(1);
-                if (roomLedgeMatrix && roomLedgeDpl) {
-                    t3d_matrix_set(roomLedgeMatrix, true);
-                    rspq_block_run(roomLedgeDpl);
-                }
-
-                if (pillarsMatrix && pillarsDpl) {
-                    t3d_matrix_set(pillarsMatrix, true);
-                    rspq_block_run(pillarsDpl);
-                }
-
-                if (pillarsFrontMatrix && pillarsFrontDpl) {
-                    t3d_matrix_set(pillarsFrontMatrix, true);
-                    rspq_block_run(pillarsFrontDpl);
-                }
-            t3d_matrix_pop(1);
-
-            // Characters.
-            t3d_matrix_push_pos(1);
-                character_draw();
-
-                if (g_boss) {
-                    boss_draw(g_boss);
-                }
-            t3d_matrix_pop(1);
-
-            // Persistent gameplay chains only.
-            // cinematicChains moved into cutscene_guardian_phase1.c and should not be referenced here.
-            t3d_matrix_push_pos(1);
-                if (chainsMatrix && chainsDpl) {
-                    t3d_matrix_set(chainsMatrix, true);
-                    rspq_block_run(chainsDpl);
-                }
-            t3d_matrix_pop(1);
+            scene_draw_hall();
 
             skill_fx_draw();
 
@@ -2225,9 +2256,18 @@ void scene_delete_environment(void)
     if (roomFloorMatrix) { free_uncached(roomFloorMatrix); roomFloorMatrix = NULL; }
 }
 
+#ifdef HLE_TEST_ENDING
+void scene_test_start_ending(void)     // test aid: straight to the ending
+{
+    cutsceneState = CUTSCENE_ENDING;
+    scene_init_cutscene();
+}
+#endif
+
 void scene_cleanup(void)
 {
     rspq_wait();
+    ending_free();
     //collision_mesh_cleanup();
     scene_delete_environment();
     boss_ground_crush_cleanup();

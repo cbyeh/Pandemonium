@@ -54,7 +54,9 @@ assets_wav = $(filter %.wav,$(asset_files))
 assets_ttf = $(filter %.ttf,$(asset_files))
 assets_bin = $(filter %.bin,$(asset_files))
 assets_h264 = $(filter %.h264,$(asset_files))
-assets_mp4 = $(filter %.mp4,$(asset_files))
+# The ending renders live now (src/scenes/guardian/guardian_ending.c): assets/video.mp4 is no
+# longer shipped, only its soundtrack (video.wav). Restore this filter to ship videos again.
+assets_mp4 =
 
 # Convert asset paths to filesystem output paths, preserving subdirs
 ASSETSCONV = $(patsubst $(ASSDIR)/%.png,$(FILESYSTEMDIR)/%.sprite,$(assets_png)) \

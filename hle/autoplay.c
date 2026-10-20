@@ -4,7 +4,7 @@
  */
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING)
 #include "character.h"
 #include "game/boss/boss.h"
 #include "controllers/menu_controller.h"
@@ -40,6 +40,23 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     extern void video_player_request(const char *rom_video_path);
     if (frame == 30) video_player_request("rom:/video.h264");
     return;
+#endif
+#ifdef HLE_TEST_ENDING
+    {
+        static int start = -1;
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT) { start = frame; debugf("[end] fight at %d\n", frame); }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (frame == start + 30) {
+            extern void scene_test_start_ending(void);
+            scene_test_start_ending();
+            debugf("[end] ending at %d\n", frame);
+        } else if (frame % 150 == 0) {
+            debugf("[end] f%d boss %p\n", frame, (void *)boss);
+        }
+        return;
+    }
 #endif
 #ifdef HLE_TEST_BONUS
     // Title -> Bonus -> Fallen Knight; watch the intro, stand still (it leaps at range),

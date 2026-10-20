@@ -27,6 +27,9 @@ void skill_fx_spawn_wave(SkillWaveShape shape, const float pos[3], const float v
                          float damage, int hits, float hitInterval, float life, bool pillarOnEnd);
 
 void skill_fx_spawn_pillar(const float pos[3]);
+
+// Swirling orange/violet funnel hanging down from `top` (the ending's vortex).
+void skill_fx_draw_vortex(const float top[3], float depth, float radius, float time);
 void skill_fx_spawn_burst(const float pos[3], float yaw);
 
 // Hostile versions (the Fallen Knight): same shapes in a crimson palette, hitting

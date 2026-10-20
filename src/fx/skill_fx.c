@@ -521,12 +521,8 @@ static void draw_burst(const SkillFx *f)
     }
 }
 
-void skill_fx_draw(void)
+static void draw_begin(void)
 {
-    bool any = false;
-    for (int i = 0; i < SKILL_FX_MAX && !any; i++) any = s_fx[i].type != FX_NONE;
-    if (!any) return;
-
     if (!s_identity) {
         s_identity = malloc_uncached(sizeof(T3DMat4FP));
         T3DMat4 id;
@@ -551,7 +547,26 @@ void skill_fx_draw(void)
     s_nverts = s_ntris = 0;
     s_vb = s_ring[s_ringIdx];
     s_ringIdx = (s_ringIdx + 1) % BUILD_RING;
+}
 
+static void draw_end(void)
+{
+    build_flush();
+    s_drawHostile = false;
+
+    t3d_matrix_pop(1);
+    t3d_state_set_depth_offset(0);
+    t3d_fog_set_enabled(true);
+    rdpq_sync_pipe();
+}
+
+void skill_fx_draw(void)
+{
+    bool any = false;
+    for (int i = 0; i < SKILL_FX_MAX && !any; i++) any = s_fx[i].type != FX_NONE;
+    if (!any) return;
+
+    draw_begin();
     for (int i = 0; i < SKILL_FX_MAX; i++) {
         const SkillFx *f = &s_fx[i];
         s_drawHostile = f->hostile;
@@ -563,11 +578,31 @@ void skill_fx_draw(void)
             default: break;
         }
     }
-    build_flush();
-    s_drawHostile = false;
+    draw_end();
+}
 
-    t3d_matrix_pop(1);
-    t3d_state_set_depth_offset(0);
-    t3d_fog_set_enabled(true);
-    rdpq_sync_pipe();
+void skill_fx_draw_vortex(const float top[3], float depth, float radius, float time)
+{
+    enum { STRANDS = 12, SEG = 9 };
+    draw_begin();
+    for (int k = 0; k < STRANDS; k++) {
+        float outer[SEG][3], inner[SEG][3];
+        uint32_t co[SEG], ci[SEG];
+        bool hot = (k & 1) == 0;
+        float spin = time * (hot ? 1.6f : 1.1f);
+        for (int i = 0; i < SEG; i++) {
+            float u = (float)i / (SEG - 1);
+            float r = radius * powf(1.0f - u, 1.4f) + 3.0f;
+            float a = 2.0f * T3D_PI * k / STRANDS + spin + u * 2.8f;
+            float w = 0.2f + 0.12f * (1.0f - u);
+            float y = top[1] - depth * u;
+            outer[i][0] = top[0] + r * cosf(a - w); outer[i][1] = y; outer[i][2] = top[2] + r * sinf(a - w);
+            inner[i][0] = top[0] + r * cosf(a + w); inner[i][1] = y; inner[i][2] = top[2] + r * sinf(a + w);
+            float al = 0.9f - 0.5f * u;
+            co[i] = hot ? rgba(255, 150, 40, al) : rgba(170, 60, 240, al);
+            ci[i] = hot ? rgba(255, 210, 120, al * 0.5f) : rgba(230, 120, 255, al * 0.5f);
+        }
+        build_ribbon(outer, inner, co, ci, SEG);
+    }
+    draw_end();
 }
