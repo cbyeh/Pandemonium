@@ -1935,6 +1935,20 @@ void scene_draw(T3DViewport *viewport)
 
     t3d_viewport_attach(viewport);
 
+#ifdef HLE_TEST_COVER
+    {   // test aid: only the knight and the boss on magenta (cover art cutouts)
+        t3d_screen_clear_color(RGBA32(255, 0, 255, 0xFF));
+        t3d_screen_clear_depth();
+        t3d_fog_set_enabled(false);
+        t3d_light_set_ambient(colorAmbient);
+        t3d_matrix_push_pos(1);
+            character_draw();
+            if (g_boss) boss_draw(g_boss);
+        t3d_matrix_pop(1);
+        return;
+    }
+#endif
+
     // Fog
     color_t fogColor = (color_t){0, 0, 0, 0xFF};
 

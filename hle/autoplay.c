@@ -5,7 +5,8 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER)
+#include "camera_controller.h"
 #include "character.h"
 #include "game/boss/boss.h"
 #include "controllers/menu_controller.h"
@@ -55,6 +56,34 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     extern void video_player_request(const char *rom_video_path);
     if (frame == 30) video_player_request("rom:/video.h264");
     return;
+#endif
+#ifdef HLE_TEST_COVER
+    // Cover art poses (with HLE_TEST_FREEZE_BOSS): the knight facing the Guardian;
+    // camera shots switch every 60 frames (see the shot list in the log)
+    {
+        static int start = -1;
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) start = frame;
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        int t = frame - start;
+        cameraLockOnActive = false;
+        character.pos[0] = boss->pos[0] - (t < 120 ? 600.0f : 70.0f); character.pos[2] = boss->pos[2] + 6.0f;   // out of the Guardian's shot
+        character.rot[1] = T3D_PI * 1.5f;
+        static const float shots[][6] = {
+            { -80, 6, 50,    -5, 34, 0 },      // 0 (t < 120): the Guardian, from below
+            { -40, 14, 26,   -70, 14, 6 },     // 1 (t >= 120): the knight, close, mid-swing
+        };
+        int k = t < 120 ? 0 : 1;
+        customCamPos = (T3DVec3){{ shots[k][0], shots[k][1], shots[k][2] }};
+        customCamTarget = (T3DVec3){{ shots[k][3], shots[k][4], shots[k][5] }};
+        camera_mode(CAMERA_CUSTOM);
+        if (t % 60 == 0) debugf("[cover] shot %d at frame %d\n", k, frame);
+        if (t >= 125 && t < 129) { pressed->b = 1; in->btn.b = 1; }     // a swing, for an action pose
+        return;
+    }
 #endif
 #ifdef HLE_TEST_DUMMY
     // Threat measurement: a passive, invincible dummy at the start position; logs the
