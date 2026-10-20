@@ -926,12 +926,15 @@ static inline void clear_lockon_strafe_flags_on_action(void)
     lastStrafeAnimLock = -1;
 }
 
+static void end_skill(void);
+
 static inline bool can_roll_now(const joypad_buttons_t* buttons, const StickInput* stick)
 {
     (void)stick;
-    if (!(buttons->a && characterState == CHAR_STATE_NORMAL)) return false;
-    if (character.stamina < STAMINA_COST_ROLL) return false;
-    return true;
+    if (!buttons->a || character.stamina < STAMINA_COST_ROLL) return false;
+    // Attacks and skills can be cancelled into a roll, except Moon Blade Dance in the air
+    if (characterState == CHAR_STATE_SKILL) return !(activeSkill == SKILL_MOON_BLADE_DANCE && airborne);
+    return characterState == CHAR_STATE_NORMAL || characterState == CHAR_STATE_ATTACKING;
 }
 
 static inline void try_start_roll(const joypad_buttons_t* buttons, const StickInput* stick)
@@ -939,6 +942,11 @@ static inline void try_start_roll(const joypad_buttons_t* buttons, const StickIn
     if (!can_roll_now(buttons, stick)) return;
 
     character_consume_stamina(STAMINA_COST_ROLL);
+
+    // Roll-cancel: drop the attack combo / the skill (its cooldown stays spent)
+    attackQueued = false;
+    attackEnding = false;
+    if (characterState == CHAR_STATE_SKILL) end_skill();
 
     characterState = CHAR_STATE_ROLLING;
     actionTimer = 0.0f;
@@ -1163,7 +1171,6 @@ static const float HALFMOON_CHARGE = 2.0f;         // rooted; a hit cancels it a
 static const float HALFMOON_END = 3.2f;
 static const float HALFMOON_RADIUS = 85.0f;
 static const float HALFMOON_DAMAGE = 25.0f;        // < 2 strong attacks
-static const float HALFMOON_CHARGE_DAMAGE_MULT = 1.5f;
 static const float CLEAVE_RELEASE = 0.85f;         // interruptible wind-up (the SkillCleave upswing)
 static const float CLEAVE_END = 1.7f;
 static const int   CLEAVE_BLADES = 5;
@@ -3244,10 +3251,8 @@ void character_apply_damage(float amount)
     { extern float hle_dummy_damage; extern int hle_dummy_hits; hle_dummy_damage += amount; hle_dummy_hits++; return; }   // test aid: count hits, never hurt
 #endif
 
-    // A hit during a wind-up cancels the skill (the cooldown is still spent);
-    // the Halfmoon charge also leaves the player exposed to extra damage
+    // A hit during a wind-up cancels the skill (the cooldown is still spent)
     if (characterState == CHAR_STATE_SKILL && skillStep == 0 && activeSkill != SKILL_MOON_BLADE_DANCE) {
-        if (activeSkill == SKILL_HALFMOON_SLASH) amount *= HALFMOON_CHARGE_DAMAGE_MULT;
         end_skill();
     }
 

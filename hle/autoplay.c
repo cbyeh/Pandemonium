@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL)
 #include "camera_controller.h"
 #include "character.h"
 #include "game/boss/boss.h"
@@ -56,6 +56,27 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     extern void video_player_request(const char *rom_video_path);
     if (frame == 30) video_player_request("rom:/video.h264");
     return;
+#endif
+#ifdef HLE_TEST_ROLLCANCEL
+    // A during an attack, the Halfmoon charge and an airborne Moon Blade Dance
+    // (states: 0 normal, 1 rolling, 2 attacking, 9 skill)
+    {
+        static int start = -1;
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) start = frame;
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        int t = frame - start;
+        if (t == 60)  { pressed->b = 1; in->btn.b = 1; }
+        if (t == 200) pressed->d_right = 1;
+        if (t == 400) pressed->d_up = 1;
+        if (t == 70 || t == 230 || t == 440) { pressed->a = 1; in->btn.a = 1; }
+        if (t == 69 || t == 72 || t == 229 || t == 232 || t == 439 || t == 442)
+            debugf("[rc] t %d state %d\n", t, character_get_state());
+        return;
+    }
 #endif
 #ifdef HLE_TEST_COVER
     // Cover art poses (with HLE_TEST_FREEZE_BOSS): the knight facing the Guardian;
