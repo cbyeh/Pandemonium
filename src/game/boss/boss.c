@@ -592,6 +592,13 @@ void boss_update(Boss* boss)
 void boss_draw(Boss* boss)
 {
     if (!boss) return;
+    if (boss->phaseIndex == 2) {
+        // Guardian Unbound: corrupted violet cast
+        t3d_light_set_ambient((uint8_t[4]){ 200, 110, 230, 255 });
+        boss_render_draw(boss);
+        t3d_light_set_ambient((uint8_t[4]){ 255, 255, 255, 255 });
+        return;
+    }
     boss_render_draw(boss);
 }
 
@@ -925,6 +932,7 @@ void boss_reset(Boss* boss)
     boss->scale[2] = MODEL_SCALE;
 
     boss->state = BOSS_STATE_INTRO;
+    boss->name = "Guardian of the Shackled Sun";
     boss->maxHealth = boss_target_max_health();
     boss->health = boss->maxHealth;
     boss->phaseIndex = 1;

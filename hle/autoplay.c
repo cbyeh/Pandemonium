@@ -4,10 +4,11 @@
  */
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2)
 #include "character.h"
 #include "game/boss/boss.h"
 #include "controllers/menu_controller.h"
+#include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #endif
 
 void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
@@ -39,6 +40,34 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     extern void video_player_request(const char *rom_video_path);
     if (frame == 30) video_player_request("rom:/video.h264");
     return;
+#endif
+#ifdef HLE_TEST_BOSS2
+    // Kill the Guardian, skip the transformation, fight Guardian Unbound, kill it too
+    {
+        static int phase = 0, t0 = 0;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0;
+        if (frame % 60 == 0 && boss)
+            debugf("[b2] f%d phase %d boss phase %d mode %d state %d hp %.0f/%.0f msa %d\n", frame, phase,
+                   boss->phaseIndex, boss->mode, boss->state, (double)boss->health, (double)boss->maxHealth,
+                   msa_has_active_aerial_swords());
+        if (phase == 0) {               // get to the fight
+            if (boss && boss->mode == BOSS_MODE_COMBAT && boss->phaseIndex == 1) { phase = 1; t0 = frame; }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (!boss) {
+            return;
+        } else if (phase == 1) {        // first death
+            if (t == 120) { boss_apply_damage(boss, boss->maxHealth * 2.0f); debugf("[b2] killed guardian\n"); }
+            if (t > 120 && boss->phaseIndex == 2 && boss->mode == BOSS_MODE_COMBAT) { phase = 2; t0 = frame; debugf("[b2] unbound fight at %d\n", frame); }
+#ifndef HLE_TEST_WATCH_CUTSCENE
+            else if (t > 150 && frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }    // skip the cutscene
+#endif
+        } else if (phase == 2) {        // fight a while, then the final death
+            if (t % 45 == 0) { pressed->b = 1; in->btn.b = 1; }
+            if (t == 900) { boss_apply_damage(boss, boss->maxHealth * 2.0f); debugf("[b2] killed unbound\n"); phase = 3; }
+        }
+        return;
+    }
 #endif
 #ifdef HLE_TEST_TOGGLE
     // Skills OFF in the pause menu, die, restart, skills ON in the pause menu, try Cleave

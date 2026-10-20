@@ -176,6 +176,7 @@ static const float POST_BOSS_PROMPT_DIST  = 140.0f;   // show A prompt and allow
 // ------------------------------------------------------------
 static bool s_pendingBossLoopMusic = false;
 static const char *s_bossLoopMusicPath = "rom:/audio/music/boss_phase1-looping-22k.wav64";
+static const char *s_boss2LoopMusicPath = "rom:/audio/music/boss_phase2_cutscene2-22k.wav64";   // Guardian Unbound
 
 // Require the character to be facing the boss for post-boss interaction.
 // The third-person camera orbits independently of the character's body yaw,
@@ -530,7 +531,7 @@ void scene_load_environment(void)
 
     // Global/system-level effect. Keep loaded if it is used outside one cutscene,
     // or move it later if it is phase-2-only.
-    // lightning_fx_system_init("rom:/boss/boss_back_sword_lightning2.t3dm");
+    lightning_fx_system_init("rom:/boss/boss_back_sword_lightning2.t3dm");
 }
 
 void scene_init(void)
@@ -608,7 +609,7 @@ void scene_init(void)
     dust_particles_fx_reset();
     blood_particles_fx_reset();
 
-    //msa_init();
+    msa_init();
 
     // Guardian scene normal startup: entering the scene starts the phase-1 intro.
     gameState = GAME_STATE_PLAYING;
@@ -689,6 +690,7 @@ void scene_reset(void)
         boss_deactivate(g_boss);
     }
     phase2CutsceneTriggered = false;
+    boss_ui_set_second_form(false);
     gameState = GAME_STATE_PLAYING;
     lastMenuActive = false;
     lastAPressed = false;
@@ -737,7 +739,7 @@ void scene_reset(void)
     // mid-phase-2 death leaks state into the new run: leftover MSA swords keep
     // falling during phase 1, the BNW lightning ring stays armed, and the
     // shackled-sun screen shake never clears.
-    //msa_init();
+    msa_init();
     lightning_fx_system_ring_enable(false);
     screen_shake_set_shake_mag(0.0f);
 
@@ -1015,6 +1017,8 @@ static void scene_finish_phase2_cutscene(void)
         boss_activate_combat(g_boss);
 
         g_boss->phaseIndex = 2;
+        g_boss->name = "Guardian Unbound";
+        g_boss->health = g_boss->maxHealth;
         g_boss->handAttackColliderActive = false;
         g_boss->sphereAttackColliderActive = false;
         g_boss->velX = 0.0f;
@@ -1036,11 +1040,12 @@ static void scene_finish_phase2_cutscene(void)
     cutsceneState = CUTSCENE_NONE;
     skipButtonVisible = false;
 
-    bossUiIntro = 1.0f;
-    boss_ui_set_intro(1.0f);
-    if (g_boss && g_boss->maxHealth > 0.0f) {
-        boss_ui_snap_health_trail(g_boss->health / g_boss->maxHealth);
-    }
+    // A new boss: replay the name title and grow a fresh health bar
+    boss_ui_set_second_form(true);
+    bossTitleFade = 1.0f;
+    bossUiIntro = 0.0f;
+    boss_ui_set_intro(0.0f);
+    boss_ui_snap_health_trail(1.0f);
 
     character_reset_button_state();
     scene_sync_input_edge_state();
@@ -1234,7 +1239,7 @@ void scene_update(void) {
     if (s_pendingBossLoopMusic) {
         if (!audio_is_music_playing() && g_boss->health > 0) {
             s_pendingBossLoopMusic = false;
-            audio_play_music(s_bossLoopMusicPath, true);
+            audio_play_music((g_boss->phaseIndex == 2) ? s_boss2LoopMusicPath : s_bossLoopMusicPath, true);
         }
     }
 
@@ -1332,13 +1337,17 @@ void scene_update(void) {
             // Boss death no longer forces GAME_STATE_VICTORY.
             // The boss will play its collapse and remain still; the player can keep moving.
 
-            // Phase 2 transition: trigger cutscene when boss health drops to 40%.
+            // Second fight: when the Guardian falls the first time, it rises again as
+            // Guardian Unbound (phase-2 cutscene). Refill its health in this same frame
+            // so the ending (music fade, video trigger, clear time) does not start.
 #if PHASE_2_ENABLED
-            if (boss_is_combat_active(g_boss)
-                && !phase2CutsceneTriggered && g_boss->phaseIndex == 1
-                && g_boss->health <= g_boss->maxHealth * 0.4f
-                && g_boss->health > 0.0f) {
+            if (!phase2CutsceneTriggered && g_boss->phaseIndex == 1 && g_boss->health <= 0.0f) {
                 phase2CutsceneTriggered = true;
+                g_boss->health = g_boss->maxHealth;
+                g_boss->state = BOSS_STATE_INTRO;
+                g_boss->mode = BOSS_MODE_CINEMATIC;
+                cameraLockOnActive = false;
+                skill_fx_reset();
                 cutsceneTimer = 0.0f;
                 cutsceneCameraTimer = 0.0f;
                 cutsceneState = CUTSCENE_PHASE2_INTRO;
@@ -1488,9 +1497,9 @@ void scene_update(void) {
         }
     }
 
-    // if (cutsceneState == CUTSCENE_NONE) {
-    //    msa_update(deltaTime); // multi sword attack
-    // }
+    if (cutsceneState == CUTSCENE_NONE) {
+        msa_update(deltaTime); // multi sword attack (Guardian Unbound)
+    }
     //boulder_hazard_update(deltaTime); // close-range ground boulders
 
     lastZPressed = zHeld;
@@ -1748,7 +1757,7 @@ void scene_draw(T3DViewport *viewport)
         boss_draw(g_boss);
     }
 
-    //msa_draw_visuals(viewport); // multi sword attack
+    msa_draw_visuals(viewport); // multi sword attack (Guardian Unbound)
     //boulder_hazard_draw(viewport); // close-range ground boulders
 
     // Fog door (transparent): depth test ON, depth write OFF so it can be drawn late.
@@ -2061,6 +2070,8 @@ void scene_cleanup(void)
     blood_particles_fx_cleanup();
     dust_particles_fx_cleanup();
     particle_system_cleanup();
+    msa_shutdown();
+    lightning_fx_system_shutdown();
 
     dialog_controller_free();
     audio_scene_unload_sfx();
