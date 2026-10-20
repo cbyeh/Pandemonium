@@ -33,6 +33,28 @@ CLIPS = {
         ("Attack2", 0.33, 0.82, 0.40),
         ("Attack2End", 0.0, 0.83, 0.90),
     ],
+    # Moon Blade Dance take-off: the tucked middle of the roll, held, while the hips
+    # spin once backward (see OVERRIDES)
+    "SkillBackflip": [
+        ("Roll", 0.45, 0.45, 0.60),
+    ],
+}
+
+def quat_z(a):
+    return np.array([0.0, 0.0, np.sin(a / 2), np.cos(a / 2)])
+
+def ease(u):
+    return u * u * (3 - 2 * u)
+
+# Per-clip bone overrides: bone -> path -> f(u), u = 0..1 over the clip. The roll
+# spins the Waist (hips) positively around Z going forward, so a backflip is -2 pi.
+OVERRIDES = {
+    "SkillBackflip": {
+        "Waist": {
+            "rotation": lambda u: quat_z(-2 * np.pi * ease(u)),
+            "translation": lambda u: np.array([-0.6, 3.9, 0.0]),
+        },
+    },
 }
 
 CT = {5126: 'f', 5123: 'H', 5125: 'I', 5121: 'B', 5122: 'h'}
@@ -91,7 +113,7 @@ def mix(a, b, u):
         return q / np.linalg.norm(q)
     return a * (1 - u) + b * u
 
-def compose(j, b, segs):
+def compose(j, b, segs, clip_name=None):
     anims = {a['name']: a for a in j['animations']}
     # channel layout (node, path) taken from the first source clip
     first = anims[segs[0][0]]
@@ -121,6 +143,10 @@ def compose(j, b, segs):
                 prev = value(k - 1, node, path, starts[k])
                 v = mix(prev, v, (t - starts[k]) / BLEND)
             out[(node, path)].append(v)
+    names = {n: i for i, n in enumerate(nd.get('name') for nd in j['nodes'])}
+    for bone, paths in OVERRIDES.get(clip_name, {}).items():
+        for path, f in paths.items():
+            out[(names[bone], path)] = [f(t / times[-1]) for t in times]
     t_acc = add_acc(j, b, times, 'SCALAR')
     channels, samplers = [], []
     for node, path in layout:
@@ -134,7 +160,7 @@ def main(path):
     j, b = load(path)
     j['animations'] = [a for a in j['animations'] if a['name'] not in CLIPS]
     for name, segs in CLIPS.items():
-        a = compose(j, b, segs)
+        a = compose(j, b, segs, name)
         a['name'] = name
         j['animations'].append(a)
         print(f"{name}: {sum(s[3] for s in segs):.2f} s")

@@ -32,11 +32,11 @@ extern T3DModel* characterModel;       // the player's knight model (character.c
 
 enum {
     FKA_IDLE, FKA_WALK, FKA_RUN, FKA_ROLL, FKA_ATTACK1, FKA_ATTACK2, FKA_ATTACK3,
-    FKA_CHARGED, FKA_CLEAVE, FKA_HALFMOON, FKA_DEATH, FKA_COUNT
+    FKA_CHARGED, FKA_CLEAVE, FKA_HALFMOON, FKA_DEATH, FKA_BACKFLIP, FKA_COUNT
 };
 static const char *ANIM_NAMES[FKA_COUNT] = {
     "Idle", "Walk1", "Run", "Roll", "Attack1", "Attack2", "Attack3",
-    "AttackCharged", "SkillCleave", "SkillHalfmoon", "Death",
+    "AttackCharged", "SkillCleave", "SkillHalfmoon", "Death", "SkillBackflip",
 };
 static const bool ANIM_LOOP[FKA_COUNT] = { true, true, true };
 
@@ -238,7 +238,7 @@ static void moonblade_update(Boss *b, float dt)
     // leap high and rain five crimson crosses on the player
     if (s.step == 0) {
         s.velY = 120.0f;
-        play(FKA_ROLL, true);
+        play(FKA_BACKFLIP, true);
         s.step = 1;
     }
     s.velY -= 120.0f * ((s.step >= 1 && s.step <= 5 && s.velY < 15.0f) ? 0.15f : 1.0f) * dt;
