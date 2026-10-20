@@ -111,6 +111,14 @@ static void task_submit(void)
                  SP_WSTATUS_CLEAR_BROKE | SP_WSTATUS_CLEAR_HALT;
     MEMORY_BARRIER();
 
+#ifdef HLE_TEST_TASKS
+    extern int hle_task_log;
+    if (hle_task_log) {
+        hle_logf("task %lu bytes, first cmd %08lx", (unsigned long)size, (uint32_t)(dl_base[0] >> 32));
+        int n = dl_ptr - dl_base;
+        for (int i = 0; i < n; i++) if (n < 50 || i < 14 || i >= n - 8) debugf("  %08lx %08lx\n", (uint32_t)(dl_base[i] >> 32), (uint32_t)dl_base[i]);
+    }
+#endif
 #ifdef HLE_DUMP_TASKS
     static int ntasks;
     if (ntasks++ < HLE_DUMP_TASKS) {

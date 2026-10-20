@@ -11,10 +11,22 @@
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #endif
 
+int hle_task_log;
+
 void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
     static int frame;
     frame++;
+#ifdef HLE_TEST_TASKS
+    {   // gfx tasks per game frame (a frame should be exactly one)
+        extern uint32_t gsp_epoch;
+        static uint32_t last;
+        extern int hle_task_log;
+        hle_task_log = (frame == 300 || frame == 301 || frame == 700 || frame == 701);
+        if (hle_task_log) debugf("[tasks] frame %d\n", frame);
+        if (frame % 30 == 0) { debugf("[tasks] f%d %.2f per frame\n", frame, (double)(gsp_epoch - last) / 30.0); last = gsp_epoch; }
+    }
+#endif
 #ifdef HLE_TEST_PERF
     {
         extern uint32_t __hle_perf_ticks;
@@ -52,9 +64,16 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             return;
         }
         int t = frame - start;
-        if (t >= 60 && t < 84) in->btn.b = 1;
+        if (t >= 60 && t < 90) in->btn.b = 1;
         if (t == 60) pressed->b = 1;
-        if (t >= 58 && t < 100 && t % 4 == 0) debugf("[heavy] t %d state %d\n", t, character_get_state());
+        if (t < 60) {       // keep right in front of the boss, facing it
+            float a = boss->rot[1];
+            character.pos[0] = boss->pos[0] - fm_sinf(a) * 30.0f; character.pos[2] = boss->pos[2] + fm_cosf(a) * 30.0f;
+            character.rot[1] = a + T3D_PI;
+        }
+        if (t == 140) { pressed->b = 1; in->btn.b = 1; }    // a light attack, for comparison
+        if (t == 59) debugf("[heavy] frame %d knight %.0f,%.0f boss %.0f,%.0f\n", frame, (double)character.pos[0], (double)character.pos[2], (double)boss->pos[0], (double)boss->pos[2]);
+        if (t >= 60 && t < 170 && t % 4 == 0) debugf("[heavy] t %d state %d boss hp %.1f stamina %.0f\n", t, character_get_state(), (double)boss->health, (double)character.stamina);
         return;
     }
 #endif
