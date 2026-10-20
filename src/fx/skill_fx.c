@@ -434,6 +434,7 @@ static void draw_blade(const SkillFx *f)
     dir_basis(flat, d, s, u);
     float rise = fminf(1.0f, f->age / 0.25f);
     float a = fade(f, 0.0f, 0.3f);
+    if (a < 0.2f) return;   // nearly faded: very low alphas render dark on GLideN64
     const float H = 70.0f, BOW = 2.5f, W = 4.0f;
     float outer[N][3], inner[N][3];
     uint32_t co[N], ci[N];
@@ -467,6 +468,7 @@ static void draw_pillar(const SkillFx *f)
 {
     float grow = fminf(1.0f, f->age / 0.1f);
     float a = fade(f, 0.0f, 0.5f);
+    if (a < 0.2f) return;   // see draw_blade
     const float W = 3.5f;
     float H = 70.0f * grow;
     for (int k = 0; k < 2; k++) {
