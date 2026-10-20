@@ -47,6 +47,7 @@ static const float SHADOW_SHRINK_AMOUNT = 0.45f;  // 0=no shrink, 0.45 -> 55% si
 static CharacterState characterState = CHAR_STATE_NORMAL;
 
 // D-pad skill state (see the skills section)
+static bool skillsEnabled = true;    // Settings toggle
 static float skillCooldowns[SKILL_COUNT];
 static CharacterSkill activeSkill = SKILL_MOON_BLADE_DANCE;
 static float skillTime = 0.0f;      // seconds since the skill started
@@ -757,7 +758,7 @@ void character_reset(void)
     footstepTimer = 0.0f;
 
     character.health = character.maxHealth;
-    character.healthPotions = 3;
+    character.healthPotions = skillsEnabled ? 5 : 3;    // the skills fight is longer (2x boss HP)
     character.stamina = character.maxStamina;
     character.staminaRegenDelay = 0.0f;
     character.damageFlashTimer = 0.0f;
@@ -1221,8 +1222,6 @@ float character_get_skill_cooldown_ratio(CharacterSkill skill)
     if (skill >= SKILL_COUNT) return 0.0f;
     return skillCooldowns[skill] / SKILL_DEFS[skill].cooldown;
 }
-
-static bool skillsEnabled = true;
 
 bool character_skills_enabled(void) { return skillsEnabled; }
 void character_set_skills_enabled(bool enabled) { skillsEnabled = enabled; }

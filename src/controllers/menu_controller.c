@@ -458,8 +458,11 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                     break;
 
                 case MENU_SETTINGS_SKILLS:
-                    character_set_skills_enabled(!character_skills_enabled());
-                    (void)save_controller_save_settings();
+                    // Only from the title screen: no switching mid-battle
+                    if (settingsHubReturnMenu == MENU_TITLE) {
+                        character_set_skills_enabled(!character_skills_enabled());
+                        (void)save_controller_save_settings();
+                    }
                     break;
 
                 case MENU_SETTINGS_BACK:
@@ -1088,8 +1091,10 @@ void menu_controller_draw(void)
 
         for (int i = 0; i < MENU_SETTINGS_COUNT; i++) {
             char optionText[64];
+            bool locked = (i == MENU_SETTINGS_SKILLS && settingsHubReturnMenu != MENU_TITLE);
             snprintf(optionText, sizeof(optionText), settingsMenuOptions[i] ? settingsMenuOptions[i] : "",
-                     character_skills_enabled() ? "ON" : "OFF");
+                     locked ? (character_skills_enabled() ? "ON (title only)" : "OFF (title only)")
+                            : (character_skills_enabled() ? "ON" : "OFF"));
 
             if (i == selectedOption) {
                 draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
@@ -1097,6 +1102,7 @@ void menu_controller_draw(void)
             } else {
                 rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
             }
+            if (locked) rdpq_set_prim_color(RGBA32(130, 130, 130, 255));   // greyed out
 
             rdpq_text_printf(&(rdpq_textparms_t){
                 .align = ALIGN_CENTER,
