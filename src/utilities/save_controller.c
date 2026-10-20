@@ -87,7 +87,7 @@ static int clampi(int v, int lo, int hi)
 
 static int8_t saved_overscan_x(const SaveData *d)
 {
-    if (!d) return UI_OVERSCAN_MIN;
+    if (!d) return UI_OVERSCAN_DEFAULT_X;
     // Stored in padding to keep save size stable across versions.
     int8_t v = (int8_t)d->_pad[0];
     int maxX = (SCREEN_WIDTH / 2) - 2;
@@ -96,7 +96,7 @@ static int8_t saved_overscan_x(const SaveData *d)
 
 static int8_t saved_overscan_y(const SaveData *d)
 {
-    if (!d) return UI_OVERSCAN_MIN;
+    if (!d) return UI_OVERSCAN_DEFAULT_Y;
     int8_t v = (int8_t)d->_pad[1];
     int maxY = (SCREEN_HEIGHT / 2) - 2;
     return (int8_t)clampi((int)v, UI_OVERSCAN_MIN, maxY);
@@ -155,7 +155,7 @@ static void save_defaults_for_slot(SaveData *d, int slot) {
     d->stereoMode   = (uint8_t)(audio_get_stereo_mode() ? 1 : 0);
 
     // UI overscan defaults: minimum extra padding (widest UI in calibrated range)
-    save_set_overscan(d, UI_OVERSCAN_MIN, UI_OVERSCAN_MIN);
+    save_set_overscan(d, UI_OVERSCAN_DEFAULT_X, UI_OVERSCAN_DEFAULT_Y);
     save_set_rumble_enabled(d, true);
     save_set_hd_aspect(d, false);
 

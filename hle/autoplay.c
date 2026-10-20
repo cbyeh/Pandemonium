@@ -14,9 +14,15 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         extern uint32_t __hle_perf_ticks;
         static uint32_t last, start;
         uint32_t now = TICKS_READ();
+        static int minq = 99; static uint32_t maxdt;
+        int q = audio_get_queued_buffers();
+        if (q < minq) minq = q;
+        if (last && now - last > maxdt) maxdt = now - last;
         if (frame % 120 == 0) {
-            debugf("[hle] perf: %lu frames in %lu ms, rsp-hle %lu%% of CPU time\n", 120UL,
-                (unsigned long)TICKS_TO_MS(now - start), (unsigned long)(__hle_perf_ticks * 100ULL / (now - start)));
+            debugf("[hle] perf: %lu frames in %lu ms, rsp-hle %lu%% of CPU time, audio min queued %d/%d, max frame %lu ms\n", 120UL,
+                (unsigned long)TICKS_TO_MS(now - start), (unsigned long)(__hle_perf_ticks * 100ULL / (now - start)),
+                minq, audio_get_num_buffers(), (unsigned long)TICKS_TO_MS(maxdt));
+            minq = 99; maxdt = 0;
             extern void hle_perf_dump(uint32_t total);
             hle_perf_dump(now - start);
             __hle_perf_ticks = 0; start = now;
