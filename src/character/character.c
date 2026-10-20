@@ -87,8 +87,6 @@ static const float ROLL_IFRAME_END   = 0.72f;
 
 static const float ROLL_ANIM_SPEED = 1.0f;
 static const float ATTACK_DURATION = 0.9f; // (legacy, not used directly)
-static const float STRONG_ATTACK_DURATION = 1.2f;
-static const float STRONG_ATTACK_HOLD_THRESHOLD = 0.4f;
 static const float STRONG_ATTACK_DAMAGE = 15.0f;
 static const float STRONG_ATTACK_HIT_START = 0.35f;
 static const float STRONG_ATTACK_HIT_END = 0.9f;
@@ -117,7 +115,6 @@ static const float KNOCKDOWN_DURATION = 0.8f;
 
 // Stamina costs and regen tuning
 static const float STAMINA_COST_ATTACK = 18.0f;
-static const float STAMINA_COST_STRONG_ATTACK = 20.0f; // extra on top of the base attack cost
 static const float STAMINA_COST_ROLL = 25.0f;
 static const float STAMINA_REGEN_PER_SEC = 40.0f;
 static const float STAMINA_REGEN_DELAY = 0.5f; // wait this long after acting before regen resumes
@@ -248,7 +245,6 @@ static float lastBaseSpeed   = -1.0f;
 static float lastStrafeSpeed = -1.0f;
 
 // Strong-attack upgrade flag
-static bool strongAttackUpgradedFlag = false;
 
 
 static bool hasBlendSnapshot = false;
@@ -764,7 +760,6 @@ void character_reset(void)
     character.damageFlashTimer = 0.0f;
     character.currentAttackHasHit = false;
 
-    strongAttackUpgradedFlag = false;
 
     for (int s = 0; s < SKILL_COUNT; s++) skillCooldowns[s] = 0.0f;
     skillTime = 0.0f;
@@ -1139,44 +1134,6 @@ static inline void try_start_attack(bool leftJustPressed)
         }
     }
 }
-
-static inline void upgrade_to_strong_attack(bool leftHeldNow)
-{
-    if (characterState == CHAR_STATE_ATTACKING &&
-        leftHeldNow &&
-        leftTriggerHoldTime >= STRONG_ATTACK_HOLD_THRESHOLD &&
-        actionTimer < STRONG_ATTACK_HOLD_THRESHOLD + 0.1f &&    // was 0.3: shorter than the hold, never reachable
-        !attackEnding &&
-        !strongAttackUpgradedFlag &&
-        character.stamina >= STAMINA_COST_STRONG_ATTACK) {
-
-        strongAttackUpgradedFlag = true;
-
-        character_consume_stamina(STAMINA_COST_STRONG_ATTACK);
-
-        characterState = CHAR_STATE_ATTACKING_STRONG;
-
-        attackComboIndex = 1;
-        attackQueued = false;
-        attackEnding = false;
-
-        actionTimer = 0.0f;
-        character_reset_swing_sfx();
-        currentActionDuration = STRONG_ATTACK_DURATION;
-
-        character.currentAttackHasHit = false;
-        movementVelocityX = 0.0f;
-        movementVelocityZ = 0.0f;
-
-        character_play_swing_timed(SWING_DELAY_STRONG);
-    }
-
-    if (characterState == CHAR_STATE_NORMAL) {
-        strongAttackUpgradedFlag = false;
-    }
-}
-
-
 
 /* -----------------------------------------------------------------------------
  * D-pad skills
@@ -2214,7 +2171,7 @@ static inline void update_actions(const joypad_buttons_t* buttons,
     // Normal action starts (these won't fire while knocked down anyway)
     try_start_roll(buttons, stick);
     try_start_attack(leftJustPressed);
-    upgrade_to_strong_attack(leftHeldNow);
+    (void)leftHeldNow;     // no heavy attack: holding B never triggered one in the original either
     try_start_skill(buttons);
 
     // Knockdown breakaway handling happens inside progress_action_timers()

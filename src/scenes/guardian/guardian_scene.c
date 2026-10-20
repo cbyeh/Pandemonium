@@ -1209,8 +1209,7 @@ static void scene_bonus_begin_boss(void)
     const BonusDef *d = &BONUS_DEFS[s_bonusFight];
     d->begin(g_boss);
     boss_ui_set_form(d->phase);
-    audio_stop_music();
-    audio_play_music(d->music, true);
+    if (!audio_is_music_playing()) audio_play_music(d->music, true);   // a skip before the intro started it
 }
 
 static void scene_bonus_start_fight(void)
@@ -1304,6 +1303,7 @@ void scene_init_cutscene(void)
             scene_bonus_schedule(BONUS_DEFS[s_bonusFight].intro, 6, BONUS_DEFS[s_bonusFight].dropAt, 0.8f);
             cutsceneTimer = 0.0f;
             audio_stop_music();
+            audio_play_music(BONUS_DEFS[s_bonusFight].music, true);     // the boss theme plays under its intro
             cutscene_manager_set_camera_shot(&sceneContext,
                 (T3DVec3){{ -372.0f, 30.0f, 58.0f }}, (T3DVec3){{ -352.0f, 26.0f, 40.0f }},
                 (T3DVec3){{ BONUS_SPAWN_X, 24.0f, 0.0f }});
@@ -1326,6 +1326,8 @@ void scene_init_cutscene(void)
             customCamTarget = (T3DVec3){{ g_boss->pos[0], g_boss->pos[1] + 14.0f, g_boss->pos[2] }};
             camera_mode_smooth(CAMERA_CUSTOM, 1.0f);
             scene_bonus_schedule(BONUS_DEFS[s_bonusFight].outro, 4, -1, 0.0f);
+            audio_stop_music();
+            audio_play_music("rom:/audio/music/boss_phase1_cutscene1-22k.wav64", false);
         } break;
 
         case CUTSCENE_POST_BOSS_RESTORED: {
