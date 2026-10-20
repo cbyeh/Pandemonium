@@ -754,7 +754,7 @@ void character_reset(void)
     footstepTimer = 0.0f;
 
     character.health = character.maxHealth;
-    character.healthPotions = 3;
+    character.healthPotions = 7;     // two phases (Guardian, then Guardian Unbound)
     character.stamina = character.maxStamina;
     character.staminaRegenDelay = 0.0f;
     character.damageFlashTimer = 0.0f;
@@ -3237,6 +3237,9 @@ void character_apply_damage(float amount)
 {
     if (amount <= 0.0f) return;
     if (character_is_invulnerable()) return;
+#ifdef HLE_TEST_DUMMY
+    { extern float hle_dummy_damage; extern int hle_dummy_hits; hle_dummy_damage += amount; hle_dummy_hits++; return; }   // test aid: count hits, never hurt
+#endif
 
     // A hit during a wind-up cancels the skill (the cooldown is still spent);
     // the Halfmoon charge also leaves the player exposed to extra damage

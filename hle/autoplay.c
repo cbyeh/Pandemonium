@@ -4,7 +4,8 @@
  */
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY)
+#include <string.h>
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY)
 #include "character.h"
 #include "game/boss/boss.h"
 #include "controllers/menu_controller.h"
@@ -12,6 +13,8 @@
 #endif
 
 int hle_task_log;
+float hle_dummy_damage;
+int hle_dummy_hits;
 
 void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
@@ -52,6 +55,42 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     extern void video_player_request(const char *rom_video_path);
     if (frame == 30) video_player_request("rom:/video.h264");
     return;
+#endif
+#ifdef HLE_TEST_DUMMY
+    // Threat measurement: a passive, invincible dummy at the start position; logs the
+    // damage each boss lands over 120 s. HLE_DUMMY_BOSS: 1 Guardian, 2 Unbound,
+    // 3 Fallen Knight, 4 Shackled Sun.
+    {
+        extern float deltaTime;
+        static int phase = 0, step = 0, t0 = 0;
+        static float tm;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0;
+        if (phase == 0) {       // reach the title menu
+            if (menu_controller_is_active()) { phase = 1; t0 = frame; }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 1) {    // pick the fight
+            const char *seq = HLE_DUMMY_BOSS == 3 ? "DDAA" : HLE_DUMMY_BOSS == 4 ? "DDADA" : "A";
+            int n = (int)strlen(seq);
+            if (t >= 20 && step < n) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; t0 = frame; }
+            if (step == n) { phase = 2; t0 = frame; }
+        } else if (phase == 2) {    // through the intro (A skips cutscenes)
+            int want = HLE_DUMMY_BOSS <= 2 ? 1 : HLE_DUMMY_BOSS;
+            if (boss && boss->mode == BOSS_MODE_COMBAT && boss->phaseIndex == want && character_get_state() == CHAR_STATE_NORMAL) {
+                if (HLE_DUMMY_BOSS == 2) { boss_apply_damage(boss, boss->maxHealth * 2.0f); phase = 3; }
+                else { phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
+            } else if (t > 60 && frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 3) {    // Unbound: skip the transformation
+            if (boss->phaseIndex == 2 && boss->mode == BOSS_MODE_COMBAT) { phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
+            else if (frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 4) {
+            float prev = tm;
+            tm += deltaTime;
+            if ((int)(tm / 30.0f) != (int)(prev / 30.0f))
+                debugf("[dummy] boss %d t %.0f s damage %.0f hits %d\n", HLE_DUMMY_BOSS, (double)tm, (double)hle_dummy_damage, hle_dummy_hits);
+        }
+        return;
+    }
 #endif
 #ifdef HLE_TEST_HEAVY
     // Hold B for 0.8 s in the fight: must turn into the strong attack

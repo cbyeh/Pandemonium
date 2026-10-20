@@ -499,19 +499,19 @@ static inline void boss_update_shadow_mat(Boss* boss)
     t3d_mat4fp_from_srt_euler((T3DMat4FP*)boss->shadowMat, shadowScale, shadowRot, shadowPos);
 }
 
-// The D-pad skills hit hard: the fight gets more boss HP while they are enabled
-#define BOSS_BASE_HEALTH         100.0f
-#define BOSS_HEALTH_WITH_SKILLS  200.0f
-
-static inline float boss_target_max_health(void)
+// Health per fight without skills; the D-pad skills double it. The bonus bosses are
+// sized to the same difficulty as the Guardian's two phases together (measured damage
+// against a dummy + a binomial dodge model): they hit softer but more often.
+static inline float boss_target_max_health(int phase)
 {
-    return character_skills_enabled() ? BOSS_HEALTH_WITH_SKILLS : BOSS_BASE_HEALTH;
+    float base = (phase == FALLEN_KNIGHT_PHASE) ? 300.0f : (phase == SUN_BOSS_PHASE) ? 325.0f : 100.0f;
+    return character_skills_enabled() ? base * 2.0f : base;
 }
 
 /** Follows the Skills setting, keeping the health percentage (it can change mid-fight). */
 static void boss_sync_max_health(Boss* boss)
 {
-    float target = boss_target_max_health();
+    float target = boss_target_max_health(boss->phaseIndex);
     if (boss->maxHealth == target) return;
     if (boss->maxHealth > 0.0f) boss->health *= target / boss->maxHealth;
     boss->maxHealth = target;
@@ -841,7 +841,7 @@ void boss_init(Boss* boss)
     boss->shadowMat = shadowMat;
 
     boss->name = "Guardian of the Shackled Sun";
-    boss->maxHealth = boss_target_max_health();
+    boss->maxHealth = boss_target_max_health(1);
     boss->health = boss->maxHealth;
     boss->phaseIndex = 1;
 
@@ -955,7 +955,7 @@ void boss_reset(Boss* boss)
 
     boss->state = BOSS_STATE_INTRO;
     boss->name = "Guardian of the Shackled Sun";
-    boss->maxHealth = boss_target_max_health();
+    boss->maxHealth = boss_target_max_health(1);
     boss->health = boss->maxHealth;
     boss->phaseIndex = 1;
 
