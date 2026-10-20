@@ -289,7 +289,7 @@ void sun_boss_update(Boss* b, float dt)
         // Comes down from the ceiling in its chains
         b->pos[1] = s.groundY + HOVER_H + (DROP_H - HOVER_H) * (1.0f - clamp01(s.t / (INTRO_TIME * 0.8f)));
         face_player(b, dt, 4.0f);
-        if (s.t >= INTRO_TIME) { b->mode = BOSS_MODE_COMBAT; b->state = BOSS_STATE_NEUTRAL; enter(SB_HOVER); }
+        // then waits, hovering, until the intro cutscene ends (sun_boss_skip_intro)
         break;
 
     case SB_HOVER: {

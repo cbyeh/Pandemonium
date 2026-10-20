@@ -4,7 +4,7 @@
  */
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY)
 #include "character.h"
 #include "game/boss/boss.h"
 #include "controllers/menu_controller.h"
@@ -40,6 +40,23 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     extern void video_player_request(const char *rom_video_path);
     if (frame == 30) video_player_request("rom:/video.h264");
     return;
+#endif
+#ifdef HLE_TEST_HEAVY
+    // Hold B for 0.8 s in the fight: must turn into the strong attack
+    {
+        static int start = -1;
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) start = frame;
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        int t = frame - start;
+        if (t >= 60 && t < 84) in->btn.b = 1;
+        if (t == 60) pressed->b = 1;
+        if (t >= 58 && t < 100 && t % 4 == 0) debugf("[heavy] t %d state %d\n", t, character_get_state());
+        return;
+    }
 #endif
 #ifdef HLE_TEST_ENDING
     {

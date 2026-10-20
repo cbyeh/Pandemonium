@@ -14,7 +14,7 @@
 
 // Turns `boss` into the Shackled Sun (descends from the ceiling, then fights).
 void sun_boss_begin(Boss* boss);
-// Lands it at once and starts the fight (cutscene skip).
+// Ends its descent and starts the fight (the intro cutscene ends or is skipped).
 void sun_boss_skip_intro(Boss* boss);
 void sun_boss_update(Boss* boss, float dt);
 void sun_boss_draw(Boss* boss);

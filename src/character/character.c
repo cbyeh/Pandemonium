@@ -1145,7 +1145,7 @@ static inline void upgrade_to_strong_attack(bool leftHeldNow)
     if (characterState == CHAR_STATE_ATTACKING &&
         leftHeldNow &&
         leftTriggerHoldTime >= STRONG_ATTACK_HOLD_THRESHOLD &&
-        actionTimer < 0.3f &&
+        actionTimer < STRONG_ATTACK_HOLD_THRESHOLD + 0.1f &&    // was 0.3: shorter than the hold, never reachable
         !attackEnding &&
         !strongAttackUpgradedFlag &&
         character.stamina >= STAMINA_COST_STRONG_ATTACK) {
@@ -1379,7 +1379,7 @@ static void update_skill(float dt)
             float dx = -fm_sinf(a), dz = fm_cosf(a);
             float origin[3] = { character.pos[0] + dx * dist, groundY, character.pos[2] + dz * dist };
             skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 30.0f, 0.0f, dz * 30.0f },
-                                1.5f, 4, 0.3f, 1.6f, false);
+                                1.25f, 4, 0.3f, 1.6f, false);   // ~10-15 when 2-3 blades cross the boss
             skill_fx_spawn_burst(origin, a);
             if (skillStep == 0) {
                 screen_shake_set_shake_mag(6.0f);

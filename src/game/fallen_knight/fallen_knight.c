@@ -182,6 +182,10 @@ void fallen_knight_begin(Boss* boss)
 void fallen_knight_skip_intro(Boss* boss)
 {
     if (!s.ready || s.state != FK_INTRO) return;
+    if (s.step == 0) {      // skipped before it landed
+        float p[3] = { boss->pos[0], s.groundY, boss->pos[2] };
+        skill_fx_spawn_burst_hostile(p, 0.0f);
+    }
     boss->pos[1] = s.groundY;
     boss->mode = BOSS_MODE_COMBAT;
     boss->state = BOSS_STATE_NEUTRAL;
@@ -309,12 +313,7 @@ void fallen_knight_update(Boss* b, float dt)
             screen_shake_set_shake_mag(10.0f);
             s.step = 1;
         }
-        if (s.t >= FK_INTRO_TIME) {
-            b->mode = BOSS_MODE_COMBAT;
-            b->state = BOSS_STATE_NEUTRAL;
-            enter(FK_CHASE);
-        }
-        break;
+        break;      // waits, landed, until the intro cutscene ends (fallen_knight_skip_intro)
 
     case FK_CHASE: {
         face_player(b, dt, FK_TURN_RATE);
