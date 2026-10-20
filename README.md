@@ -14,11 +14,33 @@ B button: Attack
 
 C-Pad: Look
 
+D-Pad: Skills (Up / Right / Down) and health potion (Left)
+
 Start button: Pause Menu
 
 Z trigger: Toggle z targetting
 
 Hold Z trigger + left/right on Cpad: Change z target
+
+## New in this fork
+
+### Skills (D-pad)
+Optional sword skills inspired by Dragon Nest's Sword Master, on the D-pad with cooldowns shown on the HUD. Turn them on or off from **Settings > Skills** on the title screen (on by default). With skills on, bosses have double health and you carry 5 potions instead of 3.
+
+| Moon Blade Dance (D-Up) | Halfmoon Slash (D-Right) | Crescent Cleave (D-Down) |
+|---|---|---|
+| <img src="docs/media/skill_moon_blade_dance.gif" width="320"> | <img src="docs/media/skill_halfmoon_slash.gif" width="320"> | <img src="docs/media/skill_crescent_cleave.gif" width="320"> |
+| Leap high in the direction you are moving (in place when standing still) and rain five X-shaped sword waves on the target, one per swing. Without lock-on they land where the camera looks. | High risk nuke: a long rooted charge (a hit cancels it and hurts more), then a huge 180-degree slash that rolls outward as a wave. | Medium risk: crouch, then a rising swing that raises five light pillars in a fan, each hitting repeatedly. |
+
+### Two new boss fights
+Defeating the Guardian of the Shackled Sun is no longer the end.
+
+| Guardian Unbound | Fallen Knight |
+|---|---|
+| <img src="docs/media/boss_guardian_unbound.png" width="420"> | <img src="docs/media/boss_fallen_knight.png" width="420"> |
+| The Guardian rises again, corrupted: a fresh health bar, an aerial sword barrage and ground sweeps. | A dark, larger mirror of the knight that combos, rolls away from your swings and turns your own skills against you. |
+
+The animations for Crescent Cleave and Halfmoon Slash are spliced from existing knight clips by `tools/compose_anims.py` (rerun it after re-exporting `knight.glb`).
 
 ## 2025 N64brew Game Jam - Pandemonium
 - December 1st - Feburary 1st
