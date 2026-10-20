@@ -11,6 +11,7 @@
 #include "controllers/audio_controller.h"
 #include "../scenes/guardian/guardian_scene_sfx.h"
 #include "utilities/general_utility.h"
+#include "character/character.h"
 
 #define SKILL_FX_MAX 24
 
@@ -27,7 +28,10 @@ typedef struct {
     int   hitsLeft;
     float hitInterval, hitTimer;
     bool  pillarOnEnd;
+    bool  hostile;          // hits the player (Fallen Knight) instead of the boss
 } SkillFx;
+
+static bool s_spawnHostile;     // palette/target for effects spawned now
 
 static SkillFx s_fx[SKILL_FX_MAX];
 
@@ -39,6 +43,7 @@ static SkillFx* fx_alloc(FxType type)
         if (s_fx[i].type == FX_NONE) {
             memset(&s_fx[i], 0, sizeof(s_fx[i]));
             s_fx[i].type = type;
+            s_fx[i].hostile = s_spawnHostile;
             return &s_fx[i];
         }
     }
@@ -73,6 +78,28 @@ void skill_fx_spawn_wave(SkillWaveShape shape, const float pos[3], const float v
     f->hitInterval = hitInterval;
     f->life = life;
     f->pillarOnEnd = pillarOnEnd;
+}
+
+void skill_fx_spawn_burst_hostile(const float pos[3], float yaw)
+{
+    s_spawnHostile = true;
+    skill_fx_spawn_burst(pos, yaw);
+    s_spawnHostile = false;
+}
+
+void skill_fx_spawn_arc_hostile(const float pos[3], float yaw, float radius, float damage)
+{
+    s_spawnHostile = true;
+    skill_fx_spawn_arc(pos, yaw, radius, damage);
+    s_spawnHostile = false;
+}
+
+void skill_fx_spawn_wave_hostile(SkillWaveShape shape, const float pos[3], const float vel[3],
+                                 float damage, int hits, float hitInterval, float life, bool pillarOnEnd)
+{
+    s_spawnHostile = true;
+    skill_fx_spawn_wave(shape, pos, vel, damage, hits, hitInterval, life, pillarOnEnd);
+    s_spawnHostile = false;
 }
 
 void skill_fx_spawn_pillar(const float pos[3])
@@ -143,10 +170,33 @@ static inline float arc_radius(const SkillFx *f)
     return f->radius * (0.2f + 0.8f * fminf(1.0f, f->age / ARC_GROW_TIME));
 }
 
+/** Sphere vs the player's capsule. */
+static bool sphere_hits_player(const float p[3], float r)
+{
+    float a[3], c[3], q[3];
+    for (int i = 0; i < 3; i++) {
+        a[i] = character.pos[i] + character.capsuleCollider.localCapA.v[i];
+        c[i] = character.pos[i] + character.capsuleCollider.localCapB.v[i];
+    }
+    closest_on_segment(a, c, p, q);
+    float d[3] = { p[0]-q[0], p[1]-q[1], p[2]-q[2] };
+    return d[0]*d[0] + d[1]*d[1] + d[2]*d[2] <= (r + character.capsuleCollider.radius) * (r + character.capsuleCollider.radius);
+}
+
 static void update_arc_hit(SkillFx *f, Boss *b)
 {
-    // One hit, when the wave front reaches the boss
+    // One hit, when the wave front reaches the target
     if (f->hitsLeft <= 0) return;
+    if (f->hostile) {
+        float dx = character.pos[0] - f->pos[0], dz = character.pos[2] - f->pos[2];
+        float dist = sqrtf(dx*dx + dz*dz);
+        float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
+        if (dist - character.capsuleCollider.radius > arc_radius(f)) return;
+        if (dist > 1e-3f && (dx*fx + dz*fz) / dist < -0.2f) return;
+        f->hitsLeft = 0;
+        character_apply_damage(f->damage);
+        return;
+    }
     float a[3], c[3];
     if (!boss_capsule(b, a, c)) return;
     float dx = b->pos[0] - f->pos[0], dz = b->pos[2] - f->pos[2];
@@ -176,8 +226,13 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
         memcpy(c, f->pos, sizeof(c));
         r = 12.0f;
     }
-    if (!sphere_hits_boss(b, c, r, contact)) return;
-    damage_boss(b, f->damage, contact, 1.0f);
+    if (f->hostile) {
+        if (!sphere_hits_player(c, r)) return;
+        character_apply_damage(f->damage);
+    } else {
+        if (!sphere_hits_boss(b, c, r, contact)) return;
+        damage_boss(b, f->damage, contact, 1.0f);
+    }
     f->hitsLeft--;
     f->hitTimer = f->hitInterval;
     if (f->shape == SKILL_WAVE_X && f->hitsLeft <= 0) f->life = f->age;   // spent
@@ -201,8 +256,10 @@ void skill_fx_update(float dt)
                 float ground[3] = { f->pos[0], f->pos[1], f->pos[2] };
                 float yaw = atan2f(-f->vel[0], f->vel[2]);
                 f->type = FX_NONE;      // free the slot before spawning the impact
+                s_spawnHostile = f->hostile;
                 skill_fx_spawn_burst(ground, yaw);
                 if (f->pillarOnEnd) skill_fx_spawn_pillar(ground);
+                s_spawnHostile = false;
             } else {
                 f->type = FX_NONE;
             }
@@ -261,8 +318,14 @@ static void build_tri(int a, int b, int c)
     s_ntris++;
 }
 
+static bool s_drawHostile;      // crimson palette for the effect being drawn
+
 static inline uint32_t rgba(int r, int g, int b, float a)
 {
+    if (s_drawHostile) {        // cyan/white -> crimson/rose, gold -> violet
+        int nr = b, ng = g / 4, nb = r / 2;
+        r = nr; g = ng; b = nb;
+    }
     int ai = (int)(a * 255.0f);
     ai = ai < 0 ? 0 : ai > 255 ? 255 : ai;
     return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | (uint32_t)ai;
@@ -470,6 +533,7 @@ void skill_fx_draw(void)
 
     for (int i = 0; i < SKILL_FX_MAX; i++) {
         const SkillFx *f = &s_fx[i];
+        s_drawHostile = f->hostile;
         switch (f->type) {
             case FX_ARC:    draw_arc(f); break;
             case FX_WAVE:   if (f->shape == SKILL_WAVE_X) draw_xwave(f); else draw_blade(f); break;
@@ -479,6 +543,7 @@ void skill_fx_draw(void)
         }
     }
     build_flush();
+    s_drawHostile = false;
 
     t3d_matrix_pop(1);
     t3d_state_set_depth_offset(0);

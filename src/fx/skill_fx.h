@@ -29,4 +29,11 @@ void skill_fx_spawn_wave(SkillWaveShape shape, const float pos[3], const float v
 void skill_fx_spawn_pillar(const float pos[3]);
 void skill_fx_spawn_burst(const float pos[3], float yaw);
 
+// Hostile versions (the Fallen Knight): same shapes in a crimson palette, hitting
+// the player instead of the boss.
+void skill_fx_spawn_burst_hostile(const float pos[3], float yaw);
+void skill_fx_spawn_arc_hostile(const float pos[3], float yaw, float radius, float damage);
+void skill_fx_spawn_wave_hostile(SkillWaveShape shape, const float pos[3], const float vel[3],
+                                 float damage, int hits, float hitInterval, float life, bool pillarOnEnd);
+
 #endif

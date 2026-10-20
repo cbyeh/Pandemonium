@@ -55,6 +55,7 @@
 #include "fx/dust_particles_fx.h"
 #include "fx/blood_particles_fx.h"
 #include "fx/skill_fx.h"
+#include "game/fallen_knight/fallen_knight.h"
 //#include "boulder_hazard.h" // close-range ground-boulder hazard
 
 // Forward declaration: scene_init() and scene_restart() start the Guardian intro.
@@ -177,6 +178,8 @@ static const float POST_BOSS_PROMPT_DIST  = 140.0f;   // show A prompt and allow
 static bool s_pendingBossLoopMusic = false;
 static const char *s_bossLoopMusicPath = "rom:/audio/music/boss_phase1-looping-22k.wav64";
 static const char *s_boss2LoopMusicPath = "rom:/audio/music/boss_phase2_cutscene2-22k.wav64";   // Guardian Unbound
+static const char *s_boss3LoopMusicPath = "rom:/audio/music/demonous-22k.wav64";                 // Fallen Knight
+static bool phase3Triggered = false;
 
 // Require the character to be facing the boss for post-boss interaction.
 // The third-person camera orbits independently of the character's body yaw,
@@ -690,7 +693,9 @@ void scene_reset(void)
         boss_deactivate(g_boss);
     }
     phase2CutsceneTriggered = false;
-    boss_ui_set_second_form(false);
+    boss_ui_set_form(1);
+    phase3Triggered = false;
+    fallen_knight_free();
     gameState = GAME_STATE_PLAYING;
     lastMenuActive = false;
     lastAPressed = false;
@@ -1041,7 +1046,7 @@ static void scene_finish_phase2_cutscene(void)
     skipButtonVisible = false;
 
     // A new boss: replay the name title and grow a fresh health bar
-    boss_ui_set_second_form(true);
+    boss_ui_set_form(2);
     bossTitleFade = 1.0f;
     bossUiIntro = 0.0f;
     boss_ui_set_intro(0.0f);
@@ -1239,7 +1244,8 @@ void scene_update(void) {
     if (s_pendingBossLoopMusic) {
         if (!audio_is_music_playing() && g_boss->health > 0) {
             s_pendingBossLoopMusic = false;
-            audio_play_music((g_boss->phaseIndex == 2) ? s_boss2LoopMusicPath : s_bossLoopMusicPath, true);
+            audio_play_music((g_boss->phaseIndex == FALLEN_KNIGHT_PHASE) ? s_boss3LoopMusicPath :
+                             (g_boss->phaseIndex == 2) ? s_boss2LoopMusicPath : s_bossLoopMusicPath, true);
         }
     }
 
@@ -1341,6 +1347,21 @@ void scene_update(void) {
             // Guardian Unbound (phase-2 cutscene). Refill its health in this same frame
             // so the ending (music fade, video trigger, clear time) does not start.
 #if PHASE_2_ENABLED
+            // Final fight: when Guardian Unbound falls, the Fallen Knight descends.
+            if (!phase3Triggered && g_boss->phaseIndex == 2 && g_boss->health <= 0.0f) {
+                phase3Triggered = true;
+                msa_set_enabled(false);
+                skill_fx_reset();
+                fallen_knight_begin(g_boss);        // refills health and starts its intro
+                cameraLockOnActive = false;
+                boss_ui_set_form(3);
+                bossTitleFade = 1.0f;
+                bossUiIntro = 0.0f;
+                boss_ui_set_intro(0.0f);
+                boss_ui_snap_health_trail(1.0f);
+                audio_play_music(s_boss3LoopMusicPath, true);
+                return;
+            }
             if (!phase2CutsceneTriggered && g_boss->phaseIndex == 1 && g_boss->health <= 0.0f) {
                 phase2CutsceneTriggered = true;
                 g_boss->health = g_boss->maxHealth;
@@ -2072,6 +2093,7 @@ void scene_cleanup(void)
     particle_system_cleanup();
     msa_shutdown();
     lightning_fx_system_shutdown();
+    fallen_knight_free();
 
     dialog_controller_free();
     audio_scene_unload_sfx();

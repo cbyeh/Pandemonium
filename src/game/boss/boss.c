@@ -3,6 +3,7 @@
 #include "boss_anim.h"
 #include "boss_render.h"
 #include "boss_attacks.h"
+#include "game/fallen_knight/fallen_knight.h"
 
 #include <libdragon.h>
 #include <t3d/t3dmath.h>
@@ -95,6 +96,7 @@ bool boss_get_bone_world_pos(const Boss* boss, int boneIndex, T3DVec3 *outWorld)
     if (!boss) return false;
     if (!boss->skeleton || !boss->modelMat) return false;
     if (boneIndex < 0) return false;
+    if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) return false;     // not the Guardian's skeleton
 
     T3DSkeleton *skel = (T3DSkeleton*)boss->skeleton;
 
@@ -144,7 +146,8 @@ T3DVec3 boss_get_fallback_lock_focus_point(const Boss* boss)
         return (T3DVec3){{0.0f, 0.0f, 0.0f}};
     }
 
-    return (T3DVec3){{boss->pos[0], boss->pos[1] + 40.0f, boss->pos[2]}};
+    float lift = (boss->phaseIndex == FALLEN_KNIGHT_PHASE) ? 18.0f : 40.0f;
+    return (T3DVec3){{boss->pos[0], boss->pos[1] + lift, boss->pos[2]}};
 }
 
 // Apply intent from AI to animation system
@@ -457,7 +460,9 @@ bool boss_is_post_defeat(const Boss* boss)
 
 bool boss_is_interactable(const Boss* boss)
 {
-    return boss && boss->mode == BOSS_MODE_POST_DEFEAT && boss->state == BOSS_STATE_DEAD;
+    // The post-fight chat is the Guardian's; the Fallen Knight has none
+    return boss && boss->mode == BOSS_MODE_POST_DEFEAT && boss->state == BOSS_STATE_DEAD &&
+           boss->phaseIndex != FALLEN_KNIGHT_PHASE;
 }
 
 static inline void boss_update_shadow_mat(Boss* boss)
@@ -518,6 +523,10 @@ void boss_update(Boss* boss)
 #ifdef HLE_TEST_FREEZE_BOSS
     if (boss->mode == BOSS_MODE_COMBAT) return;     // test aid: keep the boss out of the way
 #endif
+    if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) {
+        fallen_knight_update(boss, deltaTime);
+        return;
+    }
 
     float dt = deltaTime;
 
@@ -592,6 +601,10 @@ void boss_update(Boss* boss)
 void boss_draw(Boss* boss)
 {
     if (!boss) return;
+    if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) {
+        fallen_knight_draw(boss);
+        return;
+    }
     if (boss->phaseIndex == 2) {
         // Guardian Unbound: corrupted violet cast
         t3d_light_set_ambient((uint8_t[4]){ 200, 110, 230, 255 });

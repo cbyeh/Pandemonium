@@ -64,7 +64,24 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
         } else if (phase == 2) {        // fight a while, then the final death
             if (t % 45 == 0) { pressed->b = 1; in->btn.b = 1; }
-            if (t == 900) { boss_apply_damage(boss, boss->maxHealth * 2.0f); debugf("[b2] killed unbound\n"); phase = 3; }
+#ifdef HLE_TEST_BOSS2_DIE
+            if (t % 60 == 0) debugf("[b2] player hp %.0f state %d\n", (double)character_get_health(), character_get_state());
+            if (character_get_state() == CHAR_STATE_DEAD) { phase = 4; t0 = frame; debugf("[b2] player died at %d\n", frame); }
+#else
+            if (t == 900) { boss_apply_damage(boss, boss->maxHealth * 2.0f); debugf("[b2] killed unbound\n"); phase = 3; t0 = frame; }
+#endif
+        } else if (phase == 3) {        // the Fallen Knight descends
+            if (boss->phaseIndex == 3 && boss->mode == BOSS_MODE_COMBAT) { phase = 5; t0 = frame; debugf("[b2] fallen knight fight at %d\n", frame); }
+        } else if (phase == 5) {        // fight it, then the final death
+            if (t % 40 == 0) { pressed->b = 1; in->btn.b = 1; }
+            if (t % 60 == 0) debugf("[b2] FK hp %.0f state %d | player hp %.0f state %d\n", (double)boss->health, boss->state,
+                                    (double)character_get_health(), character_get_state());
+            if (t == 1500) { boss_apply_damage(boss, boss->maxHealth * 2.0f); debugf("[b2] killed fallen knight\n"); phase = 6; t0 = frame; }
+        } else if (phase == 6) {
+            if (t % 120 == 0) debugf("[b2] end: mode %d state %d hp %.0f\n", boss->mode, boss->state, (double)boss->health);
+        } else if (phase == 4) {        // restart from the death screen: back to the first Guardian
+            if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            if (t % 120 == 0) debugf("[b2] after restart: boss phase %d name %s mode %d hp %.0f\n", boss->phaseIndex, boss->name, boss->mode, (double)boss->health);
         }
         return;
     }
