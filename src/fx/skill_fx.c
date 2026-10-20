@@ -135,18 +135,26 @@ static void damage_boss(Boss *b, float damage, const float contact[3], float str
     audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_ATTACK_HIT1 + (int)(rand_custom_u32() % 6), 1.0f, 0.0f);
 }
 
+#define ARC_GROW_TIME 0.35f
+
+/** The crescent rolls outward from the player like a wave. */
+static inline float arc_radius(const SkillFx *f)
+{
+    return f->radius * (0.2f + 0.8f * fminf(1.0f, f->age / ARC_GROW_TIME));
+}
+
 static void update_arc_hit(SkillFx *f, Boss *b)
 {
-    // One hit, once the crescent has grown most of the way out
-    if (f->hitsLeft <= 0 || f->age < 0.08f) return;
-    f->hitsLeft = 0;
+    // One hit, when the wave front reaches the boss
+    if (f->hitsLeft <= 0) return;
     float a[3], c[3];
     if (!boss_capsule(b, a, c)) return;
     float dx = b->pos[0] - f->pos[0], dz = b->pos[2] - f->pos[2];
     float dist = sqrtf(dx*dx + dz*dz);
-    if (dist - b->capsuleCollider.radius > f->radius) return;
+    if (dist - b->capsuleCollider.radius > arc_radius(f)) return;
     float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
     if (dist > 1e-3f && (dx*fx + dz*fz) / dist < -0.2f) return;    // behind the player
+    f->hitsLeft = 0;
     float contact[3] = { b->pos[0] - dx / (dist + 1e-3f) * b->capsuleCollider.radius,
                          f->pos[1], b->pos[2] - dz / (dist + 1e-3f) * b->capsuleCollider.radius };
     damage_boss(b, f->damage, contact, 2.5f);
@@ -163,10 +171,10 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
     if (f->shape == SKILL_WAVE_BLADE) {
         if (f->age < 0.2f) return;      // still rising out of the ground
         c[0] = f->pos[0]; c[1] = f->pos[1] + 14.0f; c[2] = f->pos[2];
-        r = 8.0f;
+        r = 7.0f;
     } else {
         memcpy(c, f->pos, sizeof(c));
-        r = 9.0f;
+        r = 12.0f;
     }
     if (!sphere_hits_boss(b, c, r, contact)) return;
     damage_boss(b, f->damage, contact, 1.0f);
@@ -289,9 +297,8 @@ static void draw_arc(const SkillFx *f)
     enum { N = 17 };
     float outer[N][3], inner[N][3];
     uint32_t co[N], ci[N];
-    float grow = fminf(1.0f, f->age / 0.12f);
-    float R = f->radius * (0.35f + 0.65f * grow);
-    float a = fade(f, 0.0f, 0.6f);
+    float R = arc_radius(f);
+    float a = fade(f, 0.0f, 0.4f);
     float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
     float rx = fz, rz = -fx;
     // Layer 0: flat crescent on the slash plane; layer 1: a blade-wall standing on its
@@ -345,8 +352,8 @@ static void draw_xwave(const SkillFx *f)
             float t = -1.0f + 2.0f * i / (N - 1);
             float bulge = 1.0f - t * t;
             for (int c = 0; c < 3; c++) {
-                outer[i][c] = f->pos[c] + e[c] * t * 13.0f + d[c] * bulge * 6.0f;
-                inner[i][c] = outer[i][c] - d[c] * bulge * 8.0f;
+                outer[i][c] = f->pos[c] + e[c] * t * 24.0f + d[c] * bulge * 3.0f;
+                inner[i][c] = outer[i][c] - d[c] * bulge * 4.0f;
             }
             co[i] = rgba(235, 250, 255, a);
             ci[i] = rgba(90, 200, 255, a * 0.2f);
@@ -362,9 +369,9 @@ static void draw_blade(const SkillFx *f)
     float d[3], s[3], u[3];
     float flat[3] = { f->vel[0], 0.0f, f->vel[2] };
     dir_basis(flat, d, s, u);
-    float rise = fminf(1.0f, f->age / 0.4f);
+    float rise = fminf(1.0f, f->age / 0.25f);
     float a = fade(f, 0.0f, 0.3f);
-    const float H = 32.0f, BOW = 4.0f, W = 5.0f;
+    const float H = 70.0f, BOW = 2.5f, W = 4.0f;
     float outer[N][3], inner[N][3];
     uint32_t co[N], ci[N];
     for (int i = 0; i < N; i++) {

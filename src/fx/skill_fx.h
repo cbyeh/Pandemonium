@@ -9,7 +9,7 @@
 
 typedef enum {
     SKILL_WAVE_X,       // Moon Blade Dance: two crossed crescents
-    SKILL_WAVE_BLADE,   // Crescent Cleave: tall, slightly curved blade rising out of the ground
+    SKILL_WAVE_BLADE,   // Crescent Cleave: tall, slightly curved light blade rising out of the ground
 } SkillWaveShape;
 
 void skill_fx_init(void);

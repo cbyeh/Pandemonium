@@ -493,9 +493,28 @@ static inline void boss_update_shadow_mat(Boss* boss)
     t3d_mat4fp_from_srt_euler((T3DMat4FP*)boss->shadowMat, shadowScale, shadowRot, shadowPos);
 }
 
+// The D-pad skills hit hard: the fight gets more boss HP while they are enabled
+#define BOSS_BASE_HEALTH         100.0f
+#define BOSS_HEALTH_WITH_SKILLS  200.0f
+
+static inline float boss_target_max_health(void)
+{
+    return character_skills_enabled() ? BOSS_HEALTH_WITH_SKILLS : BOSS_BASE_HEALTH;
+}
+
+/** Follows the Skills setting, keeping the health percentage (it can change mid-fight). */
+static void boss_sync_max_health(Boss* boss)
+{
+    float target = boss_target_max_health();
+    if (boss->maxHealth == target) return;
+    if (boss->maxHealth > 0.0f) boss->health *= target / boss->maxHealth;
+    boss->maxHealth = target;
+}
+
 void boss_update(Boss* boss)
 {
     if (!boss) return;
+    boss_sync_max_health(boss);
 
     float dt = deltaTime;
 
@@ -790,8 +809,8 @@ void boss_init(Boss* boss)
     boss->shadowMat = shadowMat;
 
     boss->name = "Guardian of the Shackled Sun";
-    boss->maxHealth = 100.0f;
-    boss->health = 100.0f;
+    boss->maxHealth = boss_target_max_health();
+    boss->health = boss->maxHealth;
     boss->phaseIndex = 1;
 
     boss->velX = 0.0f;
@@ -903,6 +922,7 @@ void boss_reset(Boss* boss)
     boss->scale[2] = MODEL_SCALE;
 
     boss->state = BOSS_STATE_INTRO;
+    boss->maxHealth = boss_target_max_health();
     boss->health = boss->maxHealth;
     boss->phaseIndex = 1;
 

@@ -325,6 +325,9 @@ bool save_controller_set_active_slot(int slot) {
         return false;
     }
 
+    // Persist pending (debounced) setting changes first: the re-read below would drop them
+    if (s_dirty) (void)blob_write_now();
+
     // Ensure we have a valid blob loaded
     (void)blob_read_or_seed_defaults();
 
