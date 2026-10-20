@@ -1327,16 +1327,17 @@ static void update_skill(float dt)
         break;
 
     case SKILL_CRESCENT_CLEAVE:
-        // After the swing, light blades shoot up one by one, further out each time,
-        // and keep surging outward
+        // After the swing, light blades shoot up one by one close around the player,
+        // then fan out to about the old width
         if (skillStep < CLEAVE_BLADES && skillTime >= CLEAVE_RELEASE + skillStep * CLEAVE_BLADE_GAP) {
             static const float spread[] = { 0.0f, -0.35f, 0.35f, -0.7f, 0.7f };   // CLEAVE_BLADES entries
             float a = yaw + spread[skillStep];
-            float dist = 20.0f + skillStep * 12.0f;
+            float dist = 12.0f;
             float dx = -fm_sinf(a), dz = fm_cosf(a);
             float origin[3] = { character.pos[0] + dx * dist, groundY, character.pos[2] + dz * dist };
-            skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 30.0f, 0.0f, dz * 30.0f },
-                                1.25f, 4, 0.3f, 1.6f, false);   // ~10-15 when 2-3 blades cross the boss
+            // 56/s for 1.6 s: ~100 out, the outer blades ~65 to each side
+            skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 56.0f, 0.0f, dz * 56.0f },
+                                1.6f, 4, 0.3f, 1.6f, false);    // faster: ~3 ticks per blade, ~10-15 a cast
             skill_fx_spawn_burst(origin, a);
             if (skillStep == 0) {
                 screen_shake_set_shake_mag(6.0f);
