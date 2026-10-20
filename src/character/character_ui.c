@@ -404,7 +404,10 @@ void character_ui_draw_c_buttons(void)
     // visible key edges close together.
     int spacing = (int)(keyPx * 0.9f);
     int centerX = marginX + spacing + keyPx / 2;
-    int centerY = SCREEN_HEIGHT - marginY - spacing - keyPx / 2;
+    // Sits above the boss health bar + name plate row (bottom centre), which it
+    // would otherwise overlap on the right key
+    const int bossRowH = 26;
+    int centerY = SCREEN_HEIGHT - marginY - bossRowH - spacing - keyPx / 2;
 
     int leftX  = centerX - spacing, leftY  = centerY;
     int rightX = centerX + spacing, rightY = centerY;
