@@ -41,6 +41,7 @@ static sprite_t *iconZ = NULL;
 static sprite_t *iconStart = NULL;
 static sprite_t *iconStick = NULL;
 static sprite_t *iconCLeft = NULL;
+static sprite_t *iconDpad = NULL;
 
 // Input handling for edge detection
 static bool lastStartPressed = false;
@@ -235,6 +236,7 @@ void menu_controller_init(void)
     iconStart = sprite_load("rom:/buttons/Start.sprite");
     iconStick = sprite_load("rom:/buttons/StickTexture.sprite");
     iconCLeft = sprite_load("rom:/buttons/CLeft.sprite");
+    iconDpad = sprite_load("rom:/buttons/Dpad.sprite");
 }
 
 MenuAction menu_controller_consume_action(void)
@@ -1222,6 +1224,9 @@ void menu_controller_draw(void)
         y += lineHeight + 6;
 
         draw_icon_line(iconCLeft, listX, y, lineHeight, listW, "Move Camera");
+        y += lineHeight + 6;
+
+        draw_icon_line(iconDpad, listX, y, lineHeight, listW, "Skills / Potion");
     } else if (currentMenu == MENU_CREDITS) {
         rdpq_text_printf(&(rdpq_textparms_t){
             .align = ALIGN_CENTER,
@@ -1299,6 +1304,11 @@ void menu_controller_free(void)
     if (iconCLeft) {
         sprite_free(iconCLeft);
         iconCLeft = NULL;
+    }
+
+    if (iconDpad) {
+        sprite_free(iconDpad);
+        iconDpad = NULL;
     }
 }
 

@@ -35,6 +35,16 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     if (frame == 30) video_player_request("rom:/video.h264");
     return;
 #endif
+#ifdef HLE_TEST_SKILLS
+    // A only (Start would pause), then each skill once: Halfmoon, lock on, Cleave, Moon Blade Dance
+    if (frame > 200 && frame < 900 && frame % 60 == 0) { pressed->a = 1; in->btn.a = 1; }
+    if (frame == 990) pressed->d_right = 1;
+    if (frame == 1000) { pressed->z = 1; in->btn.z = 1; }
+    if (frame == 1200) pressed->d_down = 1;
+    if (frame > 1450 && frame < 1550) in->stick_x = -80;
+    if (frame == 1460) pressed->d_up = 1;
+    return;
+#endif
     if (frame > 200 && frame < 2000 && frame % 60 == 0) {
         pressed->a = 1; in->btn.a = 1;
         pressed->start = 1; in->btn.start = 1;

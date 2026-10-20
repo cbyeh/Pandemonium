@@ -54,6 +54,7 @@
 #include "systems/particle_system.h"
 #include "fx/dust_particles_fx.h"
 #include "fx/blood_particles_fx.h"
+#include "fx/skill_fx.h"
 //#include "boulder_hazard.h" // close-range ground-boulder hazard
 
 // Forward declaration: scene_init() and scene_restart() start the Guardian intro.
@@ -592,6 +593,7 @@ void scene_init(void)
     particle_system_init();
     dust_particles_fx_init();
     blood_particles_fx_init();
+    skill_fx_init();
 
     character_ui_init();
     boss_ui_init();
@@ -748,6 +750,7 @@ void scene_reset(void)
 
     dust_particles_fx_reset();
     blood_particles_fx_reset();
+    skill_fx_reset();
     boss_ground_crush_reset();
 }
 
@@ -1320,6 +1323,7 @@ void scene_update(void) {
         character_update();
         // Update character transform after constraint
         character_update_position();
+        skill_fx_update(deltaTime);
 
         boss_ground_crush_update(deltaTime);
 
@@ -1430,9 +1434,9 @@ void scene_update(void) {
     bool cLeftJustPressed = cLeftHeld && !lastCLeftHeld;
     bool cRightJustPressed = cRightHeld && !lastCRightHeld;
 
-    // C-left is reserved for the health potion (when not holding Z for lock-on cycling).
+    // D-left is the health potion (the other D-pad directions are skills, see character.c).
     // Avoid consuming during cutscenes / dialog sequences.
-    if (cutsceneState == CUTSCENE_NONE && cLeftJustPressed && !zHeld) {
+    if (cutsceneState == CUTSCENE_NONE && btn.d_left) {
         (void)character_try_use_health_potion();
     }
 
@@ -1775,6 +1779,9 @@ void scene_draw(T3DViewport *viewport)
     // Blood splatters from boss hits (drawn after dust so red reads on top of puffs)
     blood_particles_fx_update(deltaTime);
     blood_particles_fx_draw(viewport);
+
+    // Player skill waves, arches, pillars and bursts
+    skill_fx_draw();
 
     // ===== DRAW 2D =====
     // Post-boss interaction prompt ("A") above the defeated boss when close enough to interact

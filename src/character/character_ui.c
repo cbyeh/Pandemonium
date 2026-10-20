@@ -19,15 +19,15 @@ typedef struct {
     float gainHold;
 } CharacterUiBarTrailState;
 
-static sprite_t* s_cUpSprite = NULL;
-static sprite_t* s_cDownSprite = NULL;
-static sprite_t* s_cLeftSprite = NULL;
-static sprite_t* s_cRightSprite = NULL;
+static sprite_t* s_keySprite = NULL;
+static sprite_t* s_skillMoonBladeSprite = NULL;
+static sprite_t* s_skillHalfmoonSprite = NULL;
+static sprite_t* s_skillCleaveSprite = NULL;
 
-static surface_t s_cUpSurf = {0};
-static surface_t s_cDownSurf = {0};
-static surface_t s_cLeftSurf = {0};
-static surface_t s_cRightSurf = {0};
+static surface_t s_keySurf = {0};
+static surface_t s_skillMoonBladeSurf = {0};
+static surface_t s_skillHalfmoonSurf = {0};
+static surface_t s_skillCleaveSurf = {0};
 
 static sprite_t* s_healthBottleSprite = NULL;
 static surface_t s_healthBottleSurf = {0};
@@ -155,12 +155,11 @@ void character_ui_init(void)
     character_ui_reset_bar_trail(&s_playerHealthBarState, 1.0f);
     character_ui_reset_bar_trail(&s_playerStaminaBarState, 1.0f);
 
-    // C-left uses the empty variant because the health potion graphic is drawn
-    // over it. The other three show their arrow icon/unassigned slot.
-    character_ui_load_sprite(&s_cUpSprite,    &s_cUpSurf,    "rom:/buttons/CUp.sprite");
-    character_ui_load_sprite(&s_cDownSprite,  &s_cDownSurf,  "rom:/buttons/CDown.sprite");
-    character_ui_load_sprite(&s_cLeftSprite,  &s_cLeftSurf,  "rom:/buttons/CButton_empty.sprite");
-    character_ui_load_sprite(&s_cRightSprite, &s_cRightSurf, "rom:/buttons/CRight.sprite");
+    // D-pad keys (blank) with the skill icons and the potion drawn over them.
+    character_ui_load_sprite(&s_keySprite, &s_keySurf, "rom:/ui/skills/dpad_key.rgba16.sprite");
+    character_ui_load_sprite(&s_skillMoonBladeSprite, &s_skillMoonBladeSurf, "rom:/ui/skills/skill_moonblade.rgba16.sprite");
+    character_ui_load_sprite(&s_skillHalfmoonSprite, &s_skillHalfmoonSurf, "rom:/ui/skills/skill_halfmoon.rgba16.sprite");
+    character_ui_load_sprite(&s_skillCleaveSprite, &s_skillCleaveSurf, "rom:/ui/skills/skill_cleave.rgba16.sprite");
 
     // Health potion bottle icon.
     character_ui_load_sprite(&s_healthBottleSprite, &s_healthBottleSurf, "rom:/healthBottle.ia8.sprite");
@@ -168,10 +167,10 @@ void character_ui_init(void)
 
 void character_ui_cleanup(void)
 {
-    character_ui_free_sprite(&s_cUpSprite,    &s_cUpSurf);
-    character_ui_free_sprite(&s_cDownSprite,  &s_cDownSurf);
-    character_ui_free_sprite(&s_cLeftSprite,  &s_cLeftSurf);
-    character_ui_free_sprite(&s_cRightSprite, &s_cRightSurf);
+    character_ui_free_sprite(&s_keySprite, &s_keySurf);
+    character_ui_free_sprite(&s_skillMoonBladeSprite, &s_skillMoonBladeSurf);
+    character_ui_free_sprite(&s_skillHalfmoonSprite, &s_skillHalfmoonSurf);
+    character_ui_free_sprite(&s_skillCleaveSprite, &s_skillCleaveSurf);
 
     character_ui_free_sprite(&s_healthBottleSprite, &s_healthBottleSurf);
 
@@ -349,93 +348,81 @@ void character_ui_draw_stamina_bar(float ratio)
     rdpq_fill_rectangle(right - 1, top, right, bottom);
 }
 
+static void character_ui_draw_icon(sprite_t *sprite, const surface_t *surf, int x, int y, float px)
+{
+    if (!sprite || surf->width <= 0) return;
+    float scale = px / (float)((surf->width > surf->height) ? surf->width : surf->height);
+    rdpq_sprite_blit(sprite, x, y, &(rdpq_blitparms_t){
+        .scale_x = scale, .scale_y = scale, .cx = surf->width / 2, .cy = surf->height / 2,
+    });
+}
+
+/** Skill slot: icon, darkened from the top while on cooldown, plus seconds left. */
+static void character_ui_draw_skill(CharacterSkill skill, sprite_t *icon, const surface_t *iconSurf,
+                                    int x, int y, int keyPx)
+{
+    rdpq_set_mode_standard();
+    rdpq_mode_alphacompare(1);
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+    rdpq_mode_filter(FILTER_BILINEAR);
+    character_ui_draw_icon(icon, iconSurf, x, y, keyPx * 0.75f);
+
+    float ratio = character_get_skill_cooldown_ratio(skill);
+    bool affordable = character_can_afford_skill(skill);
+    if (ratio <= 0.0f && affordable) return;
+
+    // Visible key face is ~80% of the sprite
+    int half = (int)(keyPx * 0.40f);
+    int top = y - half;
+    int shadeH = (ratio > 0.0f) ? (int)(2 * half * ratio + 0.5f) : 2 * half;
+    rdpq_set_mode_standard();
+    rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+    rdpq_set_prim_color(RGBA32(0, 0, 0, ratio > 0.0f ? 170 : 110));
+    rdpq_fill_rectangle(x - half, top, x + half, top + shadeH);
+
+    float secs = character_get_skill_cooldown(skill);
+    if (secs > 0.0f) {
+        rdpq_text_printf(&(rdpq_textparms_t){ .width = 2 * half, .align = ALIGN_CENTER },
+                         FONT_UNBALANCED, x - half, y + 4, "%d", (int)ceilf(secs));
+    }
+}
+
 void character_ui_draw_c_buttons(void)
 {
-    // Bottom-left C-button diamond.
+    // Bottom-left D-pad diamond: skills on up/right/down, health potion on left.
     // This should be called by scene after the 3D/world pass, with the rest of
     // the 2D UI.
-    if (!s_cLeftSprite) return;
+    if (!s_keySprite) return;
 
-    int w = (s_cLeftSurf.width > 0) ? s_cLeftSurf.width : 24;
-    int h = (s_cLeftSurf.height > 0) ? s_cLeftSurf.height : 24;
-
-    // Target on-screen button size. Source sprites are currently 64x64.
-    const float targetButtonPx = 20.0f;
-    int srcMax = (w > h) ? w : h;
-
-    float cScale = (srcMax > 0)
-        ? (targetButtonPx / (float)srcMax)
-        : 1.0f;
-
-    int drawW = (int)((float)w * cScale);
-    int drawH = (int)((float)h * cScale);
-
+    // Target on-screen key size. Source sprites are 64x64.
+    const int keyPx = 20;
     const int marginX = ui_safe_margin_x();
     const int marginY = ui_safe_margin_y();
 
-    // Diamond spacing. The source sprites have transparent padding, so this
-    // keeps the visible button edges closer together.
-    const float spacingFrac = 0.7f;
-    int spacingX = (int)((float)drawW * spacingFrac);
-    int spacingY = (int)((float)drawH * spacingFrac);
+    // Diamond spacing: the sprites have transparent padding, so this keeps the
+    // visible key edges close together.
+    int spacing = (int)(keyPx * 0.9f);
+    int centerX = marginX + spacing + keyPx / 2;
+    int centerY = SCREEN_HEIGHT - marginY - spacing - keyPx / 2;
 
-    // Diamond center. Enough room from safe bounds that C-left and C-down sit
-    // near the bottom-left corner.
-    int centerX = marginX + spacingX + (drawW / 2);
-    int centerY = SCREEN_HEIGHT - marginY - spacingY - (drawH / 2);
-
-    int leftX  = centerX - spacingX;
-    int leftY  = centerY;
-
-    int rightX = centerX + spacingX;
-    int rightY = centerY;
-
-    int upX    = centerX;
-    int upY    = centerY - spacingY;
-
-    int downX  = centerX;
-    int downY  = centerY + spacingY;
+    int leftX  = centerX - spacing, leftY  = centerY;
+    int rightX = centerX + spacing, rightY = centerY;
+    int upX    = centerX,           upY    = centerY - spacing;
+    int downX  = centerX,           downY  = centerY + spacing;
 
     rdpq_set_mode_standard();
     rdpq_mode_alphacompare(0);
     rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
     rdpq_mode_filter(FILTER_BILINEAR);
+    character_ui_draw_icon(s_keySprite, &s_keySurf, upX, upY, keyPx);
+    character_ui_draw_icon(s_keySprite, &s_keySurf, rightX, rightY, keyPx);
+    character_ui_draw_icon(s_keySprite, &s_keySurf, downX, downY, keyPx);
+    character_ui_draw_icon(s_keySprite, &s_keySurf, leftX, leftY, keyPx);
 
-    if (s_cUpSprite && s_cUpSurf.width > 0 && s_cUpSurf.height > 0) {
-        rdpq_sprite_blit(s_cUpSprite, upX, upY, &(rdpq_blitparms_t){
-            .scale_x = cScale,
-            .scale_y = cScale,
-            .cx = s_cUpSurf.width / 2,
-            .cy = s_cUpSurf.height / 2,
-        });
-    }
-
-    if (s_cDownSprite && s_cDownSurf.width > 0 && s_cDownSurf.height > 0) {
-        rdpq_sprite_blit(s_cDownSprite, downX, downY, &(rdpq_blitparms_t){
-            .scale_x = cScale,
-            .scale_y = cScale,
-            .cx = s_cDownSurf.width / 2,
-            .cy = s_cDownSurf.height / 2,
-        });
-    }
-
-    if (s_cRightSprite && s_cRightSurf.width > 0 && s_cRightSurf.height > 0) {
-        rdpq_sprite_blit(s_cRightSprite, rightX, rightY, &(rdpq_blitparms_t){
-            .scale_x = cScale,
-            .scale_y = cScale,
-            .cx = s_cRightSurf.width / 2,
-            .cy = s_cRightSurf.height / 2,
-        });
-    }
-
-    if (s_cLeftSprite && s_cLeftSurf.width > 0 && s_cLeftSurf.height > 0) {
-        rdpq_sprite_blit(s_cLeftSprite, leftX, leftY, &(rdpq_blitparms_t){
-            .scale_x = cScale,
-            .scale_y = cScale,
-            .cx = s_cLeftSurf.width / 2,
-            .cy = s_cLeftSurf.height / 2,
-        });
-    }
+    character_ui_draw_skill(SKILL_MOON_BLADE_DANCE, s_skillMoonBladeSprite, &s_skillMoonBladeSurf, upX, upY, keyPx);
+    character_ui_draw_skill(SKILL_HALFMOON_SLASH, s_skillHalfmoonSprite, &s_skillHalfmoonSurf, rightX, rightY, keyPx);
+    character_ui_draw_skill(SKILL_CRESCENT_CLEAVE, s_skillCleaveSprite, &s_skillCleaveSurf, downX, downY, keyPx);
 
     // Only show the potion bottle + count while the player has potions.
     int potionCount = character_get_health_potion_count();
@@ -445,46 +432,25 @@ void character_ui_draw_c_buttons(void)
     }
 
     if (s_healthBottleSprite && s_healthBottleSurf.width > 0 && s_healthBottleSurf.height > 0) {
-        float target = (float)((drawW < drawH) ? drawW : drawH) * 0.80f;
-        float denom = (float)(
-            (s_healthBottleSurf.width > s_healthBottleSurf.height)
-                ? s_healthBottleSurf.width
-                : s_healthBottleSurf.height
-        );
-
-        float bottleScale = (denom > 0.0f)
-            ? (target / denom)
-            : 1.0f;
-
-        if (bottleScale < 0.05f) bottleScale = 0.05f;
-        if (bottleScale > 4.0f)  bottleScale = 4.0f;
-
-        // Tint the IA8 bottle sprite dark red so it contrasts against the
-        // yellow button.
+        // Tint the IA8 bottle sprite red so it contrasts against the grey key.
         rdpq_set_mode_standard();
         rdpq_mode_alphacompare(1);
         rdpq_mode_combiner(RDPQ_COMBINER_TEX_FLAT);
         rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
         rdpq_mode_filter(FILTER_BILINEAR);
-        rdpq_set_prim_color(RGBA32(180, 30, 30, 255));
-
-        rdpq_sprite_blit(s_healthBottleSprite, leftX, leftY, &(rdpq_blitparms_t){
-            .scale_x = bottleScale,
-            .scale_y = bottleScale,
-            .cx = s_healthBottleSurf.width / 2,
-            .cy = s_healthBottleSurf.height / 2,
-        });
+        rdpq_set_prim_color(RGBA32(220, 50, 50, 255));
+        character_ui_draw_icon(s_healthBottleSprite, &s_healthBottleSurf, leftX, leftY, keyPx * 0.65f);
     }
 
-    // Potion count.
+    // Potion count, in the gap at the diamond's centre.
     {
-        const int textX = leftX + (drawW / 2) + 2;
+        const int textX = leftX + keyPx / 2 - 1;
         const int textY = leftY + 4;
 
         rdpq_set_mode_standard();
         rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
         rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-        rdpq_set_prim_color(RGBA32(0, 0, 0, 255));
+        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
 
         rdpq_text_printf(NULL, FONT_UNBALANCED, textX, textY, "%d", potionCount);
     }
