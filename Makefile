@@ -18,9 +18,8 @@ INCDIR = include
 ASSDIR = assets
 OBJDIR = $(BUILD_DIR)
 ifeq ($(HLE),1)
-# Separate assets: the HLE mixer needs uncompressed audio
+# Separate assets: the HLE build ships a CPU-decodable video (see below)
 FILESYSTEMDIR = $(BUILD_DIR)/filesystem
-WAV64_FLAGS = --wav-compress 0
 else
 FILESYSTEMDIR = filesystem
 endif
