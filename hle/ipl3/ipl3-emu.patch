@@ -1,0 +1,50 @@
+--- a/boot/ipl3.c	2026-10-19 16:55:16
++++ b/boot/ipl3.c	2026-10-19 16:55:16
+@@ -275,9 +275,13 @@
+     int memsize;
+     bool bbplayer = (*MI_VERSION & 0xF0) == 0xB0;
+ 
+-    if (!bbplayer && *RI_SELECT == 0) {
++    memsize = 0;
++    if (!bbplayer && *RI_SELECT == 0)
+         memsize = rdram_init(mem_bank_init);
+-    } else {
++
++    // Warm boot, iQue, or an emulator whose RDRAM register emulation only covers
++    // Nintendo's IPL3 (rdram_init finds no chips): probe memory directly.
++    if (memsize == 0) {
+         if (bbplayer) {
+             // iQue doesn't have a IPL2 and the OS provides boot flags already in lowmem.
+             // Read the ones we need for our bootflags.
+@@ -335,7 +339,9 @@
+         // with this even if Everdrive itself doesn't use this IPL3 (but
+         // might boot a game that does, and that game shouldn't clear
+         // 0x80000318).
+-        rsp_bzero_init(bbplayer);
++        // Clear IMEM with the CPU: emulators mirror RDRAM above 8 MiB instead of
++        // returning zeros, so the DMA trick would fill memory with garbage.
++        rsp_bzero_init(true);
+         rsp_bzero_async(0xA0000400, memsize-0x400-TOTAL_RESERVED_SIZE);
+     }
+ 
+@@ -349,7 +355,8 @@
+     debugf("stage2 ", stage2_start, stage2_size);
+ 
+     void *rdram_stage2 = LOADER_BASE(memsize, stage2_size);
+-    *PI_DRAM_ADDR = (uint32_t)rdram_stage2;
++    // Physical address: some emulators (e.g. the 2019 Mupen64Plus core in Delta) don't mask it
++    *PI_DRAM_ADDR = (uint32_t)rdram_stage2 & 0x1FFFFFFF;
+     *PI_CART_ADDR = (uint32_t)stage2_start - 0xA0000000;
+     while (*SP_DMA_BUSY) {}         // Make sure RDRAM clearing is finished before reading data
+     *PI_WR_LEN = stage2_size-1;
+--- a/boot/loader.c	2026-10-19 16:55:16
++++ b/boot/loader.c	2026-10-19 16:55:16
+@@ -53,7 +53,7 @@
+ static void pi_read_async(void *dram_addr, uint32_t cart_addr, uint32_t len)
+ {
+     while (*PI_STATUS & (PI_STATUS_DMA_BUSY | PI_STATUS_IO_BUSY)) {}
+-    *PI_DRAM_ADDR = (uint32_t)dram_addr;
++    *PI_DRAM_ADDR = (uint32_t)dram_addr & 0x1FFFFFFF;  // physical (see ipl3.c)
+     *PI_CART_ADDR = cart_addr;
+     *PI_WR_LEN = len-1;
+ }

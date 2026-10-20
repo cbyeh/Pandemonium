@@ -35,6 +35,10 @@ void joypad_update(void)
     joypad = joypad_get_inputs(JOYPAD_PORT_1);
     btn = joypad_get_buttons_pressed(JOYPAD_PORT_1);
     rel = joypad_get_buttons_released(JOYPAD_PORT_1);
+#ifdef HLE_AUTOPLAY
+    extern void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed);
+    hle_autoplay(&joypad, &btn);
+#endif
     if(joypad.stick_x < 10 && joypad.stick_x > -10)joypad.stick_x = 0;
     if(joypad.stick_y < 10 && joypad.stick_y > -10)joypad.stick_y = 0;
 

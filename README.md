@@ -58,6 +58,13 @@ Hold Z trigger + left/right on Cpad: Change z target
 - Install Tiny3D (main)
 - run make file
 
+### Emulator build (Delta, Mupen64Plus HLE)
+`make HLE=1` builds `pandemonium-hle.z64` for emulators that only emulate the RSP at a high level (Delta on iOS, Mupen64Plus with GLideN64 + rsp-hle). These can't run libdragon's RSP microcode, so this build replaces it with CPU code in `hle/`. Graphics become F3DEX2 display lists that the emulator's graphics plugin draws, audio is mixed on the CPU, and the intro video is re-encoded to a CPU-decodable format.
+
+- Needs `ffmpeg` on the PATH (to re-encode the video).
+- `hle/` is tied to the libdragon preview commit in `hle/internal/LIBDRAGON_COMMIT` and Tiny3D `6f5ac0b`; update it if you update either.
+- Not for real hardware or accurate (LLE) emulators: use the normal `make` ROM for those.
+
 ## SummerCart64
 
 Deploy to a [SummerCart64](https://github.com/Polprzewodnikowy/SummerCart64) over USB using [sc64deployer](https://github.com/Polprzewodnikowy/SummerCart64/releases). Connect the cart in developer / USB upload mode so `sc64deployer list` succeeds.

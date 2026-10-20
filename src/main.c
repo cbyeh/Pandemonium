@@ -20,6 +20,10 @@
 
 int main(void)
 {
+#ifdef HLE_BUILD
+    debug_init_isviewer();
+    debugf("[hle] main\n");
+#endif
     if (DEV_MODE)
     {
         dev_tools_init();

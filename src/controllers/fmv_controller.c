@@ -21,6 +21,9 @@
 #include "audio_controller.h"
 #include "scene_controller.h"
 #include "../managers/cutscene_manager.h"
+#ifdef HLE_BUILD
+#include "hle_video.h"
+#endif
 
 /*
  * Decoded-picture buffer sizing (see libdragon h264bsdInitDpb): dpbSize includes this many
@@ -51,6 +54,7 @@ static void video_player_fmv_osd(void *osd_ctx, int frame_idx, float time_sec, f
     }
 }
 
+#ifndef HLE_BUILD
 /*
  * Same behavior as libdragon fmv_play(), but with a lower H264 decode buffer count
  * for real hardware.
@@ -307,6 +311,7 @@ static void pandemonium_fmv_play(const char *video_fn, const fmv_parms_t *parms)
     video_close(video);
     display_set_fps_limit(0);
 }
+#endif
 
 // ----------------------------
 // Internal state
@@ -314,6 +319,7 @@ static void pandemonium_fmv_play(const char *video_fn, const fmv_parms_t *parms)
 static bool video_pending = false;
 static const char *video_path = NULL;
 
+#ifndef HLE_BUILD
 static bool s_video_inited = false;
 
 static void video_player_init_once(void)
@@ -329,6 +335,7 @@ static void video_player_init_once(void)
     video_register_codec(&h264_codec);
     //video_register_codec(&mpeg1_codec);
 }
+#endif
 
 static void on_video_finished(void)
 {
@@ -380,12 +387,19 @@ bool video_player_pump_and_play(T3DViewport *viewport)
     audio_stop_music();
     mixer_ch_set_vol(CHANNEL_MUSIC, 1.0f, 1.0f);
 
+#ifdef HLE_BUILD
+    // H.264 needs the RSP: play the CPU-decodable re-encode instead.
+    hle_fmv_play(path, &(fmv_parms_t){
+        .osd_callback = video_player_fmv_osd,
+    });
+#else
     video_player_init_once();
 
     // Blocking playback on the current display (no extra display alloc/close).
     pandemonium_fmv_play(path, &(fmv_parms_t){
         .osd_callback = video_player_fmv_osd,
     });
+#endif
 
     // Safe queue drain after FMV finishes.
     rspq_wait();
