@@ -119,6 +119,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         return;
     }
     int t = frame - start;
+#ifdef HLE_TEST_FREEZE_BOSS
+    if (t < 40) in->btn.c_left = 1;     // orbit the camera to a side view
+#endif
     if (t == 150) pressed->d_right = 1;
     if (t == 160) { pressed->z = 1; in->btn.z = 1; }
     if (t == 360) pressed->d_down = 1;

@@ -33,6 +33,8 @@ typedef enum {
     ANIM_WALK_BACK,
     ANIM_RUN_BACK,
     ANIM_DEATH,
+    ANIM_SKILL_CLEAVE,      // built by tools/compose_anims.py
+    ANIM_SKILL_HALFMOON,
     ANIM_COUNT,
 } CharacterAnimState;
 

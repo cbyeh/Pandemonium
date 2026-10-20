@@ -515,6 +515,9 @@ void boss_update(Boss* boss)
 {
     if (!boss) return;
     boss_sync_max_health(boss);
+#ifdef HLE_TEST_FREEZE_BOSS
+    if (boss->mode == BOSS_MODE_COMBAT) return;     // test aid: keep the boss out of the way
+#endif
 
     float dt = deltaTime;
 

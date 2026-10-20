@@ -1207,7 +1207,7 @@ static const float HALFMOON_END = 3.2f;
 static const float HALFMOON_RADIUS = 85.0f;
 static const float HALFMOON_DAMAGE = 45.0f;
 static const float HALFMOON_CHARGE_DAMAGE_MULT = 1.5f;
-static const float CLEAVE_RELEASE = 0.8f;          // interruptible wind-up
+static const float CLEAVE_RELEASE = 0.85f;         // interruptible wind-up (the SkillCleave upswing)
 static const float CLEAVE_END = 1.7f;
 static const int   CLEAVE_BLADES = 5;
 static const float CLEAVE_BLADE_GAP = 0.1f;
@@ -1504,8 +1504,8 @@ static inline int get_target_animation(CharacterState state, float speedRatio)
     if (state == CHAR_STATE_SKILL) {
         switch (activeSkill) {
             case SKILL_MOON_BLADE_DANCE: return skillAnim;
-            case SKILL_HALFMOON_SLASH:   return ANIM_ATTACK_CHARGED;
-            default:                     return ANIM_ATTACK4;
+            case SKILL_HALFMOON_SLASH:   return ANIM_SKILL_HALFMOON;
+            default:                     return ANIM_SKILL_CLEAVE;
         }
     }
 
@@ -2457,8 +2457,6 @@ static inline void update_animations(float speedRatio, CharacterState state, flo
             }
         } else if (state == CHAR_STATE_ATTACKING_STRONG) {
             animSpeed = 0.8f;
-        } else if (state == CHAR_STATE_SKILL && activeSkill == SKILL_HALFMOON_SLASH && skillStep == 0) {
-            animSpeed = 0.25f;     // slow wind-up so the swing lands on the release
         } else if (state == CHAR_STATE_SKILL && activeSkill == SKILL_MOON_BLADE_DANCE && skillStep > 0) {
             animSpeed = 1.6f;      // swings fit the gap between waves
         } else if (state == CHAR_STATE_ROLLING) {
@@ -2526,7 +2524,9 @@ void character_init(void)
         "AttackCharged",
         "WalkBackwards",
         "RunBackwards",
-        "Death"
+        "Death",
+        "SkillCleave",
+        "SkillHalfmoon",
     };
 
     const bool animationsLooping[] = {
@@ -2552,7 +2552,9 @@ void character_init(void)
         false,  // AttackCharged
         true,   // WalkBackwards
         true,   // RunBackwards
-        false   // Death
+        false,  // Death
+        false,  // SkillCleave
+        false,  // SkillHalfmoon
     };
 
     T3DAnim** animations = malloc_uncached(animationCount * sizeof(T3DAnim*));
