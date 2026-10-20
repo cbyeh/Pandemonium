@@ -1314,7 +1314,7 @@ static void skill_fire_moon_blade(void)
     float len = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
     if (len < 1.0f) len = 1.0f;
     float vel[3] = { d[0] / len * MBD_WAVE_SPEED, d[1] / len * MBD_WAVE_SPEED, d[2] / len * MBD_WAVE_SPEED };
-    skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, 2.5f, 1, 0.0f, len / MBD_WAVE_SPEED,   // 5 waves ~ one strong attack
+    skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, 1.5f, 1, 0.0f, len / MBD_WAVE_SPEED,   // 5 waves: 7.5, mostly for the dodge
                         skillStep == MBD_WAVES - 1);
     character_play_swing();
 
@@ -1379,7 +1379,7 @@ static void update_skill(float dt)
             float dx = -fm_sinf(a), dz = fm_cosf(a);
             float origin[3] = { character.pos[0] + dx * dist, groundY, character.pos[2] + dz * dist };
             skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 30.0f, 0.0f, dz * 30.0f },
-                                1.0f, 4, 0.3f, 1.6f, false);
+                                1.5f, 4, 0.3f, 1.6f, false);
             skill_fx_spawn_burst(origin, a);
             if (skillStep == 0) {
                 screen_shake_set_shake_mag(6.0f);
