@@ -87,14 +87,15 @@ static int count_printable_glyphs(const char* str)
 
 float dialog_controller_type_time(const char* text)
 {
+    // Mirrors dialog_controller_update: markers and spaces are free, '~' is a pause
     float speed = FAST_SPEED, t = 0.0f;     // dialog_controller_speak starts fast
     for (const char *c = text; c && *c; c++) {
         switch (*c) {
             case '<': speed = SLOW_SPEED; break;
             case '^': speed = NORMAL_SPEED; break;
             case '>': speed = FAST_SPEED; break;
-            case '~': speed = BREATH_SPEED; break;
-            case '@': break;
+            case '~': t += BREATH_SPEED; break;
+            case '@': case ' ': case '\n': break;
             default:  t += speed; break;
         }
     }
@@ -212,34 +213,13 @@ void dialog_controller_draw_dialog(bool isVertical, int x, int y, int width, int
     ) {
         char c = dialogText[src_index];
 
-        if (c == '<') {
-            currentSpeed = SLOW_SPEED;
-            src_index++;
-            continue;
-        } else if (c == '^') {
-            currentSpeed = NORMAL_SPEED;
-            src_index++;
-            continue;
-        } else if (c == '>') {
-            currentSpeed = FAST_SPEED;
-            src_index++;
-            continue;
-        } else if (c == '~') {
-            currentSpeed = BREATH_SPEED;
-            src_index++;
-            continue;
-        } else if (c == '@') {
-            src_index++;
-            continue;
-        }
-
-        int char_len = 1;
-
-        for (int i = 0; i < char_len && dst_index < MAX_TEXT_LENGTH - 1; i++) {
-            visibleText[dst_index++] = dialogText[src_index++];
-        }
-
+        // visibleCharacters counts the raw text, markers included (see dialog_controller_update)
         chars_copied++;
+        if (c == '<' || c == '^' || c == '>' || c == '~' || c == '@') {
+            src_index++;
+            continue;
+        }
+        visibleText[dst_index++] = dialogText[src_index++];
     }
 
     visibleText[dst_index] = '\0';
@@ -273,21 +253,25 @@ void dialog_controller_update(void)
     maxCharacters = strlen(dialogText);
 
     if (visibleCharacters < maxCharacters) {
+        // Types by elapsed time, several characters a frame if need be, so the pace (and
+        // dialog_controller_type_time) holds at any frame rate
         dialogTimer += deltaTime;
-
-        char c = dialogText[visibleCharacters];
-
-        if (c == ' ' || c == '\n') {
-            currentWordIndex++;
+        while (visibleCharacters < maxCharacters) {
+            char c = dialogText[visibleCharacters];
+            if (c == '<') currentSpeed = SLOW_SPEED;
+            else if (c == '^') currentSpeed = NORMAL_SPEED;
+            else if (c == '>') currentSpeed = FAST_SPEED;
+            else if (c == '~') dialogTimer -= BREATH_SPEED;     // a pause
+            else if (c == ' ' || c == '\n') currentWordIndex++;
+            else if (c != '@') {
+                if (dialogTimer < currentSpeed) break;
+                dialogTimer -= currentSpeed;
+            }
             visibleCharacters++;
-            dialogTimer = 0.0f;
-            return;
         }
-
-        if (dialogTimer >= currentSpeed) {
-            dialogTimer = 0.0f;
-            visibleCharacters++;
-        }
+#ifdef HLE_TEST_ENDING
+        if (visibleCharacters >= maxCharacters) debugf("[dlg] typed out at %lu ms\n", (unsigned long)get_ticks_ms());
+#endif
     }
 }
 

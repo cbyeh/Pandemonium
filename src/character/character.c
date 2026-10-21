@@ -1465,6 +1465,7 @@ static inline int get_target_animation(CharacterState state, float speedRatio)
     if (state == CHAR_STATE_DEAD) return ANIM_DEATH;
     if (state == CHAR_STATE_TITLE_IDLE) return ANIM_IDLE_TITLE;
     if (state == CHAR_STATE_FOG_WALK) return ANIM_FOG_OF_WAR;
+    if (state == CHAR_STATE_CINE_WALK) return ANIM_WALK;
     if (state == CHAR_STATE_KNOCKDOWN) return ANIM_KNOCKDOWN;
     if (state == CHAR_STATE_ROLLING) return ANIM_ROLL;
     if (state == CHAR_STATE_SKILL) {
@@ -1561,8 +1562,8 @@ void character_set_state(CharacterState state)
         movementVelocityX = 0.0f;
         movementVelocityZ = 0.0f;
         currentSpeed = 0.0f;
-    } else if (state == CHAR_STATE_FOG_WALK) {
-        walkThroughFog = true;
+    } else if (state == CHAR_STATE_FOG_WALK || state == CHAR_STATE_CINE_WALK) {
+        walkThroughFog = state == CHAR_STATE_FOG_WALK;
         currentSpeed = 1.0f;
     } else if (state == CHAR_STATE_DEAD) {
         movementVelocityX = 0.0f;
@@ -1605,7 +1606,8 @@ void character_update_cinematic(void)
         movementVelocityX = 0.0f;
         movementVelocityZ = 0.0f;
         currentSpeed = 0.0f;
-    } else if (characterState == CHAR_STATE_TITLE_IDLE) {
+    } else if (characterState == CHAR_STATE_TITLE_IDLE || characterState == CHAR_STATE_NORMAL) {
+        // no input in a cutscene: whatever walk or run it came in with settles to idle
         apply_friction(deltaTime, 1.0f);
         update_current_speed(0.0f, deltaTime);
     }
@@ -2600,7 +2602,8 @@ void character_update(void)
 {
     if (characterState == CHAR_STATE_DEAD ||
         characterState == CHAR_STATE_TITLE_IDLE ||
-        characterState == CHAR_STATE_FOG_WALK) {
+        characterState == CHAR_STATE_FOG_WALK ||
+        characterState == CHAR_STATE_CINE_WALK) {
         if (airborne) update_vertical(deltaTime);   // e.g. killed mid-jump: still fall
         character_update_cinematic();
         return;
@@ -3248,6 +3251,8 @@ void character_apply_damage(float amount)
 {
     if (amount <= 0.0f) return;
     if (character_is_invulnerable()) return;
+    // Once the boss has fallen, whatever is still in flight is harmless
+    { Boss *b = boss_get_instance(); if (b && b->state == BOSS_STATE_DEAD) return; }
 #ifdef HLE_TEST_DUMMY
     { extern float hle_dummy_damage; extern int hle_dummy_hits; hle_dummy_damage += amount; hle_dummy_hits++; return; }   // test aid: count hits, never hurt
 #endif
@@ -3259,6 +3264,10 @@ void character_apply_damage(float amount)
 
     character.health -= amount;
     if (character.health < 0.0f) character.health = 0.0f;
+#ifdef HLE_TEST_UNBOUND   // test aid: log every hit, never die
+    debugf("[dmg] %.0f -> hp %.0f (state %d)\n", (double)amount, (double)character.health, characterState);
+    if (character.health < 60.0f) character.health = character.maxHealth;
+#endif
 
     joypad_rumble_pulse_seconds(1.0f);
 

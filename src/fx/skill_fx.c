@@ -52,6 +52,7 @@ static SkillFx* fx_alloc(FxType type)
 
 void skill_fx_init(void) { skill_fx_reset(); }
 void skill_fx_reset(void) { memset(s_fx, 0, sizeof(s_fx)); }
+void skill_fx_clear_hostile(void) { for (int i = 0; i < SKILL_FX_MAX; i++) if (s_fx[i].hostile) s_fx[i].type = FX_NONE; }
 
 void skill_fx_spawn_arc(const float pos[3], float yaw, float radius, float damage)
 {

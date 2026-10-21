@@ -88,7 +88,12 @@ static const float WALL_THICKNESS = 10.0f;
 
 static const float DMG_BODY     = 35.0f;
 static const float DMG_WALL     = 12.0f;
-static const float HIT_COOLDOWN = 0.25f;
+// A sword hit knocks the player down; give them time to get clear of it before the next
+// (back-to-back knockdowns were a stun-lock). The glowing walls hurt at most once a second.
+static const float BODY_HIT_GRACE = 1.4f;
+static const float WALL_HIT_COOLDOWN = 1.0f;
+// A wall that has started fading out no longer hurts or blocks: what you can't see can't hit you
+static const float WALL_SOLID_ALPHA = 0.6f;
 
 // Model forward axis is -X, so yaw needs a PI flip.
 static const float MSA_MODEL_YAW_OFFSET = (float)T3D_PI;
@@ -455,7 +460,7 @@ static bool msa_wall_hit_or_block_capsule(
         const MsaSword *sw = &gSwords[si];
         const PathRibbon *pr = &sw->ribbon;
 
-        if (pr->dead) continue;
+        if (pr->dead || pr->alpha_mul < WALL_SOLID_ALPHA) continue;
         int n = (int)pr->count;
         if (n < 2) continue;
 
@@ -719,6 +724,9 @@ void msa_set_pattern(MsaPattern p) { gPattern = p; (void)gPattern; }
 // Start a single ground-sweep cycle driven by the boss AI.
 // Resets the MSA to CEILING_SETUP, runs one full cycle, then signals done.
 void msa_ground_sweep_start(void) {
+#ifdef HLE_TEST_UNBOUND
+    debugf("[msa] sweep start\n");
+#endif
     // Reset all swords
     for (int i = 0; i < MSA_MAX_SWORDS; i++) {
         MsaSword *s = &gSwords[i];
@@ -908,7 +916,7 @@ void msa_update(float dt) {
 
                 if (p2 <= (32.0f * 32.0f) && gHitCd <= 0.0f) {
                     character_apply_damage(DMG_BODY);
-                    gHitCd = HIT_COOLDOWN;
+                    gHitCd = BODY_HIT_GRACE;
                 }
 
                 // Lock in the flying orientation at the moment of impact.
@@ -1231,11 +1239,17 @@ void msa_update(float dt) {
 
     if (gHitCd <= 0.0f) {
         if (hitBody) {
+#ifdef HLE_TEST_UNBOUND
+            debugf("[msa] body hit\n");
+#endif
             character_apply_damage(DMG_BODY);
-            gHitCd = HIT_COOLDOWN;
+            gHitCd = BODY_HIT_GRACE;
         } else if (hitWall) {
+#ifdef HLE_TEST_UNBOUND
+            debugf("[msa] wall hit\n");
+#endif
             character_apply_damage(DMG_WALL);
-            gHitCd = HIT_COOLDOWN;
+            gHitCd = WALL_HIT_COOLDOWN;
         }
     }
 }
@@ -1396,7 +1410,7 @@ void msa_draw_debug(T3DViewport *viewport) {
         const MsaSword *s = &gSwords[si];
         const PathRibbon *pr = &s->ribbon;
 
-        if (pr->dead) continue;
+        if (pr->dead || pr->alpha_mul < WALL_SOLID_ALPHA) continue;
         int n = (int)pr->count;
         if (n < 2) continue;
 
@@ -1583,4 +1597,26 @@ void msa_cleanup_aerial_swords(void) {
     }
     
     gCount = 0;
+}
+
+void msa_clear_all(void) {
+    // The boss fell: every sword, wall and crack goes at once
+#ifdef HLE_TEST_UNBOUND
+    { int sw = 0, wl = 0; for (int i = 0; i < MSA_MAX_SWORDS; i++) { sw += gSwords[i].state != SW_INACTIVE; wl += gSwords[i].ribbon.count >= 2 && !gSwords[i].ribbon.dead; }
+      debugf("[msa] clear: %d swords, %d walls were live (enabled %d)\n", sw, wl, gEnabled); }
+#endif
+    for (int i = 0; i < MSA_MAX_SWORDS; i++) {
+        MsaSword *s = &gSwords[i];
+        s->state = SW_INACTIVE;
+        s->glowVisible = 0;
+        s->pos[1] = -9999.0f;
+        path_ribbon_clear(&s->ribbon);
+        gAerialAimTimer[i] = 0.0f;
+        gAerialStickTimer[i] = 0.0f;
+    }
+    gAerialMode = false;
+    gGroundSweepActive = false;
+    gGroundSweepDone = true;
+    gEnabled = false;
+    gHitCd = 0.0f;
 }

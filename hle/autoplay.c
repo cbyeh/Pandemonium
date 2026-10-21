@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND)
 #include "camera_controller.h"
 #include "character_skin.h"
 #include <math.h>
@@ -129,6 +129,45 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         customCamTarget = (T3DVec3){{ p[0], p[1] + 20.0f, p[2] }};
         camera_mode_smooth(CAMERA_CUSTOM, 0.01f);   // also ends the fight-intro transition
         if (t % period == 0) debugf("[skin] view %d at frame %d\n", t / period % 3, frame);
+        return;
+    }
+#endif
+#ifdef HLE_TEST_UNBOUND
+    // Hazard check: reach Guardian Unbound, circle it for 150 s (every hit is logged with
+    // its source, the player is topped up), kill it, then keep walking through where its
+    // swords and walls were for 10 s: nothing may land after the death.
+    {
+        static int phase = 0, t0 = 0;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0;
+        if (phase == 0) {
+            if (boss && boss->mode == BOSS_MODE_COMBAT && boss->phaseIndex == 1) { phase = 1; t0 = frame; }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 1) {
+            if (t == 60) boss_apply_damage(boss, boss->maxHealth * 2.0f);
+            if (t > 60 && boss->phaseIndex == 2 && boss->mode == BOSS_MODE_COMBAT) { phase = 2; t0 = frame; debugf("[ub] fight at %d\n", frame); }
+            else if (t > 90 && frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 2) {
+            in->stick_x = (int)(80 * cosf(t * 0.02f)); in->stick_y = (int)(80 * sinf(t * 0.02f));   // circle about
+            if (t % 300 == 0) debugf("[ub] t %d hp %.0f boss state %d\n", t, (double)character_get_health(), boss->state);
+            // the kill lands mid-sweep, with the walls up (the sweep's 3rd cycle, about 14 s in)
+            static int sweeps, sweepAt, wasActive;
+            int active = msa_ground_sweep_is_active();
+            if (active && !wasActive && ++sweeps == 3) sweepAt = frame;
+            wasActive = active;
+            if (sweepAt && frame - sweepAt == 500) { boss_apply_damage(boss, boss->maxHealth * 2.0f); debugf("[ub] killed at %d ms %lu\n", frame, (unsigned long)get_ticks_ms()); phase = 3; t0 = frame; }
+        }
+        if (phase >= 2) {   // overhead shot of the player so the swords and walls are in frame
+            cameraLockOnActive = false;
+            float *p = character.pos;
+            customCamPos = (T3DVec3){{ p[0] + 1.0f, p[1] + 260.0f, p[2] + 120.0f }};
+            customCamTarget = (T3DVec3){{ p[0], p[1], p[2] }};
+            camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+        }
+        if (phase == 3) {
+            in->stick_x = (int)(80 * cosf(t * 0.03f)); in->stick_y = (int)(80 * sinf(t * 0.03f));
+            if (t == 300) { debugf("[ub] after-death window over ms %lu\n", (unsigned long)get_ticks_ms()); phase = 4; }
+        }
         return;
     }
 #endif
