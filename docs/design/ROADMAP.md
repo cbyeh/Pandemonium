@@ -1,4 +1,6 @@
-# Pandemonium: ideas for what's next (draft)
+# Pandemonium: ideas for what's next
+
+The Tower MVP and the Shrine shipped in v0.72-fork.8. Weapons, curses, seeds, elite floors, practice mode and the King are still ideas.
 
 Work happens on the `tower` branch. Each section lists what it is, how it fits the code we have, and rough size: **S** is under a day, **M** is a few days, **L** is a week or more.
 
@@ -12,12 +14,12 @@ Work happens on the `tower` branch. Each section lists what it is, how it fits t
 A run climbs floors, and each floor is one fight:
 - **A circle is five floors:** the Guardian first, then the Fallen Warrior, the Shackled Sun and Shadowborn in a seeded random order, and Guardian Unbound last, as a floor of its own (no transformation cutscene).
 - **The climb starts well below the story fights:** in circle 1 the bosses have 70% of their health and deal 60% of their damage. Each circle adds 30% health and 20% damage, so circle 3 is at full damage and beyond.
-- **A run starts like the original game:** 3 potions and the sword only. The D-pad skills are unlocked at the Shrine.
+- **A run starts like the original game:** 3 potions and the sword only. The D-pad skills are learned during the climb, from skill cards in the boon draft.
 
 Boss health in a run starts from each boss's skills-off health:
 - The Guardian and Unbound keep theirs, so floor 1 plays like the original jam game.
 - The Bonus bosses start at half, since their health was sized for 7 potions and the skills.
-- Each unlocked skill adds a third, so all three unlocked doubles it, the same as the Skills setting does.
+- Each skill learned in the run adds a third, so all three learned doubles it, the same as the Skills setting does.
 
 Between floors:
 - The player heals a third and gets a potion back, up to the run's maximum.
@@ -53,7 +55,7 @@ Boons stack. Duplicates of a stat boon add up, and unique boons leave the pool o
 ## 2. The Shrine: permanent upgrades (S to M, building second)
 Spend Embers on the title screen. Upgrades apply only inside Tower runs.
 
-**Skills** are unlocked here, once each: Halfmoon Slash (40 Embers), Moon Blade Dance (60) and Crescent Cleave (80). In a run, only unlocked skills work; the Skills setting is ignored.
+Skills aren't sold here. They're learned in the climb: one of the three boon cards after each boss is always a skill card (learn Moon Blade Dance, Halfmoon Slash or Crescent Cleave, or upgrade one learned this run). In a run, only learned skills work; the Skills setting is ignored.
 
 | Upgrade | Levels | Per level |
 |---|---|---|
@@ -96,5 +98,5 @@ Needs a per-weapon stats table: damage, animation speed and the hit capsule leng
 - **Runs are endless circles**: 5 floors per circle, with Ascension scaling every circle after the first. The score is the best floor reached.
 - **The Guardian and Guardian Unbound are two separate floors**, with no transformation cutscene between them. Unbound closes each circle.
 - **Tower starts much easier than the story mode**, then catches up by circle 3.
-- **Runs start with 3 potions and basic attacks only**; skills are unlocked at the Shrine, and boss health grows with them.
+- **Runs start with 3 potions and basic attacks only**; skills are learned from boon cards during the climb, and boss health grows with them.
 - **Shadowborn** (Bonus 3) joins the circle; it may be a little harder than the others.
