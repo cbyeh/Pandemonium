@@ -264,11 +264,14 @@ const char* tower_upgrade_desc(UpgradeId u) { return UPGRADES[u].desc; }
 
 // ---- Modifiers ----
 
+// Shrine upgrades count only inside a run; the story and Bonus fights stay as tuned
+static int shrine(UpgradeId u) { return s.active ? tower_upgrade_level(u) : 0; }
+
 static float powf_int(float b, int e) { float r = 1.0f; while (e-- > 0) r *= b; return r; }
 
 float tower_mod_damage_dealt(void)
 {
-    float m = (1.0f + 0.08f * tower_upgrade_level(UPG_HONED_BLADE)) * (1.0f + 0.15f * tower_boon_stacks(BOON_EMBER_EDGE));
+    float m = (1.0f + 0.08f * shrine(UPG_HONED_BLADE)) * (1.0f + 0.15f * tower_boon_stacks(BOON_EMBER_EDGE));
     if (tower_boon_stacks(BOON_LAST_STAND) && character.health < character.maxHealth * 0.3f) m *= 1.4f;
     return m;
 }
@@ -280,17 +283,17 @@ float tower_mod_damage_taken(void)
     return m;
 }
 
-int   tower_mod_max_potions(void) { return 7 + tower_upgrade_level(UPG_FLASK_CAPACITY) + tower_boon_stacks(BOON_DEEP_FLASK); }
+int   tower_mod_max_potions(void) { return 7 + shrine(UPG_FLASK_CAPACITY) + tower_boon_stacks(BOON_DEEP_FLASK); }
 float tower_mod_potion_heal(void)
 {
-    return 0.45f * (1.0f + 0.08f * tower_upgrade_level(UPG_FLASK_POTENCY)) * (1.0f + 0.15f * tower_boon_stacks(BOON_KINDLED_FLASK));
+    return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.15f * tower_boon_stacks(BOON_KINDLED_FLASK));
 }
-float tower_mod_max_health(void) { return 150.0f + 10.0f * tower_upgrade_level(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR); }
+float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR); }
 float tower_mod_roll_cost(void) { return tower_boon_stacks(BOON_FLEETFOOT) ? 0.6f : 1.0f; }
 float tower_mod_stamina_regen(void) { return 1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND); }
 float tower_mod_skill_cooldown(void)
 {
-    return (1.0f - 0.08f * tower_upgrade_level(UPG_SKILL_MASTERY)) * powf_int(0.8f, tower_boon_stacks(BOON_MOON_MASTERY));
+    return (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * powf_int(0.8f, tower_boon_stacks(BOON_MOON_MASTERY));
 }
 float tower_mod_lifesteal(void) { return 0.06f * tower_boon_stacks(BOON_BLOODTHIRST); }
 int   tower_mod_extra_mbd_waves(void) { return tower_boon_stacks(BOON_CRESCENT_ECHO) ? 2 : 0; }

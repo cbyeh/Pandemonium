@@ -58,7 +58,7 @@ const char* tower_upgrade_name(UpgradeId u);
 const char* tower_upgrade_desc(UpgradeId u);
 int  tower_best_floor(void);
 
-// ---- Modifiers (Shrine always, Boons during a run) ----
+// ---- Modifiers (Shrine upgrades and Boons, during a run only) ----
 float tower_mod_damage_dealt(void);
 float tower_mod_damage_taken(void);
 int   tower_mod_max_potions(void);

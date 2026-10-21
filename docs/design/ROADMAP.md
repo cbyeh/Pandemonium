@@ -45,7 +45,7 @@ When the player dies, the run ends. Embers are kept, and the best floor is recor
 Boons stack. Duplicates of a stat boon add up, and unique boons leave the pool once taken.
 
 ## 2. The Shrine: permanent upgrades (S to M, building second)
-Spend Embers on the title screen. Upgrades apply everywhere: the story fight, Bonus fights and the Tower.
+Spend Embers on the title screen. Upgrades apply only inside Tower runs.
 
 | Upgrade | Levels | Per level |
 |---|---|---|
@@ -83,7 +83,9 @@ Needs a per-weapon stats table: damage, animation speed and the hit capsule leng
 4. Curses, seeds and elite floors.
 5. Practice mode, then the King.
 
+## Decisions (2026-10-21)
+- **Shrine upgrades apply only in the Tower.** The story and Bonus fights stay as tuned, so `tower_mod_*` returns 1.0 (or 0) whenever no run is active.
+- **Runs are endless circles**: 3 floors per circle, with Ascension scaling every circle after the first. The score is the best floor reached.
+
 ## Open questions
-- Should Shrine upgrades apply to the story fight (souls-like progression), or only to the Tower? The draft assumes everywhere.
 - Is it fine that the Tower's Guardian skips the Unbound transformation cutscene for pacing?
-- What is the target Tower length? The draft is 3 floors per circle and endless circles.
