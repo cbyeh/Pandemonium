@@ -33,9 +33,23 @@ Toggle in **Settings > Skills** (title screen). Bosses have double health with s
 | <img src="docs/media/skill_moon_blade_dance.gif" width="320"> | <img src="docs/media/skill_halfmoon_slash.gif" width="320"> | <img src="docs/media/skill_crescent_cleave.gif" width="320"> |
 
 ### Skins
-**Settings > Skin**: Teal, Crimson and Umber Cloak (**Settings > Hood** for hood up or down), Wolf Knight, Black Swordsman and Scarlet Valkyrie.
+**Settings > Skin**: the Knight, the Umber Cloak, Wolf Knight, Black Swordsman and Scarlet Valkyrie from the start. Two more unlock:
+- **Crimson Cloak:** beat the story (the Guardian, then Guardian Unbound).
+- **Teal Cloak:** reach floor 10 of the Tower (two full circles).
+
+**Settings > Hood** puts a cloak's hood up or down.
 
 <img src="docs/media/skins.png" width="800">
+
+### The Tower
+**Title > Tower > Climb**: a boss rush, floor after floor with no cutscenes.
+- **Circles:** each one is five floors. The Guardian comes first, then the three Bonus bosses in a random order, and Guardian Unbound last.
+- **Difficulty:** the climb starts well below the story fights, and the bosses grow stronger every circle.
+- **Your start:** you begin as the original game did, with 3 potions and the sword only.
+- **Between floors:** you get a third of your health and a potion back, and you choose one of three **Boons**. One of the three is always a skill card: learn a D-pad skill, or upgrade one you've learned.
+- **Embers:** cleared floors earn Embers, kept when you die. Spend them at **Tower > Shrine** on permanent upgrades, which only apply in the Tower.
+
+Each save slot keeps its best floor and Embers. **Load Game** shows a slot's progress: story clear time, best Tower floor, Bonus bosses beaten and skins unlocked.
 
 ### New boss fights
 Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on the title screen.

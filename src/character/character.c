@@ -1325,7 +1325,7 @@ static void update_skill(float dt)
         }
         if (skillStep == 0 && skillTime >= HALFMOON_CHARGE) {
             skill_fx_spawn_arc((float[3]){ character.pos[0], character.pos[1] + 10.0f, character.pos[2] },
-                               yaw, HALFMOON_RADIUS, HALFMOON_DAMAGE);
+                               yaw, HALFMOON_RADIUS, HALFMOON_DAMAGE * tower_mod_skill_damage(SKILL_HALFMOON_SLASH));
             screen_shake_set_shake_mag(14.0f);
             character_play_swing();
             audio_play_scene_sfx_dist(SCENE1_SFX_BLADE_SLASH, 1.0f, 0.0f);
@@ -1355,7 +1355,7 @@ static void update_skill(float dt)
             float origin[3] = { character.pos[0] + dx * dist, groundY, character.pos[2] + dz * dist };
             // 56/s for 1.6 s: ~100 out, the outer blades ~65 to each side
             skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 56.0f, 0.0f, dz * 56.0f },
-                                1.6f, 4, 0.3f, 1.6f, false);    // faster: ~3 ticks per blade, ~10-15 a cast
+                                1.6f * tower_mod_skill_damage(SKILL_CRESCENT_CLEAVE), 4, 0.3f, 1.6f, false);    // faster: ~3 ticks per blade, ~10-15 a cast
             skill_fx_spawn_burst(origin, a);
             audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_CAST, 0.45f, 0.0f);
             if (skillStep == 0) {
@@ -3281,7 +3281,7 @@ void character_apply_damage(float amount)
     character.health -= amount;
     if (character.health <= 0.0f && tower_mod_try_unbroken()) character.health = 1.0f;   // the Unbroken boon
     if (character.health < 0.0f) character.health = 0.0f;
-#if defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_BONUS_DRAGON) || defined(HLE_TEST_STRIKE)   // test aid: log every hit, never die
+#if defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_STRIKE)   // test aid: log every hit, never die
     debugf("[dmg] %.0f -> hp %.0f (state %d)\n", (double)amount, (double)character.health, characterState);
     if (character.health < 60.0f) character.health = character.maxHealth;
 #endif

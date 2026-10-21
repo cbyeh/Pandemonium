@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI)
 #include "camera_controller.h"
 #include "character_skin.h"
 #include <math.h>
@@ -14,7 +14,8 @@
 #include "controllers/menu_controller.h"
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #endif
-#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN)
+#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI)
+#include "utilities/save_controller.h"
 #include "controllers/menu_controller.h"
 #include "controllers/audio_controller.h"
 #include "scenes/guardian/guardian_scene_sfx.h"
@@ -177,6 +178,60 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     }
     return;
 #endif
+#ifdef HLE_TEST_TOWER_UI
+    // Screens and the skill cards: 200 Embers; Title > Tower > Shrine: buy Honed Blade
+    // (row 3); back, Climb; no skill works on floor 1; kill the boss: the draft, take its
+    // first card (always a skill card): on floor 2 that one skill works; then pause >
+    // Main Menu > Load Game.
+    {
+        extern bool tower_draft_is_open(void), tower_mod_skill_allowed(int);
+        extern int tower_floor(void);
+        extern int tower_upgrade_level(int), tower_embers(void);
+        static int phase = 0, t0 = 0, step = 0;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0;
+        if (phase == 0) {
+            if (menu_controller_is_active()) {
+                TowerSave ts; save_controller_get_tower(&ts); ts.embers = 200; save_controller_set_tower(&ts);
+                phase = 1; t0 = frame; debugf("[ui] title at %d\n", frame);
+            } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 1) {
+            // DDD A (Tower) . A? no: D (Shrine) A; D D A (Honed Blade); D D D D A (Halfmoon); B; U A (Climb)
+            static const char seq[] = "DDA.DA.DDA.B.UA";
+            if (t >= 25 && seq[step]) {
+                char c = seq[step];
+                if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1;
+                else if (c == 'A') { pressed->a = 1; in->btn.a = 1; } else if (c == 'B') { pressed->b = 1; in->btn.b = 1; }
+                if (c == '.') debugf("[ui] step %d at %d\n", step, frame);
+                step++; t0 = frame;
+            }
+            if (!seq[step]) {
+                debugf("[ui] bought: Honed Blade %d; Embers left %d\n", tower_upgrade_level(2), tower_embers());
+                phase = 2; t0 = frame;
+            }
+        } else if (phase == 2) {
+            static bool fighting;
+            if (!fighting) { if (!boss || boss->mode != BOSS_MODE_COMBAT) { t0 = frame; return; } fighting = true; t0 = frame; return; }
+            if (t == 40) pressed->d_up = 1;
+            if (t == 44) debugf("[ui] floor 1, D-up: state %d (%s)\n", character_get_state(), character_get_state() == CHAR_STATE_SKILL ? "CAST: not locked" : "locked");
+            if (t == 120) { debugf("[ui] kill at %d\n", frame); boss_apply_damage(boss, boss->maxHealth * 2.0f); }
+            if (t == 240) debugf("[ui] draft %s at %d\n", tower_draft_is_open() ? "open" : "CLOSED", frame);
+            if (t == 300) { pressed->a = 1; in->btn.a = 1; }      // the first card
+            if (t == 420) debugf("[ui] floor %d: skills usable %d %d %d\n", tower_floor(), tower_mod_skill_allowed(0), tower_mod_skill_allowed(1), tower_mod_skill_allowed(2));
+            if (t == 430) { int k = tower_mod_skill_allowed(0) ? 0 : tower_mod_skill_allowed(1) ? 1 : 2;
+                            if (k == 0) pressed->d_up = 1; else if (k == 1) pressed->d_right = 1; else pressed->d_down = 1; }
+            if (t == 434) debugf("[ui] the learned skill: state %d (%s)\n", character_get_state(), character_get_state() == CHAR_STATE_SKILL ? "cast" : "NOT CAST");
+            if (t == 520) { pressed->start = 1; in->btn.start = 1; }
+            if (t == 540 || t == 550 || t == 560 || t == 570) pressed->d_down = 1;
+            if (t == 590) { pressed->a = 1; in->btn.a = 1; }
+            if (t == 700) { phase = 3; t0 = frame; }
+        } else if (phase == 3) {
+            if (t == 30 || t == 40 || t == 50) pressed->d_down = 1;   // Load Game
+            if (t == 70) { pressed->a = 1; in->btn.a = 1; debugf("[ui] load game at %d\n", frame); }
+        }
+        return;
+    }
+#endif
 #ifdef HLE_TEST_TOWER_RUN
     // A Tower run from the title: Down x3 (Tower), A, A (Climb). Each floor: check the
     // boss, a locked skill (D-up does nothing), kill it, take a boon (A). After floor 6,
@@ -192,7 +247,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (menu_controller_is_active()) { phase = 1; t0 = frame; }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
-            static const char seq[] = "DDDAA";
+            static const char seq[] = "DDAA";
             if (t >= 20 && step < 5) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; t0 = frame; }
             if (step == 5 && boss && tower_active()) { phase = 2; t0 = frame; }
         } else if (phase == 2) {
@@ -251,20 +306,23 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         static const char *const music[] = { "rom:/audio/music/shadowborn_pursuit-22k.wav64", "rom:/audio/music/shackled_sun_metal-22k.wav64" };
         const int nsfx = SCENE1_SFX_CHAIN2 - SCENE1_SFX_DRAGON_ROAR + 1, total = nsfx + 2;
         int t = frame - start;
-        static int before;
-        if (step < total && t == 20 + step * 20) {
+        // One at a time, 3.5 s apart. A sound counts as silent only if three tries in a row
+        // start no channel (another sound ending in the same frame can hide one try)
+        static int before, tries;
+        if (step < total && t == 20 + step * 130 + tries * 30) {
             before = 0;
             for (int ch = SFX_CH_FIRST; ch <= SFX_CH_LAST; ch++) before += mixer_ch_playing(ch);
             if (step < nsfx) audio_play_scene_sfx_dist(SCENE1_SFX_DRAGON_ROAR + step, 1.0f, 0.0f);
             else audio_play_music(music[step - nsfx], true);
         }
-        if (step < total && t == 20 + step * 20 + 1) {
+        if (step < total && t == 20 + step * 130 + tries * 30 + 1) {
             bool on = false;
             if (step < nsfx) { int n = 0; for (int ch = SFX_CH_FIRST; ch <= SFX_CH_LAST; ch++) n += mixer_ch_playing(ch); on = n > before; }
             else on = audio_is_music_playing();
+            if (!on && ++tries < 3) return;
             if (!on) fails++;
             debugf("[audio] %d %s\n", step, on ? "playing" : "SILENT");
-            step++;
+            step++; tries = 0;
             if (step == total) debugf("[audio] self-check: %s (%d silent)\n", fails ? "FAIL" : "ok", fails);
         }
         return;
@@ -351,7 +409,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (menu_controller_is_active()) { phase = 1; t0 = frame; }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {    // pick the fight
-            const char *seq = HLE_DUMMY_BOSS == 3 ? "DDAA" : HLE_DUMMY_BOSS == 4 ? "DDADA" : HLE_DUMMY_BOSS == 5 ? "DDADDA" : "A";
+            const char *seq = HLE_DUMMY_BOSS == 3 ? "DAA" : HLE_DUMMY_BOSS == 4 ? "DADA" : HLE_DUMMY_BOSS == 5 ? "DADDA" : "A";
             int n = (int)strlen(seq);
             if (t >= 20 && step < n) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; t0 = frame; }
             if (step == n) { phase = 2; t0 = frame; }
@@ -435,11 +493,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {        // Down, Down (Bonus), A, A (Fallen Warrior)
 #if defined(HLE_TEST_BONUS_SUN)
-            static const char seq[] = "DDADA";      // Bonus > The Shackled Sun
+            static const char seq[] = "DADA";       // Bonus > The Shackled Sun
 #elif defined(HLE_TEST_BONUS_DRAGON)
-            static const char seq[] = "DDADDA";     // Bonus > Shadowborn
+            static const char seq[] = "DADDA";      // Bonus > Shadowborn
 #else
-            static const char seq[] = "DDAA";       // Bonus > Fallen Warrior
+            static const char seq[] = "DAA";        // Bonus > Fallen Warrior
 #endif
             int n = (int)sizeof(seq) - 1;
             if (t >= 20 && step < n) {

@@ -72,12 +72,12 @@ static const char* mainMenuOptions[MENU_MAIN_COUNT] = {
 };
 
 static const char* titleMenuOptions[MENU_TITLE_COUNT] = {
-    "Continue",
-    "Load Game",
-    "Bonus",
-    "Tower",
-    "Settings",
-    "Credits",
+    [MENU_TITLE_CONTINUE]  = "Continue",
+    [MENU_TITLE_BONUS]     = "Bonus",
+    [MENU_TITLE_TOWER]     = "Tower",
+    [MENU_TITLE_LOAD_GAME] = "Load Game",
+    [MENU_TITLE_SETTINGS]  = "Settings",
+    [MENU_TITLE_CREDITS]   = "Credits",
 };
 
 static const char* settingsMenuOptions[MENU_SETTINGS_COUNT] = {
@@ -112,7 +112,6 @@ static const char* towerMenuOptions[MENU_TOWER_COUNT] = {
     "Back",
 };
 
-static const char* const SHRINE_SKILL_NAMES[MENU_SHRINE_SKILLS] = { "Moon Blade Dance", "Halfmoon Slash", "Crescent Cleave" };
 
 static const char* bonusMenuOptions[MENU_BONUS_COUNT] = {
     "Fallen Warrior",
@@ -486,7 +485,9 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
     } else if (currentMenu == MENU_SETTINGS) {
         int skinStep = (rightJustPressed || (aJustPressed && selectedOption == MENU_SETTINGS_SKIN)) ? 1 : leftJustPressed ? -1 : 0;
         if (skinStep && selectedOption == MENU_SETTINGS_SKIN) {
-            character_skin_set((character_skin_get() + skinStep + SKIN_COUNT) % SKIN_COUNT);
+            int k = character_skin_get();
+            do k = (k + skinStep + SKIN_COUNT) % SKIN_COUNT; while (!save_controller_skin_unlocked(k));   // the Knight is always unlocked
+            character_skin_set(k);
             (void)save_controller_save_settings();
         } else if ((skinStep || aJustPressed) && selectedOption == MENU_SETTINGS_HOOD && character_skin_has_hood(character_skin_get())) {
             character_skin_set_hood_up(!character_skin_hood_up());
@@ -737,10 +738,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             currentMenu = MENU_TOWER;
             selectedOption = MENU_TOWER_SHRINE;
         } else if (aJustPressed) {
-            bool bought = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_buy((UpgradeId)selectedOption)
-                                                                : tower_skill_buy(selectedOption - MENU_SHRINE_UPGRADES);
-            if (bought) save_controller_save_settings();
-            else audio_play_ui(AUDIO_UI_BACK);      // not enough Embers, or maxed
+            if (tower_upgrade_buy((UpgradeId)selectedOption)) save_controller_save_settings();
         }
     }
 }
@@ -987,11 +985,11 @@ void menu_controller_draw(void)
             .wrap = WRAP_WORD,
         }, FONT_UNBALANCED, contentX, contentY + titleYOffset, "LOAD GAME");
 
-        int boxY = contentY + 50;
-        const int boxHeight = 28;
-        const int boxSpacing = 8;
-        const int slotInnerPadX = 14;
-        const int slotWidth = contentW / 2;
+        int boxY = contentY + 34;
+        const int boxHeight = 44;
+        const int boxSpacing = 5;
+        const int slotInnerPadX = 8;
+        const int slotWidth = contentW;
         const int boxLeft = contentX + (contentW - slotWidth) / 2;
         const int boxRight = boxLeft + slotWidth;
         const int boxWidth = boxRight - boxLeft;
@@ -1040,18 +1038,24 @@ void menu_controller_draw(void)
                 .align = ALIGN_CENTER,
                 .width = boxWidth - (slotInnerPadX * 2),
                 .wrap = WRAP_WORD,
-            }, FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 9, "%s", loadGameMenuOptions[slot]);
+            }, FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 11, "%s", loadGameMenuOptions[slot]);
 
-            if (saveData && (saveData->run_count > 0 || saveData->best_boss_time_ms > 0)) {
+            bool used = saveData && (saveData->run_count > 0 || saveData->best_boss_time_ms > 0 ||
+                                     save_progress_tower_best_floor(saveData) > 0 || save_progress_bonus_mask(saveData));
+            if (used) {
+                // The slot's progress: the story, the Tower, the Bonus bosses, the skins
+                char l1[48], l2[48], story[16] = "-";
+                uint32_t ms = saveData->best_boss_time_ms;
+                if (ms) snprintf(story, sizeof story, "%lu:%02lu", (unsigned long)(ms / 60000), (unsigned long)(ms / 1000 % 60));
+                int bm = save_progress_bonus_mask(saveData);
+                snprintf(l1, sizeof l1, "Story %s   Tower %d", story, save_progress_tower_best_floor(saveData));
+                snprintf(l2, sizeof l2, "Bonus %d/3   Skins %d/%d   Runs %lu", (bm & 1) + ((bm >> 1) & 1) + ((bm >> 2) & 1),
+                         save_progress_skins_unlocked(saveData), SKIN_COUNT, (unsigned long)saveData->run_count);
                 rdpq_set_prim_color(RGBA32(200, 200, 200, 255));
-                char statsText[64];
-                snprintf(statsText, sizeof(statsText), "Runs: %lu", (unsigned long)saveData->run_count);
-
-                rdpq_text_printf(&(rdpq_textparms_t){
-                    .align = ALIGN_CENTER,
-                    .width = boxWidth - (slotInnerPadX * 2),
-                    .wrap = WRAP_WORD,
-                }, FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 25, "%s", statsText);
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = boxWidth - (slotInnerPadX * 2) },
+                                 FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 24, "%s", l1);
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = boxWidth - (slotInnerPadX * 2) },
+                                 FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 36, "%s", l2);
             } else {
                 rdpq_set_prim_color(RGBA32(150, 150, 150, 255));
 
@@ -1059,7 +1063,7 @@ void menu_controller_draw(void)
                     .align = ALIGN_CENTER,
                     .width = boxWidth - (slotInnerPadX * 2),
                     .wrap = WRAP_WORD,
-                }, FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 25, "Empty");
+                }, FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 28, "Empty");
             }
 
             boxY += boxHeight + boxSpacing;
@@ -1272,7 +1276,7 @@ void menu_controller_draw(void)
     } else if (currentMenu == MENU_SHRINE) {
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
                          FONT_UNBALANCED, x, y + titleYOffset, "SHRINE");
-        y += lineHeight + titleYOffset + 4;
+        y += lineHeight * 2 + titleYOffset + 2;
         rdpq_set_prim_color(RGBA32(255, 210, 120, 255));
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW },
                          FONT_UNBALANCED, x, y, "Embers %d", tower_embers());
@@ -1284,10 +1288,6 @@ void menu_controller_draw(void)
                 int c = tower_upgrade_cost((UpgradeId)i);
                 snprintf(name, sizeof name, "%s %d/%d", tower_upgrade_name((UpgradeId)i), tower_upgrade_level((UpgradeId)i), UPG_MAX_LEVEL);
                 if (c < 0) snprintf(right, sizeof right, "max"); else snprintf(right, sizeof right, "%d", c);
-            } else if (i < MENU_SHRINE_COUNT - 1) {
-                int k = i - MENU_SHRINE_UPGRADES, c = tower_skill_cost(k);
-                snprintf(name, sizeof name, "%s", SHRINE_SKILL_NAMES[k]);
-                if (c < 0) snprintf(right, sizeof right, "learned"); else snprintf(right, sizeof right, "%d", c);
             } else {
                 snprintf(name, sizeof name, "Back");
             }
@@ -1306,7 +1306,7 @@ void menu_controller_draw(void)
         }
         // What the selected one does
         const char *desc = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_desc((UpgradeId)selectedOption)
-                         : selectedOption < MENU_SHRINE_COUNT - 1 ? "A D-pad skill, in Tower runs" : "";
+                                                                 : "Skills are learned in the climb";
         rdpq_set_prim_color(RGBA32(180, 180, 180, 255));
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW },
                          FONT_UNBALANCED, x, y + 6, "%s", desc);

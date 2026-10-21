@@ -35,7 +35,12 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_VIGOR]         = { "Vigor",         "+25 max health",               3 },
     [BOON_LAST_STAND]    = { "Last Stand",    "+40% damage below 30% health", 1 },
     [BOON_UNBROKEN]      = { "Unbroken",      "Once a floor, live through a killing blow", 1 },
-    [BOON_CRESCENT_ECHO] = { "Crescent Echo", "Moon Blade Dance: 2 more waves", 1 },
+    [BOON_CRESCENT_ECHO] = { "Moon Blade Dance+", "2 more waves", 1 },
+    [BOON_LEARN_MOONBLADE] = { "Moon Blade Dance", "Learn it: D-up", 1 },
+    [BOON_LEARN_HALFMOON]  = { "Halfmoon Slash",   "Learn it: D-right", 1 },
+    [BOON_LEARN_CLEAVE]    = { "Crescent Cleave",  "Learn it: D-down", 1 },
+    [BOON_HALFMOON_PLUS]   = { "Halfmoon Slash+",  "+50% damage", 1 },
+    [BOON_CLEAVE_PLUS]     = { "Crescent Cleave+", "+50% damage", 1 },
 };
 
 typedef struct { const char *name, *desc; } UpgradeDef;
@@ -48,14 +53,13 @@ static const UpgradeDef UPGRADES[UPG_COUNT] = {
     [UPG_SKILL_MASTERY]  = { "Skill Mastery",  "Skill cooldowns -8%" },
 };
 static const int UPGRADE_COST[UPG_MAX_LEVEL] = { 30, 70, 120 };
-static const int SKILL_COST[SKILL_COUNT] = { 60, 40, 80 };     // Moon Blade Dance, Halfmoon Slash, Crescent Cleave
 
 static struct {
     bool active;
     int floor;
     uint32_t rng;
     TowerBoss order[FLOORS_PER_CIRCLE];
-    uint8_t skills;                 // unlocked when the run began
+    uint8_t skills;                 // learned this run (bit per CharacterSkill)
     uint8_t stacks[BOON_COUNT];
     int runEmbers, lastFloorEmbers;
     bool unbrokenUsed;
@@ -93,9 +97,6 @@ void tower_begin_run(uint32_t seed)
     s.active = true;
     s.floor = 1;
     s.rng = seed ? seed : 1;
-    TowerSave t;
-    save_controller_get_tower(&t);
-    s.skills = t.skills;
     shuffle_circle();
 }
 
@@ -132,18 +133,42 @@ void tower_next_floor(void)
 
 // ---- Draft ----
 
+static bool is_skill_card(BoonId b)
+{
+    return b == BOON_LEARN_MOONBLADE || b == BOON_LEARN_HALFMOON || b == BOON_LEARN_CLEAVE ||
+           b == BOON_HALFMOON_PLUS || b == BOON_CLEAVE_PLUS || b == BOON_CRESCENT_ECHO || b == BOON_MOON_MASTERY;
+}
+
+static bool knows(int skill) { return (s.skills >> skill) & 1; }
+
+// Can it be offered now? (stacks left, and an upgrade needs its skill)
+static bool offerable(BoonId b)
+{
+    if (s.stacks[b] >= BOONS[b].maxStacks) return false;
+    switch (b) {
+    case BOON_MOON_MASTERY:  return s.skills != 0;
+    case BOON_CRESCENT_ECHO: return knows(SKILL_MOON_BLADE_DANCE);
+    case BOON_HALFMOON_PLUS: return knows(SKILL_HALFMOON_SLASH);
+    case BOON_CLEAVE_PLUS:   return knows(SKILL_CRESCENT_CLEAVE);
+    default: return true;
+    }
+}
+
 void tower_draft_open(void)
 {
-    // Three different boons that can still stack
-    BoonId pool[BOON_COUNT]; int n = 0;
+    // Three different boons; the first a skill card (learn or upgrade) while any are left
+    BoonId pool[BOON_COUNT], skills[BOON_COUNT]; int n = 0, ns = 0;
     for (int b = 0; b < BOON_COUNT; b++) {
-        if (s.stacks[b] >= BOONS[b].maxStacks) continue;
-        // skill boons only once there is a skill to use them on
-        if (b == BOON_MOON_MASTERY && !s.skills) continue;
-        if (b == BOON_CRESCENT_ECHO && !(s.skills & (1 << SKILL_MOON_BLADE_DANCE))) continue;
-        pool[n++] = b;
+        if (!offerable(b)) continue;
+        if (is_skill_card(b)) skills[ns++] = b; else pool[n++] = b;
     }
     s.nChoices = 0;
+    if (ns > 0) {
+        int k = rng_next() % ns;
+        s.choices[s.nChoices++] = skills[k];
+        skills[k] = skills[--ns];
+        for (int i = 0; i < ns; i++) pool[n++] = skills[i];   // the rest may still turn up
+    }
     while (s.nChoices < DRAFT_CHOICES && n > 0) {
         int k = rng_next() % n;
         s.choices[s.nChoices++] = pool[k];
@@ -161,6 +186,9 @@ void tower_draft_pick(int index)
         BoonId b = s.choices[index];
         s.stacks[b]++;
         if (b == BOON_DEEP_FLASK) character.healthPotions++;
+        if (b == BOON_LEARN_MOONBLADE) s.skills |= 1 << SKILL_MOON_BLADE_DANCE;
+        if (b == BOON_LEARN_HALFMOON)  s.skills |= 1 << SKILL_HALFMOON_SLASH;
+        if (b == BOON_LEARN_CLEAVE)    s.skills |= 1 << SKILL_CRESCENT_CLEAVE;
         if (b == BOON_VIGOR) character.health += 25.0f;
     }
     s.draftOpen = false;
@@ -203,7 +231,7 @@ void tower_draft_draw(void)
     rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
     text(0, 58, SCREEN_WIDTH, ALIGN_CENTER, "Choose a Boon");
 
-    const int cw = 92, ch = 112, gap = 8, y0 = 76;
+    const int cw = 96, ch = 112, gap = 6, y0 = 76;
     int x0 = (SCREEN_WIDTH - (cw * s.nChoices + gap * (s.nChoices - 1))) / 2;
     for (int i = 0; i < s.nChoices; i++) {
         int x = x0 + i * (cw + gap);
@@ -217,7 +245,7 @@ void tower_draft_draw(void)
         rdpq_set_prim_color(on ? RGBA32(255, 220, 140, 255) : RGBA32(220, 200, 170, 255));
         text(x + 4, y0 + 18, cw - 8, ALIGN_CENTER, b->name);
         rdpq_set_prim_color(RGBA32(235, 235, 235, 255));
-        text(x + 6, y0 + 46, cw - 12, ALIGN_CENTER, b->desc);
+        text(x + 6, y0 + 52, cw - 12, ALIGN_CENTER, b->desc);     // below a name of up to two lines
         if (s.stacks[s.choices[i]] > 0) {
             snprintf(line, sizeof line, "Have %d", s.stacks[s.choices[i]]);
             rdpq_set_prim_color(RGBA32(170, 170, 170, 255));
@@ -282,24 +310,6 @@ bool tower_upgrade_buy(UpgradeId u)
 const char* tower_upgrade_name(UpgradeId u) { return UPGRADES[u].name; }
 const char* tower_upgrade_desc(UpgradeId u) { return UPGRADES[u].desc; }
 
-bool tower_skill_unlocked(int skill)
-{
-    TowerSave t; save_controller_get_tower(&t);
-    return skill >= 0 && skill < SKILL_COUNT && (t.skills >> skill) & 1;
-}
-
-int tower_skill_cost(int skill) { return (skill < 0 || skill >= SKILL_COUNT || tower_skill_unlocked(skill)) ? -1 : SKILL_COST[skill]; }
-
-bool tower_skill_buy(int skill)
-{
-    int cost = tower_skill_cost(skill);
-    TowerSave t; save_controller_get_tower(&t);
-    if (cost < 0 || t.embers < cost) return false;
-    t.embers -= cost;
-    t.skills |= 1 << skill;
-    return save_controller_set_tower(&t);
-}
-
 // ---- Modifiers ----
 
 // Shrine upgrades count only inside a run; the story and Bonus fights stay as tuned
@@ -322,7 +332,13 @@ float tower_mod_damage_taken(void)
 }
 
 int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + tower_boon_stacks(BOON_DEEP_FLASK) : 7; }
-bool  tower_mod_skill_allowed(int skill) { return !s.active || ((s.skills >> skill) & 1); }
+bool  tower_mod_skill_allowed(int skill) { return !s.active || knows(skill); }
+float tower_mod_skill_damage(int skill)
+{
+    if (skill == SKILL_HALFMOON_SLASH && tower_boon_stacks(BOON_HALFMOON_PLUS)) return 1.5f;
+    if (skill == SKILL_CRESCENT_CLEAVE && tower_boon_stacks(BOON_CLEAVE_PLUS)) return 1.5f;
+    return 1.0f;
+}
 float tower_mod_potion_heal(void)
 {
     return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.15f * tower_boon_stacks(BOON_KINDLED_FLASK));

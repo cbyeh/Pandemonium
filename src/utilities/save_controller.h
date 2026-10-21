@@ -57,10 +57,19 @@ typedef struct {
     uint8_t  bestFloor;
     uint8_t  weaponsOwned;   // bit per weapon
     uint8_t  weapon;         // equipped
-    uint8_t  skills;         // bit per D-pad skill unlocked
 } TowerSave;
 void save_controller_get_tower(TowerSave *out);
 bool save_controller_set_tower(const TowerSave *in);
+
+// Progress shown on the Load Game cards (any slot's data; NULL reads as nothing)
+int  save_progress_tower_best_floor(const SaveData *d);
+int  save_progress_tower_embers(const SaveData *d);
+int  save_progress_bonus_mask(const SaveData *d);      // bit per Bonus boss beaten: Fallen Warrior, Shackled Sun, Shadowborn
+int  save_progress_skins_unlocked(const SaveData *d);
+bool save_progress_skin_unlocked(const SaveData *d, int skin);
+// The active slot
+void save_controller_mark_bonus_beaten(int bonusIndex);   // 0..2
+bool save_controller_skin_unlocked(int skin);
 
 // Run + boss stats
 bool save_controller_increment_run_count(void);

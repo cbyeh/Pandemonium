@@ -31,9 +31,9 @@ typedef enum {
 
 typedef enum {
     MENU_TITLE_CONTINUE,
-    MENU_TITLE_LOAD_GAME,
     MENU_TITLE_BONUS,
     MENU_TITLE_TOWER,
+    MENU_TITLE_LOAD_GAME,
     MENU_TITLE_SETTINGS,
     MENU_TITLE_CREDITS,
     MENU_TITLE_COUNT
@@ -91,10 +91,9 @@ typedef enum {
     MENU_TOWER_COUNT
 } TowerMenuOption;
 
-// The Shrine: the five upgrades, the three skills, Back
+// The Shrine: the five upgrades, Back
 #define MENU_SHRINE_UPGRADES 5
-#define MENU_SHRINE_SKILLS   3
-#define MENU_SHRINE_COUNT    (MENU_SHRINE_UPGRADES + MENU_SHRINE_SKILLS + 1)
+#define MENU_SHRINE_COUNT    (MENU_SHRINE_UPGRADES + 1)
 
 typedef enum {
     MENU_ACTION_NONE = 0,

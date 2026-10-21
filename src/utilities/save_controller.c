@@ -375,7 +375,8 @@ bool save_controller_load_settings(void) {
     hdAspect = saved_hd_aspect(d);
     character_set_skills_enabled(saved_skills_enabled(d));
     character_skin_set_hood_up(saved_hood_up(d));
-    character_skin_set(saved_skin(d));
+    // a skin this slot hasn't unlocked (an older save, before the unlocks) falls back to the Knight
+    character_skin_set(save_progress_skin_unlocked(d, saved_skin(d)) ? saved_skin(d) : SKIN_KNIGHT);
     return true;
 }
 
@@ -418,7 +419,7 @@ bool save_controller_increment_run_count(void) {
     return blob_write_now();
 }
 
-// _pad[7..8] embers, [9..10] five 3-bit levels, [11] best floor, [12] weapons owned, [13] weapon, [14] skills
+// _pad[7..8] embers, [9..10] five 3-bit levels, [11] best floor, [12] weapons owned, [13] weapon, [15] Bonus bosses beaten
 void save_controller_get_tower(TowerSave *out)
 {
     memset(out, 0, sizeof(*out));
@@ -430,7 +431,6 @@ void save_controller_get_tower(TowerSave *out)
     out->bestFloor = p[11];
     out->weaponsOwned = p[12];
     out->weapon = p[13];
-    out->skills = p[14];
 }
 
 bool save_controller_set_tower(const TowerSave *in)
@@ -445,12 +445,49 @@ bool save_controller_set_tower(const TowerSave *in)
     p[11] = in->bestFloor;
     p[12] = in->weaponsOwned;
     p[13] = in->weapon;
-    p[14] = in->skills;
     d->checksum = compute_slot_checksum(d);
     extern double nowS;
     s_last_dirty_time_s = nowS;
     s_dirty = true;
     return true;
+}
+
+int save_progress_tower_best_floor(const SaveData *d) { return d ? d->_pad[11] : 0; }
+int save_progress_tower_embers(const SaveData *d) { return d ? (d->_pad[7] | (d->_pad[8] << 8)) : 0; }
+int save_progress_bonus_mask(const SaveData *d) { return d ? (d->_pad[15] & 7) : 0; }
+
+// The Knight, the Umber cloak and the three cameo skins from the start; the Crimson
+// cloak for beating the story (Guardian, then Unbound: a clear time is recorded); the
+// Teal cloak for two circles of the Tower (every boss twice: floor 10)
+bool save_progress_skin_unlocked(const SaveData *d, int skin)
+{
+    if (skin == SKIN_CRIMSON_CLOAK) return d && d->best_boss_time_ms > 0;
+    if (skin == SKIN_TEAL_CLOAK) return save_progress_tower_best_floor(d) >= 10;
+    return skin >= 0 && skin < SKIN_COUNT;
+}
+
+int save_progress_skins_unlocked(const SaveData *d)
+{
+    int n = 0;
+    for (int k = 0; k < SKIN_COUNT; k++) n += save_progress_skin_unlocked(d, k);
+    return n;
+}
+
+bool save_controller_skin_unlocked(int skin)
+{
+    return save_progress_skin_unlocked(s_initialized ? &s_blob.slots[s_active_slot] : NULL, skin);
+}
+
+void save_controller_mark_bonus_beaten(int bonusIndex)
+{
+    if (!s_initialized || bonusIndex < 0 || bonusIndex > 2) return;
+    SaveData *d = &s_blob.slots[s_active_slot];
+    if (d->_pad[15] & (1 << bonusIndex)) return;
+    d->_pad[15] |= (uint8_t)(1 << bonusIndex);
+    d->checksum = compute_slot_checksum(d);
+    extern double nowS;
+    s_last_dirty_time_s = nowS;
+    s_dirty = true;
 }
 
 bool save_controller_record_boss_clear_time_ms(uint32_t clear_time_ms) {

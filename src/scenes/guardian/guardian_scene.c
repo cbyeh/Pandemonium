@@ -1358,11 +1358,8 @@ static void scene_tower_draft_update(void)
 {
     bool l = btn.d_left || joypad.stick_x < -40, r = btn.d_right || joypad.stick_x > 40, a = btn.a;
     bool done = tower_draft_update(l && !s_towerLastL, r && !s_towerLastR, a && !s_towerLastA);
-    if (l && !s_towerLastL) audio_play_ui(AUDIO_UI_MOVE);
-    if (r && !s_towerLastR) audio_play_ui(AUDIO_UI_MOVE);
     s_towerLastL = l; s_towerLastR = r; s_towerLastA = a;
     if (!done) return;
-    audio_play_ui(AUDIO_UI_CONFIRM);
     s_towerDraft = false;
     tower_floor_restore();
     tower_next_floor();
@@ -1765,6 +1762,7 @@ void scene_update(void) {
             }
 #if PHASE_2_ENABLED
             if (!s_tower && s_bonusFight && g_boss->state == BOSS_STATE_DEAD) {
+                if (s_bonusEndTimer == 0.0f) save_controller_mark_bonus_beaten(s_bonusFight - BONUS_FALLEN_KNIGHT);
                 s_bonusEndTimer += deltaTime;
                 if (s_bonusEndTimer >= 2.5f) {     // let the death play out, then the outro
                     cutsceneState = CUTSCENE_BONUS_OUTRO;
