@@ -35,7 +35,12 @@ void proc_mesh_tri(const float a[3], const float b[3], const float c[3], uint32_
     const float *v[3] = { a, b, c };
     for (int i = 0; i < 3; i++)
         for (int k = 0; k < 3; k++) t->p[i][k] = (int16_t)lrintf(v[i][k] * PM_UNIT);
-    if (unlit) { t->c = rgba; return; }
+    // Unlit (glowing): alpha follows brightness, so proc_mesh_draw_glow fades the dark parts out
+    if (unlit) {
+        int r = rgba >> 24, g = (rgba >> 16) & 0xFF, b = (rgba >> 8) & 0xFF, m = r > g ? (r > b ? r : b) : (g > b ? g : b);
+        t->c = (rgba & ~0xFFu) | (uint32_t)m;
+        return;
+    }
     // Two-sided flat shading: a key light from above-front plus ambient
     float e1[3] = { b[0]-a[0], b[1]-a[1], b[2]-a[2] }, e2[3] = { c[0]-a[0], c[1]-a[1], c[2]-a[2] };
     float n[3] = { e1[1]*e2[2]-e1[2]*e2[1], e1[2]*e2[0]-e1[0]*e2[2], e1[0]*e2[1]-e1[1]*e2[0] };
@@ -220,14 +225,16 @@ void proc_mesh_corona(float radius, int tongues, float reach, int seed, bool hot
     }
 }
 
-void proc_mesh_draw_additive(const ProcMesh *m)
+void proc_mesh_draw_glow(const ProcMesh *m)
 {
     if (!m->block) return;
     rdpq_sync_pipe();
     rdpq_set_mode_standard();
     rdpq_mode_zbuf(true, false);
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
-    rdpq_mode_blender(RDPQ_BLENDER_ADDITIVE);
+    // Blended by brightness, not added: the real RDP wraps an overflowing sum (the Sun's
+    // corona tips speckled green on hardware; HLE renderers clamp, so it never showed there)
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
     t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
     t3d_matrix_set(m->mat, true);
     rspq_block_run(m->block);

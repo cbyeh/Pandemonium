@@ -29,7 +29,7 @@ void proc_mesh_frustum(const float base[3], float r0, float r1, float h, int sid
 // `facingZ`. `hot` shifts it to crimson and white.
 void proc_mesh_eye_sphere(float radius, bool facingZ, bool hot);
 // Flame tongues round a disc of `radius` facing +z, up to `reach` long (see
-// proc_mesh_draw_additive: their dark tips fade out).
+// proc_mesh_draw_glow: their dark tips fade out).
 void proc_mesh_corona(float radius, int tongues, float reach, int seed, bool hot);
 // One chain link: an oval ring in the xy plane, `len` long along y.
 void proc_mesh_chain_link(float len, float width, float thick, uint32_t rgba, bool unlit);
@@ -38,8 +38,9 @@ void proc_mesh_end(ProcMesh *out);
 void proc_mesh_set_transform(ProcMesh *m, const float scale, const float rot[3], const float pos[3]);
 // Draws at the current matrix-stack slot (call between t3d_matrix_push_pos/pop).
 void proc_mesh_draw(const ProcMesh *m);
-// Glow: added onto what is behind, no depth write.
-void proc_mesh_draw_additive(const ProcMesh *m);
+// Glow (unlit triangles): blended over what is behind by brightness, no depth write.
+// Never additive: the real RDP wraps an overflowing sum instead of clamping.
+void proc_mesh_draw_glow(const ProcMesh *m);
 void proc_mesh_free(ProcMesh *m);
 
 static inline uint32_t proc_rgb(int r, int g, int b) { return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xFF; }

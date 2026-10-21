@@ -151,6 +151,13 @@ static void player_chest(float o[3]) { o[0] = character.pos[0]; o[1] = character
 static void sfx_boom(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH2, 1.0f, 0.0f); }
 static void sfx_swing(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SWING3, 1.0f, 0.0f); }
 static void sfx_lunge(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_LUNGE, 1.0f, 0.0f); }
+static void sfx_roar(void)
+{
+#ifdef HLE_AUTOPLAY
+    debugf("[dragon] roar\n");
+#endif
+    audio_play_scene_sfx_dist(SCENE1_SFX_DRAGON_ROAR, 1.0f, 0.0f);
+}
 static void sfx_step(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_STEP1, 0.6f, 0.0f); }
 
 // ---- Meshes ----
@@ -683,7 +690,7 @@ static void charge_update(Boss *b, float dt)
     if (s.step == 0) {
         face_player(b, dt, 2.5f);
         s.tNeckPitch = 0.7f; s.tJaw = 1.0f; s.tCrouch = 4.0f;
-        if (s.t < dt * 1.5f) { screen_shake_set_shake_mag(4.0f); sfx_boom(); }
+        if (s.t < dt * 1.5f) { screen_shake_set_shake_mag(4.0f); sfx_roar(); }
         if (s.t >= 0.9f / (s.dark ? 1.2f : 1.0f)) { s.step = 1; s.t = 0.0f; sfx_lunge(); }
     } else if (s.step == 1) {
         s.tNeckPitch = -0.2f; s.tNeckReach = 1.2f; s.tCrouch = 6.0f; s.tJaw = 0.3f;
@@ -756,7 +763,7 @@ static void roar_update(Boss *b, float dt)
         float a = s.step * 0.8f;
         skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * 45.0f, s.groundY, b->pos[2] + cosf(a) * 45.0f }, a);
         screen_shake_set_shake_mag(8.0f);
-        if (s.step == 0) sfx_boom();
+        if (s.step == 0) sfx_roar();
         s.step++;
     }
     if (s.t >= 2.4f) { s.alt = 0.0f; b->mode = BOSS_MODE_COMBAT; s.cdNova = 1.0f; enter(DG_IDLE); }
@@ -895,6 +902,7 @@ void dragon_boss_update(Boss* b, float dt)
             s.flapRate = 8.0f;
             s.alt = fmaxf(0.0f, s.alt - fmaxf(s.alt * 1.1f, 25.0f) * dt);
             if (s.alt <= 0.0f) {
+                s.step = 1; s.t = 0.0f;     // landed: the roar follows
                 for (int i = 0; i < 4; i++)
                     skill_fx_spawn_burst_hostile((float[3]){ s.foot[i][0], s.groundY, s.foot[i][2] }, i * 1.5f);
                 screen_shake_set_shake_mag(12.0f);
@@ -902,6 +910,7 @@ void dragon_boss_update(Boss* b, float dt)
             }
         } else {
             s.tNeckPitch = 0.7f; s.tJaw = 0.8f; s.tWingRaise = 0.6f;    // a roar at the player
+            if (s.step == 1 && s.t > 0.4f) { s.step = 2; sfx_roar(); screen_shake_set_shake_mag(5.0f); }
         }
         face_player(b, dt, 2.0f);
         break;
@@ -1063,10 +1072,13 @@ void dragon_boss_draw(Boss* b)
             put(wing, root, x, y, s.F, k * s.wingSpan, k, k);
         }
 
-    // Glows: fire, dark orbs, the beam, the light in its mouth
+    // Glows: fire, dark orbs, the beam, the light in its mouth. Alpha-blended, not
+    // additive: the real RDP wraps an overflowing sum (overlapping flames turned rainbow)
     rdpq_sync_pipe();
     rdpq_mode_zbuf(true, false);
-    rdpq_mode_blender(RDPQ_BLENDER_ADDITIVE);
+    rdpq_mode_combiner(RDPQ_COMBINER1((0, 0, 0, SHADE), (0, 0, 0, PRIM)));
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+    rdpq_set_prim_color(RGBA32(255, 255, 255, 170));
     for (int i = 0; i < FL_MAX; i++) {
         const Flame *f = &s.fl[i];
         if (f->age >= f->life) continue;
