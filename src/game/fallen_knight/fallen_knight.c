@@ -302,6 +302,10 @@ void fallen_knight_update(Boss* b, float dt)
         b->pos[1] = s.groundY;
     }
 
+
+#ifdef HLE_TEST_DUMMY
+    { extern void hle_open_tick(bool, float); hle_open_tick((s.state == FK_CHASE || s.state == FK_RECOVER), dt); }   // test aid: measure the openings
+#endif
     switch (s.state) {
     case FK_INTRO:
         // Falls from above in a crimson light, lands with a burst, then fights
@@ -334,7 +338,7 @@ void fallen_knight_update(Boss* b, float dt)
                 break;
             }
         }
-        if (s.t > 0.4f) choose(b, dist);
+        if (s.t > 0.7f) choose(b, dist);
         break;
     }
 
@@ -363,8 +367,9 @@ void fallen_knight_update(Boss* b, float dt)
     case FK_MOONBLADE: moonblade_update(b, dt); break;
 
     case FK_RECOVER:
+        // A breather after every move: the opening to hit back
         play(FKA_IDLE, false);
-        if (s.t > 0.7f) enter(FK_CHASE);
+        if (s.t > 1.4f) enter(FK_CHASE);
         break;
 
     case FK_DEAD:
