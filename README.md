@@ -33,7 +33,7 @@ Optional sword skills inspired by Dragon Nest's Moonlord, on the D-pad with cool
 | Backflip high in the direction you are moving (in place when standing still) and rain five X-shaped sword waves on the target, one per swing. Without lock-on they land where the camera looks. | High risk nuke: a long rooted charge (a hit cancels it and hurts more), then a huge 180-degree slash that rolls outward as a wave. | Medium risk: crouch, then a rising swing that raises five light blades close around you that fan outward, each hitting repeatedly. |
 
 ### Skins
-Pick a look from **Settings > Skin** (Left/Right or A), saved with your settings: the stock Knight, a hooded Teal, Crimson or Umber Cloak (**Settings > Hood** puts the hood up or down), and three homages: the Wolf Knight's tattered blue cloak, the Black Swordsman's dark armor and black cloak, and the Scarlet Valkyrie's gold armor and red hair. Cloaks and hair are simulated cloth that sways and trails as you move.
+Pick a look from **Settings > Skin** (Left/Right or A), saved with your settings: the stock Knight, a hooded Teal, Crimson or Umber Cloak (**Settings > Hood** puts the hood up or down), and three homages: the Wolf Knight (dark silver plate, bright mail, a torn royal-blue cloak and a long black plume that arches off the helm), the Black Swordsman (blackened plate, a spined helm with burning eyes, a ragged black cloak and a slab of a greatsword) and the Scarlet Valkyrie (brass plate, an olive dress, a winged helm and fur collar, red hair over a crimson cape). Cloaks, capes, hair and plumes are simulated cloth that sways and trails as you move.
 
 <img src="docs/media/skins.png" width="800">
 

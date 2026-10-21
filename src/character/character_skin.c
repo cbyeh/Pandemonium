@@ -10,6 +10,7 @@
 #include "game_math.h"
 #include "game_lighting.h"
 #include "globals.h"
+#include "fx/proc_mesh.h"
 
 // Knight rig facts (from knight.glb): it faces -X, Y up; bone rest rotations are
 // identity, so bone-local offsets are model offsets. Offsets below are in glTF units.
@@ -19,29 +20,48 @@
 typedef struct { uint8_t r, g, b, set; } SkinColor;
 #define C(r, g, b) { r, g, b, 1 }
 
-enum { CLOTH_NONE, CLOTH_CLOAK, CLOTH_HAIR };
+enum { CLOTH_NONE, CLOTH_CLOAK, CLOTH_HAIR, CLOTH_PLUME };
+
+typedef struct {
+    uint8_t kind;
+    SkinColor color;
+    bool tattered;
+    float len, flare;                  // glTF units; bottom width over top width - 1
+    float drop;                        // a cloak pinned this much below the shoulders
+} ClothSpec;
+
+// Accessories: procedural meshes riding a bone (see acc_build)
+enum { ACC_WINGED_HELM = 1, ACC_FUR_COLLAR = 2, ACC_BERSERK_HELM = 4, ACC_DRAGONSLAYER = 8 };
 
 typedef struct {
     const char *name;
-    SkinColor armor, helm, cloth, plume, chain;
-    bool hidePlume;
-    uint8_t clothKind;
-    SkinColor clothColor;
-    bool tattered;
+    SkinColor armor, helm, cloth, plume, chain, sword;
+    bool hidePlume, hideSword;
+    ClothSpec cl[2];
     bool hood;                         // offers the Hood setting
+    uint8_t acc;
 } SkinDef;
+
+#define CLOAK(r, g, b) { CLOTH_CLOAK, C(r, g, b), false, 5.4f, 0.7f }
 
 static const SkinDef SKINS[SKIN_COUNT] = {
     [SKIN_KNIGHT]           = { "Knight" },
-    [SKIN_TEAL_CLOAK]       = { "Teal Cloak",    .cloth = C(20, 70, 70),  .clothKind = CLOTH_CLOAK, .clothColor = C(30, 120, 118), .hood = true },
-    [SKIN_CRIMSON_CLOAK]    = { "Crimson Cloak", .cloth = C(90, 16, 18),  .clothKind = CLOTH_CLOAK, .clothColor = C(150, 26, 30),  .hood = true },
-    [SKIN_UMBER_CLOAK]      = { "Umber Cloak",   .cloth = C(62, 42, 26),  .clothKind = CLOTH_CLOAK, .clothColor = C(105, 70, 44),  .hood = true },
-    [SKIN_WOLF_KNIGHT]      = { "Wolf Knight",   .armor = C(200, 208, 230), .helm = C(200, 208, 230), .cloth = C(26, 34, 84),
-                                .plume = C(46, 64, 140), .clothKind = CLOTH_CLOAK, .clothColor = C(30, 40, 92), .tattered = true },
-    [SKIN_BLACK_SWORDSMAN]  = { "Black Swordsman", .armor = C(78, 76, 84), .helm = C(70, 68, 76), .cloth = C(26, 22, 22),
-                                .chain = C(20, 20, 22), .hidePlume = true, .clothKind = CLOTH_CLOAK, .clothColor = C(34, 30, 30), .tattered = true },
-    [SKIN_SCARLET_VALKYRIE] = { "Scarlet Valkyrie", .armor = C(255, 205, 120), .helm = C(255, 205, 120), .cloth = C(150, 26, 30),
-                                .hidePlume = true, .clothKind = CLOTH_HAIR, .clothColor = C(200, 58, 28) },
+    [SKIN_TEAL_CLOAK]       = { "Teal Cloak",    .cloth = C(20, 70, 70), .cl = { CLOAK(30, 120, 118) }, .hood = true },
+    [SKIN_CRIMSON_CLOAK]    = { "Crimson Cloak", .cloth = C(90, 16, 18), .cl = { CLOAK(150, 26, 30) },  .hood = true },
+    [SKIN_UMBER_CLOAK]      = { "Umber Cloak",   .cloth = C(62, 42, 26), .cl = { CLOAK(105, 70, 44) },  .hood = true },
+    // Artorias: dark silver plate, bright mail, a torn royal-blue cloak, a long black plume
+    [SKIN_WOLF_KNIGHT]      = { "Wolf Knight", .armor = C(112, 104, 100), .helm = C(146, 142, 146), .chain = C(165, 175, 196),
+                                .cloth = C(30, 52, 108), .hidePlume = true,
+                                .cl = { { CLOTH_CLOAK, C(42, 74, 152), true, 4.6f, 0.8f }, { CLOTH_PLUME, C(22, 22, 30), false, 3.6f, 0.4f } } },
+    // Guts: blackened plate, a spined wolf helm with burning eyes, a ragged black cloak, the Dragonslayer
+    [SKIN_BLACK_SWORDSMAN]  = { "Black Swordsman", .armor = C(58, 57, 63), .helm = C(52, 51, 58), .cloth = C(24, 22, 22),
+                                .chain = C(22, 22, 24), .hidePlume = true, .hideSword = true,
+                                .cl = { { CLOTH_CLOAK, C(26, 24, 27), true, 6.2f, 0.9f } }, .acc = ACC_BERSERK_HELM | ACC_DRAGONSLAYER },
+    // Malenia: brass plate, an olive pleated dress, a winged helm, a fur collar, red hair over a crimson cape
+    [SKIN_SCARLET_VALKYRIE] = { "Scarlet Valkyrie", .armor = C(196, 156, 82), .helm = C(208, 168, 92), .cloth = C(98, 80, 50),
+                                .chain = C(72, 60, 40), .hidePlume = true,
+                                .cl = { { CLOTH_HAIR, C(196, 64, 30), true, 3.4f, 0.3f }, { CLOTH_CLOAK, C(86, 12, 16), false, 4.8f, 0.9f, 0.8f } },
+                                .acc = ACC_WINGED_HELM | ACC_FUR_COLLAR },
 };
 
 static int  s_skin = SKIN_KNIGHT;
@@ -86,42 +106,49 @@ static void bone_world(const T3DMat4FP *modelMat, int b, float x, float y, float
 
 typedef struct { float a[3], b[3], r; } Capsule;
 
-static struct {
+typedef struct {
     int cols, rows;
     float p[CLOTH_N][3], q[CLOTH_N][3];
-    float anchor[CLOTH_COLS][3];
+    float anchor[CLOTH_COLS][3], anchor2[CLOTH_COLS][3];   // anchor2: a plume's second, stiff row
     float hrest[CLOTH_ROWS], vrest[CLOTH_COLS];
     bool valid;
     float time;
-    Capsule body[18]; int bodyCount;
     T3DVertPacked *vb[RING];
     T3DMat4FP *mat[RING];
     int ring;
-} cloth;
+} Cloth;
+
+static Cloth s_cloth[2];
+static Capsule s_body[18];
+static int s_bodyCount;
 
 static const uint8_t TATTER[CLOTH_COLS] = { 100, 15, 60, 5, 80, 25, 90 };  // % of the last three segments
 
-void character_skin_reset_cloth(void) { cloth.valid = false; }
+void character_skin_reset_cloth(void) { s_cloth[0].valid = s_cloth[1].valid = false; }
 
-static inline float *P(int c, int r) { return cloth.p[r * cloth.cols + c]; }
+static inline float *PC(Cloth *cl, int c, int r) { return cl->p[r * cl->cols + c]; }
+static inline bool strands(const ClothSpec *sp) { return sp->kind == CLOTH_HAIR || sp->kind == CLOTH_PLUME; }
 
-static void cloth_anchors(const T3DMat4FP *M)
+static void cloth_anchors(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *M)
 {
-    const SkinDef *s = &SKINS[s_skin];
-    for (int c = 0; c < cloth.cols; c++) {
-        float u = (float)c / (cloth.cols - 1) * 2.0f - 1.0f;   // -1..1 across
-        if (s->clothKind == CLOTH_CLOAK) {
-            // Across the shoulders, wrapping forward at the sides
-            bone_world(M, B_SPINE, 0.95f - 0.95f * u * u + ((c & 1) ? 0.08f : 0.0f), 2.62f, 1.45f * u, cloth.anchor[c]);   // over the pauldrons, pleated
-        } else {
-            bone_world(M, B_HEAD, 0.6f - 0.1f * u * u, 1.3f, 0.45f * u, cloth.anchor[c]);
+    for (int c = 0; c < cl->cols; c++) {
+        float u = (float)c / (cl->cols - 1) * 2.0f - 1.0f;   // -1..1 across
+        if (sp->kind == CLOTH_CLOAK && sp->drop > 0.0f)   // across the back, under the hair
+            bone_world(M, B_SPINE, 1.25f - 0.7f * u * u + ((c & 1) ? 0.06f : 0.0f), 2.62f - sp->drop, 1.2f * u, cl->anchor[c]);
+        else if (sp->kind == CLOTH_CLOAK)   // over the pauldrons, wrapping forward at the sides, pleated
+            bone_world(M, B_SPINE, 0.95f - 0.95f * u * u + ((c & 1) ? 0.08f : 0.0f), 2.62f, 1.45f * u, cl->anchor[c]);
+        else if (sp->kind == CLOTH_HAIR)    // from the back of the helm
+            bone_world(M, B_HEAD, 0.6f - 0.15f * u * u, 1.3f, 0.62f * u, cl->anchor[c]);
+        else {                              // a crest on top of the helm that arches up and back
+            bone_world(M, B_HEAD, -0.15f + 0.25f * (u + 1.0f), 2.0f, 0.1f * u, cl->anchor[c]);
+            bone_world(M, B_HEAD, 0.35f + 0.25f * (u + 1.0f), 2.55f, 0.12f * u, cl->anchor2[c]);
         }
     }
 }
 
 static void cloth_bodies(const T3DMat4FP *M)
 {
-    Capsule *b = cloth.body; int n = 0;
+    Capsule *b = s_body; int n = 0;
     #define SPHERE(bone, x, y, z, rad) do { bone_world(M, bone, x, y, z, b[n].a); memcpy(b[n].b, b[n].a, sizeof b[n].a); b[n].r = (rad) * GU; n++; } while (0)
     #define CAPS(b0, b1, rad) do { bone_world(M, b0, 0, 0, 0, b[n].a); bone_world(M, b1, 0, 0, 0, b[n].b); b[n].r = (rad) * GU; n++; } while (0)
     // Radii are the mesh's extents plus a margin, as cloth triangles span between particles
@@ -129,7 +156,7 @@ static void cloth_bodies(const T3DMat4FP *M)
     SPHERE(B_SPINE, -0.1f, 1.45f, 0, 1.0f + m);      // upper back
     SPHERE(B_SPINE, -0.1f, 0.35f, 0, 0.95f + m);
     SPHERE(B_WAIST, -0.05f, -0.2f, 0, 0.9f + m);
-    SPHERE(B_HEAD, -0.34f, 1.07f, 0, SKINS[s_skin].clothKind == CLOTH_HAIR ? 0.9f : 0.95f + m);   // hair roots sit on it
+    SPHERE(B_HEAD, -0.34f, 1.07f, 0, 0.9f);          // hair and plume roots sit on it
     // sword hilt (the blade runs along the hand's -X): crossguard and pommel
     bone_world(M, B_HAND_R, -0.3f, 0, 0, b[n].a); bone_world(M, B_HAND_R, 1.25f, 0, 0, b[n].b); b[n].r = (0.7f + m) * GU; n++;
     CAPS(B_ARM_L, B_FORE_L, 0.62f + m);              // pauldrons and upper arms
@@ -144,25 +171,23 @@ static void cloth_bodies(const T3DMat4FP *M)
     CAPS(B_SHIN_R, B_FOOT_R, 0.42f + m);
     #undef SPHERE
     #undef CAPS
-    cloth.bodyCount = n;
+    s_bodyCount = n;
 }
 
-static void cloth_reset(void)
+static void cloth_reset(Cloth *cl, const ClothSpec *sp)
 {
-    const SkinDef *s = &SKINS[s_skin];
-    float len = (s->clothKind == CLOTH_HAIR ? 4.0f : 5.4f) * GU;
-    float flare = s->clothKind == CLOTH_HAIR ? 0.2f : 0.7f;
-    float top = sqrtf(t3d_vec3_distance2(&(T3DVec3){{cloth.anchor[0][0], cloth.anchor[0][1], cloth.anchor[0][2]}},
-                                         &(T3DVec3){{cloth.anchor[1][0], cloth.anchor[1][1], cloth.anchor[1][2]}}));
-    for (int r = 0; r < cloth.rows; r++) cloth.hrest[r] = top * (1.0f + flare * r / (cloth.rows - 1));
-    for (int c = 0; c < cloth.cols; c++) cloth.vrest[c] = len / (cloth.rows - 1);
-    for (int r = 0; r < cloth.rows; r++)
-        for (int c = 0; c < cloth.cols; c++) {
-            float *p = P(c, r);
-            p[0] = cloth.anchor[c][0]; p[1] = cloth.anchor[c][1] - cloth.vrest[c] * r; p[2] = cloth.anchor[c][2];
-            memcpy(cloth.q[r * cloth.cols + c], p, sizeof(float[3]));
+    float len = sp->len * GU;
+    float top = sqrtf(t3d_vec3_distance2(&(T3DVec3){{cl->anchor[0][0], cl->anchor[0][1], cl->anchor[0][2]}},
+                                         &(T3DVec3){{cl->anchor[1][0], cl->anchor[1][1], cl->anchor[1][2]}}));
+    for (int r = 0; r < cl->rows; r++) cl->hrest[r] = top * (1.0f + sp->flare * r / (cl->rows - 1));
+    for (int c = 0; c < cl->cols; c++) cl->vrest[c] = len / (cl->rows - 1);
+    for (int r = 0; r < cl->rows; r++)
+        for (int c = 0; c < cl->cols; c++) {
+            float *p = PC(cl, c, r);
+            p[0] = cl->anchor[c][0]; p[1] = cl->anchor[c][1] - cl->vrest[c] * r; p[2] = cl->anchor[c][2];
+            memcpy(cl->q[r * cl->cols + c], p, sizeof(float[3]));
         }
-    cloth.valid = true;
+    cl->valid = true;
 }
 
 static void link(float *a, float *b, float rest, bool pinA)
@@ -175,10 +200,11 @@ static void link(float *a, float *b, float rest, bool pinA)
     for (int i = 0; i < 3; i++) { a[i] += d[i] * k * wa; b[i] -= d[i] * k * wb; }
 }
 
-static void collide(float *p)
+// pad: hair over a cape rides a little further out, so it lies on the cape
+static void collide(float *p, float pad)
 {
-    for (int i = 0; i < cloth.bodyCount; i++) {
-        const Capsule *c = &cloth.body[i];
+    for (int i = 0; i < s_bodyCount; i++) {
+        const Capsule *c = &s_body[i];
         float ab[3] = { c->b[0] - c->a[0], c->b[1] - c->a[1], c->b[2] - c->a[2] };
         float ap[3] = { p[0] - c->a[0], p[1] - c->a[1], p[2] - c->a[2] };
         float l2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
@@ -186,22 +212,24 @@ static void collide(float *p)
         h = h < 0 ? 0 : h > 1 ? 1 : h;
         float d[3] = { ap[0] - ab[0] * h, ap[1] - ab[1] * h, ap[2] - ab[2] * h };
         float dl = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-        if (dl < c->r && dl > 1e-4f) {
-            float k = (c->r - dl) / dl;
+        float r = c->r + (i == 3 ? 0.0f : pad);   // not round the head: that is where it is pinned
+        if (dl < r && dl > 1e-4f) {
+            float k = (r - dl) / dl;
             p[0] += d[0] * k; p[1] += d[1] * k; p[2] += d[2] * k;
         }
     }
 }
 
-static void cloth_step(float h, const float back[3])
+// plane: hair over a cape stays behind it (point, normal), or NULL
+static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back[3], const float *plane)
 {
     const float g = -220.0f * h * h;
-    cloth.time += h;
-    const float damp = SKINS[s_skin].clothKind == CLOTH_HAIR ? 0.92f : 0.97f;
-    for (int r = 1; r < cloth.rows; r++)
-        for (int c = 0; c < cloth.cols; c++) {
-            float *p = P(c, r), *q = cloth.q[r * cloth.cols + c];
-            float gust = (14.0f + 10.0f * sinf(cloth.time * 1.7f + c * 0.6f)) * h * h * r / cloth.rows;
+    cl->time += h;
+    const float damp = strands(sp) ? 0.92f : 0.97f;
+    for (int r = 1; r < cl->rows; r++)
+        for (int c = 0; c < cl->cols; c++) {
+            float *p = PC(cl, c, r), *q = cl->q[r * cl->cols + c];
+            float gust = (14.0f + 10.0f * sinf(cl->time * 1.7f + c * 0.6f)) * h * h * r / cl->rows;
             for (int i = 0; i < 3; i++) {
                 float v = (p[i] - q[i]) * damp;
                 q[i] = p[i];
@@ -210,27 +238,40 @@ static void cloth_step(float h, const float back[3])
             p[1] += g;
         }
     for (int it = 0; it < 6; it++) {
-        for (int c = 0; c < cloth.cols; c++) memcpy(P(c, 0), cloth.anchor[c], sizeof(float[3]));
-        for (int r = 0; r < cloth.rows - 1; r++)
-            for (int c = 0; c < cloth.cols; c++) {
-                float rest = cloth.vrest[c];
-                if (SKINS[s_skin].tattered && r >= cloth.rows - 4) rest *= TATTER[c] / 100.0f;
-                link(P(c, r), P(c, r + 1), rest, r == 0);
+        for (int c = 0; c < cl->cols; c++) {
+            memcpy(PC(cl, c, 0), cl->anchor[c], sizeof(float[3]));
+            if (sp->kind == CLOTH_PLUME) memcpy(PC(cl, c, 1), cl->anchor2[c], sizeof(float[3]));
+        }
+        for (int r = 0; r < cl->rows - 1; r++)
+            for (int c = 0; c < cl->cols; c++) {
+                float rest = cl->vrest[c];
+                if (sp->tattered && r >= cl->rows - 4) rest *= TATTER[c] / 100.0f;
+                link(PC(cl, c, r), PC(cl, c, r + 1), rest, r == 0 || (r == 1 && sp->kind == CLOTH_PLUME));
             }
-        if (SKINS[s_skin].clothKind == CLOTH_HAIR)   // bend links: hair can't fold back on itself
-            for (int r = 0; r < cloth.rows - 2; r++)
-                for (int c = 0; c < cloth.cols; c++) link(P(c, r), P(c, r + 2), 2 * cloth.vrest[c], r == 0);
-        int loose = SKINS[s_skin].tattered ? cloth.rows - 3 : cloth.rows;   // tatters hang as free strands
+        if (strands(sp))   // bend links: hair can't fold back on itself
+            for (int r = 0; r < cl->rows - 2; r++)
+                for (int c = 0; c < cl->cols; c++) link(PC(cl, c, r), PC(cl, c, r + 2), 2 * cl->vrest[c], r == 0);
+        int loose = sp->tattered ? cl->rows - 3 : cl->rows;   // tatters hang as free strands
         for (int r = 1; r < loose; r++)
-            for (int c = 0; c < cloth.cols - 1; c++) link(P(c, r), P(c + 1, r), cloth.hrest[r], false);
-        if (it >= 3) for (int i = cloth.cols; i < cloth.cols * cloth.rows; i++) collide(cloth.p[i]);
-        // Never above the pins: a particle pushed out the top of a collider would otherwise stick up as a spike
-        for (int r = 1; r < cloth.rows; r++)
-            for (int c = 0; c < cloth.cols; c++) {
-                float maxY = cloth.anchor[c][1] - 0.15f * r * cloth.vrest[c];
-                if (P(c, r)[1] > maxY) P(c, r)[1] = maxY;
+            for (int c = 0; c < cl->cols - 1; c++) link(PC(cl, c, r), PC(cl, c + 1, r), cl->hrest[r], false);
+        if (it >= 3) for (int i = cl->cols; i < cl->cols * cl->rows; i++) {
+            float *p = cl->p[i];
+            collide(p, 0.0f);
+            if (plane) {
+                float d = (p[0] - plane[0]) * plane[3] + (p[1] - plane[1]) * plane[4] + (p[2] - plane[2]) * plane[5];
+                if (d < 0) for (int m = 0; m < 3; m++) p[m] -= d * plane[3 + m];
+            }
+        }
+        // Never above the pins (a cloak) or above the head (a plume streams back, it can't stand up)
+        for (int r = 1; r < cl->rows; r++)
+            for (int c = 0; c < cl->cols; c++) {
+                float top = sp->kind == CLOTH_PLUME ? cl->anchor2[c][1] : cl->anchor[c][1];
+                float maxY = top - (sp->kind == CLOTH_PLUME ? 0.02f : 0.15f) * r * cl->vrest[c];
+                if (PC(cl, c, r)[1] > maxY) PC(cl, c, r)[1] = maxY;
             }
     }
+    if (sp->kind == CLOTH_PLUME)   // the links above may have nudged its stiff root
+        for (int c = 0; c < cl->cols; c++) memcpy(PC(cl, c, 1), cl->anchor2[c], sizeof(float[3]));
 }
 
 static inline void put_vert(T3DVertPacked *vb, int i, const int16_t pos[3], uint32_t rgba)
@@ -252,33 +293,34 @@ static uint32_t shade(SkinColor c, const float n[3], float bias)
     return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xFF;
 }
 
-static void cloth_draw(const float origin[3])
+static void cloth_draw(Cloth *cl, const ClothSpec *sp, const float origin[3])
 {
-    if (!cloth.vb[0]) {
+    if (!cl->vb[0]) {
         for (int i = 0; i < RING; i++) {
-            cloth.vb[i] = malloc_uncached(sizeof(T3DVertPacked) * CLOTH_N / 2);
-            cloth.mat[i] = malloc_uncached(sizeof(T3DMat4FP));
+            cl->vb[i] = malloc_uncached(sizeof(T3DVertPacked) * CLOTH_N / 2);
+            cl->mat[i] = malloc_uncached(sizeof(T3DMat4FP));
         }
     }
-    T3DVertPacked *vb = cloth.vb[cloth.ring];
-    T3DMat4FP *mat = cloth.mat[cloth.ring];
-    cloth.ring = (cloth.ring + 1) % RING;
+    T3DVertPacked *vb = cl->vb[cl->ring];
+    T3DMat4FP *mat = cl->mat[cl->ring];
+    cl->ring = (cl->ring + 1) % RING;
 
     // Positions relative to the character in 1/8 world units, for sub-unit precision
     const float SUB = 8.0f;
     t3d_mat4fp_from_srt_euler(mat, (float[3]){ 1 / SUB, 1 / SUB, 1 / SUB }, (float[3]){ 0, 0, 0 }, origin);
-    SkinColor col = SKINS[s_skin].clothColor;
-    for (int r = 0; r < cloth.rows; r++)
-        for (int c = 0; c < cloth.cols; c++) {
-            const float *l = P(c > 0 ? c - 1 : c, r), *rr = P(c < cloth.cols - 1 ? c + 1 : c, r);
-            const float *u = P(c, r > 0 ? r - 1 : r), *d = P(c, r < cloth.rows - 1 ? r + 1 : r);
+    for (int r = 0; r < cl->rows; r++)
+        for (int c = 0; c < cl->cols; c++) {
+            const float *l = PC(cl, c > 0 ? c - 1 : c, r), *rr = PC(cl, c < cl->cols - 1 ? c + 1 : c, r);
+            const float *u = PC(cl, c, r > 0 ? r - 1 : r), *d = PC(cl, c, r < cl->rows - 1 ? r + 1 : r);
             float a[3] = { rr[0] - l[0], rr[1] - l[1], rr[2] - l[2] }, b[3] = { d[0] - u[0], d[1] - u[1], d[2] - u[2] };
             float n[3] = { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] };
             float nl = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]) + 1e-6f;
             n[0] /= nl; n[1] /= nl; n[2] /= nl;
-            const float *p = P(c, r);
+            const float *p = PC(cl, c, r);
             int16_t pos[3] = { (int16_t)((p[0] - origin[0]) * SUB), (int16_t)((p[1] - origin[1]) * SUB), (int16_t)((p[2] - origin[2]) * SUB) };
-            put_vert(vb, r * cloth.cols + c, pos, shade(col, n, 1.0f - 0.25f * r / cloth.rows));
+            // strands get a sheen down the middle, cloth darkens toward the hem
+            float bias = strands(sp) ? 0.85f + 0.3f * (c == cl->cols / 2) : 1.0f - 0.25f * r / cl->rows;
+            put_vert(vb, r * cl->cols + c, pos, shade(sp->color, n, bias));
         }
 
     rdpq_sync_pipe();
@@ -288,12 +330,12 @@ static void cloth_draw(const float origin[3])
     rdpq_mode_alphacompare(0);
     t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
     t3d_matrix_set(mat, true);
-    t3d_vert_load(vb, 0, cloth.cols * cloth.rows);
-    for (int r = 0; r < cloth.rows - 1; r++)
-        for (int c = 0; c < cloth.cols - 1; c++) {
-            int i = r * cloth.cols + c;
-            t3d_tri_draw(i, i + cloth.cols, i + 1);
-            t3d_tri_draw(i + 1, i + cloth.cols, i + cloth.cols + 1);
+    t3d_vert_load(vb, 0, cl->cols * cl->rows);
+    for (int r = 0; r < cl->rows - 1; r++)
+        for (int c = 0; c < cl->cols - 1; c++) {
+            int i = r * cl->cols + c;
+            t3d_tri_draw(i, i + cl->cols, i + 1);
+            t3d_tri_draw(i + 1, i + cl->cols, i + cl->cols + 1);
         }
     t3d_tri_sync();
 }
@@ -361,14 +403,14 @@ static void hood_build(void)
         s_hoodBone = B_HEAD;
         open = 12 * R;
         n0 = shell(s_hoodVerts[0], (float[3]){ -0.34f, 1.07f, 0 }, (float[3]){ 1.1f, 1.1f, 0.86f },
-                   t0, t1, nt, p0, p1, np, 0.45f, 0.14f, s->clothColor);
+                   t0, t1, nt, p0, p1, np, 0.45f, 0.14f, s->cl[0].color);
     } else {          // gathered round the neck, folds lying on the back
         s_hoodBone = B_SPINE;
         t0 = -135 * R; t1 = 135 * R; p0 = -80 * R; p1 = 80 * R; nt = 9; np = 7;
         n0 = shell(s_hoodVerts[0], (float[3]){ -0.1f, 2.25f, 0 }, (float[3]){ 1.12f, 0.36f, 1.1f },
-                   t0, t1, nt, p0, p1, np, 0, 0, s->clothColor);
+                   t0, t1, nt, p0, p1, np, 0, 0, s->cl[0].color);
         n1 = shell(s_hoodVerts[1], (float[3]){ 0.9f, 1.75f, 0 }, (float[3]){ 0.28f, 0.62f, 0.66f },
-                   -90 * R, 90 * R, nt1, -88 * R, 88 * R, np1, 0, 0, s->clothColor);
+                   -90 * R, 90 * R, nt1, -88 * R, 88 * R, np1, 0, 0, s->cl[0].color);
     }
     rspq_block_begin();
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
@@ -388,13 +430,154 @@ static void hood_build(void)
 }
 
 /* -----------------------------------------------------------------------------
+ * Accessories: proc meshes in a bone's space (model units, glTF x 64)
+ * -------------------------------------------------------------------------- */
+
+#define ACC_MAX 4
+static struct { ProcMesh m; int bone; } s_acc[ACC_MAX];
+static int s_accCount;
+
+static void G(float out[3], float x, float y, float z) { out[0] = x * GLTF; out[1] = y * GLTF; out[2] = z * GLTF; }
+static inline uint32_t rgb(SkinColor c) { return proc_rgb(c.r, c.g, c.b); }
+
+// A flat shape given as a strip of point pairs (both faces lit)
+static void strip(const float (*l)[3], const float (*r)[3], int n, uint32_t col)
+{
+    for (int i = 0; i < n - 1; i++) proc_mesh_quad(l[i], r[i], r[i + 1], l[i + 1], col, false);
+}
+
+static void acc_winged_helm(SkinColor gold)
+{
+    // Malenia's crest: a tall wing of feathers rising off the helm and swept back,
+    // in two leaves splayed a little so it reads from behind as well
+    for (int side = -1; side <= 1; side += 2)
+        for (int k = 0; k < 7; k++) {
+            float a = (96.0f - k * 9.0f) * (float)M_PI / 180.0f, len = 2.1f - 0.12f * k, w = 0.26f - 0.012f * k;
+            float bx = -0.72f + 0.13f * k, by = 1.84f + 0.03f * k;
+            float dx = cosf(a), dy = sinf(a), sz = side * 0.08f;     // a slight V, to read from behind
+            float l[4][3], r[4][3];
+            for (int i = 0; i < 4; i++) {
+                float t = i / 3.0f, ww = w * (1.0f - 0.7f * t), bend = 0.45f * t * t;   // tips curl back
+                float px = bx + dx * len * t + bend, py = by + dy * len * t, pz = side * 0.05f + sz * t * len;
+                G(l[i], px - dy * ww, py + dx * ww, pz); G(r[i], px + dy * ww, py - dx * ww, pz);
+            }
+            SkinColor c = gold; float f = 0.85f + 0.05f * k;
+            c.r = (uint8_t)fminf(255, c.r * f); c.g = (uint8_t)fminf(255, c.g * f); c.b = (uint8_t)fminf(255, c.b * f);
+            strip(l, r, 4, rgb(c));
+        }
+}
+
+static void ring(float cx, float cy, float rx, float ry, float rz, float th0, float th1, int nt, int np, uint32_t col, float fluff)
+{
+    for (int j = 0; j < np; j++)
+        for (int i = 0; i < nt; i++) {
+            float t[2] = { th0 + (th1 - th0) * i / nt, th0 + (th1 - th0) * (i + 1) / nt };
+            float f[2] = { -1.4f + 2.8f * j / np, -1.4f + 2.8f * (j + 1) / np };
+            float q[4][3];
+            for (int k = 0; k < 4; k++) {
+                float th = t[(k == 1 || k == 2)], ph = f[k >= 2];
+                float fl = 1.0f + fluff * sinf(th * 13.0f + ph * 5.0f);
+                G(q[k], cx + rx * cosf(ph) * cosf(th) * fl, cy + ry * sinf(ph) * fl, rz * cosf(ph) * sinf(th) * fl);
+            }
+            proc_mesh_quad(q[0], q[1], q[2], q[3], col, false);
+        }
+}
+
+static void acc_berserk_helm(SkinColor steel)
+{
+    // Spined fins swept back off the helm, and the burning eyes of the Berserker armour
+    uint32_t c = rgb(steel);
+    static const float FINS[][6] = {
+        { -0.75f, 1.85f, 0.0f,  1.35f, 2.0f, 0.0f },
+        { -0.35f, 1.78f, 0.26f, 1.35f, 1.72f, 0.4f },  { -0.35f, 1.78f, -0.26f, 1.35f, 1.72f, -0.4f },
+        { -0.05f, 1.45f, 0.5f,  1.25f, 1.32f, 0.6f },  { -0.05f, 1.45f, -0.5f, 1.25f, 1.32f, -0.6f },
+    };
+    for (unsigned i = 0; i < sizeof FINS / sizeof FINS[0]; i++) {
+        float b[3], t[3];
+        G(b, FINS[i][0], FINS[i][1], FINS[i][2]); G(t, FINS[i][3], FINS[i][4], FINS[i][5]);
+        proc_mesh_spike(b, t, (i == 0 ? 0.22f : 0.16f) * GLTF, 4, c);
+    }
+    for (int side = -1; side <= 1; side += 2) {     // slanted slits, a hair in front of the visor
+        float q[4][3];
+        G(q[0], -1.33f, 0.79f, side * 0.07f); G(q[1], -1.33f, 0.86f, side * 0.07f);
+        G(q[2], -1.31f, 0.9f, side * 0.36f);  G(q[3], -1.31f, 0.83f, side * 0.36f);
+        proc_mesh_quad(q[0], q[1], q[2], q[3], proc_rgb(255, 196, 40), true);
+    }
+}
+
+static void acc_dragonslayer(SkinColor iron)
+{
+    // A slab of raw iron: the stock sword runs from the pommel (1.36, 0.65, 0.2) to the
+    // tip (-8.15, 1.05, -1.0) in the hand's space, its flat across y
+    float o[3] = { 0.2f, 0.66f, 0.15f }, u[3] = { -9.5f, 0.4f, -1.2f };
+    float ul = sqrtf(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+    for (int i = 0; i < 3; i++) u[i] /= ul;
+    float w[3] = { -u[0] * u[1], 1.0f - u[1] * u[1], -u[2] * u[1] };   // y without its u part
+    float wl = sqrtf(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
+    for (int i = 0; i < 3; i++) w[i] /= wl;
+    float t[3] = { u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0] };
+    // oriented box: along u from a to b, half widths hw (w) and ht (t)
+    #define OBOX(a, b, hw, ht, col) do { \
+        float v[8][3]; \
+        for (int k = 0; k < 8; k++) { float s0 = (k & 1) ? (b) : (a), s1 = (k & 2) ? (hw) : -(hw), s2 = (k & 4) ? (ht) : -(ht); \
+            for (int m = 0; m < 3; m++) v[k][m] = (o[m] + u[m] * s0 + w[m] * s1 + t[m] * s2) * GLTF; } \
+        static const int F[6][4] = { {0,1,3,2}, {4,6,7,5}, {0,4,5,1}, {2,3,7,6}, {0,2,6,4}, {1,5,7,3} }; \
+        for (int f = 0; f < 6; f++) proc_mesh_quad(v[F[f][0]], v[F[f][1]], v[F[f][2]], v[F[f][3]], col, false); } while (0)
+    SkinColor edge = { (uint8_t)fminf(255, iron.r * 1.5f), (uint8_t)fminf(255, iron.g * 1.5f), (uint8_t)fminf(255, iron.b * 1.5f), 1 };
+    OBOX(-0.8f, 0.7f, 0.14f, 0.14f, proc_rgb(92, 66, 42));    // wrapped grip
+    OBOX(0.7f, 1.0f, 0.55f, 0.2f, rgb(iron));                 // squat guard
+    OBOX(1.0f, 10.4f, 0.72f, 0.12f, rgb(iron));               // the slab
+    OBOX(1.0f, 10.4f, 0.78f, 0.04f, rgb(edge));               // its bevelled edges
+    OBOX(9.7f, 10.7f, 0.5f, 0.11f, rgb(iron));                // the blunt, angled tip
+    #undef OBOX
+}
+
+static void acc_build(void)
+{
+    for (int i = 0; i < s_accCount; i++) proc_mesh_free(&s_acc[i].m);   // waits for the RSP
+    s_accCount = 0;
+    const SkinDef *s = &SKINS[s_skin];
+    #define ACC(flag, bn, ...) if ((s->acc & (flag)) && s_accCount < ACC_MAX) { \
+        proc_mesh_begin(); __VA_ARGS__; proc_mesh_end(&s_acc[s_accCount].m); \
+        proc_mesh_set_transform(&s_acc[s_accCount].m, 1.0f, (float[3]){ 0, 0, 0 }, (float[3]){ 0, 0, 0 }); \
+        s_acc[s_accCount++].bone = bn; }
+    ACC(ACC_WINGED_HELM, B_HEAD, acc_winged_helm(s->helm));
+    ACC(ACC_FUR_COLLAR, B_SPINE, ring(-0.1f, 2.62f, 1.32f, 0.38f, 1.42f, -2.5f, 2.5f, 16, 3, proc_rgb(156, 132, 100), 0.08f));
+    ACC(ACC_BERSERK_HELM, B_HEAD, acc_berserk_helm(s->helm));
+    ACC(ACC_DRAGONSLAYER, B_HAND_R, acc_dragonslayer((SkinColor)C(70, 68, 70)));
+    #undef ACC
+}
+
+static void acc_draw(const T3DSkeleton *skel, const T3DMat4FP *modelMat)
+{
+    if (!s_accCount) return;
+    rdpq_sync_pipe();
+    rdpq_set_mode_standard();
+    rdpq_mode_zbuf(true, true);
+    rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
+    t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
+    for (int i = 0; i < s_accCount; i++) {
+        t3d_matrix_set(modelMat, true);
+        t3d_matrix_push(&skel->boneMatricesFP[s_bone[s_acc[i].bone]]);
+        t3d_matrix_push(s_acc[i].m.mat);     // proc_mesh's 1/8 units
+        rspq_block_run(s_acc[i].m.block);
+        t3d_matrix_pop(2);
+    }
+}
+
+/* -----------------------------------------------------------------------------
  * Recording / drawing
  * -------------------------------------------------------------------------- */
 
-static bool filter_plume(void *user, const T3DObject *obj)
+// userData: bit 0 hides the plume (cloth2), bit 1 the sword
+static bool filter_parts(void *user, const T3DObject *obj)
 {
-    (void)user;
-    return !(obj->material && obj->material->name && strcmp(obj->material->name, "cloth2") == 0);
+    uintptr_t hide = (uintptr_t)user;
+    const char *n = obj->material ? obj->material->name : NULL;
+    if (!n) return true;
+    if ((hide & 1) && strcmp(n, "cloth2") == 0) return false;
+    if ((hide & 2) && strcmp(n, "sword") == 0) return false;
+    return true;
 }
 
 static void tint(const char *matName, SkinColor c, color_t *saved)
@@ -412,24 +595,27 @@ rspq_block_t* character_skin_record(const T3DModel *model, const T3DSkeleton *sk
     const SkinDef *s = &SKINS[s_skin];
 
     // Tint, record, then restore: the Fallen Knight draws this model live with stock colours
-    static const char *MATS[] = { "knight", "head", "cloth", "cloth2", "chainmail" };
-    const SkinColor cols[] = { s->armor, s->helm, s->cloth, s->plume, s->chain };
-    color_t saved[5];
-    for (int i = 0; i < 5; i++) tint(MATS[i], cols[i], &saved[i]);
-    bool hidePlume = s->hidePlume || (s->hood && s_hoodUp);
+    static const char *MATS[] = { "knight", "head", "cloth", "cloth2", "chainmail", "sword" };
+    const SkinColor cols[] = { s->armor, s->helm, s->cloth, s->plume, s->chain, s->sword };
+    enum { NM = sizeof MATS / sizeof MATS[0] };
+    color_t saved[NM];
+    for (int i = 0; i < NM; i++) tint(MATS[i], cols[i], &saved[i]);
+    uintptr_t hide = ((s->hidePlume || (s->hood && s_hoodUp)) ? 1 : 0) | (s->hideSword ? 2 : 0);
     rspq_block_begin();
     t3d_model_draw_custom(model, (T3DModelDrawConf){
-        .filterCb = hidePlume ? filter_plume : NULL,
+        .userData = (void*)hide,
+        .filterCb = hide ? filter_parts : NULL,
         .matrices = skel->bufferCount == 1 ? skel->boneMatricesFP
                                            : (const T3DMat4FP*)t3d_segment_placeholder(T3D_SEGMENT_SKELETON),
     });
     rspq_block_t *block = rspq_block_end();
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < NM; i++) {
         T3DMaterial *m = t3d_model_get_material(model, MATS[i]);
         if (m) m->primColor = saved[i];
     }
     hood_build();
-    cloth.valid = false;
+    acc_build();
+    character_skin_reset_cloth();
     return block;
 }
 
@@ -469,23 +655,39 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
         rspq_block_run(s_hoodBlock);
         t3d_matrix_pop(1);
     }
-    if (s->clothKind == CLOTH_NONE) return;
+    acc_draw(skel, modelMat);
+    if (s->cl[0].kind == CLOTH_NONE) return;
 
-    cloth.cols = s->clothKind == CLOTH_HAIR ? 3 : CLOTH_COLS;
-    cloth.rows = CLOTH_ROWS;
-    float prev0[3]; memcpy(prev0, cloth.anchor[0], sizeof prev0);
-    cloth_anchors(modelMat);
     cloth_bodies(modelMat);
-    float dx = cloth.anchor[0][0] - prev0[0], dy = cloth.anchor[0][1] - prev0[1], dz = cloth.anchor[0][2] - prev0[2];
-    if (!cloth.valid || dx * dx + dy * dy + dz * dz > 40.0f * 40.0f) cloth_reset();   // first frame or teleport
-
     // "Back" is the model's +X axis in world space
     float o[3], x1[3], back[3];
     mat4fp_mul_point_f32_row3_colbasis(modelMat, (float[3]){ 0, 0, 0 }, o);
     mat4fp_mul_point_f32_row3_colbasis(modelMat, (float[3]){ GLTF, 0, 0 }, x1);
     for (int i = 0; i < 3; i++) back[i] = (x1[i] - o[i]) / GU;
-
     if (dt > 0.05f) dt = 0.05f;
-    if (dt > 0.0f) { cloth_step(dt * 0.5f, back); cloth_step(dt * 0.5f, back); }
-    cloth_draw(pos);
+
+    bool cape = s->cl[0].kind == CLOTH_CLOAK || s->cl[1].kind == CLOTH_CLOAK;
+    for (int k = 0; k < 2; k++) {
+        const ClothSpec *sp = &s->cl[k];
+        Cloth *cl = &s_cloth[k];
+        if (sp->kind == CLOTH_NONE) continue;
+        cl->cols = sp->kind == CLOTH_CLOAK ? CLOTH_COLS : sp->kind == CLOTH_HAIR ? 3 : 2;
+        cl->rows = CLOTH_ROWS;
+        float prev0[3]; memcpy(prev0, cl->anchor[0], sizeof prev0);
+        cloth_anchors(cl, sp, modelMat);
+        float dx = cl->anchor[0][0] - prev0[0], dy = cl->anchor[0][1] - prev0[1], dz = cl->anchor[0][2] - prev0[2];
+        if (!cl->valid || dx * dx + dy * dy + dz * dz > 40.0f * 40.0f) cloth_reset(cl, sp);   // first frame or teleport
+        // hair over a cape: kept behind a plane just outside the cape's top edge
+        float plane[6], *pl = NULL;
+        if (strands(sp) && cape) {
+            bone_world(modelMat, B_SPINE, 1.12f, 2.62f, 0.0f, plane);
+            float hl = sqrtf(back[0] * back[0] + back[2] * back[2]) + 1e-6f;
+            plane[3] = back[0] / hl; plane[4] = 0.0f; plane[5] = back[2] / hl;
+            pl = plane;
+        }
+        if (dt > 0.0f) { cloth_step(cl, sp, dt * 0.5f, back, pl); cloth_step(cl, sp, dt * 0.5f, back, pl); }
+        if (pl) t3d_state_set_depth_offset(-0x40);   // where it lies on the cape, it wins
+        cloth_draw(cl, sp, pos);
+        if (pl) t3d_state_set_depth_offset(0);
+    }
 }
