@@ -51,6 +51,7 @@ typedef enum {
     CHAR_STATE_KNOCKDOWN,
     CHAR_STATE_DEAD,
     CHAR_STATE_SKILL,
+    CHAR_STATE_CINE_WALK,       // scripted walk forward (cutscenes); FOG_WALK's clip steps backward
 } CharacterState;
 
 // D-pad skills (D-left is the health potion)

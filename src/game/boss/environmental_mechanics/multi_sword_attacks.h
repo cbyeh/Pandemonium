@@ -50,4 +50,7 @@ void msa_ground_sweep_start(void);
 bool msa_ground_sweep_is_done(void);
 bool msa_ground_sweep_is_active(void);
 
+// Removes every sword, wall and crack at once (the boss died).
+void msa_clear_all(void);
+
 #endif

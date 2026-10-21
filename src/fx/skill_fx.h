@@ -39,4 +39,7 @@ void skill_fx_spawn_arc_hostile(const float pos[3], float yaw, float radius, flo
 void skill_fx_spawn_wave_hostile(SkillWaveShape shape, const float pos[3], const float vel[3],
                                  float damage, int hits, float hitInterval, float life, bool pillarOnEnd);
 
+// Removes the bosses' effects, keeping the player's.
+void skill_fx_clear_hostile(void);
+
 #endif

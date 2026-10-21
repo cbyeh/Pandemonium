@@ -20,6 +20,8 @@
 #include "character.h"
 #include "globals.h"
 #include "../../fx/sword_trail.h"
+#include "../../fx/skill_fx.h"
+#include "environmental_mechanics/multi_sword_attacks.h"
 
 // Forward declarations for internal functions
 static void boss_apply_intent(Boss* boss, const BossIntent* intent);
@@ -671,6 +673,10 @@ void boss_apply_damage(Boss* boss, float amount)
         boss->velZ = 0.0f;
         boss->currentSpeed = 0.0f;
         boss_set_mode(boss, BOSS_MODE_POST_DEFEAT);
+        // Nothing it left behind may hurt the player now: swords, walls, crosses, pillars
+        msa_clear_all();
+        skill_fx_clear_hostile();
+        for (int i = 0; i < 12; i++) boss->aerialSwordActive[i] = false;
     }
 }
 

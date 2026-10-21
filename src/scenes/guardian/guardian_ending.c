@@ -12,6 +12,7 @@
 #include "audio_controller.h"
 #include "general_utility.h"
 #include "../../managers/cutscene_manager.h"
+#include "dialog_controller.h"
 #include "../../fx/proc_mesh.h"
 #include "../../fx/skill_fx.h"
 #include "../../fx/screen_shake.h"
@@ -31,7 +32,7 @@ static const float ARM_PIVOT[3] = { THRONE_X + 2.0f, FLOOR_Y + 39.0f, 0.0f };
 static bool s_ready;
 static float s_t;
 static int s_line;
-static ProcMesh s_throne, s_king, s_arms, s_gold, s_sun;
+static ProcMesh s_throne, s_king, s_arms, s_gold, s_sun, s_dog;
 static T3DModel *s_raysModel;
 static T3DMat4FP *s_raysMat;
 static ScrollParams s_raysScroll = { .xSpeed = 30.0f, .ySpeed = 0.0f, .scale = 64 };
@@ -139,6 +140,53 @@ static void build_gold(void)
     proc_mesh_end(&s_gold);
 }
 
+// ---- The dog the knight becomes in the void (a shiba: tan back, white front) ----
+
+static void blob(const float c[3], const float r[3], uint32_t col)
+{
+    enum { LAT = 5, LON = 8 };
+    for (int i = 0; i < LAT; i++)
+        for (int j = 0; j < LON; j++) {
+            float a0 = T3D_PI * i / LAT, a1 = T3D_PI * (i + 1) / LAT;
+            float b0 = 2.0f * T3D_PI * j / LON, b1 = 2.0f * T3D_PI * (j + 1) / LON;
+            float q[4][3];
+            float A[4] = { a0, a1, a1, a0 }, B[4] = { b0, b0, b1, b1 };
+            for (int k = 0; k < 4; k++) {
+                q[k][0] = c[0] + r[0] * sinf(A[k]) * cosf(B[k]);
+                q[k][1] = c[1] + r[1] * cosf(A[k]);
+                q[k][2] = c[2] + r[2] * sinf(A[k]) * sinf(B[k]);
+            }
+            proc_mesh_quad(q[0], q[1], q[2], q[3], col, false);
+        }
+}
+
+#define DOG_HEIGHT 15.0f     // the dog is built about this tall, facing +x
+
+static void build_dog(void)
+{
+    const uint32_t tan = proc_rgb(200, 122, 56), cream = proc_rgb(238, 228, 212), dark = proc_rgb(28, 20, 18);
+    proc_mesh_begin();
+    blob((float[3]){ 0, 7, 0 }, (float[3]){ 7, 3.6f, 3.4f }, tan);                 // body
+    blob((float[3]){ 2.6f, 5.6f, 0 }, (float[3]){ 4.4f, 2.6f, 2.9f }, cream);      // chest and belly
+    blob((float[3]){ 8.6f, 10.6f, 0 }, (float[3]){ 3.4f, 3.0f, 3.1f }, tan);       // head
+    blob((float[3]){ 11.2f, 9.5f, 0 }, (float[3]){ 2.2f, 1.5f, 1.7f }, cream);     // muzzle and cheeks
+    blob((float[3]){ 9.4f, 9.2f, 0 }, (float[3]){ 2.4f, 1.6f, 2.6f }, cream);
+    proc_mesh_box((float[3]){ 13.3f, 9.9f, 0 }, (float[3]){ 0.5f, 0.5f, 0.6f }, dark);   // nose
+    for (int s = -1; s <= 1; s += 2) {
+        proc_mesh_box((float[3]){ 11.0f, 11.6f, s * 1.5f }, (float[3]){ 0.25f, 0.35f, 0.45f }, dark);   // eyes
+        proc_mesh_spike((float[3]){ 8.4f, 12.8f, s * 1.7f }, (float[3]){ 8.2f, 16.0f, s * 2.3f }, 1.3f, 3, tan);   // ears
+        for (int f = -1; f <= 1; f += 2) {     // legs, white socks
+            float x = f > 0 ? 4.6f : -4.6f;
+            proc_mesh_box((float[3]){ x, 2.6f, s * 2.1f }, (float[3]){ 1.0f, 2.4f, 1.0f }, tan);
+            proc_mesh_box((float[3]){ x + 0.3f, 0.6f, s * 2.1f }, (float[3]){ 1.2f, 0.6f, 1.1f }, cream);
+        }
+    }
+    // the curled tail
+    proc_mesh_spike((float[3]){ -6.5f, 8.5f, 0 }, (float[3]){ -7.8f, 12.0f, 0 }, 1.5f, 4, tan);
+    proc_mesh_spike((float[3]){ -7.6f, 11.6f, 0 }, (float[3]){ -5.0f, 13.2f, 0.4f }, 1.2f, 4, cream);
+    proc_mesh_end(&s_dog);
+}
+
 #define SUN_R 16.0f      // built at this radius (proc meshes store 1/8 units)
 
 static void build_sun(void)
@@ -157,6 +205,8 @@ void ending_free(void)
     proc_mesh_free(&s_arms);
     proc_mesh_free(&s_gold);
     proc_mesh_free(&s_sun);
+    proc_mesh_free(&s_dog);
+    character.visible = true;
     if (s_raysModel) t3d_model_free(s_raysModel);
     if (s_raysMat) free_uncached(s_raysMat);
     s_raysModel = NULL;
@@ -171,6 +221,7 @@ void ending_begin(void)
     build_king();
     build_gold();
     build_sun();
+    build_dog();
     const float t[3] = { THRONE_X, FLOOR_Y, 0.0f };
     proc_mesh_set_transform(&s_throne, 1.0f, (float[3]){ 0, 0, 0 }, t);
     proc_mesh_set_transform(&s_king, 1.0f, (float[3]){ 0, 0, 0 }, t);
@@ -185,7 +236,7 @@ void ending_begin(void)
     character.pos[1] = FLOOR_Y;
     character.pos[2] = 0.0f;
     character_set_velocity_xz(0.0f, 0.0f);
-    character_set_state(CHAR_STATE_FOG_WALK);
+    character_set_state(CHAR_STATE_CINE_WALK);
 
     cutscene_manager_set_camera_shot(NULL, (T3DVec3){{ WALK_FROM_X - 30.0f, 20.0f, 8.0f }},
                                      (T3DVec3){{ WALK_FROM_X - 30.0f, 20.0f, 8.0f }},
@@ -199,13 +250,23 @@ void ending_begin(void)
 // ---- Timeline ----
 
 static const struct { float t; const char *text; } LINES[] = {
-    { 15.5f, "^You've come here...~ ^to kill\nme? And what will that\nachieve..." },
-    { 21.0f, "^There is nothing left in this\nworld that is not already\nmine." },
+    // Each line is typed out at least a second before its shot cuts away (see LINE_CLEAR)
+    { 15.0f, "^You've come here...~ >to kill\nme? And what will that\nachieve..." },
+    { 21.0f, ">There is nothing left in this\nworld that is not already\n^mine." },
     { 26.3f, "<If I die..." },
     { 29.6f, ">IT DIES WITH ME" },
-    { 50.0f, "<A fitting image..." },
+    { 53.0f, "<A fitting image..." },     // over the cut back to the hall, as in the video
 };
-static const float LINE_CLEAR[] = { 20.8f, 26.0f, 29.4f, 33.5f, 56.0f };
+static const float LINE_CLEAR[] = { 20.9f, 25.9f, 29.4f, 33.5f, 59.4f };
+
+#define DOG_T 50.6f      // in the void, the knight becomes a dog
+
+static void dog_place(const float pos[3], float yaw, float tumble, float scale)
+{
+    // centred on its middle so the tumble turns it about itself
+    proc_mesh_set_transform(&s_dog, scale, (float[3]){ tumble, yaw, tumble * 0.6f },
+                            (float[3]){ pos[0], pos[1] + DOG_HEIGHT * 0.2f * scale, pos[2] });
+}
 
 static void knight_walk_x(float t, float *x) { *x = WALK_FROM_X + (WALK_TO_X - WALK_FROM_X) * clamp01(t / WALK_END_T); }
 
@@ -263,35 +324,58 @@ bool ending_update(float dt)
     { static int n; if (++n % 30 == 0) debugf("[end] t %.2f dt %.3f\n", (double)t, (double)dt); }
 #endif
 
+#ifdef HLE_TEST_ENDING
+    if (t == dt)   // self-check: every line is read in full before it is cleared
+        for (int i = 0; i < (int)(sizeof(LINES) / sizeof(LINES[0])); i++) {
+            float hold = LINE_CLEAR[i] - LINES[i].t - dialog_controller_type_time(LINES[i].text);
+            debugf("[end] line %d holds %.2f s typed out%s\n", i, (double)hold, hold < 1.0f ? "  FAIL" : "");
+        }
+#endif
     // Dialog
     if (s_line < (int)(sizeof(LINES) / sizeof(LINES[0])) && t >= LINES[s_line].t) {
         cutscene_manager_begin_dialog(LINES[s_line].text, 0.0f);
+#ifdef HLE_TEST_ENDING
+        debugf("[end] line %d starts at %.2f (%lu ms)\n", s_line, (double)t, (unsigned long)get_ticks_ms());
+#endif
         s_line++;
     }
-    if (s_line > 0 && t >= LINE_CLEAR[s_line - 1] && cutscene_manager_is_dialog_active()) cutscene_manager_clear_dialog();
+    if (s_line > 0 && t >= LINE_CLEAR[s_line - 1] && cutscene_manager_is_dialog_active()) {
+#ifdef HLE_TEST_ENDING
+        debugf("[end] line %d cleared at %.2f\n", s_line - 1, (double)t);
+#endif
+        cutscene_manager_clear_dialog();
+    }
     cutscene_manager_update_dialog();
 
     // The knight: walks in, stops, falls through the vortex shrinking, lands tiny
     float kx; knight_walk_x(t, &kx);
     if (t < WALK_END_T) {
         character.pos[0] = kx;
-        character.rot[1] = T3D_PI * 0.5f;      // facing down the hall (+x)
+        character.rot[1] = T3D_PI * 1.5f;      // facing up the hall to the throne (+x), as in the fight
     } else if (t < 47.5f) {
-        if (character_get_state() == CHAR_STATE_FOG_WALK) character_set_state(CHAR_STATE_NORMAL);
+        if (character_get_state() == CHAR_STATE_CINE_WALK) character_set_state(CHAR_STATE_NORMAL);
         character.pos[0] = WALK_TO_X;
     } else if (t < 54.0f) {
+        // falls through the vortex, tumbling; at DOG_T it is a dog
         if (character_get_state() != CHAR_STATE_KNOCKDOWN) character_set_state(CHAR_STATE_KNOCKDOWN);   // not DEAD: that is the death screen
         float u = smooth(47.5f, 54.0f, t);
         character.pos[0] = 0.0f; character.pos[1] = VOID_Y - 20.0f - 150.0f * u; character.pos[2] = 0.0f;
         character.rot[1] += dt * 3.0f;
-        float sc = MODEL_SCALE * (0.5f - 0.42f * u);
+        float sc = MODEL_SCALE * (0.5f - 0.3f * u);
         character.scale[0] = character.scale[1] = character.scale[2] = sc;
+        if (t >= DOG_T && t - dt < DOG_T)
+            skill_fx_spawn_burst((float[3]){ character.pos[0], character.pos[1] + 6.0f, character.pos[2] }, 0.0f);
+        character.visible = t < DOG_T;
+        dog_place(character.pos, character.rot[1], (t - DOG_T) * 2.4f, 0.55f - 0.1f * u);
     } else {
+        // lands on the carpet where the knight stood, and stays there
         if (character_get_state() == CHAR_STATE_KNOCKDOWN) character_set_state(CHAR_STATE_NORMAL);
+        character.visible = false;
         float u = clamp01((t - 54.0f) / 1.2f);
-        character.pos[0] = WALK_TO_X; character.pos[1] = FLOOR_Y + 60.0f * (1.0f - u * u); character.pos[2] = 0.0f;
-        float sc = MODEL_SCALE * 0.12f;
-        character.scale[0] = character.scale[1] = character.scale[2] = sc;
+        float p[3] = { WALK_TO_X, FLOOR_Y + 60.0f * (1.0f - u * u), 0.0f };
+        // Rights itself as it drops, landing on its feet facing the throne
+        float tumble = (1.0f - u) * (1.0f - u) * 5.0f;
+        dog_place(p, T3D_PI * 1.6f, tumble, 0.5f);
     }
     character_set_velocity_xz(0.0f, 0.0f);
     character_update_cinematic();
@@ -339,6 +423,7 @@ void ending_draw_world(void)
             proc_mesh_draw(&s_throne);
             proc_mesh_draw(&s_king);
             proc_mesh_draw(&s_arms);
+            if (t >= 54.0f) proc_mesh_draw(&s_dog);
         t3d_matrix_pop(1);
         if (t > 33.0f && t < 43.0f) draw_sun((float[3]){ THRONE_X - 40.0f, sun_y(t), 0.0f }, 6.0f, false);
     } else if (t >= 44.0f) {
@@ -350,7 +435,8 @@ void ending_draw_world(void)
             rdpq_set_mode_standard();
             rdpq_mode_zbuf(true, true);
             t3d_matrix_push_pos(1);
-                character_draw();
+                if (t < DOG_T) character_draw();
+                else proc_mesh_draw(&s_dog);
             t3d_matrix_pop(1);
         }
     }
