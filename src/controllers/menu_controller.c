@@ -342,6 +342,12 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
         aJustPressed = true;
     }
 
+    // Feedback for every menu input (the option moving, a setting changing, confirm, back)
+    if (aJustPressed) audio_play_ui(AUDIO_UI_CONFIRM);
+    else if (bJustPressed) audio_play_ui(AUDIO_UI_BACK);
+    else if (upJustPressed || downJustPressed || stickUpJustPressed || stickDownJustPressed || leftJustPressed || rightJustPressed)
+        audio_play_ui(AUDIO_UI_MOVE);
+
     if (!(currentMenu == MENU_VIDEO && overscanCalibrating)) {
         int maxOptions = get_menu_option_count(currentMenu);
 

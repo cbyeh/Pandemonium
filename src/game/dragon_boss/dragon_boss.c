@@ -158,6 +158,7 @@ static void sfx_roar(void)
 #endif
     audio_play_scene_sfx_dist(SCENE1_SFX_DRAGON_ROAR, 1.0f, 0.0f);
 }
+static void sfx(int id, float vol) { audio_play_scene_sfx_dist(id, vol, 0.0f); }
 static void sfx_step(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_STEP1, 0.6f, 0.0f); }
 
 // ---- Meshes ----
@@ -418,12 +419,16 @@ static void hazards_update(float dt)
         float dx = character.pos[0] - p[0], dz = character.pos[2] - p[2];
         if (dx * dx + dz * dz < 13.0f * 13.0f && player_low()) character_apply_damage(12.0f);
         screen_shake_set_shake_mag(3.0f);
+        if (i & 1) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);     // every other one: they come five a second
     }
 }
 
 // Breath: a stream of flames from the mouth toward `to`
 static void breathe(const float to[3], float speed, float life, float dt)
 {
+    static float roarT;
+    roarT -= dt;
+    if (roarT <= 0.0f) { sfx(SCENE1_SFX_FIRE, 0.9f); roarT = 0.45f; }     // the torrent crackles on
     s.emit -= dt;
     while (s.emit <= 0.0f) {
         s.emit += 0.03f;
@@ -785,6 +790,7 @@ static void nova_update(Boss *b, float dt)
             skill_fx_spawn_arc_hostile(c, b->rot[1] + T3D_PI, 120.0f, 24.0f);
             screen_shake_set_shake_mag(14.0f);
             sfx_boom();
+            sfx(SCENE1_SFX_DARK_NOVA, 1.0f);
             s.glow = 0.0f;
             s.step = 1; s.t = 0.0f;
         }
@@ -806,7 +812,7 @@ static void orbs_update(Boss *b, float dt)
         o->v[0] = o->v[1] = o->v[2] = 0.0f;
         o->age = -0.1f * s.step;
         o->on = true;
-        sfx_swing();
+        sfx(SCENE1_SFX_SPELL_CAST, 0.7f);
         s.step++;
     }
     if (s.t >= 1.6f) enter(DG_IDLE);
@@ -826,7 +832,7 @@ static void beam_update(Boss *b, float dt)
             s.sweepFrom = atan2f(dx, dz) - 0.9f * sg; s.sweepSpan = 1.8f * sg;
             s.range = fminf(fmaxf(dist, 50.0f), 150.0f);
         }
-        if (s.t >= 1.5f) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; sfx_lunge(); }
+        if (s.t >= 1.5f) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; sfx(SCENE1_SFX_DARK_BEAM, 1.0f); }
     } else if (s.step == 1) {
         float a = s.sweepFrom + s.sweepSpan * clamp01(s.t / 2.2f);
         floor_point(b, a, s.range, s.beamP);

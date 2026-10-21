@@ -306,6 +306,16 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
 
     [SCENE1_SFX_BOSS_STEP1]  = "rom:/audio/sfx/boss/boss_step1_22k.wav64",
     [SCENE1_SFX_DRAGON_ROAR] = "rom:/audio/sfx/boss/dragon_roar_22k.wav64",
+    [SCENE1_SFX_SPELL_WAVE]  = "rom:/audio/sfx/fx/spell_wave_22k.wav64",
+    [SCENE1_SFX_SPELL_CAST]  = "rom:/audio/sfx/fx/spell_cast_22k.wav64",
+    [SCENE1_SFX_BLADE_SLASH] = "rom:/audio/sfx/fx/blade_slash_22k.wav64",
+    [SCENE1_SFX_HEAL]        = "rom:/audio/sfx/fx/heal_chime_22k.wav64",
+    [SCENE1_SFX_FIRE]        = "rom:/audio/sfx/fx/fire_breath_22k.wav64",
+    [SCENE1_SFX_DARK_BEAM]   = "rom:/audio/sfx/fx/dark_beam_22k.wav64",
+    [SCENE1_SFX_DARK_NOVA]   = "rom:/audio/sfx/fx/dark_nova_22k.wav64",
+    [SCENE1_SFX_ROCK_BLAST]  = "rom:/audio/sfx/fx/rock_blast_22k.wav64",
+    [SCENE1_SFX_CHAIN1]      = "rom:/audio/sfx/fx/chain1_22k.wav64",
+    [SCENE1_SFX_CHAIN2]      = "rom:/audio/sfx/fx/chain2_22k.wav64",
 
     // Character SFX
     [SCENE1_SFX_CHAR_SWING1]         = "rom:/audio/sfx/character/char_swing1_22k.wav64",
@@ -1180,7 +1190,7 @@ static const BonusDef BONUS_DEFS[] = {
         },
         .dropAt = 4,
         .begin = sun_boss_begin, .skip = sun_boss_skip_intro, .phase = SUN_BOSS_PHASE,
-        .music = "rom:/audio/music/boss_phase2_cutscene2-22k.wav64",
+        .music = "rom:/audio/music/shackled_sun_metal-22k.wav64",    // CC0, "Boss Battle #2 [Symphonic Metal]" by nene
     },
     [BONUS_SHADOWBORN] = {
         .intro = {
@@ -1195,7 +1205,7 @@ static const BonusDef BONUS_DEFS[] = {
         },
         .dropAt = 3,
         .begin = dragon_boss_begin, .skip = dragon_boss_skip_intro, .phase = DRAGON_BOSS_PHASE,
-        .music = "rom:/audio/music/boss_phase1-looping-22k.wav64",
+        .music = "rom:/audio/music/shadowborn_pursuit-22k.wav64",    // CC0, "Determined Pursuit" by Emma_MA
         .camScale = 2.6f,
     },
 };

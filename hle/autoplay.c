@@ -14,6 +14,11 @@
 #include "controllers/menu_controller.h"
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #endif
+#ifdef HLE_TEST_AUDIO
+#include "controllers/audio_controller.h"
+#include "scenes/guardian/guardian_scene_sfx.h"
+#include "game/boss/boss.h"
+#endif
 
 int hle_task_log;
 float hle_dummy_damage;
@@ -129,6 +134,41 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         customCamTarget = (T3DVec3){{ p[0], p[1] + 20.0f, p[2] }};
         camera_mode_smooth(CAMERA_CUSTOM, 0.01f);   // also ends the fight-intro transition
         if (t % period == 0) debugf("[skin] view %d at frame %d\n", t / period % 3, frame);
+        return;
+    }
+#endif
+#ifdef HLE_TEST_AUDIO
+    // Every new sound and track loads and plays: in the fight, play each in turn and
+    // check the mixer has a channel going a few frames later
+    {
+        static int start = -1, step = 0, fails = 0;
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT) start = frame;
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        static const char *const music[] = { "rom:/audio/music/shadowborn_pursuit-22k.wav64", "rom:/audio/music/shackled_sun_metal-22k.wav64" };
+        const int nsfx = SCENE1_SFX_CHAIN2 - SCENE1_SFX_DRAGON_ROAR + 1, total = nsfx + AUDIO_UI_COUNT + 2;
+        int t = frame - start;
+        static int before;
+        if (step < total && t == 20 + step * 20) {
+            before = 0;
+            for (int ch = SFX_CH_FIRST; ch <= SFX_CH_LAST; ch++) before += mixer_ch_playing(ch);
+            if (step < nsfx) audio_play_scene_sfx_dist(SCENE1_SFX_DRAGON_ROAR + step, 1.0f, 0.0f);
+            else if (step < nsfx + AUDIO_UI_COUNT) audio_play_ui(step - nsfx);
+            else audio_play_music(music[step - nsfx - AUDIO_UI_COUNT], true);
+        }
+        if (step < total && t == 20 + step * 20 + 1) {
+            bool on = false;
+            if (step < nsfx) { int n = 0; for (int ch = SFX_CH_FIRST; ch <= SFX_CH_LAST; ch++) n += mixer_ch_playing(ch); on = n > before; }
+            else if (step < nsfx + AUDIO_UI_COUNT) on = mixer_ch_playing(CHANNEL_UI);
+            else on = audio_is_music_playing();
+            if (!on) fails++;
+            debugf("[audio] %d %s\n", step, on ? "playing" : "SILENT");
+            step++;
+            if (step == total) debugf("[audio] self-check: %s (%d silent)\n", fails ? "FAIL" : "ok", fails);
+        }
         return;
     }
 #endif

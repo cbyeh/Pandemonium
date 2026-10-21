@@ -795,6 +795,7 @@ bool character_try_use_health_potion(void)
 
     character.healthPotions--;
     if (character.healthPotions < 0) character.healthPotions = 0;
+    audio_play_scene_sfx_dist(SCENE1_SFX_HEAL, 0.9f, 0.0f);
     return true;
 }
 
@@ -1283,6 +1284,7 @@ static void skill_fire_moon_blade(void)
     skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, 1.5f, 1, 0.0f, len / MBD_WAVE_SPEED,   // 5 waves: 7.5, mostly for the dodge
                         skillStep == MBD_WAVES - 1);
     character_play_swing();
+    audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_WAVE, 0.55f, 0.0f);
 
     // One swing per cross; cycling the clips restarts the swing every wave
     static const int swings[3] = { ANIM_ATTACK1, ANIM_ATTACK2, ANIM_ATTACK3 };
@@ -1320,6 +1322,7 @@ static void update_skill(float dt)
                                yaw, HALFMOON_RADIUS, HALFMOON_DAMAGE);
             screen_shake_set_shake_mag(14.0f);
             character_play_swing();
+            audio_play_scene_sfx_dist(SCENE1_SFX_BLADE_SLASH, 1.0f, 0.0f);
             skillStep = 1;
         }
         // Debris thrown up behind the rolling wave front
@@ -1348,6 +1351,7 @@ static void update_skill(float dt)
             skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 56.0f, 0.0f, dz * 56.0f },
                                 1.6f, 4, 0.3f, 1.6f, false);    // faster: ~3 ticks per blade, ~10-15 a cast
             skill_fx_spawn_burst(origin, a);
+            audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_CAST, 0.45f, 0.0f);
             if (skillStep == 0) {
                 screen_shake_set_shake_mag(6.0f);
                 character_play_swing();

@@ -46,8 +46,6 @@ Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on th
 
 The ending now plays live in the engine.
 
-Shadowborn's roar is "CC0 Deep Monster Roar" by trazzz123 ([OpenGameArt](https://opengameart.org/content/cc0-deep-monster-roar), CC0).
-
 ## 2025 N64brew Game Jam - Pandemonium
 - December 1st - Feburary 1st
 - Theme Annonced on December 8th
@@ -137,6 +135,17 @@ BoxingBruin:
 HelloNewman:
 - Github: HellooooNewman
 - Discord: HelloNewman
+
+### Credits
+Third-party audio added in this fork. Everything here is CC0 (public domain), so no attribution is required, but it's given anyway.
+
+| Asset | Used for | Author | Source |
+|---|---|---|---|
+| CC0 Deep Monster Roar | Shadowborn's roar | trazzz123 | [OpenGameArt](https://opengameart.org/content/cc0-deep-monster-roar) |
+| 80 CC0 RPG SFX | Skill casts, potion, fire breath, the dark beam and nova, explosions, chains | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-rpg-sfx) |
+| Interface Sounds | Menu move, confirm and back | Kenney | [kenney.nl](https://kenney.nl/assets/interface-sounds) |
+| Determined Pursuit (epic orchestra loop) | Shadowborn's theme | Emma_MA | [OpenGameArt](https://opengameart.org/content/determined-pursuit-epic-orchestra-loop) |
+| Boss Battle #2 [Symphonic Metal] | The Shackled Sun's theme | nene | [OpenGameArt](https://opengameart.org/content/boss-battle-2-symphonic-metal) |
 
 ## Licensing
 
