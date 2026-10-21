@@ -58,6 +58,7 @@
 #include "game/fallen_knight/fallen_knight.h"
 #include "game/sun_boss/sun_boss.h"
 #include "game/dragon_boss/dragon_boss.h"
+#include "game/tower/tower.h"
 #include "guardian_ending.h"
 //#include "boulder_hazard.h" // close-range ground-boulder hazard
 
@@ -183,6 +184,11 @@ static const char *s_bossLoopMusicPath = "rom:/audio/music/boss_phase1-looping-2
 static const char *s_boss2LoopMusicPath = "rom:/audio/music/boss_phase2_cutscene2-22k.wav64";   // Guardian Unbound
 static const char *s_boss3LoopMusicPath = "rom:/audio/music/demonous-22k.wav64";                 // Fallen Knight
 static BonusFight s_bonusFight = BONUS_NONE;   // set by the title Bonus menu
+static bool  s_tower;             // set by the title Tower menu: the next scene_init climbs
+static bool  s_towerDraft;        // choosing a boon between floors
+static float s_towerDeadT;        // the floor's boss has lain dead this long
+static bool  s_towerLastL, s_towerLastR, s_towerLastA;
+static void scene_tower_begin_run(void);
 static int   s_bonusBeat;                     // bonus intro/outro script step
 static float s_bonusEndTimer;
 
@@ -637,6 +643,11 @@ void scene_init(void)
     // Guardian scene normal startup: entering the scene starts the phase-1 intro
     // (or a Bonus fight's intro).
     gameState = GAME_STATE_PLAYING;
+    if (s_tower) {
+        audio_stop_all_sfx();
+        scene_tower_begin_run();
+        return;
+    }
     cutsceneState = s_bonusFight ? CUTSCENE_BONUS_INTRO : CUTSCENE_PHASE1_INTRO;
     cutsceneTimer = 0.0f;
     cutsceneCameraTimer = 0.0f;
@@ -917,6 +928,11 @@ void scene_restart(void)
 
     // 5) Re-enter Guardian intro runtime state (NO allocations / NO frees)
     gameState = GAME_STATE_PLAYING;
+    if (s_tower) {     // a Tower run restarts from floor 1
+        scene_tower_begin_run();
+        scene_sync_input_edge_state();
+        return;
+    }
     cutsceneState = s_bonusFight ? CUTSCENE_BONUS_INTRO : CUTSCENE_PHASE1_INTRO;
     cutsceneTimer = 0.0f;
     cutsceneCameraTimer = 0.0f;
@@ -1254,6 +1270,105 @@ static void scene_bonus_start_fight(void)
     scene_sync_input_edge_state();
 }
 
+// ---- The Tower: floors back to back, no cutscenes, a boon draft between them ----
+
+
+void scene_set_tower(bool on) { s_tower = on; }
+
+static void scene_tower_start_floor(void)
+{
+    TowerBoss tb = tower_floor_boss();
+#ifdef HLE_AUTOPLAY
+    debugf("[tower] floor %d: boss %d\n", tower_floor(), tb);
+#endif
+    // A clean hall: nothing from the last floor's fight may linger
+    rspq_wait();
+    skill_fx_reset();
+    msa_clear_all();
+    boss_ground_crush_reset();
+    lightning_fx_system_ring_enable(false);
+    fallen_knight_free();
+    sun_boss_free();
+    dragon_boss_free();
+    screen_shake_set_shake_mag(0.0f);
+
+    boss_reset(g_boss);
+    g_boss->pos[0] = BONUS_SPAWN_X;
+    g_boss->pos[2] = 0.0f;
+    phase2CutsceneTriggered = true;   // Guardian Unbound is a floor of its own, not a transformation
+    s_bonusFight = BONUS_NONE;
+    s_towerDeadT = 0.0f;
+    bossWasDead = false;
+    bossDeathMusicFadeStarted = false;
+
+    scene_place_character();          // health and potions carry over
+    cutsceneState = CUTSCENE_NONE;
+    letterbox_hide();
+
+    const char *music = s_bossLoopMusicPath;
+    int form = 1;
+    if (tb == TOWER_GUARDIAN || tb == TOWER_UNBOUND) {
+        boss_activate_combat(g_boss);
+        if (tb == TOWER_UNBOUND) {
+            g_boss->phaseIndex = 2;
+            g_boss->name = "Guardian Unbound";
+            boss_ai_start_aerial_sword_barrage(g_boss);
+            music = s_boss2LoopMusicPath;
+            form = 2;
+        }
+    } else {
+        s_bonusFight = tb == TOWER_FALLEN_KNIGHT ? BONUS_FALLEN_KNIGHT : tb == TOWER_SHACKLED_SUN ? BONUS_SHACKLED_SUN : BONUS_SHADOWBORN;
+        const BonusDef *d = &BONUS_DEFS[s_bonusFight];
+        d->begin(g_boss);
+        d->skip(g_boss);
+        music = d->music;
+        form = d->phase;
+    }
+    boss_set_full_health(g_boss);     // sized for this floor of the climb
+
+    boss_ui_set_form(form);
+    bossTitleFade = 1.0f;
+    bossUiIntro = 0.0f;
+    boss_ui_set_intro(0.0f);
+    boss_ui_snap_health_trail(1.0f);
+    s_pendingBossLoopMusic = false;
+    audio_stop_music();
+    audio_play_music(music, true);
+    camera_mode_smooth(CAMERA_CHARACTER, 1.0f);
+    cameraLockOnActive = true;
+    character_reset_button_state();
+    scene_sync_input_edge_state();
+}
+
+static void scene_tower_begin_run(void)
+{
+    tower_begin_run((uint32_t)TICKS_READ() | 1u);
+    character_reset();                // Tower potions and health (the run is active now)
+    dialog_controller_stop_speaking();
+    s_towerDraft = false;
+    s_bossRunActive = false;
+    gameState = GAME_STATE_PLAYING;
+    bossUiIntro = playerUiIntro = 0.0f;
+    character_ui_set_intro(0.0f);
+    scene_tower_start_floor();
+}
+
+// Between floors: the draft; once a boon is taken, the next floor
+static void scene_tower_draft_update(void)
+{
+    bool l = btn.d_left || joypad.stick_x < -40, r = btn.d_right || joypad.stick_x > 40, a = btn.a;
+    bool done = tower_draft_update(l && !s_towerLastL, r && !s_towerLastR, a && !s_towerLastA);
+    if (l && !s_towerLastL) audio_play_ui(AUDIO_UI_MOVE);
+    if (r && !s_towerLastR) audio_play_ui(AUDIO_UI_MOVE);
+    s_towerLastL = l; s_towerLastR = r; s_towerLastA = a;
+    if (!done) return;
+    audio_play_ui(AUDIO_UI_CONFIRM);
+    s_towerDraft = false;
+    tower_floor_restore();
+    tower_next_floor();
+    scene_tower_start_floor();
+}
+
 // An intro shot of the spawn point: positions and target are relative to it, scaled to the boss
 static void scene_bonus_shot(const BonusDef *d, const float p0[3], const float p1[3], const float tg[3])
 {
@@ -1542,7 +1657,7 @@ void scene_update(void) {
             bossDeathMusicFadeStarted = true;
             audio_stop_music_fade(2);
         }
-        if (!s_bonusFight) scene_update_video_trigger();   // bonus fights have no ending portal
+        if (!s_bonusFight && !s_tower) scene_update_video_trigger();   // bonus fights and the Tower have no ending portal
     }
 
     scene_update_video_preroll();  // always safe; it early-outs
@@ -1584,6 +1699,11 @@ void scene_update(void) {
         return;
     }
 
+    if (s_towerDraft) {     // the fight is over; the hall waits while a boon is chosen
+        scene_tower_draft_update();
+        return;
+    }
+
     // Debug hotkey: L-trigger skips to boss defeated (dead + fully stopped)
     // if (DEV_MODE)
     // {
@@ -1600,7 +1720,7 @@ void scene_update(void) {
         // Post-boss interaction trigger: after defeat, when Z-targeted and close enough,
         // start the dialog/camera only when player presses A (held-edge).
         // IMPORTANT: check this BEFORE character_update so A doesn't also trigger a roll.
-        if (boss_is_interactable(g_boss) && g_boss->state == BOSS_STATE_DEAD) {
+        if (!s_tower && boss_is_interactable(g_boss) && g_boss->state == BOSS_STATE_DEAD) {
             bool aHeld = joypad.btn.a;
             bool aJustPressed = aHeld && !lastInteractAHeld;
             lastInteractAHeld = aHeld;
@@ -1634,8 +1754,17 @@ void scene_update(void) {
             // Second fight: when the Guardian falls the first time, it rises again as
             // Guardian Unbound (phase-2 cutscene). Refill its health in this same frame
             // so the ending (music fade, video trigger, clear time) does not start.
+            if (s_tower && g_boss->state == BOSS_STATE_DEAD) {
+                s_towerDeadT += deltaTime;
+                if (s_towerDeadT >= 2.0f) {     // let the death play out, then the draft
+                    tower_floor_cleared();
+                    s_towerDraft = true;
+                    s_towerLastL = s_towerLastR = s_towerLastA = true;   // no carried-over press
+                    return;
+                }
+            }
 #if PHASE_2_ENABLED
-            if (s_bonusFight && g_boss->state == BOSS_STATE_DEAD) {
+            if (!s_tower && s_bonusFight && g_boss->state == BOSS_STATE_DEAD) {
                 s_bonusEndTimer += deltaTime;
                 if (s_bonusEndTimer >= 2.5f) {     // let the death play out, then the outro
                     cutsceneState = CUTSCENE_BONUS_OUTRO;
@@ -1708,7 +1837,7 @@ void scene_update(void) {
         bool bossDeadNow = (g_boss->state == BOSS_STATE_DEAD);
         if (bossDeadNow && !bossWasDead) {
             // Record fastest clear time per save slot (once, on death edge).
-            if (s_bossRunActive && s_bossRunStartS > 0.0 && !s_bonusFight) {
+            if (s_bossRunActive && s_bossRunStartS > 0.0 && !s_bonusFight && !s_tower) {
                 double dt = nowS - s_bossRunStartS;
                 if (dt > 0.0) {
                     uint32_t ms = (uint32_t)(dt * 1000.0);
@@ -2165,7 +2294,9 @@ void scene_draw(T3DViewport *viewport)
         }
 
         character_ui_draw();
+        if (s_tower) tower_hud_draw();
     }
+    if (s_towerDraft && !isDead) tower_draft_draw();
 
     // Slide-up overlay for boss title after fight starts (no fading)
     if (!cutsceneActive && !isEndScreen && bossTitleFade > 0.0f && g_boss) {
@@ -2214,6 +2345,12 @@ void scene_draw(T3DViewport *viewport)
                 .align = ALIGN_CENTER,
                 .width = SCREEN_WIDTH,
             }, FONT_UNBALANCED, 0, SCREEN_HEIGHT / 2 - 12, "%s", "You Died");
+            if (s_tower) {
+                rdpq_set_prim_color(RGBA32(255, 210, 120, 255));
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = SCREEN_WIDTH },
+                                 FONT_UNBALANCED, 0, SCREEN_HEIGHT / 2 + 2, "%s", tower_death_summary());
+                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+            }
 
             // Delay restart prompt so rapid gameplay A-mashing doesn't instantly restart.
             if (deathRestartLockoutTimer >= DEATH_RESTART_LOCKOUT_S) {
@@ -2393,6 +2530,7 @@ void scene_test_start_ending(void)     // test aid: straight to the ending
 void scene_cleanup(void)
 {
     rspq_wait();
+    if (s_tower) { tower_end_run(); s_tower = false; s_towerDraft = false; }
     ending_free();
     sun_boss_free();
     dragon_boss_free();

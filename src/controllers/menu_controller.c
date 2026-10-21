@@ -9,6 +9,7 @@
 #include "../utilities/save_controller.h"
 #include "../character/character.h"
 #include "../character/character_skin.h"
+#include "../game/tower/tower.h"
 
 #include "../utilities/globals.h"
 #include "../utilities/video_layout.h"
@@ -74,6 +75,7 @@ static const char* titleMenuOptions[MENU_TITLE_COUNT] = {
     "Continue",
     "Load Game",
     "Bonus",
+    "Tower",
     "Settings",
     "Credits",
 };
@@ -103,6 +105,14 @@ static const char* videoMenuOptions[MENU_VIDEO_COUNT] = {
     "Calibrate Overscan",
     "Back",
 };
+
+static const char* towerMenuOptions[MENU_TOWER_COUNT] = {
+    "Climb",
+    "Shrine",
+    "Back",
+};
+
+static const char* const SHRINE_SKILL_NAMES[MENU_SHRINE_SKILLS] = { "Moon Blade Dance", "Halfmoon Slash", "Crescent Cleave" };
 
 static const char* bonusMenuOptions[MENU_BONUS_COUNT] = {
     "Fallen Warrior",
@@ -144,6 +154,8 @@ static int get_menu_option_count(MenuState menu)
         case MENU_VIDEO:     return MENU_VIDEO_COUNT;
         case MENU_LOAD_GAME: return MENU_LOAD_GAME_COUNT;
         case MENU_BONUS:     return MENU_BONUS_COUNT;
+        case MENU_TOWER:     return MENU_TOWER_COUNT;
+        case MENU_SHRINE:    return MENU_SHRINE_COUNT;
         case MENU_CONTROLS:  return 1;
         case MENU_CREDITS:   return 1;
         default:             return 1;
@@ -426,8 +438,20 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                     save_controller_update_last_played_timestamp();
 
                     scene_set_bonus_fight(BONUS_NONE);
+                    scene_set_tower(false);
                     menu_controller_close();
                     pendingAction = MENU_ACTION_TITLE_START_GAME;
+                    break;
+                }
+
+                case MENU_TITLE_TOWER: {
+                    // The Tower's Embers and upgrades belong to the last played slot
+                    int lastPlayedSlot = save_controller_get_last_played_slot();
+                    save_controller_set_active_slot((lastPlayedSlot >= 0) ? lastPlayedSlot : 0);
+                    parentMenu = MENU_TITLE;
+                    parentSelectedOption = MENU_TITLE_TOWER;
+                    currentMenu = MENU_TOWER;
+                    selectedOption = 0;
                     break;
                 }
 
@@ -693,11 +717,36 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
 
             scene_set_bonus_fight(selectedOption == MENU_BONUS_SHACKLED_SUN ? BONUS_SHACKLED_SUN :
                                   selectedOption == MENU_BONUS_SHADOWBORN ? BONUS_SHADOWBORN : BONUS_FALLEN_KNIGHT);
+            scene_set_tower(false);
             menu_controller_close();
             pendingAction = MENU_ACTION_TITLE_START_GAME;
         } else if (bJustPressed || (aJustPressed && selectedOption == MENU_BONUS_BACK)) {
             currentMenu = parentMenu;
             selectedOption = parentSelectedOption;
+        }
+    } else if (currentMenu == MENU_TOWER) {
+        if (aJustPressed && selectedOption == MENU_TOWER_CLIMB) {
+            scene_set_bonus_fight(BONUS_NONE);
+            scene_set_tower(true);
+            menu_controller_close();
+            pendingAction = MENU_ACTION_TITLE_START_GAME;
+        } else if (aJustPressed && selectedOption == MENU_TOWER_SHRINE) {
+            currentMenu = MENU_SHRINE;
+            selectedOption = 0;
+        } else if (bJustPressed || (aJustPressed && selectedOption == MENU_TOWER_BACK)) {
+            currentMenu = MENU_TITLE;
+            selectedOption = MENU_TITLE_TOWER;
+        }
+    } else if (currentMenu == MENU_SHRINE) {
+        bool back = bJustPressed || (aJustPressed && selectedOption == MENU_SHRINE_COUNT - 1);
+        if (back) {
+            currentMenu = MENU_TOWER;
+            selectedOption = MENU_TOWER_SHRINE;
+        } else if (aJustPressed) {
+            bool bought = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_buy((UpgradeId)selectedOption)
+                                                                : tower_skill_buy(selectedOption - MENU_SHRINE_UPGRADES);
+            if (bought) save_controller_save_settings();
+            else audio_play_ui(AUDIO_UI_BACK);      // not enough Embers, or maxed
         }
     }
 }
@@ -1066,9 +1115,12 @@ void menu_controller_draw(void)
         currentMenu == MENU_AUDIO ||
         currentMenu == MENU_VIDEO ||
         currentMenu == MENU_CREDITS ||
-        currentMenu == MENU_BONUS
+        currentMenu == MENU_BONUS ||
+        currentMenu == MENU_TOWER
     ) {
         dialogWidth = 260;
+    } else if (currentMenu == MENU_SHRINE) {
+        dialogWidth = 300;
     }
 
     rdpq_sync_pipe();
@@ -1202,6 +1254,68 @@ void menu_controller_draw(void)
             y += lineHeight + 2;
         }
 
+        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+    } else if (currentMenu == MENU_TOWER) {
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
+                         FONT_UNBALANCED, x, y + titleYOffset, "TOWER");
+        y += (lineHeight * 2) + titleYOffset;
+        rdpq_set_prim_color(RGBA32(255, 210, 120, 255));
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW },
+                         FONT_UNBALANCED, x, y, "Embers %d   Best floor %d", tower_embers(), tower_best_floor());
+        y += lineHeight * 2;
+        for (int i = 0; i < MENU_TOWER_COUNT; i++) {
+            if (i == selectedOption) {
+                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
+                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+            } else {
+                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
+            }
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
+                             FONT_UNBALANCED, x, y, "%s", towerMenuOptions[i]);
+            y += lineHeight + 2;
+        }
+        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+    } else if (currentMenu == MENU_SHRINE) {
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
+                         FONT_UNBALANCED, x, y + titleYOffset, "SHRINE");
+        y += lineHeight + titleYOffset + 4;
+        rdpq_set_prim_color(RGBA32(255, 210, 120, 255));
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW },
+                         FONT_UNBALANCED, x, y, "Embers %d", tower_embers());
+        y += lineHeight + 4;
+        for (int i = 0; i < MENU_SHRINE_COUNT; i++) {
+            char name[40], right[24];
+            right[0] = 0;
+            if (i < MENU_SHRINE_UPGRADES) {
+                int c = tower_upgrade_cost((UpgradeId)i);
+                snprintf(name, sizeof name, "%s %d/%d", tower_upgrade_name((UpgradeId)i), tower_upgrade_level((UpgradeId)i), UPG_MAX_LEVEL);
+                if (c < 0) snprintf(right, sizeof right, "max"); else snprintf(right, sizeof right, "%d", c);
+            } else if (i < MENU_SHRINE_COUNT - 1) {
+                int k = i - MENU_SHRINE_UPGRADES, c = tower_skill_cost(k);
+                snprintf(name, sizeof name, "%s", SHRINE_SKILL_NAMES[k]);
+                if (c < 0) snprintf(right, sizeof right, "learned"); else snprintf(right, sizeof right, "%d", c);
+            } else {
+                snprintf(name, sizeof name, "Back");
+            }
+            if (i == selectedOption) {
+                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW - 8);
+                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+            } else {
+                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
+            }
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW - 16 },
+                             FONT_UNBALANCED, x + 8, y, "%s", name);
+            if (right[0])
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 16 },
+                                 FONT_UNBALANCED, x + 8, y, "%s", right);
+            y += lineHeight + 1;
+        }
+        // What the selected one does
+        const char *desc = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_desc((UpgradeId)selectedOption)
+                         : selectedOption < MENU_SHRINE_COUNT - 1 ? "A D-pad skill, in Tower runs" : "";
+        rdpq_set_prim_color(RGBA32(180, 180, 180, 255));
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW },
+                         FONT_UNBALANCED, x, y + 6, "%s", desc);
         rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
     } else if (currentMenu == MENU_AUDIO) {
         rdpq_text_printf(&(rdpq_textparms_t){

@@ -6,6 +6,7 @@
 #include "game/fallen_knight/fallen_knight.h"
 #include "game/sun_boss/sun_boss.h"
 #include "game/dragon_boss/dragon_boss.h"
+#include "game/tower/tower.h"
 
 #include <libdragon.h>
 #include <t3d/t3dmath.h>
@@ -509,7 +510,16 @@ static inline float boss_target_max_health(int phase)
 {
     float base = (phase == FALLEN_KNIGHT_PHASE) ? 300.0f : (phase == SUN_BOSS_PHASE) ? 325.0f :
                  (phase == DRAGON_BOSS_PHASE) ? 375.0f : 100.0f;
+    if (tower_active()) return base * tower_boss_health_scale(phase);   // the climb and its unlocked skills
     return character_skills_enabled() ? base * 2.0f : base;
+}
+
+/** Full health for its current phase (a Tower floor's boss). */
+void boss_set_full_health(Boss* boss)
+{
+    if (!boss) return;
+    boss->maxHealth = boss_target_max_health(boss->phaseIndex);
+    boss->health = boss->maxHealth;
 }
 
 /** Follows the Skills setting, keeping the health percentage (it can change mid-fight). */
@@ -667,6 +677,10 @@ void boss_apply_damage(Boss* boss, float amount)
     if (!boss || amount <= 0.0f) return;
     if (boss->mode != BOSS_MODE_COMBAT) return;
 
+    if (tower_active()) {     // Tower run: damage boons and upgrades, and Bloodthirst's lifesteal
+        amount *= tower_mod_damage_dealt();
+        character.health = fminf(character.maxHealth, character.health + amount * tower_mod_lifesteal());
+    }
     boss->health -= amount;
     if (boss->health < 0.0f) boss->health = 0.0f;
 

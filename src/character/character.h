@@ -164,6 +164,7 @@ float character_get_skill_cooldown(CharacterSkill skill);         // seconds lef
 float character_get_skill_cooldown_ratio(CharacterSkill skill);   // 1 = just used, 0 = ready
 bool character_can_afford_skill(CharacterSkill skill);            // enough stamina
 bool character_skills_enabled(void);                              // Settings toggle
+bool character_skill_usable(CharacterSkill skill);                // the toggle, or the Tower's unlocks in a run
 void character_set_skills_enabled(bool enabled);
 
 #endif // CHARACTER_H

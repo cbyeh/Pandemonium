@@ -419,14 +419,20 @@ void character_ui_draw_c_buttons(void)
     rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
     rdpq_mode_filter(FILTER_BILINEAR);
     character_ui_draw_icon(s_keySprite, &s_keySurf, leftX, leftY, keyPx);
-    if (character_skills_enabled()) {
-        character_ui_draw_icon(s_keySprite, &s_keySurf, upX, upY, keyPx);
-        character_ui_draw_icon(s_keySprite, &s_keySurf, rightX, rightY, keyPx);
-        character_ui_draw_icon(s_keySprite, &s_keySurf, downX, downY, keyPx);
-
-        character_ui_draw_skill(SKILL_MOON_BLADE_DANCE, s_skillMoonBladeSprite, &s_skillMoonBladeSurf, upX, upY, keyPx);
-        character_ui_draw_skill(SKILL_HALFMOON_SLASH, s_skillHalfmoonSprite, &s_skillHalfmoonSurf, rightX, rightY, keyPx);
-        character_ui_draw_skill(SKILL_CRESCENT_CLEAVE, s_skillCleaveSprite, &s_skillCleaveSurf, downX, downY, keyPx);
+    // Only the skills that can be used (the Skills setting, or a Tower run's unlocks)
+    const struct { CharacterSkill s; sprite_t *spr; const surface_t *surf; int x, y; } keys[] = {
+        { SKILL_MOON_BLADE_DANCE, s_skillMoonBladeSprite, &s_skillMoonBladeSurf, upX, upY },
+        { SKILL_HALFMOON_SLASH,   s_skillHalfmoonSprite,  &s_skillHalfmoonSurf,  rightX, rightY },
+        { SKILL_CRESCENT_CLEAVE,  s_skillCleaveSprite,    &s_skillCleaveSurf,    downX, downY },
+    };
+    for (int i = 0; i < 3; i++) {
+        if (!character_skill_usable(keys[i].s)) continue;
+        rdpq_set_mode_standard();
+        rdpq_mode_alphacompare(0);
+        rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+        rdpq_mode_filter(FILTER_BILINEAR);
+        character_ui_draw_icon(s_keySprite, &s_keySurf, keys[i].x, keys[i].y, keyPx);
+        character_ui_draw_skill(keys[i].s, keys[i].spr, keys[i].surf, keys[i].x, keys[i].y, keyPx);
     }
 
     // Only show the potion bottle + count while the player has potions.

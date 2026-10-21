@@ -74,5 +74,7 @@ typedef enum {
     BONUS_SHADOWBORN,
 } BonusFight;
 void scene_set_bonus_fight(BonusFight fight);
+// Title-menu Tower: the next scene_init starts a Tower run (floor after floor, no cutscenes).
+void scene_set_tower(bool on);
 
 #endif

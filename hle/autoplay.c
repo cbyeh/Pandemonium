@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN)
 #include "camera_controller.h"
 #include "character_skin.h"
 #include <math.h>
@@ -14,7 +14,7 @@
 #include "controllers/menu_controller.h"
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #endif
-#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_QUIT)
+#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN)
 #include "controllers/menu_controller.h"
 #include "controllers/audio_controller.h"
 #include "scenes/guardian/guardian_scene_sfx.h"
@@ -168,6 +168,45 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }
     return;
+#endif
+#ifdef HLE_TEST_TOWER_RUN
+    // A Tower run from the title: Down x3 (Tower), A, A (Climb). Each floor: check the
+    // boss, a locked skill (D-up does nothing), kill it, take a boon (A). After floor 6,
+    // die: the death screen's summary, then A back to the title.
+    {
+        extern int tower_floor(void), tower_floor_boss(void);
+        extern bool tower_draft_is_open(void), tower_active(void);
+        extern const char *tower_death_summary(void);
+        static int phase = 0, t0 = 0, step = 0, lastFloor = 0;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0;
+        if (phase == 0) {
+            if (menu_controller_is_active()) { phase = 1; t0 = frame; }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 1) {
+            static const char seq[] = "DDDAA";
+            if (t >= 20 && step < 5) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; t0 = frame; }
+            if (step == 5 && boss && tower_active()) { phase = 2; t0 = frame; }
+        } else if (phase == 2) {
+            if (!boss) return;
+            if (tower_floor() != lastFloor && boss->mode == BOSS_MODE_COMBAT && !tower_draft_is_open()) {
+                lastFloor = tower_floor(); t0 = frame;
+                debugf("[run] floor %d boss %d phase %d hp %.0f/%.0f | player hp %.0f/%.0f potions %d\n", lastFloor, tower_floor_boss(),
+                       boss->phaseIndex, (double)boss->health, (double)boss->maxHealth, (double)character.health, (double)character.maxHealth,
+                       character.healthPotions);
+            }
+            if (t == 30) pressed->d_up = 1;
+            if (t == 34) debugf("[run] D-up: state %d (%s)\n", character_get_state(), character_get_state() == CHAR_STATE_SKILL ? "SKILL: not locked" : "locked");
+            if (t == 90) boss_apply_damage(boss, boss->maxHealth * 2.0f);
+            if (tower_draft_is_open() && t % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
+            if (lastFloor == 7 && t == 60) { phase = 3; t0 = frame; character_apply_damage(9999.0f); }
+        } else if (phase == 3) {
+            if (t == 30) debugf("[run] died: state %d, \"%s\"\n", character_get_state(), tower_death_summary());
+            if (t > 150 && t % 30 == 0) { pressed->a = 1; in->btn.a = 1; in->btn.a = 1; }
+            if (t > 150 && !boss) { debugf("[run] back at the title, run %s\n", tower_active() ? "STILL ACTIVE" : "ended"); phase = 4; }
+        }
+        return;
+    }
 #endif
 #ifdef HLE_TEST_QUIT
     // Pause mid-fight > Main Menu (4 down: Resume, Restart, Settings, Controls, Main Menu) > A:

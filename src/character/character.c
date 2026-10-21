@@ -16,6 +16,7 @@
 
 #include "game/boss/boss.h"
 #include "game/dragon_boss/dragon_boss.h"
+#include "game/tower/tower.h"
 #include "collision_system.h"
 #include "controllers/audio_controller.h"
 #include "../scenes/guardian/guardian_scene_sfx.h"
@@ -755,8 +756,9 @@ void character_reset(void)
 
     footstepTimer = 0.0f;
 
+    character.maxHealth = tower_mod_max_health();     // 150, more in a Tower run with Vigor
     character.health = character.maxHealth;
-    character.healthPotions = 7;     // two phases (Guardian, then Guardian Unbound)
+    character.healthPotions = tower_mod_max_potions(); // 7 (two phases: Guardian, then Unbound); 3 in a Tower run
     character.stamina = character.maxStamina;
     character.staminaRegenDelay = 0.0f;
     character.damageFlashTimer = 0.0f;
@@ -789,7 +791,7 @@ bool character_try_use_health_potion(void)
     if (character.health >= character.maxHealth - 0.01f) return false;
 
     // Each potion gives a little under half health.
-    const float heal = character.maxHealth * 0.45f;
+    const float heal = character.maxHealth * tower_mod_potion_heal();   // 0.45, more with Tower upgrades
     character.health += heal;
     if (character.health > character.maxHealth) character.health = character.maxHealth;
 
@@ -934,7 +936,8 @@ static void end_skill(void);
 static inline bool can_roll_now(const joypad_buttons_t* buttons, const StickInput* stick)
 {
     (void)stick;
-    if (!buttons->a || character.stamina < STAMINA_COST_ROLL) return false;
+    const float rollCost = STAMINA_COST_ROLL * tower_mod_roll_cost();
+    if (!buttons->a || character.stamina < rollCost) return false;
     // Attacks and skills can be cancelled into a roll, except Moon Blade Dance in the air
     if (characterState == CHAR_STATE_SKILL) return !(activeSkill == SKILL_MOON_BLADE_DANCE && airborne);
     return characterState == CHAR_STATE_NORMAL || characterState == CHAR_STATE_ATTACKING;
@@ -944,7 +947,7 @@ static inline void try_start_roll(const joypad_buttons_t* buttons, const StickIn
 {
     if (!can_roll_now(buttons, stick)) return;
 
-    character_consume_stamina(STAMINA_COST_ROLL);
+    character_consume_stamina(STAMINA_COST_ROLL * tower_mod_roll_cost());
 
     // Roll-cancel: drop the attack combo / the skill (its cooldown stays spent)
     attackQueued = false;
@@ -1169,6 +1172,7 @@ static const float MBD_WAVE_SPEED = 70.0f;
 static const float MBD_FIRST_WAVE = 0.6f;
 static const float MBD_WAVE_GAP = 0.25f;
 static const int   MBD_WAVES = 5;
+static inline int mbd_waves(void) { return MBD_WAVES + tower_mod_extra_mbd_waves(); }   // the Crescent Echo boon adds 2
 static const float MBD_AIM_DIST = 60.0f;           // ground distance of the aim point without lock-on
 static const float HALFMOON_CHARGE = 2.0f;         // rooted; a hit cancels it and hurts more
 static const float HALFMOON_END = 3.2f;
@@ -1187,10 +1191,12 @@ float character_get_skill_cooldown(CharacterSkill skill)
 float character_get_skill_cooldown_ratio(CharacterSkill skill)
 {
     if (skill >= SKILL_COUNT) return 0.0f;
-    return skillCooldowns[skill] / SKILL_DEFS[skill].cooldown;
+    return skillCooldowns[skill] / (SKILL_DEFS[skill].cooldown * tower_mod_skill_cooldown());
 }
 
 bool character_skills_enabled(void) { return skillsEnabled; }
+// In a Tower run a skill works once unlocked at the Shrine (the Skills setting is ignored)
+bool character_skill_usable(CharacterSkill skill) { return tower_active() ? tower_mod_skill_allowed(skill) : skillsEnabled; }
 void character_set_skills_enabled(bool enabled) { skillsEnabled = enabled; }
 
 bool character_can_afford_skill(CharacterSkill skill)
@@ -1222,11 +1228,11 @@ static void try_start_skill(const joypad_buttons_t *buttons)
     int s = buttons->d_up ? SKILL_MOON_BLADE_DANCE :
             buttons->d_right ? SKILL_HALFMOON_SLASH :
             buttons->d_down ? SKILL_CRESCENT_CLEAVE : -1;
-    if (s < 0 || !skillsEnabled || characterState != CHAR_STATE_NORMAL || airborne) return;
+    if (s < 0 || !character_skill_usable(s) || characterState != CHAR_STATE_NORMAL || airborne) return;
     if (skillCooldowns[s] > 0.0f || !character_can_afford_skill(s)) return;
 
     character_consume_stamina(SKILL_DEFS[s].stamina);
-    skillCooldowns[s] = SKILL_DEFS[s].cooldown;
+    skillCooldowns[s] = SKILL_DEFS[s].cooldown * tower_mod_skill_cooldown();
     activeSkill = s;
     skillTime = 0.0f;
     skillStep = 0;
@@ -1272,7 +1278,7 @@ static void skill_fire_moon_blade(void)
         character.rot[1] = atan2f(-fx, fz);
         tgt[0] = character.pos[0] + fx * MBD_AIM_DIST; tgt[1] = groundY; tgt[2] = character.pos[2] + fz * MBD_AIM_DIST;
     }
-    float side = (float)(skillStep - MBD_WAVES / 2) * 7.0f;
+    float side = (float)(skillStep - mbd_waves() / 2) * 7.0f;
     tgt[0] += fz * side;
     tgt[2] -= fx * side;
 
@@ -1282,7 +1288,7 @@ static void skill_fire_moon_blade(void)
     if (len < 1.0f) len = 1.0f;
     float vel[3] = { d[0] / len * MBD_WAVE_SPEED, d[1] / len * MBD_WAVE_SPEED, d[2] / len * MBD_WAVE_SPEED };
     skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, 1.5f, 1, 0.0f, len / MBD_WAVE_SPEED,   // 5 waves: 7.5, mostly for the dodge
-                        skillStep == MBD_WAVES - 1);
+                        skillStep == mbd_waves() - 1);
     character_play_swing();
     audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_WAVE, 0.55f, 0.0f);
 
@@ -1299,7 +1305,7 @@ static void update_skill(float dt)
 
     switch (activeSkill) {
     case SKILL_MOON_BLADE_DANCE:
-        if (skillStep < MBD_WAVES && skillTime >= MBD_FIRST_WAVE + skillStep * MBD_WAVE_GAP) {
+        if (skillStep < mbd_waves() && skillTime >= MBD_FIRST_WAVE + skillStep * MBD_WAVE_GAP) {
             skill_fire_moon_blade();
             skillStep++;
         }
@@ -1383,7 +1389,7 @@ static void update_vertical(float dt)
 {
     if (!airborne) return;
     bool hovering = characterState == CHAR_STATE_SKILL && activeSkill == SKILL_MOON_BLADE_DANCE &&
-                    skillStep < MBD_WAVES && velocityY < 15.0f;
+                    skillStep < mbd_waves() && velocityY < 15.0f;
     velocityY -= GRAVITY * (hovering ? MBD_HOVER_GRAVITY : 1.0f) * dt;
     if (hovering && velocityY < -6.0f) velocityY = -6.0f;
     character.pos[1] += velocityY * dt;
@@ -2684,7 +2690,7 @@ void character_update(void)
         character.staminaRegenDelay -= deltaTime;
         if (character.staminaRegenDelay < 0.0f) character.staminaRegenDelay = 0.0f;
     } else if (characterState == CHAR_STATE_NORMAL && character.stamina < character.maxStamina) {
-        character.stamina += STAMINA_REGEN_PER_SEC * deltaTime;
+        character.stamina += STAMINA_REGEN_PER_SEC * tower_mod_stamina_regen() * deltaTime;
         if (character.stamina > character.maxStamina) character.stamina = character.maxStamina;
     }
 
@@ -3271,7 +3277,9 @@ void character_apply_damage(float amount)
         end_skill();
     }
 
+    amount *= tower_mod_damage_taken();     // 1 outside a Tower run
     character.health -= amount;
+    if (character.health <= 0.0f && tower_mod_try_unbroken()) character.health = 1.0f;   // the Unbroken boon
     if (character.health < 0.0f) character.health = 0.0f;
 #if defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_BONUS_DRAGON) || defined(HLE_TEST_STRIKE)   // test aid: log every hit, never die
     debugf("[dmg] %.0f -> hp %.0f (state %d)\n", (double)amount, (double)character.health, characterState);

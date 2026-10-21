@@ -331,6 +331,8 @@ BossState boss_get_state(const Boss* boss);
 
 // External API to apply damage to the boss
 void boss_apply_damage(Boss* boss, float amount);
+// Full health for its current phase, as the Skills setting or a Tower run sizes it.
+void boss_set_full_health(Boss* boss);
 
 // Initialization and cleanup
 void boss_init(Boss* boss);
