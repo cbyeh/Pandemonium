@@ -674,5 +674,5 @@ void sun_boss_draw(Boss* b)
 
     if (s.chainsReady) chains_draw();
     proc_mesh_draw(s.unshackled ? &s.eyeHot : &s.eye);
-    if (dying < 1.0f) for (int i = 0; i < 2; i++) proc_mesh_draw_additive(&cor[i]);
+    if (dying < 1.0f) for (int i = 0; i < 2; i++) proc_mesh_draw_glow(&cor[i]);
 }

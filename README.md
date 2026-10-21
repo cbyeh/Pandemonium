@@ -46,6 +46,8 @@ Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on th
 
 The ending now plays live in the engine.
 
+Shadowborn's roar is "CC0 Deep Monster Roar" by trazzz123 ([OpenGameArt](https://opengameart.org/content/cc0-deep-monster-roar), CC0).
+
 ## 2025 N64brew Game Jam - Pandemonium
 - December 1st - Feburary 1st
 - Theme Annonced on December 8th
@@ -88,6 +90,9 @@ The ending now plays live in the engine.
 
 ### Emulator build (Delta, Mupen64Plus HLE)
 `make HLE=1` builds `pandemonium-hle.z64`, which replaces the RSP microcode with CPU code (`hle/`) for high-level-emulation emulators. Needs `ffmpeg`. Not for real hardware or accurate emulators.
+
+### Scripted test runs
+The `hle/autoplay.c` scripts (`HLE_TEST_*`) drive the game for automated checks. In the emulator build, pass them as `HLE_EXTRA_CFLAGS="-DHLE_AUTOPLAY -DHLE_TEST_..."`. For the hardware ROM in an accurate emulator such as Ares, pass `TEST_CFLAGS` the same way. The hardware path is where real-RDP behaviour shows: additive blending wraps on overflow there, but HLE renderers clamp it.
 
 ## SummerCart64
 

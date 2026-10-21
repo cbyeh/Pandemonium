@@ -20,7 +20,7 @@
 
 int main(void)
 {
-#ifdef HLE_BUILD
+#if defined(HLE_BUILD) || defined(HLE_AUTOPLAY)
     debug_init_isviewer();
     debugf("[hle] main\n");
 #endif

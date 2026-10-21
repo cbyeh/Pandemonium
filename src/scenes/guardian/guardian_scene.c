@@ -305,6 +305,7 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_BOSS_LAND2]  = "rom:/audio/sfx/boss/boss_land2_22k.wav64",
 
     [SCENE1_SFX_BOSS_STEP1]  = "rom:/audio/sfx/boss/boss_step1_22k.wav64",
+    [SCENE1_SFX_DRAGON_ROAR] = "rom:/audio/sfx/boss/dragon_roar_22k.wav64",
 
     // Character SFX
     [SCENE1_SFX_CHAR_SWING1]         = "rom:/audio/sfx/character/char_swing1_22k.wav64",

@@ -21,6 +21,8 @@ typedef enum Scene1Sfx
 
     SCENE1_SFX_BOSS_STEP1,
 
+    SCENE1_SFX_DRAGON_ROAR,     // CC0, "Deep Monster Roar" by trazzz123 (OpenGameArt)
+
     // Character SFX
     SCENE1_SFX_CHAR_SWING1,
     

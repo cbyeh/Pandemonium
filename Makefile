@@ -112,6 +112,15 @@ $(BUILD_DIR)/$(TARGET).elf.emux: $(BUILD_DIR)/$(TARGET).elf
 	@touch $@
 endif
 
+ifneq ($(HLE),1)
+ifneq ($(TEST_CFLAGS),)
+# Test aid: a hardware ROM driven by the autoplay scripts (hle/autoplay.c), for accurate
+# emulators like Ares (e.g. TEST_CFLAGS="-DHLE_AUTOPLAY -DHLE_TEST_BONUS")
+N64_CFLAGS += $(TEST_CFLAGS) -Ihle
+CODEOBJECTS += $(OBJDIR)/hle/autoplay.o
+endif
+endif
+
 AUDIOCONV_FLAGS ?=
 
 # Collision exporter Python venv (avoids macOS PEP 668 "externally managed" pip errors)
