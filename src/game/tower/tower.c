@@ -8,6 +8,7 @@
 #include "globals.h"
 #include "save_controller.h"
 #include "video_controller.h"
+#include "video_layout.h"
 
 // ---- Tuning ----
 #define FLOORS_PER_CIRCLE   5
@@ -262,13 +263,15 @@ void tower_hud_draw(void)
 {
     if (!s.active) return;
     char line[32];
+    // inside the title-safe area, like the rest of the HUD (TVs and accurate emulators show the edges)
+    const int w = SCREEN_WIDTH - ui_safe_margin_x(), top = ui_safe_margin_y() + 10;
     snprintf(line, sizeof line, "Floor %d", s.floor);
     rdpq_set_prim_color(RGBA32(255, 210, 120, 255));
-    text(0, 24 + uiOverscanY, SCREEN_WIDTH - 12 - uiOverscanX, ALIGN_RIGHT, line);
+    text(0, top, w, ALIGN_RIGHT, line);
     if (tower_circle() > 1) {
         snprintf(line, sizeof line, "Ascension %d", tower_circle() - 1);
         rdpq_set_prim_color(RGBA32(230, 120, 90, 255));
-        text(0, 36 + uiOverscanY, SCREEN_WIDTH - 12 - uiOverscanX, ALIGN_RIGHT, line);
+        text(0, top + 12, w, ALIGN_RIGHT, line);
     }
 }
 

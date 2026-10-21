@@ -259,7 +259,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                        character.healthPotions);
             }
             if (t == 30) pressed->d_up = 1;
-            if (t == 34) debugf("[run] D-up: state %d (%s)\n", character_get_state(), character_get_state() == CHAR_STATE_SKILL ? "SKILL: not locked" : "locked");
+            if (t == 34) debugf("[run] D-up: state %d (%s)\n", character_get_state(), character_get_state() == CHAR_STATE_SKILL ? "cast: Moon Blade Dance learned" : "no skill");
             if (t == 90) boss_apply_damage(boss, boss->maxHealth * 2.0f);
             if (tower_draft_is_open() && t % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
             if (lastFloor == 7 && t == 60) { phase = 3; t0 = frame; character_apply_damage(9999.0f); }
