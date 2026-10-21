@@ -544,6 +544,10 @@ void sun_boss_update(Boss* b, float dt)
         enter(SB_BREAK);
     }
 
+
+#ifdef HLE_TEST_DUMMY
+    { extern void hle_open_tick(bool, float); hle_open_tick((s.state == SB_HOVER || s.state == SB_REST), dt); }   // test aid: measure the openings
+#endif
     switch (s.state) {
     case SB_INTRO:
         // Comes down from the ceiling in its chains
@@ -560,7 +564,7 @@ void sun_boss_update(Boss* b, float dt)
         move_toward(b, character.pos[0] + sinf(away) * KEEP_DIST, character.pos[2] + cosf(away) * KEEP_DIST, DRIFT_SPEED * sm, dt);
         float hy = s.groundY + HOVER_H + sinf(s.life * 2.0f) * 3.0f;
         b->pos[1] += (hy - b->pos[1]) * fminf(1.0f, dt * 3.0f);
-        if (s.t > 0.8f / sm) choose(b, dist);
+        if (s.t > 1.5f / sm) choose(b, dist);     // a pause between attacks: the opening
         break;
     }
 
@@ -572,7 +576,7 @@ void sun_boss_update(Boss* b, float dt)
 
     case SB_REST:
         // Dimmed on the floor: the opening
-        if (s.t > 2.6f / sm) enter(SB_HOVER);
+        if (s.t > 3.0f / sm) enter(SB_HOVER);
         break;
 
     case SB_BREAK:

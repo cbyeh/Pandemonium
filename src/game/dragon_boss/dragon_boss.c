@@ -907,6 +907,10 @@ void dragon_boss_update(Boss* b, float dt)
         enter(DG_ROAR);
     }
 
+
+#ifdef HLE_TEST_DUMMY
+    { extern void hle_open_tick(bool, float); hle_open_tick((s.state == DG_IDLE || s.state == DG_TIRED), dt); }   // test aid: measure the openings
+#endif
     switch (s.state) {
     case DG_INTRO:
         // Flies down into the hall and lands, then waits for the intro to end
@@ -933,7 +937,7 @@ void dragon_boss_update(Boss* b, float dt)
         float d = turn_toward(b, atan2f(dx, dz), 1.1f * sm, dt);
         if (dist > 75.0f && fabsf(d) < 0.8f) move_by(b, s.F[0] * 30.0f * sm * dt, s.F[2] * 30.0f * sm * dt);
         else if (dist < 50.0f && fabsf(d) < 1.0f) move_by(b, -s.F[0] * 18.0f * dt, -s.F[2] * 18.0f * dt);
-        if (s.t > 0.5f / sm) choose(b, dist, rel);
+        if (s.t > 1.8f / sm) choose(b, dist, rel);     // a pause between attacks: the opening
         break;
     }
 
@@ -951,7 +955,7 @@ void dragon_boss_update(Boss* b, float dt)
     case DG_TIRED:
         // Spent: its head on the floor, the best chance to hit it
         s.tCrouch = 10.0f; s.tNeckPitch = -0.95f; s.tNeckReach = 1.1f; s.tJaw = 0.3f; s.tWingRaise = -0.1f; s.poseRate = 3.0f;
-        if (s.t >= 3.0f / sm) enter(DG_IDLE);
+        if (s.t >= 3.5f / sm) enter(DG_IDLE);
         break;
 
     case DG_DEAD:

@@ -75,12 +75,6 @@ static void apply_stereo_volume(int ch, float volume) {
  * ============================================================================
  */
 
-static wav64_t uiWavs[AUDIO_UI_COUNT];
-static const char *const UI_PATHS[AUDIO_UI_COUNT] = {
-    "rom:/audio/sfx/ui/ui_move_22k.wav64", "rom:/audio/sfx/ui/ui_confirm_22k.wav64", "rom:/audio/sfx/ui/ui_back_22k.wav64",
-};
-static const float UI_VOLUME[AUDIO_UI_COUNT] = { 0.8f, 0.5f, 0.8f };
-
 static wav64_t sceneWavs[AUDIO_SCENE_MAX_SFX];
 static bool    sceneLoaded[AUDIO_SCENE_MAX_SFX];
 static int     sceneCount = 0;
@@ -280,14 +274,6 @@ void audio_initialize(void)
     }
 
     sfx_slots_init();
-    for (int i = 0; i < AUDIO_UI_COUNT; i++) wav64_open(&uiWavs[i], UI_PATHS[i]);
-}
-
-void audio_play_ui(AudioUiSound sound)
-{
-    if (globalMute || sound < 0 || sound >= AUDIO_UI_COUNT) return;
-    apply_stereo_volume(CHANNEL_UI, cap_sfx(apply_volume_settings(sfxVolume) * UI_VOLUME[sound]));
-    wav64_play(&uiWavs[sound], CHANNEL_UI);
 }
 
 static void audio_reset_fade(void)

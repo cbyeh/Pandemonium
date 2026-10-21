@@ -24,6 +24,14 @@
 int hle_task_log;
 float hle_dummy_damage;
 int hle_dummy_hits;
+// Openings (HLE_TEST_DUMMY): time a Bonus boss spends not attacking, and how many such gaps
+float hle_open_time, hle_open_cur;
+int hle_open_gaps;
+void hle_open_tick(bool open, float dt)
+{
+    if (open) { hle_open_time += dt; hle_open_cur += dt; }
+    else if (hle_open_cur > 0.0f) { hle_open_gaps++; hle_open_cur = 0.0f; }
+}
 
 void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
@@ -241,20 +249,18 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             return;
         }
         static const char *const music[] = { "rom:/audio/music/shadowborn_pursuit-22k.wav64", "rom:/audio/music/shackled_sun_metal-22k.wav64" };
-        const int nsfx = SCENE1_SFX_CHAIN2 - SCENE1_SFX_DRAGON_ROAR + 1, total = nsfx + AUDIO_UI_COUNT + 2;
+        const int nsfx = SCENE1_SFX_CHAIN2 - SCENE1_SFX_DRAGON_ROAR + 1, total = nsfx + 2;
         int t = frame - start;
         static int before;
         if (step < total && t == 20 + step * 20) {
             before = 0;
             for (int ch = SFX_CH_FIRST; ch <= SFX_CH_LAST; ch++) before += mixer_ch_playing(ch);
             if (step < nsfx) audio_play_scene_sfx_dist(SCENE1_SFX_DRAGON_ROAR + step, 1.0f, 0.0f);
-            else if (step < nsfx + AUDIO_UI_COUNT) audio_play_ui(step - nsfx);
-            else audio_play_music(music[step - nsfx - AUDIO_UI_COUNT], true);
+            else audio_play_music(music[step - nsfx], true);
         }
         if (step < total && t == 20 + step * 20 + 1) {
             bool on = false;
             if (step < nsfx) { int n = 0; for (int ch = SFX_CH_FIRST; ch <= SFX_CH_LAST; ch++) n += mixer_ch_playing(ch); on = n > before; }
-            else if (step < nsfx + AUDIO_UI_COUNT) on = mixer_ch_playing(CHANNEL_UI);
             else on = audio_is_music_playing();
             if (!on) fails++;
             debugf("[audio] %d %s\n", step, on ? "playing" : "SILENT");
@@ -366,7 +372,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             float prev = tm;
             tm += deltaTime;
             if ((int)(tm / 30.0f) != (int)(prev / 30.0f))
-                debugf("[dummy] boss %d t %.0f s damage %.0f hits %d\n", HLE_DUMMY_BOSS, (double)tm, (double)hle_dummy_damage, hle_dummy_hits);
+                debugf("[dummy] boss %d t %.0f s damage %.0f hits %d | open %.0f%% of the time, %d gaps of %.2f s\n", HLE_DUMMY_BOSS, (double)tm,
+                       (double)hle_dummy_damage, hle_dummy_hits, (double)(100.0f * hle_open_time / (tm > 0 ? tm : 1)), hle_open_gaps,
+                       (double)(hle_open_gaps ? hle_open_time / hle_open_gaps : 0.0f));
         }
         return;
     }
