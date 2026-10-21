@@ -5,8 +5,10 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN)
 #include "camera_controller.h"
+#include "character_skin.h"
+#include <math.h>
 #include "character.h"
 #include "game/boss/boss.h"
 #include "controllers/menu_controller.h"
@@ -75,6 +77,49 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         if (t == 70 || t == 230 || t == 440) { pressed->a = 1; in->btn.a = 1; }
         if (t == 69 || t == 72 || t == 229 || t == 232 || t == 439 || t == 442)
             debugf("[rc] t %d state %d\n", t, character_get_state());
+        return;
+    }
+#endif
+#ifdef HLE_TEST_SKIN
+    // Skin check: HLE_TEST_SKIN=<id> (HLE_SKIN_HOOD=0 for hood down). Title, then the knight
+    // runs a circle and stands while the camera orbits: back, side, front every 60 frames.
+    {
+        static int start = -1;
+#ifndef HLE_SKIN_HOOD
+#define HLE_SKIN_HOOD 1
+#endif
+        if (frame == 100 || start == -1) { character_skin_set_hood_up(HLE_SKIN_HOOD); character_skin_set(HLE_TEST_SKIN); }
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) { start = frame; debugf("[skin] start %d\n", frame); }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        int t = frame - start;
+#ifdef HLE_SKIN_MENU
+        // pause menu > Settings > Skin, then step the skin right twice (pause menu: Resume, Restart, Settings)
+        {
+            static const char seq[] = "SDDADDDDRR";
+            if (t >= 30 && t % 15 == 0 && t / 15 - 2 < (int)sizeof(seq) - 1) {
+                char c = seq[t / 15 - 2];
+                if (c == 'S') { pressed->start = 1; in->btn.start = 1; }
+                if (c == 'D') pressed->d_down = 1;
+                if (c == 'A') { pressed->a = 1; in->btn.a = 1; }
+                if (c == 'R') pressed->d_right = 1;
+            }
+            return;
+        }
+#endif
+        cameraLockOnActive = false;
+        if (t == 1) { character.pos[0] = boss->pos[0] - 400.0f; character.pos[2] = boss->pos[2]; character_skin_reset_cloth(); }
+        if (t < 180) { in->stick_x = (int)(75 * cosf(t * 0.05f)); in->stick_y = (int)(75 * sinf(t * 0.05f)); }
+        float yaw = character.rot[1];
+        float a = -yaw + (float)(t / 60 % 3) * 1.5708f;   // facing direction rotated by 0/90/180
+        float *p = character.pos;
+        customCamPos = (T3DVec3){{ p[0] + 70.0f * sinf(a), p[1] + 30.0f, p[2] + 70.0f * cosf(a) }};
+        customCamTarget = (T3DVec3){{ p[0], p[1] + 20.0f, p[2] }};
+        camera_mode_smooth(CAMERA_CUSTOM, 0.01f);   // also ends the fight-intro transition
+        if (t % 60 == 0) debugf("[skin] view %d at frame %d\n", t / 60 % 3, frame);
         return;
     }
 #endif
@@ -308,7 +353,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         Boss *boss = boss_get_instance();
         bool combat = boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL;
         int t = frame - t0;
-        // pause menu: Resume, Restart, Settings, Controls / settings: Audio, Video, Controls, Skills, Back
+        // pause menu: Resume, Restart, Settings, Controls / settings: Audio, Video, Controls, Skills, Skin, Hood, Back
         // O = open the pause menu, C = close it (both wait until it took effect)
         static const char seq[] = "ODDADDDABBC";
         switch (phase) {

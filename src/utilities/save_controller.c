@@ -10,6 +10,7 @@
 #include "globals.h"
 #include "video_controller.h"
 #include "../character/character.h"
+#include "../character/character_skin.h"
 
 /*
  * EEPROMFS notes:
@@ -151,6 +152,17 @@ static void save_set_skills_enabled(SaveData *d, bool enabled)
 {
     if (!d) return;
     d->_pad[4] = enabled ? 0 : 1;
+}
+
+// Old saves hold 0 in both bytes: the stock Knight, hood up.
+static int saved_skin(const SaveData *d)
+{
+    return (d && d->_pad[5] < SKIN_COUNT) ? d->_pad[5] : SKIN_KNIGHT;
+}
+
+static bool saved_hood_up(const SaveData *d)
+{
+    return !d || d->_pad[6] == 0;
 }
 
 static void save_defaults_for_slot(SaveData *d, int slot) {
@@ -362,6 +374,8 @@ bool save_controller_load_settings(void) {
     joypad_set_rumble_enabled(saved_rumble_enabled(d));
     hdAspect = saved_hd_aspect(d);
     character_set_skills_enabled(saved_skills_enabled(d));
+    character_skin_set_hood_up(saved_hood_up(d));
+    character_skin_set(saved_skin(d));
     return true;
 }
 
@@ -380,6 +394,8 @@ bool save_controller_save_settings(void) {
     save_set_rumble_enabled(d, joypad_is_rumble_enabled());
     save_set_hd_aspect(d, hdAspect);
     save_set_skills_enabled(d, character_skills_enabled());
+    d->_pad[5] = (uint8_t)character_skin_get();
+    d->_pad[6] = character_skin_hood_up() ? 0 : 1;
 
     d->checksum     = compute_slot_checksum(d);
 

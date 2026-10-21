@@ -32,6 +32,11 @@ Optional sword skills inspired by Dragon Nest's Moonlord, on the D-pad with cool
 | <img src="docs/media/skill_moon_blade_dance.gif" width="320"> | <img src="docs/media/skill_halfmoon_slash.gif" width="320"> | <img src="docs/media/skill_crescent_cleave.gif" width="320"> |
 | Backflip high in the direction you are moving (in place when standing still) and rain five X-shaped sword waves on the target, one per swing. Without lock-on they land where the camera looks. | High risk nuke: a long rooted charge (a hit cancels it and hurts more), then a huge 180-degree slash that rolls outward as a wave. | Medium risk: crouch, then a rising swing that raises five light blades close around you that fan outward, each hitting repeatedly. |
 
+### Skins
+Pick a look from **Settings > Skin** (Left/Right or A), saved with your settings: the stock Knight, a hooded Teal, Crimson or Umber Cloak (**Settings > Hood** puts the hood up or down), and three homages: the Wolf Knight's tattered blue cloak, the Black Swordsman's dark armor and black cloak, and the Scarlet Valkyrie's gold armor and red hair. Cloaks and hair are simulated cloth that sways and trails as you move.
+
+<img src="docs/media/skins.png" width="800">
+
 ### New boss fights
 Defeating the Guardian of the Shackled Sun is no longer the end: it rises again as Guardian Unbound. Two Bonus fights, picked from **Bonus** on the title screen, each have their own intro and ending cutscenes.
 

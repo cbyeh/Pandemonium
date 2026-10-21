@@ -8,6 +8,7 @@
 #include "../scenes/guardian/guardian_scene.h"
 #include "../utilities/save_controller.h"
 #include "../character/character.h"
+#include "../character/character_skin.h"
 
 #include "../utilities/globals.h"
 #include "../utilities/video_layout.h"
@@ -81,6 +82,8 @@ static const char* settingsMenuOptions[MENU_SETTINGS_COUNT] = {
     "Video",
     "Controls",
     "Skills: %s",
+    "Skin: < %s >",
+    "Hood: %s",
     "Back",
 };
 
@@ -450,6 +453,14 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             }
         }
     } else if (currentMenu == MENU_SETTINGS) {
+        int skinStep = (rightJustPressed || (aJustPressed && selectedOption == MENU_SETTINGS_SKIN)) ? 1 : leftJustPressed ? -1 : 0;
+        if (skinStep && selectedOption == MENU_SETTINGS_SKIN) {
+            character_skin_set((character_skin_get() + skinStep + SKIN_COUNT) % SKIN_COUNT);
+            (void)save_controller_save_settings();
+        } else if ((skinStep || aJustPressed) && selectedOption == MENU_SETTINGS_HOOD && character_skin_has_hood(character_skin_get())) {
+            character_skin_set_hood_up(!character_skin_hood_up());
+            (void)save_controller_save_settings();
+        }
         if (aJustPressed) {
             switch (selectedOption) {
                 case MENU_SETTINGS_AUDIO:
@@ -1122,10 +1133,13 @@ void menu_controller_draw(void)
 
         for (int i = 0; i < MENU_SETTINGS_COUNT; i++) {
             char optionText[64];
-            bool locked = (i == MENU_SETTINGS_SKILLS && settingsHubReturnMenu != MENU_TITLE);
-            snprintf(optionText, sizeof(optionText), settingsMenuOptions[i] ? settingsMenuOptions[i] : "",
-                     locked ? (character_skills_enabled() ? "ON (title only)" : "OFF (title only)")
-                            : (character_skills_enabled() ? "ON" : "OFF"));
+            bool locked = (i == MENU_SETTINGS_SKILLS && settingsHubReturnMenu != MENU_TITLE)
+                       || (i == MENU_SETTINGS_HOOD && !character_skin_has_hood(character_skin_get()));
+            const char *arg = locked ? (character_skills_enabled() ? "ON (title only)" : "OFF (title only)")
+                                     : (character_skills_enabled() ? "ON" : "OFF");
+            if (i == MENU_SETTINGS_SKIN) arg = character_skin_name(character_skin_get());
+            if (i == MENU_SETTINGS_HOOD) arg = !locked ? (character_skin_hood_up() ? "UP" : "DOWN") : "N/A";
+            snprintf(optionText, sizeof(optionText), settingsMenuOptions[i] ? settingsMenuOptions[i] : "", arg);
 
             if (i == selectedOption) {
                 draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);

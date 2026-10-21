@@ -6,6 +6,7 @@
 #include <math.h>
 
 #include "character.h"
+#include "character_skin.h"
 #include "camera_controller.h"
 
 #include "joypad_utility.h"
@@ -2540,9 +2541,7 @@ void character_init(void)
     ATTACK3_DURATION = get_attack_duration(3);
     ATTACK4_DURATION = get_attack_duration(4);
 
-    rspq_block_begin();
-    t3d_model_draw_skinned(characterModel, skeleton);
-    rspq_block_t* dpl_model = rspq_block_end();
+    rspq_block_t* dpl_model = character_skin_record(characterModel, skeleton);
 
     rspq_block_begin();
     t3d_model_draw(characterShadowModel);
@@ -2589,6 +2588,7 @@ void character_init(void)
     t3d_mat4fp_identity(newCharacter.shadowMat);
 
     character = newCharacter;
+    character_skin_bind_block(&character.dpl_model);
 
     camera_reset_third_person();
     character_update_camera();
@@ -3235,6 +3235,7 @@ void character_draw(void)
 
     t3d_matrix_set(character.modelMat, true);
     rspq_block_run(character.dpl_model);
+    character_skin_draw_extras(character.skeleton, character.modelMat, character.pos, deltaTime);
 }
 
 void character_draw_ui(void)
