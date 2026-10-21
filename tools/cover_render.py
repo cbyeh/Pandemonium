@@ -76,37 +76,58 @@ _d = BOSS + V(0, 12.0, 0) * BOSS_S - CAM
 SUN = CAM + _d / np.linalg.norm(_d) * 85; SUN_R = 16.0  # right behind the boss's head
 ST, CLOTH, PLUME, DARK, GOLD, RED, BLADE, GLOW, IRON, LEATHER, ROCK, SUNM, EYE, GROUND = range(1, 15)
 
+def grooves(d, coord, period, depth, width=0.12):
+    """Engraved lines across a surface every `period` along `coord` (plate lames, bands)."""
+    f = coord / period - np.floor(coord / period)
+    return d + depth * clip01(1 - np.minimum(f, 1 - f) / width)
+
 def hero(p):
     q = p - HERO
     x, y, z = q[:, 0], q[:, 1], q[:, 2]
     parts = []
-    legs = np.minimum(capsule(q, V(-0.15, 0.14, -0.06), V(-0.11, 0.92, 0), 0.075, 0.09),
-                      capsule(q, V(0.17, 0.14, 0.16), V(0.11, 0.92, 0), 0.075, 0.09))
-    boots = np.minimum(box(q - V(-0.15, 0.07, -0.03), V(0.075, 0.07, 0.14), 0.04),
-                       box(q - V(0.17, 0.07, 0.2), V(0.075, 0.07, 0.14), 0.04))
-    body = smin(box(q - V(0, 0.98, 0), V(0.18, 0.1, 0.12), 0.05),
-                box(q - V(0, 1.3, 0), V(0.21, 0.18, 0.13), 0.07), 0.08)
-    body = np.minimum(body, smin(legs, boots, 0.05))
-    body = np.minimum(body, ellipsoid(q, V(-0.25, 1.47, 0), V(0.13, 0.09, 0.13)))
-    body = np.minimum(body, ellipsoid(q, V(0.25, 1.47, 0), V(0.13, 0.09, 0.13)))
-    arms = np.minimum(capsule(q, V(-0.29, 1.42, 0), V(-0.33, 1.1, 0.04), 0.06),
-                      capsule(q, V(-0.33, 1.1, 0.04), V(-0.31, 0.88, 0.1), 0.055))
-    arms = np.minimum(arms, capsule(q, V(0.29, 1.42, 0), V(0.38, 1.12, 0.03), 0.06))
-    arms = np.minimum(arms, capsule(q, V(0.38, 1.12, 0.03), V(0.46, 0.93, 0.1), 0.055))
-    arms = np.minimum(arms, sphere(q, V(0.47, 0.9, 0.11), 0.055))
-    helm = smin(ellipsoid(q, V(0, 1.7, 0.01), V(0.13, 0.15, 0.14)), capsule(q, V(0, 1.5, 0), V(0, 1.62, 0), 0.07), 0.04)
+    # legs: tapered thigh, knee cop, greave, pointed sabaton
+    legs = 1e9
+    for hip, knee, ank, toe in ((V(-0.1, 0.92, 0), V(-0.14, 0.52, -0.03), V(-0.15, 0.12, -0.07), V(-0.16, 0.04, 0.08)),
+                                (V(0.1, 0.92, 0), V(0.15, 0.52, 0.09), V(0.17, 0.12, 0.15), V(0.18, 0.04, 0.3))):
+        leg = capsule(q, hip, knee, 0.088, 0.068)
+        leg = smin(leg, capsule(q, knee, ank, 0.066, 0.048), 0.03)
+        leg = smin(leg, ellipsoid(q, knee + V(0, 0.01, 0.045), V(0.062, 0.055, 0.045)), 0.015)
+        foot = smin(ellipsoid(q, ank + V(0, -0.06, 0.02), V(0.06, 0.05, 0.09)), capsule(q, ank + V(0, -0.07, 0.04), toe, 0.045, 0.02), 0.03)
+        legs = np.minimum(legs, smin(leg, foot, 0.03))
+    legs = grooves(legs, y, 0.07, 0.004)
+    fauld = grooves(capsule(q, V(0, 1.03, 0), V(0, 0.84, 0), 0.165, 0.2), y, 0.065, 0.006)
+    chest = smin(ellipsoid(q, V(0, 1.31, 0.0), V(0.2, 0.2, 0.135)), ellipsoid(q, V(0, 1.08, 0), V(0.16, 0.14, 0.11)), 0.06)
+    body = smin(smin(chest, fauld, 0.04), legs, 0.04)
+    # layered pauldrons
+    for sx in (-1, 1):
+        body = np.minimum(body, ellipsoid(q, V(0.25 * sx, 1.48, 0), V(0.12, 0.085, 0.12)))
+        body = np.minimum(body, ellipsoid(q, V(0.28 * sx, 1.42, 0), V(0.115, 0.07, 0.12)))
+    # arms: left hangs, right holds the sword low and out
+    arms = smin(capsule(q, V(-0.29, 1.42, 0), V(-0.33, 1.12, 0.03), 0.058, 0.05),
+                capsule(q, V(-0.33, 1.12, 0.03), V(-0.31, 0.9, 0.09), 0.048, 0.042), 0.02)
+    arms = np.minimum(arms, smin(capsule(q, V(0.29, 1.42, 0), V(0.38, 1.13, 0.03), 0.058, 0.05),
+                                 capsule(q, V(0.38, 1.13, 0.03), V(0.46, 0.94, 0.1), 0.048, 0.042), 0.02))
+    for e in (V(-0.335, 1.12, 0.0), V(0.385, 1.13, 0.0)):   # elbow cops
+        arms = np.minimum(arms, ellipsoid(q, e, V(0.05, 0.05, 0.045)))
+    arms = np.minimum(arms, ellipsoid(q, V(0.47, 0.9, 0.11), V(0.05, 0.055, 0.05)))
+    arms = np.minimum(arms, ellipsoid(q, V(-0.31, 0.87, 0.1), V(0.045, 0.055, 0.045)))
+    helm = smin(ellipsoid(q, V(0, 1.71, 0.0), V(0.12, 0.14, 0.13)), ellipsoid(q, V(0, 1.66, 0.06), V(0.105, 0.11, 0.1)), 0.03)
+    helm = smin(helm, capsule(q, V(0, 1.84, 0.08), V(0, 1.82, -0.1), 0.018), 0.02)   # crest
+    helm = smin(helm, capsule(q, V(0, 1.5, 0), V(0, 1.6, 0), 0.07), 0.04)
     parts.append((np.minimum(np.minimum(body, arms), helm), ST))
-    plume = capsule(q, V(0, 1.84, 0.03), V(0, 1.9, -0.08), 0.045)
-    plume = smin(plume, capsule(q, V(0, 1.9, -0.08), V(0, 1.82, -0.24), 0.04, 0.03), 0.03)
-    plume = smin(plume, capsule(q, V(0, 1.82, -0.24), V(0, 1.6, -0.33), 0.03, 0.015), 0.03)
-    parts.append((plume, PLUME))
-    # cape hangs behind the shoulders, flaring and ragged toward the knees
-    top = 1.46
-    bot = 0.42 + 0.05 * np.sin(x * 37) + 0.035 * np.sin(x * 71 + 1)
-    hw = 0.21 + (top - y) * 0.15
-    zc = -0.15 - 0.07 * (top - y) + 0.018 * np.sin(x * 25)
-    m = np.stack([np.abs(x) - hw, np.maximum(y - top, bot - y), np.abs(z - zc) - 0.012], 1)
-    parts.append(((length(np.maximum(m, 0)) + np.minimum(m.max(1), 0)) * 0.7, CLOTH))
+    # horsehair plume streaming back
+    plume = capsule(q, V(0, 1.84, 0.03), V(0, 1.91, -0.08), 0.04, 0.045)
+    plume = smin(plume, capsule(q, V(0, 1.91, -0.08), V(0.01, 1.84, -0.24), 0.045, 0.03), 0.03)
+    plume = smin(plume, capsule(q, V(0.01, 1.84, -0.24), V(0.03, 1.62, -0.34), 0.03, 0.01), 0.03)
+    parts.append((grooves(plume, x * 3 + y, 0.02, 0.004), PLUME))
+    # cloak: pleated folds, flaring and torn toward the knees
+    top = 1.47
+    bot = 0.4 + 0.05 * np.sin(x * 13) + 0.03 * np.sin(x * 31 + 1) + 0.02 * np.abs(np.sin(x * 57))
+    hw = 0.22 + (top - y) * 0.16
+    wrap = 0.14 * clip01(np.abs(x) / hw) ** 2   # the sides curl forward round the body
+    zc = -0.15 - 0.07 * (top - y) + wrap + (0.008 + 0.035 * (top - y)) * np.sin(x * 17 + 0.6 * np.sin(x * 9)) + 0.006 * np.sin(x * 47)
+    m = np.stack([np.abs(x) - hw, np.maximum(y - top, bot - y), np.abs(z - zc) - 0.01], 1)
+    parts.append(((length(np.maximum(m, 0)) + np.minimum(m.max(1), 0)) * 0.6, CLOTH))
     hand, tip = V(0.47, 0.9, 0.11), V(1.05, 0.06, 0.62)
     u = norm(tip - hand)
     parts.append((blade(q, hand + u * 0.1, tip, 0.035, 0.008, V(0, 1, 0)), BLADE))
@@ -123,54 +144,80 @@ def boss_local(p):
     x, y, z = q[:, 0], q[:, 1], q[:, 2]
     ax = np.abs(x); qs = np.stack([ax, y, z], 1)  # mirrored
     parts = []
-    legs = capsule(qs, V(1.3, 0.8, 0), V(1.1, 3.2, -0.1), 0.65, 0.6)
-    legs = smin(legs, capsule(qs, V(1.1, 3.2, -0.1), V(0.95, 6.0, 0), 0.65, 0.9), 0.3)
-    legs = np.minimum(legs, box(qs - V(1.3, 0.45, -0.5), V(0.6, 0.45, 1.1), 0.3))
-    legs = np.minimum(legs, ellipsoid(qs, V(1.12, 3.3, -0.5), V(0.7, 0.6, 0.55)))
-    skirt = box(q - V(0, 6.1, 0), V(1.9, 0.9, 1.3), 0.4)
-    tw = 1.8 + clip01((y - 6.8) / 3.5) * 0.5  # wider at the chest
-    torso = box(q - V(0, 8.6, 0), np.stack([tw, np.full_like(y, 1.9), np.full_like(y, 1.35)], 1), 0.6) * 0.9
-    torso = smin(torso, skirt, 0.4)
-    torso = np.minimum(torso, capsule(q, V(0, 10.2, 0.1), V(0, 11.0, 0.1), 0.8))
-    ridge = box(q - V(0, 8.8, -1.3), V(0.12, 1.6, 0.15), 0.08)  # chest ridge
-    paul = np.minimum(ellipsoid(qs, V(2.6, 10.0, 0), V(1.55, 1.15, 1.5)),
-                      ellipsoid(qs, V(2.85, 9.2, -0.1), V(1.4, 0.85, 1.35)))
-    arms = capsule(qs, V(2.7, 9.5, 0), V(2.25, 7.4, -1.6), 0.75, 0.6)
-    arms = smin(arms, capsule(qs, V(2.25, 7.4, -1.6), V(0.55, 8.35, -3.25), 0.65, 0.5), 0.25)
-    arms = np.minimum(arms, ellipsoid(qs, V(2.3, 7.4, -1.75), V(0.6, 0.6, 0.6)))
-    hands = ellipsoid(qs, V(0.45, 8.35, -3.35), V(0.45, 0.6, 0.55))
-    helm = ellipsoid(q, V(0, 11.9, -0.15), V(0.95, 1.15, 1.0))
-    helm = smin(helm, box(q - V(0, 11.6, -0.85), V(0.3, 0.55, 0.2), 0.15), 0.2)  # snout
-    helm = np.maximum(helm, -box(q - V(0, 11.95, -1.1), V(0.62, 0.07, 0.6)))  # visor slit
-    parts.append((np.minimum.reduce([legs, torso, ridge, paul, arms, hands, helm]), DARK))
-    parts.append((np.minimum(sphere(qs, V(0.3, 11.95, -0.75), 0.11), 1e9), EYE))
-    # horns sweep out and up from the helmet
+    # legs: banded cuisse, fanned knee cop, ridged greave, layered sabaton
+    H, K, A = V(0.95, 6.0, 0.1), V(1.12, 3.3, -0.25), V(1.3, 0.8, 0.0)
+    legs = grooves(capsule(qs, H, K, 0.95, 0.68), y, 0.62, 0.05)
+    legs = smin(legs, capsule(qs, K, A, 0.66, 0.5), 0.2)
+    legs = smin(legs, capsule(qs, K + V(0, -0.35, -0.55), A + V(0, 0.3, -0.43), 0.1), 0.12)
+    cop = smin(ellipsoid(qs, K + V(0, 0.05, -0.45), V(0.62, 0.55, 0.42)), ellipsoid(qs, K + V(0.45, 0, -0.22), V(0.16, 0.55, 0.42)), 0.08)
+    sab = smin(ellipsoid(qs, V(1.3, 0.42, -0.4), V(0.64, 0.44, 1.05)), ellipsoid(qs, V(1.3, 0.3, -1.25), V(0.42, 0.28, 0.6)), 0.15)
+    legs = np.minimum(np.minimum(legs, cop), grooves(sab, z, 0.32, 0.04))
+    # faulds: stacked lames flaring over the hips, split at the front
+    sq = q * V(1, 1, 1.3)
+    skirt = grooves(capsule(sq, V(0, 7.05, 0.05), V(0, 5.3, 0.05), 1.7, 2.15) / 1.3, y, 0.55, 0.06, 0.1)
+    skirt = np.maximum(skirt, -box(q - V(0, 5.2, -2.0), V(0.35, 1.1, 0.8)))
+    # breastplate: chest, pecs and keel over a banded abdomen
+    chest = ellipsoid(q, V(0, 9.1, -0.05), V(2.05, 1.75, 1.45))
+    pecs = ellipsoid(qs, V(0.85, 9.35, -0.7), V(0.95, 0.8, 0.75))
+    abdomen = grooves(ellipsoid(q, V(0, 7.5, 0), V(1.55, 1.25, 1.15)), y, 0.42, 0.05)
+    torso = smin(smin(chest, pecs, 0.35), abdomen, 0.45)
+    torso = smin(torso, capsule(q, V(0, 7.9, -1.18), V(0, 10.1, -1.33), 0.11), 0.15)
+    torso = smin(torso, skirt, 0.3)
+    gorget = grooves(capsule(q, V(0, 10.35, 0.1), V(0, 11.0, 0.05), 0.98, 0.72), y, 0.2, 0.03, 0.15)
+    # pauldrons: three overlapping lames
+    paul = np.minimum.reduce([ellipsoid(qs, V(2.55, 10.15, 0), V(1.45, 1.0, 1.45)),
+                              ellipsoid(qs, V(2.78, 9.55, 0), V(1.5, 0.8, 1.5)),
+                              ellipsoid(qs, V(2.98, 9.0, 0), V(1.38, 0.62, 1.38))])
+    # arms: upper arm, couter, vambrace, flared cuff, fists on the pommel
+    arms = capsule(qs, V(2.7, 9.6, 0), V(2.3, 7.4, -1.5), 0.72, 0.58)
+    arms = smin(arms, ellipsoid(qs, V(2.35, 7.35, -1.55), V(0.62, 0.6, 0.62)), 0.1)
+    arms = smin(arms, capsule(qs, V(2.3, 7.4, -1.6), V(0.8, 8.2, -3.05), 0.55, 0.48), 0.15)
+    arms = smin(arms, capsule(qs, V(1.05, 8.05, -2.85), V(0.85, 8.2, -3.05), 0.62, 0.6), 0.05)
+    fist = ellipsoid(qs, V(0.45, 8.45, -3.38), V(0.4, 0.5, 0.48))
+    for k in range(4):   # curled fingers
+        fy = 8.12 + k * 0.21
+        fist = smin(fist, capsule(qs, V(0.42, fy, -3.78), V(0.12, fy, -3.62), 0.105, 0.095), 0.04)
+    fist = smin(fist, capsule(qs, V(0.55, 8.95, -3.25), V(0.2, 9.0, -3.5), 0.11), 0.04)   # thumb
+    # helm: dome, faceplate, crest, brow, visor slit with breaths
+    helm = smin(ellipsoid(q, V(0, 12.0, -0.1), V(0.95, 1.1, 1.05)), ellipsoid(q, V(0, 11.55, -0.55), V(0.78, 0.85, 0.72)), 0.2)
+    helm = smin(helm, capsule(q, V(0, 13.02, -0.55), V(0, 12.75, 0.85), 0.12), 0.1)
+    helm = smin(helm, capsule(qs, V(0, 12.18, -1.1), V(0.66, 12.15, -0.78), 0.1), 0.06)
+    helm = np.maximum(helm, -box(q - V(0, 11.95, -1.1), V(0.62, 0.065, 0.6)))
+    bx = x - np.round(x / 0.2) * 0.2
+    breaths = box(np.stack([bx, y - 11.35, z + 1.25], 1), V(0.035, 0.22, 0.4))
+    helm = np.maximum(helm, -np.maximum(breaths, np.abs(x) - 0.45))
+    parts.append((np.minimum.reduce([legs, torso, gorget, paul, arms, fist, helm]), DARK))
+    parts.append((sphere(qs, V(0.3, 11.95, -0.75), 0.11), EYE))
+    # ribbed horns sweeping out and up
     horn = capsule(qs, V(0.75, 12.3, 0), V(1.55, 12.75, 0.1), 0.32, 0.25)
     horn = smin(horn, capsule(qs, V(1.55, 12.75, 0.1), V(2.05, 13.7, 0.2), 0.25, 0.15), 0.1)
     horn = smin(horn, capsule(qs, V(2.05, 13.7, 0.2), V(1.85, 14.7, 0.3), 0.15, 0.03), 0.08)
-    parts.append((horn, LEATHER))
-    # pauldron spikes and a sun-ray crown of gold behind the head
+    parts.append((grooves(horn, ax * 0.6 + y, 0.18, 0.025), LEATHER))
+    # gold: pauldron spikes and rims, couter spikes, knee bosses, the sun-ray crown
     gold = capsule(qs, V(2.7, 10.9, 0), V(3.3, 12.3, 0.2), 0.32, 0.02)
     gold = np.minimum(gold, capsule(qs, V(3.4, 10.5, 0), V(4.4, 11.4, 0.2), 0.28, 0.02))
-    gold = np.minimum(gold, box(qs - V(1.12, 3.4, -1.0), V(0.25, 0.25, 0.1), 0.08))
+    gold = np.minimum(gold, capsule(qs, V(2.6, 7.25, -1.4), V(3.25, 6.75, -0.6), 0.22, 0.02))
+    gold = np.minimum(gold, ellipsoid(qs, K + V(0, 0.05, -0.85), V(0.2, 0.2, 0.08)))
+    rq = qs - V(2.98, 8.62, 0)
+    gold = np.minimum(gold, length(np.stack([np.sqrt(rq[:, 0] ** 2 + rq[:, 2] ** 2) - 1.3, rq[:, 1] * 1.6], 1)) - 0.07)
     cc = q - V(0, 12.1, 0.8)
     ang = np.arctan2(cc[:, 1], cc[:, 0])
     k = np.clip(np.round((ang - np.pi / 2) / 0.33), -4, 4)
     a = np.pi / 2 + k * 0.33
     dirs = np.stack([np.cos(a), np.sin(a), np.zeros_like(a)], 1)
     ln = (2.3 - 0.25 * np.abs(k))[:, None]
-    spike = capsule(cc, dirs * 0.9, dirs * (0.9 + ln), 0.2, 0.01)
-    gold = np.minimum(gold, spike)
+    gold = np.minimum(gold, capsule(cc, dirs * 0.9, dirs * (0.9 + ln), 0.2, 0.01))
     parts.append((gold, GOLD))
-    # tattered cape behind
+    # tattered cape with deep folds, and a tabard between the legs
     top = 10.3
-    bot = 0.6 + 0.5 * np.sin(x * 2.3) + 0.3 * np.sin(x * 5.1 + 2)
+    bot = 0.5 + 0.6 * np.abs(np.sin(x * 1.3)) + 0.35 * np.sin(x * 4.7 + 1)
     hw = 2.3 + (top - y) * 0.22
-    zc = 1.7 + 0.08 * (top - y) + 0.25 * np.sin(x * 1.7)
-    m = np.stack([np.abs(x) - hw, np.maximum(y - top, bot - y), np.abs(z - zc) - 0.12], 1)
-    cape = (length(np.maximum(m, 0)) + np.minimum(m.max(1), 0)) * 0.7
-    tabard = box(q - V(0, 4.0, -1.1), V(0.9, 2.4, 0.06), 0.03)
-    tabard = np.maximum(tabard, (1.75 + 0.35 * np.sin(x * 6) - y) * 0.5)
+    zc = 1.75 + 0.07 * (top - y) + (0.1 + 0.035 * (top - y)) * np.sin(x * 1.9 + 0.3) + 0.12 * np.sin(x * 4.3)
+    m = np.stack([np.abs(x) - hw, np.maximum(y - top, bot - y), np.abs(z - zc) - 0.1], 1)
+    cape = (length(np.maximum(m, 0)) + np.minimum(m.max(1), 0)) * 0.6
+    tz = -1.15 + 0.06 * np.sin(x * 7)
+    tabard = box(np.stack([x, y - 4.0, z - tz], 1), V(0.85, 2.4, 0.05), 0.03) * 0.8
+    tabard = np.maximum(tabard, (1.6 + 0.35 * np.abs(np.sin(x * 6)) - y) * 0.5)
     parts.append((np.minimum(cape, tabard), RED))
     # greatsword planted in the ground, runes glowing down the fuller
     sb = SWORD_BASE - BOSS
@@ -269,7 +316,7 @@ def normals(p, e=0.002):
 def ambient_occ(p, n):
     occ = np.zeros(len(p), f32); s = 1.0
     for i in range(5):
-        h = 0.02 + 0.12 * i
+        h = 0.03 + 0.16 * i
         occ += (h - scene(p + n * h)) * s; s *= 0.85
     return clip01(1 - 1.5 * occ)
 
@@ -289,6 +336,20 @@ MAT = {  # albedo, metalness, shininess
     ROCK: (V(0.2, 0.16, 0.14), 0.0, 10), GROUND: (V(0.17, 0.14, 0.13), 0.0, 20),
     GLOW: (V(0, 0, 0), 0, 1), EYE: (V(0, 0, 0), 0, 1), SUNM: (V(0, 0, 0), 0, 1),
 }
+
+def noise3(p):
+    """Smooth value noise in [0, 1]."""
+    i = np.floor(p); f = p - i; f = f * f * (3 - 2 * f)
+    def h(o):
+        n = i + o
+        return np.modf(np.abs(np.sin(n[:, 0] * 127.1 + n[:, 1] * 311.7 + n[:, 2] * 74.7) * 43758.5453))[0]
+    c = [h(V(a, b, cc)) for a in (0, 1) for b in (0, 1) for cc in (0, 1)]
+    l = lambda a, b, t: a + (b - a) * t
+    fx, fy, fz = f[:, 0], f[:, 1], f[:, 2]
+    return l(l(l(c[0], c[1], fz), l(c[2], c[3], fz), fy), l(l(c[4], c[5], fz), l(c[6], c[7], fz), fy), fx)
+
+BUMP = {ST: (0.07, 40), DARK: (0.12, 3.0), GOLD: (0.06, 5), RED: (0.2, 5), CLOTH: (0.1, 55), PLUME: (0.25, 60),
+        LEATHER: (0.15, 7), ROCK: (0.2, 1.5), GROUND: (0.06, 1.2), IRON: (0.15, 2)}
 
 def hash2(a, b): return np.modf(np.abs(np.sin(a * 12.9898 + b * 78.233) * 43758.5453))[0]
 
@@ -314,6 +375,12 @@ def shade(ro, rd, t, hit):
         edge = np.minimum(np.minimum(fx, 1 - fx), np.minimum(fz, 1 - fz))
         tone = 0.7 + 0.6 * hash2(np.floor(gx), np.floor(gz))
         alb[g] *= (tone * (0.35 + 0.65 * clip01(edge / 0.04)))[:, None]
+    for k, (amp, fr) in BUMP.items():   # hammered metal, weave, stone grain
+        sel = m == k
+        if sel.any():
+            pp = p[sel] * fr
+            dn = np.stack([noise3(pp), noise3(pp + 17.3), noise3(pp + 41.7)], 1) - 0.5
+            n[sel] = norm(n[sel] + dn * amp * 2)
     nl_k = clip01(dot(n, KEY_DIR))[:, None]; nl_s = clip01(dot(n, sun_l))[:, None]
     amb = (V(0.07, 0.05, 0.06) + V(0.05, 0.02, 0.01) * clip01(-n[:, 1:2])) * ao[:, None]
     F0 = V(0.04, 0.04, 0.04) * (1 - met[:, None]) + alb * met[:, None]
