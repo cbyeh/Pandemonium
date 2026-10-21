@@ -23,6 +23,7 @@ typedef enum {
     MENU_MAIN_RESTART,
     MENU_MAIN_SETTINGS,
     MENU_MAIN_CONTROLS,
+    MENU_MAIN_QUIT,
     MENU_MAIN_COUNT
 } MainMenuOption;
 
@@ -90,6 +91,10 @@ typedef enum {
     // Reserved for later cleanup. For now restart can still call scene_restart()
     // directly from the pause menu if you kept that first-pass behavior.
     MENU_ACTION_RESTART_GAME,
+
+    // Pause menu > Main Menu: the Guardian scene consumes this at the top of its
+    // update and returns to the title (not from inside the menu, mid-scene-update).
+    MENU_ACTION_QUIT_TO_TITLE,
 } MenuAction;
 
 void menu_controller_init(void);

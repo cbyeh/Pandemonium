@@ -67,6 +67,7 @@ static const char* mainMenuOptions[MENU_MAIN_COUNT] = {
     "Restart",
     "Settings",
     "Controls",
+    "Main Menu",
 };
 
 static const char* titleMenuOptions[MENU_TITLE_COUNT] = {
@@ -403,6 +404,11 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                     parentSelectedOption = MENU_MAIN_CONTROLS;
                     currentMenu = MENU_CONTROLS;
                     selectedOption = 0;
+                    break;
+
+                case MENU_MAIN_QUIT:
+                    menu_controller_close();
+                    pendingAction = MENU_ACTION_QUIT_TO_TITLE;
                     break;
 
                 default:
