@@ -38,11 +38,11 @@ Toggle in **Settings > Skills** (title screen). Bosses have double health with s
 <img src="docs/media/skins.png" width="800">
 
 ### New boss fights
-Guardian Unbound (the Guardian's second form), plus two **Bonus** fights on the title screen.
+Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on the title screen.
 
-| Guardian Unbound | Fallen Knight (Bonus) | The Shackled Sun (Bonus) |
-|---|---|---|
-| <img src="docs/media/boss_guardian_unbound.png" width="280"> | <img src="docs/media/boss_fallen_knight.png" width="280"> | <img src="docs/media/boss_shackled_sun.png" width="280"> |
+| Guardian Unbound | Fallen Warrior (Bonus) | The Shackled Sun (Bonus) | Shadowborn (Bonus) |
+|---|---|---|---|
+| <img src="docs/media/boss_guardian_unbound.png" width="280"> | <img src="docs/media/boss_fallen_knight.png" width="280"> | <img src="docs/media/boss_shackled_sun.png" width="280"> | <img src="docs/media/boss_shadowborn.png" width="280"> |
 
 The ending now plays live in the engine.
 

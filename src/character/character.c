@@ -15,6 +15,7 @@
 #include "globals.h"
 
 #include "game/boss/boss.h"
+#include "game/dragon_boss/dragon_boss.h"
 #include "collision_system.h"
 #include "controllers/audio_controller.h"
 #include "../scenes/guardian/guardian_scene_sfx.h"
@@ -2982,6 +2983,10 @@ void character_update_camera(void)
 
     float scaledDistance = cameraDistance * 0.04f;
     float scaledHeight = cameraHeight * 0.03f;
+    {   // Shadowborn is huge: stand the camera further back
+        Boss *bb = boss_get_instance();
+        if (bb && bb->phaseIndex == DRAGON_BOSS_PHASE) { scaledDistance *= 1.5f; scaledHeight *= 1.4f; }
+    }
 
     bool unlockingFromLockOn = lastLockOnActive && !cameraLockOnActive && cameraLockBlend > 0.001f;
     if (unlockingFromLockOn && scaledDistance > 0.0f) {
@@ -3264,7 +3269,7 @@ void character_apply_damage(float amount)
 
     character.health -= amount;
     if (character.health < 0.0f) character.health = 0.0f;
-#ifdef HLE_TEST_UNBOUND   // test aid: log every hit, never die
+#if defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_BONUS_DRAGON)   // test aid: log every hit, never die
     debugf("[dmg] %.0f -> hp %.0f (state %d)\n", (double)amount, (double)character.health, characterState);
     if (character.health < 60.0f) character.health = character.maxHealth;
 #endif

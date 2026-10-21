@@ -202,7 +202,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_TEST_DUMMY
     // Threat measurement: a passive, invincible dummy at the start position; logs the
     // damage each boss lands over 120 s. HLE_DUMMY_BOSS: 1 Guardian, 2 Unbound,
-    // 3 Fallen Knight, 4 Shackled Sun.
+    // 3 Fallen Warrior, 4 Shackled Sun, 5 Shadowborn.
     {
         extern float deltaTime;
         static int phase = 0, step = 0, t0 = 0;
@@ -213,7 +213,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (menu_controller_is_active()) { phase = 1; t0 = frame; }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {    // pick the fight
-            const char *seq = HLE_DUMMY_BOSS == 3 ? "DDAA" : HLE_DUMMY_BOSS == 4 ? "DDADA" : "A";
+            const char *seq = HLE_DUMMY_BOSS == 3 ? "DDAA" : HLE_DUMMY_BOSS == 4 ? "DDADA" : HLE_DUMMY_BOSS == 5 ? "DDADDA" : "A";
             int n = (int)strlen(seq);
             if (t >= 20 && step < n) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; t0 = frame; }
             if (step == n) { phase = 2; t0 = frame; }
@@ -281,7 +281,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     }
 #endif
 #ifdef HLE_TEST_BONUS
-    // Title -> Bonus -> Fallen Knight; watch the intro, stand still (it leaps at range),
+    // Title -> Bonus -> Fallen Warrior; watch the intro, stand still (it leaps at range),
     // kill it, watch the outro and the return to the title
     {
         static int phase = 0, t0 = 0, step = 0;
@@ -293,11 +293,13 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         if (phase == 0) {               // tap A until the title menu opens
             if (menu_controller_is_active()) { phase = 1; t0 = frame; }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
-        } else if (phase == 1) {        // Down, Down (Bonus), A, A (Fallen Knight)
-#ifdef HLE_TEST_BONUS_SUN
+        } else if (phase == 1) {        // Down, Down (Bonus), A, A (Fallen Warrior)
+#if defined(HLE_TEST_BONUS_SUN)
             static const char seq[] = "DDADA";      // Bonus > The Shackled Sun
+#elif defined(HLE_TEST_BONUS_DRAGON)
+            static const char seq[] = "DDADDA";     // Bonus > Shadowborn
 #else
-            static const char seq[] = "DDAA";       // Bonus > Fallen Knight
+            static const char seq[] = "DDAA";       // Bonus > Fallen Warrior
 #endif
             int n = (int)sizeof(seq) - 1;
             if (t >= 20 && step < n) {
@@ -316,7 +318,14 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_TEST_BONUS_SUN
             if (t == 450) { boss_apply_damage(boss, boss->maxHealth * 0.55f); debugf("[bonus] half at %d\n", frame); }
 #endif
+#ifdef HLE_TEST_BONUS_DRAGON
+            // a long fight, circling it (every hit is logged, the player is topped up): half at 60 s, dead at 120 s
+            in->stick_x = (int)(70 * cosf(t * 0.015f)); in->stick_y = (int)(70 * sinf(t * 0.015f));
+            if (t == 2000) { boss_apply_damage(boss, boss->maxHealth * 0.55f); debugf("[bonus] half at %d\n", frame); }
+            if (t == 4000) { boss_apply_damage(boss, boss->maxHealth * 2.0f); debugf("[bonus] killed at %d\n", frame); phase = 4; t0 = frame; }
+#else
             if (t == 900) { boss_apply_damage(boss, boss->maxHealth * 2.0f); debugf("[bonus] killed at %d\n", frame); phase = 4; t0 = frame; }
+#endif
         } else if (phase == 4) {
             if (!boss) { debugf("[bonus] back at the title at %d\n", frame); phase = 5; }
         }
