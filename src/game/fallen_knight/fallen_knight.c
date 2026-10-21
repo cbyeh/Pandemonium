@@ -245,7 +245,8 @@ static void moonblade_update(Boss *b, float dt)
     if (s.velY < -60.0f) s.velY = -60.0f;
     b->pos[1] += s.velY * dt;
     face_player(b, dt, 6.0f);
-    if (s.step >= 1 && s.step <= 5 && s.t >= 0.55f + (s.step - 1) * 0.28f) {
+    // the crosses come slower and further apart than the player's own: readable, dodgeable
+    if (s.step >= 1 && s.step <= 5 && s.t >= 0.55f + (s.step - 1) * 0.4f) {
         float o[3] = { b->pos[0], b->pos[1] + 20.0f, b->pos[2] };
         float side = (s.step - 3) * 8.0f;
         float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
@@ -253,7 +254,7 @@ static void moonblade_update(Boss *b, float dt)
         float d[3] = { tgt[0] - o[0], tgt[1] - o[1], tgt[2] - o[2] };
         float len = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
         if (len < 1.0f) len = 1.0f;
-        const float SPEED = 90.0f;
+        const float SPEED = 58.0f;
         skill_fx_spawn_wave_hostile(SKILL_WAVE_X, o, (float[3]){ d[0] / len * SPEED, d[1] / len * SPEED, d[2] / len * SPEED },
                                     8.0f, 1, 0.0f, len / SPEED, s.step == 5);
         swing_sfx();
@@ -261,7 +262,7 @@ static void moonblade_update(Boss *b, float dt)
         // to fit the gap between waves
         static const int swings[3] = { FKA_ATTACK1, FKA_ATTACK2, FKA_ATTACK3 };
         play(swings[(s.step - 1) % 3], true);
-        t3d_anim_set_speed(&s.anims[s.anim], 1.6f);
+        t3d_anim_set_speed(&s.anims[s.anim], 1.2f);
         s.step++;
     }
     if (b->pos[1] <= s.groundY && s.velY < 0.0f) {

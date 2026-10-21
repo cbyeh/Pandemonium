@@ -48,7 +48,7 @@ Defeating the Guardian of the Shackled Sun is no longer the end: it rises again 
 | The Shackled Sun (Bonus) | The ending, rendered live |
 |---|---|
 | <img src="docs/media/boss_shackled_sun.png" width="420"> | <img src="docs/media/ending_king.png" width="420"> |
-| The chained sun itself, a floating eye: it glares crossed waves, rains pillars of light, sweeps a ring of fire you must roll through, and dives onto you (then rests, open to attack). At half health it breaks its shackles and burns hotter and faster. | The ending used to be a pre-rendered video. It now plays in the engine: the King on his throne of gold, the Shackled Sun, and the fall through the vortex (the ROMs are 1-4.6 MB smaller). |
+| The chained sun itself, a molten eye dragging its shackles: iron chains with weights that swing and drag along the floor. It glares crossed waves, rains pillars of light, sweeps a ring of fire you must roll through, dives onto you (then rests, open to attack) and lashes a glowing chain down at you. At half health the weights shatter: it burns hotter, lashes twice and scythes a chain across the floor (jump it or roll). | The ending used to be a pre-rendered video. It now plays in the engine: the King on his throne of gold, the Shackled Sun, and the fall through the vortex (the ROMs are 1-4.6 MB smaller). |
 
 The animations for Crescent Cleave and Halfmoon Slash are spliced from existing knight clips by `tools/compose_anims.py` (rerun it after re-exporting `knight.glb`).
 

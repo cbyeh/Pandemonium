@@ -9,6 +9,9 @@
 
 void boss_attacks_update(Boss* boss, float dt);
 
+// Phase2Reveal time of the upright pose the boss levitates in during the aerial barrage
+#define AERIAL_POSE_TIME 6.6f
+
 #endif // BOSS_ATTACKS_H
 
 

@@ -13,6 +13,7 @@
 
 #include <libdragon.h>
 #include <t3d/t3dmath.h>
+#include <t3d/t3danim.h>
 
 #include "systems/collision_system.h"
 
@@ -1231,6 +1232,12 @@ static void boss_attacks_update_aerial_swords(Boss* boss, float dt) {
 
 static void boss_attacks_handle_aerial_sword_barrage(Boss* boss, float dt) {
     if (!boss) return;
+
+    // Hold the levitation pose, breathing slowly through a stretch of it
+    if (boss->currentAnimation == BOSS_ANIM_PHASE2_REVEAL && boss->animations) {
+        T3DAnim *pose = ((T3DAnim**)boss->animations)[BOSS_ANIM_PHASE2_REVEAL];
+        t3d_anim_set_time(pose, AERIAL_POSE_TIME + 0.6f * (1.0f - cosf(boss->stateTimer * 1.3f)));
+    }
     
     // Phase timings
     const float liftDuration = 1.0f;      // Lift to hover height
@@ -1260,6 +1267,7 @@ static void boss_attacks_handle_aerial_sword_barrage(Boss* boss, float dt) {
     // Phase 1: Lift to hover height (0.0 - 1.0s)
     if (boss->stateTimer < liftDuration) {
         float t = boss->stateTimer / liftDuration;
+        t = t * t * (3.0f - 2.0f * t);      // eases off the floor and into the hover
         boss->pos[1] = boss->hoverCenterPos[1] + t * hoverHeight;
         
         // Face player during lift
@@ -1282,9 +1290,7 @@ static void boss_attacks_handle_aerial_sword_barrage(Boss* boss, float dt) {
     
     // Phase 2: Hover and attack (extends until all swords can be thrown)
     else if (boss->stateTimer < hoverEndTime) {
-        boss->pos[1] = boss->hoverCenterPos[1] + hoverHeight;
-        
-        // Figure 8 hover motion
+        // Figure 8 hover motion (it owns the height: the bob builds up smoothly)
         boss_attacks_update_figure_eight_hover(boss, dt);
 
         // Keep unthrown swords surrounding the boss body and aiming tips at player
@@ -1332,8 +1338,11 @@ static void boss_attacks_handle_aerial_sword_barrage(Boss* boss, float dt) {
     
     // Phase 3: Descend
     else if (boss->stateTimer < totalDuration) {
+        static float descendFrom;
+        if (boss->stateTimer - dt < hoverEndTime) descendFrom = boss->pos[1];   // from wherever the bob left it
         float t = (boss->stateTimer - hoverEndTime) / descendDuration;
-        boss->pos[1] = boss->hoverCenterPos[1] + hoverHeight * (1.0f - t);
+        t = t * t * (3.0f - 2.0f * t);
+        boss->pos[1] = boss->hoverCenterPos[1] + (descendFrom - boss->hoverCenterPos[1]) * (1.0f - t);
         
         // Face player during descent
         boss_turn_towards_player(boss, dt, 1.0f);

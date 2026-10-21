@@ -100,28 +100,163 @@ void proc_mesh_frustum(const float b[3], float r0, float r1, float h, int sides,
     }
 }
 
+static float hash01(int a, int b)
+{
+    uint32_t h = (uint32_t)a * 374761393u + (uint32_t)b * 668265263u;
+    h = (h ^ (h >> 13)) * 1274126177u;
+    return (float)((h ^ (h >> 16)) & 0xFFFF) / 65535.0f;
+}
+
+static uint32_t mix_rgb(const int a[3], const int b[3], float t, float k)
+{
+    int c[3];
+    for (int i = 0; i < 3; i++) {
+        float v = (a[i] + (b[i] - a[i]) * t) * k;
+        c[i] = v < 0 ? 0 : v > 255 ? 255 : (int)v;
+    }
+    return proc_rgb(c[0], c[1], c[2]);
+}
+
+// Built looking down +z, then turned to -y unless facingZ
+static void eye_point(float x, float y, float z, float r, bool facingZ, float out[3])
+{
+    if (facingZ) { out[0] = x * r; out[1] = y * r; out[2] = z * r; }
+    else         { out[0] = x * r; out[1] = -z * r; out[2] = y * r; }
+}
+
+// Tangent-plane point (u, v) at the eye, pushed onto the sphere
+static void eye_patch_point(float u, float v, float r, bool facingZ, float out[3])
+{
+    float l = sqrtf(u * u + v * v + 1.0f);
+    eye_point(u / l, v / l, 1.0f / l, r, facingZ, out);
+}
+
 void proc_mesh_eye_sphere(float radius, bool facingZ, bool hot)
 {
-    enum { LAT = 9, LON = 14 };
+    // Molten body: it always faces the player, so the limb darkening is baked in,
+    // white-gold at the eye through orange to a deep red rim; mottled granulation
+    // and a few dark spots
+    enum { LAT = 14, LON = 20 };
+    static const int RIM[3] = { 170, 34, 10 }, MID[3] = { 240, 100, 25 }, CORE[3] = { 255, 232, 165 };
+    static const int RIM_H[3] = { 170, 14, 26 }, MID_H[3] = { 235, 45, 40 }, CORE_H[3] = { 255, 236, 220 };
     for (int i = 0; i < LAT; i++) {
-        float a0 = T3D_PI * i / LAT, a1 = T3D_PI * (i + 1) / LAT;   // 0 at the eye
+        float a0 = T3D_PI * powf((float)i / LAT, 1.3f), a1 = T3D_PI * powf((float)(i + 1) / LAT, 1.3f);
         for (int j = 0; j < LON; j++) {
             float b0 = 2.0f * T3D_PI * j / LON, b1 = 2.0f * T3D_PI * (j + 1) / LON;
-            float p[4][3] = {
-                { sinf(a0) * cosf(b0), -cosf(a0), sinf(a0) * sinf(b0) }, { sinf(a0) * cosf(b1), -cosf(a0), sinf(a0) * sinf(b1) },
-                { sinf(a1) * cosf(b1), -cosf(a1), sinf(a1) * sinf(b1) }, { sinf(a1) * cosf(b0), -cosf(a1), sinf(a1) * sinf(b0) },
-            };
-            for (int k = 0; k < 4; k++) {
-                float x = p[k][0], y = p[k][1], z = p[k][2];
-                if (facingZ) { p[k][1] = z; p[k][2] = -y; }     // eye (-y) -> +z
-                p[k][0] = x * radius; p[k][1] *= radius; p[k][2] = (facingZ ? -y : z) * radius;
-            }
-            float m = (a0 + a1) * 0.5f / T3D_PI;    // 0 eye .. 1 back
-            uint32_t c = (i == 0) ? proc_rgb(8, 4, 4) : (i == 1) ? proc_rgb(200, 50, 20)
-                       : hot ? proc_rgb(255, (int)(120 - 80 * m), (int)(70 - 50 * m))
-                             : proc_rgb(255, (int)(225 - 120 * m), (int)(110 - 90 * m));
-            if (i > 1 && ((j * 7 + i * 3) % 11) == 0) c = proc_rgb(220, 70, 30);   // a few veins
+            float p[4][3];
+            eye_point(sinf(a0) * cosf(b0), sinf(a0) * sinf(b0), cosf(a0), radius, facingZ, p[0]);
+            eye_point(sinf(a1) * cosf(b0), sinf(a1) * sinf(b0), cosf(a1), radius, facingZ, p[1]);
+            eye_point(sinf(a1) * cosf(b1), sinf(a1) * sinf(b1), cosf(a1), radius, facingZ, p[2]);
+            eye_point(sinf(a0) * cosf(b1), sinf(a0) * sinf(b1), cosf(a0), radius, facingZ, p[3]);
+            float k = (cosf((a0 + a1) * 0.5f) + 0.7f) / 1.7f;   // the back still glows (seen from above)
+            k = k < 0 ? 0 : k > 1 ? 1 : k;
+            float g = 0.93f + 0.12f * hash01(i, j);
+            if (hash01(j + 31, i + 7) < 0.035f && k < 0.8f) g *= 0.6f;       // sunspot
+            uint32_t c = k < 0.55f ? mix_rgb(hot ? RIM_H : RIM, hot ? MID_H : MID, k / 0.55f, g)
+                                   : mix_rgb(hot ? MID_H : MID, hot ? CORE_H : CORE, (k - 0.55f) / 0.45f, g);
             proc_mesh_quad(p[0], p[1], p[2], p[3], c, true);
+        }
+    }
+    // Iris: rings of fire round a slit pupil, just above the surface
+    enum { SEG = 16 };
+    static const float RR[5] = { 0.5f, 0.4f, 0.3f, 0.2f, 0.12f };
+    static const int IR[4][3] = { { 150, 20, 6 }, { 255, 90, 15 }, { 255, 170, 50 }, { 255, 225, 120 } };
+    static const int IR_H[4][3] = { { 120, 0, 10 }, { 255, 40, 40 }, { 255, 140, 120 }, { 255, 230, 220 } };
+    for (int k = 0; k < 4; k++)
+        for (int j = 0; j < SEG; j++) {
+            float b0 = 2.0f * T3D_PI * j / SEG, b1 = 2.0f * T3D_PI * (j + 1) / SEG;
+            float p[4][3];
+            float rs = radius * 1.012f;
+            eye_patch_point(RR[k] * cosf(b0), RR[k] * 1.15f * sinf(b0), rs, facingZ, p[0]);
+            eye_patch_point(RR[k + 1] * cosf(b0), RR[k + 1] * 1.15f * sinf(b0), rs, facingZ, p[1]);
+            eye_patch_point(RR[k + 1] * cosf(b1), RR[k + 1] * 1.15f * sinf(b1), rs, facingZ, p[2]);
+            eye_patch_point(RR[k] * cosf(b1), RR[k] * 1.15f * sinf(b1), rs, facingZ, p[3]);
+            const int *col = hot ? IR_H[k] : IR[k];
+            proc_mesh_quad(p[0], p[1], p[2], p[3], proc_rgb(col[0], col[1], col[2]), true);
+        }
+    // the inner disc, then the slit (a pointed lens) over it
+    for (int j = 0; j < SEG; j++) {
+        float b0 = 2.0f * T3D_PI * j / SEG, b1 = 2.0f * T3D_PI * (j + 1) / SEG, p[3][3];
+        eye_patch_point(0, 0, radius * 1.012f, facingZ, p[0]);
+        eye_patch_point(RR[4] * cosf(b1), RR[4] * 1.15f * sinf(b1), radius * 1.012f, facingZ, p[1]);
+        eye_patch_point(RR[4] * cosf(b0), RR[4] * 1.15f * sinf(b0), radius * 1.012f, facingZ, p[2]);
+        proc_mesh_tri(p[0], p[1], p[2], hot ? proc_rgb(255, 245, 235) : proc_rgb(255, 245, 200), true);
+    }
+    enum { SL = 8 };
+    for (int j = 0; j < SL; j++) {
+        float v0 = -0.42f + 0.84f * j / SL, v1 = -0.42f + 0.84f * (j + 1) / SL;
+        float w0 = 0.07f * sqrtf(fmaxf(0.0f, 1.0f - (v0 / 0.42f) * (v0 / 0.42f)));
+        float w1 = 0.07f * sqrtf(fmaxf(0.0f, 1.0f - (v1 / 0.42f) * (v1 / 0.42f)));
+        float p[4][3], rs = radius * 1.02f;
+        eye_patch_point(-w0, v0, rs, facingZ, p[0]); eye_patch_point(w0, v0, rs, facingZ, p[1]);
+        eye_patch_point(w1, v1, rs, facingZ, p[2]); eye_patch_point(-w1, v1, rs, facingZ, p[3]);
+        proc_mesh_quad(p[0], p[1], p[2], p[3], hot ? proc_rgb(50, 0, 4) : proc_rgb(12, 3, 2), true);
+    }
+}
+
+void proc_mesh_corona(float radius, int tongues, float reach, int seed, bool hot)
+{
+    // Flame tongues round a disc facing +z, bright at the root and fading to the tip
+    // (drawn additively: dark is see-through)
+    enum { STEPS = 3 };
+    static const int COL[STEPS][3] = { { 255, 150, 40 }, { 190, 70, 10 }, { 90, 22, 0 } };
+    static const int COL_H[STEPS][3] = { { 255, 90, 80 }, { 200, 30, 30 }, { 90, 0, 10 } };
+    for (int k = 0; k < tongues; k++) {
+        float a = 2.0f * T3D_PI * (k + 0.5f * hash01(k, seed)) / tongues;
+        float len = reach * (0.55f + 0.45f * hash01(seed, k));
+        float w = 2.0f * T3D_PI / tongues * 0.55f, bend = (hash01(k + 7, seed) - 0.5f) * 0.5f;
+        for (int st = 0; st < STEPS; st++) {
+            float t0 = (float)st / STEPS, t1 = (float)(st + 1) / STEPS;
+            float r0 = radius * 0.92f + len * t0, r1 = radius * 0.92f + len * t1;
+            float h0 = w * (1.0f - t0), h1 = w * (1.0f - t1);
+            float c0 = a + bend * t0, c1 = a + bend * t1;
+            float p[4][3] = {
+                { cosf(c0 - h0) * r0, sinf(c0 - h0) * r0, 0 }, { cosf(c0 + h0) * r0, sinf(c0 + h0) * r0, 0 },
+                { cosf(c1 + h1) * r1, sinf(c1 + h1) * r1, 0 }, { cosf(c1 - h1) * r1, sinf(c1 - h1) * r1, 0 },
+            };
+            const int *c = hot ? COL_H[st] : COL[st];
+            proc_mesh_quad(p[0], p[1], p[2], p[3], proc_rgb(c[0], c[1], c[2]), true);
+        }
+    }
+}
+
+void proc_mesh_draw_additive(const ProcMesh *m)
+{
+    if (!m->block) return;
+    rdpq_sync_pipe();
+    rdpq_set_mode_standard();
+    rdpq_mode_zbuf(true, false);
+    rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
+    rdpq_mode_blender(RDPQ_BLENDER_ADDITIVE);
+    t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
+    t3d_matrix_set(m->mat, true);
+    rspq_block_run(m->block);
+}
+
+void proc_mesh_chain_link(float len, float width, float thick, uint32_t rgba, bool unlit)
+{
+    // An oval ring in the xy plane, long along y, with a diamond cross-section
+    enum { NS = 8, NT = 4 };
+    float a = len * 0.5f - width, pts[NS][3], nrm[NS][3];
+    for (int i = 0; i < NS; i++) {
+        float t = 2.0f * T3D_PI * (i + 0.5f) / NS;
+        float cx = cosf(t), cy = sinf(t);
+        pts[i][0] = cx * width; pts[i][1] = cy * width + (cy >= 0 ? a : -a); pts[i][2] = 0;
+        nrm[i][0] = cx; nrm[i][1] = cy; nrm[i][2] = 0;
+    }
+    for (int i = 0; i < NS; i++) {
+        int i1 = (i + 1) % NS;
+        for (int k = 0; k < NT; k++) {
+            float c0 = cosf(T3D_PI * 0.5f * k), s0 = sinf(T3D_PI * 0.5f * k);
+            float c1 = cosf(T3D_PI * 0.5f * (k + 1)), s1 = sinf(T3D_PI * 0.5f * (k + 1));
+            float q[4][3];
+            for (int m = 0; m < 3; m++) {
+                q[0][m] = pts[i][m] + (nrm[i][m] * c0 + (m == 2) * s0) * thick;
+                q[1][m] = pts[i1][m] + (nrm[i1][m] * c0 + (m == 2) * s0) * thick;
+                q[2][m] = pts[i1][m] + (nrm[i1][m] * c1 + (m == 2) * s1) * thick;
+                q[3][m] = pts[i][m] + (nrm[i][m] * c1 + (m == 2) * s1) * thick;
+            }
+            proc_mesh_quad(q[0], q[1], q[2], q[3], rgba, unlit);
         }
     }
 }

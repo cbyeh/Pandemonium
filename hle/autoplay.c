@@ -182,7 +182,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             int want = HLE_DUMMY_BOSS <= 2 ? 1 : HLE_DUMMY_BOSS;
             if (boss && boss->mode == BOSS_MODE_COMBAT && boss->phaseIndex == want && character_get_state() == CHAR_STATE_NORMAL) {
                 if (HLE_DUMMY_BOSS == 2) { boss_apply_damage(boss, boss->maxHealth * 2.0f); phase = 3; }
-                else { phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
+                else {
+#ifdef HLE_DUMMY_HALF   // measure the second half: past the Shackled Sun's break (and its cutscene-free 2 s)
+                    boss_apply_damage(boss, boss->maxHealth * 0.55f);
+#endif
+                    phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
             } else if (t > 60 && frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 3) {    // Unbound: skip the transformation
             if (boss->phaseIndex == 2 && boss->mode == BOSS_MODE_COMBAT) { phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }

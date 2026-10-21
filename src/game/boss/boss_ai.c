@@ -8,6 +8,7 @@
 #include <t3d/t3dmath.h>
 
 #include "boss_ai.h"
+#include "boss_attacks.h"
 #include "boss.h"
 #include "boss_sfx.h"
 
@@ -1397,7 +1398,10 @@ void boss_ai_update(Boss* boss, BossIntent* out_intent) {
                 if (boss->state != prevState) out_intent->force_restart = true;
                 break;
             case BOSS_STATE_AERIAL_SWORD_BARRAGE:
-                out_intent->anim = BOSS_ANIM_IDLE; // TODO: Add aerial barrage animation
+                // Levitates in the upright pose that ends its Phase 2 reveal (held by
+                // boss_attacks.c), not the ground stance
+                out_intent->anim = BOSS_ANIM_PHASE2_REVEAL;
+                out_intent->start_time = AERIAL_POSE_TIME;
                 out_intent->priority = BOSS_ANIM_PRIORITY_HIGH;
                 if (boss->state != prevState) out_intent->force_restart = true;
                 break;

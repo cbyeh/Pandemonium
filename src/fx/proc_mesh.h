@@ -25,14 +25,21 @@ void proc_mesh_box(const float center[3], const float half[3], uint32_t rgba);
 void proc_mesh_spike(const float base[3], const float tip[3], float radius, int sides, uint32_t rgba);
 // Upright prism/frustum: radius r0 at base[1], r1 at base[1] + h.
 void proc_mesh_frustum(const float base[3], float r0, float r1, float h, int sides, uint32_t rgba);
-// A glowing ball with an eye (black pupil, red iris) looking down -y, or +z with
-// `facingZ`. `hot` shifts it to crimson.
+// A molten sun with a fiery iris and slit pupil looking down -y, or +z with
+// `facingZ`. `hot` shifts it to crimson and white.
 void proc_mesh_eye_sphere(float radius, bool facingZ, bool hot);
+// Flame tongues round a disc of `radius` facing +z, up to `reach` long (see
+// proc_mesh_draw_additive: their dark tips fade out).
+void proc_mesh_corona(float radius, int tongues, float reach, int seed, bool hot);
+// One chain link: an oval ring in the xy plane, `len` long along y.
+void proc_mesh_chain_link(float len, float width, float thick, uint32_t rgba, bool unlit);
 void proc_mesh_end(ProcMesh *out);
 
 void proc_mesh_set_transform(ProcMesh *m, const float scale, const float rot[3], const float pos[3]);
 // Draws at the current matrix-stack slot (call between t3d_matrix_push_pos/pop).
 void proc_mesh_draw(const ProcMesh *m);
+// Glow: added onto what is behind, no depth write.
+void proc_mesh_draw_additive(const ProcMesh *m);
 void proc_mesh_free(ProcMesh *m);
 
 static inline uint32_t proc_rgb(int r, int g, int b) { return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xFF; }
