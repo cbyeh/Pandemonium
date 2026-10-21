@@ -6,6 +6,7 @@
 #include "character.h"
 #include "globals.h"
 #include "save_controller.h"
+#include "video_controller.h"
 
 // ---- Tuning ----
 #define FLOORS_PER_CIRCLE   3
