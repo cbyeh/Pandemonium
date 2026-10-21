@@ -23,34 +23,28 @@ Z trigger: Toggle z targetting
 Hold Z trigger + left/right on Cpad: Change z target
 
 ## New in this fork
+**Download:** [Releases](https://github.com/cbyeh/Pandemonium/releases). `pandemonium-*.z64` for hardware and accurate emulators, `pandemonium-hle-*.z64` for Delta and Mupen64Plus.
 
 ### Skills (D-pad)
-Optional sword skills inspired by Dragon Nest's Moonlord, on the D-pad with cooldowns shown on the HUD. Turn them on or off from **Settings > Skills** on the title screen (on by default). With skills on, bosses have double health.
+Toggle in **Settings > Skills** (title screen). Bosses have double health with skills on.
 
 | Moon Blade Dance (D-Up) | Halfmoon Slash (D-Right) | Crescent Cleave (D-Down) |
 |---|---|---|
 | <img src="docs/media/skill_moon_blade_dance.gif" width="320"> | <img src="docs/media/skill_halfmoon_slash.gif" width="320"> | <img src="docs/media/skill_crescent_cleave.gif" width="320"> |
-| Backflip high in the direction you are moving (in place when standing still) and rain five X-shaped sword waves on the target, one per swing. Without lock-on they land where the camera looks. | High risk nuke: a long rooted charge (a hit cancels it and hurts more), then a huge 180-degree slash that rolls outward as a wave. | Medium risk: crouch, then a rising swing that raises five light blades close around you that fan outward, each hitting repeatedly. |
 
 ### Skins
-Pick a look from **Settings > Skin** (Left/Right or A), saved with your settings: the stock Knight, a hooded Teal, Crimson or Umber Cloak (**Settings > Hood** puts the hood up or down), and three homages: the Wolf Knight (dark silver plate, bright mail, a torn royal-blue cloak and a long black plume that arches off the helm), the Black Swordsman (blackened plate, a spined helm with burning eyes, a ragged black cloak and a slab of a greatsword) and the Scarlet Valkyrie (brass plate, an olive dress, a winged helm and fur collar, red hair over a crimson cape). Cloaks, capes, hair and plumes are simulated cloth that sways and trails as you move.
+**Settings > Skin**: Teal, Crimson and Umber Cloak (**Settings > Hood** for hood up or down), Wolf Knight, Black Swordsman and Scarlet Valkyrie.
 
 <img src="docs/media/skins.png" width="800">
 
 ### New boss fights
-Defeating the Guardian of the Shackled Sun is no longer the end: it rises again as Guardian Unbound. Two Bonus fights, picked from **Bonus** on the title screen, each have their own intro and ending cutscenes.
+Guardian Unbound (the Guardian's second form), plus two **Bonus** fights on the title screen.
 
-| Guardian Unbound | Fallen Knight (Bonus) |
-|---|---|
-| <img src="docs/media/boss_guardian_unbound.png" width="420"> | <img src="docs/media/boss_fallen_knight.png" width="420"> |
-| The Guardian rises again, corrupted: a fresh health bar, an aerial sword barrage and ground sweeps. | A dark, larger mirror of the knight that combos, rolls away from your swings and turns your own skills against you. |
+| Guardian Unbound | Fallen Knight (Bonus) | The Shackled Sun (Bonus) |
+|---|---|---|
+| <img src="docs/media/boss_guardian_unbound.png" width="280"> | <img src="docs/media/boss_fallen_knight.png" width="280"> | <img src="docs/media/boss_shackled_sun.png" width="280"> |
 
-| The Shackled Sun (Bonus) | The ending, rendered live |
-|---|---|
-| <img src="docs/media/boss_shackled_sun.png" width="420"> | <img src="docs/media/ending_king.png" width="420"> |
-| The chained sun itself, a molten eye dragging its shackles: iron chains with weights that swing and drag along the floor. It glares crossed waves, rains pillars of light, sweeps a ring of fire you must roll through, dives onto you (then rests, open to attack) and lashes a glowing chain down at you. At half health the weights shatter: it burns hotter, lashes twice and scythes a chain across the floor (jump it or roll). | The ending used to be a pre-rendered video. It now plays in the engine: the King on his throne of gold, the Shackled Sun, and the fall through the vortex (the ROMs are 1-4.6 MB smaller). |
-
-The animations for Crescent Cleave and Halfmoon Slash are spliced from existing knight clips by `tools/compose_anims.py` (rerun it after re-exporting `knight.glb`).
+The ending now plays live in the engine.
 
 ## 2025 N64brew Game Jam - Pandemonium
 - December 1st - Feburary 1st
@@ -93,11 +87,7 @@ The animations for Crescent Cleave and Halfmoon Slash are spliced from existing 
 - run make file
 
 ### Emulator build (Delta, Mupen64Plus HLE)
-`make HLE=1` builds `pandemonium-hle.z64` for emulators that only emulate the RSP at a high level (Delta on iOS, Mupen64Plus with GLideN64 + rsp-hle). These can't run libdragon's RSP microcode, so this build replaces it with CPU code in `hle/`. Graphics become F3DEX2 display lists that the emulator's graphics plugin draws, audio is mixed on the CPU, and the intro video is re-encoded to a CPU-decodable format.
-
-- Needs `ffmpeg` on the PATH (to re-encode the video).
-- `hle/` is tied to the libdragon preview commit in `hle/internal/LIBDRAGON_COMMIT` and Tiny3D `6f5ac0b`; update it if you update either.
-- Not for real hardware or accurate (LLE) emulators: use the normal `make` ROM for those.
+`make HLE=1` builds `pandemonium-hle.z64`, which replaces the RSP microcode with CPU code (`hle/`) for high-level-emulation emulators. Needs `ffmpeg`. Not for real hardware or accurate emulators.
 
 ## SummerCart64
 
