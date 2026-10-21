@@ -59,9 +59,9 @@ bool character_skin_has_hood(int id) { return id >= 0 && id < SKIN_COUNT && SKIN
  * Bones
  * -------------------------------------------------------------------------- */
 
-enum { B_WAIST, B_SPINE, B_HEAD, B_ARM_L, B_ARM_R, B_LEG_L, B_LEG_R, B_SHIN_L, B_SHIN_R, B_FOOT_L, B_FOOT_R, B_COUNT };
+enum { B_WAIST, B_SPINE, B_HEAD, B_ARM_L, B_ARM_R, B_FORE_L, B_FORE_R, B_HAND_L, B_HAND_R, B_LEG_L, B_LEG_R, B_SHIN_L, B_SHIN_R, B_FOOT_L, B_FOOT_R, B_COUNT };
 static const char *BONE_NAMES[B_COUNT] = {
-    "Waist", "Spine1", "Head", "UpperArm-Left", "UpperArm-Right", "UpperLeg-Left", "UpperLeg-Right",
+    "Waist", "Spine1", "Head", "UpperArm-Left", "UpperArm-Right", "LowerArm-Left", "LowerArm-Right", "Hand-Left", "Hand-Right", "UpperLeg-Left", "UpperLeg-Right",
     "LowerLeg-Left", "LowerLeg-Right", "Foot-Left", "Foot-Right",
 };
 static int s_bone[B_COUNT];
@@ -79,7 +79,7 @@ static void bone_world(const T3DMat4FP *modelMat, int b, float x, float y, float
  * Verlet cloth (world space)
  * -------------------------------------------------------------------------- */
 
-#define CLOTH_COLS 6
+#define CLOTH_COLS 7
 #define CLOTH_ROWS 8
 #define CLOTH_N (CLOTH_COLS * CLOTH_ROWS)
 #define RING 4                          // frames the RSP may still be reading
@@ -93,13 +93,13 @@ static struct {
     float hrest[CLOTH_ROWS], vrest[CLOTH_COLS];
     bool valid;
     float time;
-    Capsule body[8]; int bodyCount;
+    Capsule body[18]; int bodyCount;
     T3DVertPacked *vb[RING];
     T3DMat4FP *mat[RING];
     int ring;
 } cloth;
 
-static const uint8_t TATTER[CLOTH_COLS] = { 100, 15, 60, 5, 80, 25 };  // % of the last three segments
+static const uint8_t TATTER[CLOTH_COLS] = { 100, 15, 60, 5, 80, 25, 90 };  // % of the last three segments
 
 void character_skin_reset_cloth(void) { cloth.valid = false; }
 
@@ -112,9 +112,9 @@ static void cloth_anchors(const T3DMat4FP *M)
         float u = (float)c / (cloth.cols - 1) * 2.0f - 1.0f;   // -1..1 across
         if (s->clothKind == CLOTH_CLOAK) {
             // Across the shoulders, wrapping forward at the sides
-            bone_world(M, B_SPINE, 0.95f - 0.5f * u * u + ((c & 1) ? 0.1f : -0.05f), 2.2f, 0.95f * u, cloth.anchor[c]);   // pleated
+            bone_world(M, B_SPINE, 0.95f - 0.95f * u * u + ((c & 1) ? 0.08f : 0.0f), 2.62f, 1.45f * u, cloth.anchor[c]);   // over the pauldrons, pleated
         } else {
-            bone_world(M, B_HEAD, 0.45f - 0.35f * u * u, 1.3f, 0.55f * u, cloth.anchor[c]);
+            bone_world(M, B_HEAD, 0.6f - 0.1f * u * u, 1.3f, 0.45f * u, cloth.anchor[c]);
         }
     }
 }
@@ -124,14 +124,24 @@ static void cloth_bodies(const T3DMat4FP *M)
     Capsule *b = cloth.body; int n = 0;
     #define SPHERE(bone, x, y, z, rad) do { bone_world(M, bone, x, y, z, b[n].a); memcpy(b[n].b, b[n].a, sizeof b[n].a); b[n].r = (rad) * GU; n++; } while (0)
     #define CAPS(b0, b1, rad) do { bone_world(M, b0, 0, 0, 0, b[n].a); bone_world(M, b1, 0, 0, 0, b[n].b); b[n].r = (rad) * GU; n++; } while (0)
-    SPHERE(B_SPINE, -0.05f, 1.05f, 0, 1.0f);
-    SPHERE(B_WAIST, 0, 0, 0, 0.95f);
-    SPHERE(B_HEAD, -0.34f, 1.07f, 0, 0.95f);
-    SPHERE(B_ARM_L, 0, 0, 0, 0.5f);
-    SPHERE(B_ARM_R, 0, 0, 0, 0.5f);
-    CAPS(B_LEG_L, B_SHIN_L, 0.48f);
-    CAPS(B_LEG_R, B_SHIN_R, 0.48f);
-    CAPS(B_SHIN_L, B_FOOT_L, 0.4f);
+    // Radii are the mesh's extents plus a margin, as cloth triangles span between particles
+    const float m = 0.12f;
+    SPHERE(B_SPINE, -0.1f, 1.45f, 0, 1.0f + m);      // upper back
+    SPHERE(B_SPINE, -0.1f, 0.35f, 0, 0.95f + m);
+    SPHERE(B_WAIST, -0.05f, -0.2f, 0, 0.9f + m);
+    SPHERE(B_HEAD, -0.34f, 1.07f, 0, SKINS[s_skin].clothKind == CLOTH_HAIR ? 0.9f : 0.95f + m);   // hair roots sit on it
+    // sword hilt (the blade runs along the hand's -X): crossguard and pommel
+    bone_world(M, B_HAND_R, -0.3f, 0, 0, b[n].a); bone_world(M, B_HAND_R, 1.25f, 0, 0, b[n].b); b[n].r = (0.7f + m) * GU; n++;
+    CAPS(B_ARM_L, B_FORE_L, 0.62f + m);              // pauldrons and upper arms
+    CAPS(B_ARM_R, B_FORE_R, 0.62f + m);
+    SPHERE(B_FORE_L, 0, 0, 0, 0.88f + m);             // pointed elbow guards
+    SPHERE(B_FORE_R, 0, 0, 0, 0.88f + m);
+    CAPS(B_FORE_L, B_HAND_L, 0.45f + m);
+    CAPS(B_FORE_R, B_HAND_R, 0.45f + m);
+    CAPS(B_LEG_L, B_SHIN_L, 0.5f + m);
+    CAPS(B_LEG_R, B_SHIN_R, 0.5f + m);
+    CAPS(B_SHIN_L, B_FOOT_L, 0.42f + m);
+    CAPS(B_SHIN_R, B_FOOT_R, 0.42f + m);
     #undef SPHERE
     #undef CAPS
     cloth.bodyCount = n;
@@ -187,12 +197,13 @@ static void cloth_step(float h, const float back[3])
 {
     const float g = -220.0f * h * h;
     cloth.time += h;
+    const float damp = SKINS[s_skin].clothKind == CLOTH_HAIR ? 0.92f : 0.97f;
     for (int r = 1; r < cloth.rows; r++)
         for (int c = 0; c < cloth.cols; c++) {
             float *p = P(c, r), *q = cloth.q[r * cloth.cols + c];
             float gust = (14.0f + 10.0f * sinf(cloth.time * 1.7f + c * 0.6f)) * h * h * r / cloth.rows;
             for (int i = 0; i < 3; i++) {
-                float v = (p[i] - q[i]) * 0.97f;
+                float v = (p[i] - q[i]) * damp;
                 q[i] = p[i];
                 p[i] += v + back[i] * gust;
             }
@@ -206,10 +217,19 @@ static void cloth_step(float h, const float back[3])
                 if (SKINS[s_skin].tattered && r >= cloth.rows - 4) rest *= TATTER[c] / 100.0f;
                 link(P(c, r), P(c, r + 1), rest, r == 0);
             }
+        if (SKINS[s_skin].clothKind == CLOTH_HAIR)   // bend links: hair can't fold back on itself
+            for (int r = 0; r < cloth.rows - 2; r++)
+                for (int c = 0; c < cloth.cols; c++) link(P(c, r), P(c, r + 2), 2 * cloth.vrest[c], r == 0);
         int loose = SKINS[s_skin].tattered ? cloth.rows - 3 : cloth.rows;   // tatters hang as free strands
         for (int r = 1; r < loose; r++)
             for (int c = 0; c < cloth.cols - 1; c++) link(P(c, r), P(c + 1, r), cloth.hrest[r], false);
-        for (int i = cloth.cols; i < cloth.cols * cloth.rows; i++) collide(cloth.p[i]);
+        if (it >= 3) for (int i = cloth.cols; i < cloth.cols * cloth.rows; i++) collide(cloth.p[i]);
+        // Never above the pins: a particle pushed out the top of a collider would otherwise stick up as a spike
+        for (int r = 1; r < cloth.rows; r++)
+            for (int c = 0; c < cloth.cols; c++) {
+                float maxY = cloth.anchor[c][1] - 0.15f * r * cloth.vrest[c];
+                if (P(c, r)[1] > maxY) P(c, r)[1] = maxY;
+            }
     }
 }
 
@@ -282,15 +302,16 @@ static void cloth_draw(const float origin[3])
  * Hood: static shells built once per skin, drawn on a bone
  * -------------------------------------------------------------------------- */
 
-#define HOOD_MAX_VERTS 64
+#define HOOD_MAX_VERTS 70
 static T3DVertPacked *s_hoodVerts[2];
 static rspq_block_t *s_hoodBlock;
 static int s_hoodBone;
 
 // Ellipsoid patch, theta around Y from +X (the back), phi up from the equator.
-// peak > 0 drags the vertices nearest the back-top out into the hood's point.
+// peak > 0 drags the vertices nearest the back-top out into the hood's point;
+// lip > 0 pushes the front vertices at the brow out and down into an overhang.
 static int shell(T3DVertPacked *vb, const float c[3], const float rad[3], float t0, float t1, int nt,
-                 float p0, float p1, int np, float peak, SkinColor col)
+                 float p0, float p1, int np, float peak, float lip, SkinColor col)
 {
     static const float BT[3] = { 0.64f, 0.77f, 0.0f };
     for (int j = 0; j < np; j++)
@@ -299,20 +320,25 @@ static int shell(T3DVertPacked *vb, const float c[3], const float rad[3], float 
             float d[3] = { cosf(ph) * cosf(th), sinf(ph), cosf(ph) * sinf(th) };
             float k = d[0] * BT[0] + d[1] * BT[1];
             float pk = k > 0 ? peak * k * k * k * k : 0;
+            float lp = (lip > 0 && d[0] < -0.5f && ph > 0.0f && ph < 0.35f) ? lip : 0;
+            float fl = (lip > 0 && d[0] > 0 && d[1] < 0) ? 0.9f * -d[1] * d[0] : 0;   // hood back drapes onto the cloak
             int16_t pos[3] = {
-                (int16_t)((c[0] + rad[0] * d[0] + BT[0] * pk) * GLTF),
-                (int16_t)((c[1] + rad[1] * d[1] + BT[1] * pk) * GLTF),
-                (int16_t)((c[2] + rad[2] * d[2]) * GLTF),
+                (int16_t)((c[0] + rad[0] * d[0] + BT[0] * pk + d[0] * lp + fl) * GLTF),
+                (int16_t)((c[1] + rad[1] * d[1] + BT[1] * pk - lp * 0.5f) * GLTF),
+                (int16_t)((c[2] + rad[2] * d[2] + d[2] * lp) * GLTF),
             };
-            put_vert(vb, j * nt + i, pos, shade(col, d, 1.0f));
+            put_vert(vb, j * nt + i, pos, shade(col, d, lp > 0 ? 0.8f : 1.0f));
         }
     return nt * np;
 }
 
-static void shell_tris(int nt, int np)
+// Quads facing the front (-X) below phiOpen are left out: the face opening
+static void shell_tris(int nt, int np, float t0, float t1, float p0, float p1, float phiOpen)
 {
     for (int j = 0; j < np - 1; j++)
         for (int i = 0; i < nt - 1; i++) {
+            float th = t0 + (t1 - t0) * (i + 0.5f) / (nt - 1), ph = p0 + (p1 - p0) * (j + 0.5f) / (np - 1);
+            if (cosf(th) < -0.55f && ph < phiOpen) continue;
             int a = j * nt + i;
             t3d_tri_draw(a, a + nt, a + 1);
             t3d_tri_draw(a + 1, a + nt, a + nt + 1);
@@ -328,17 +354,21 @@ static void hood_build(void)
         if (!s_hoodVerts[i]) s_hoodVerts[i] = malloc_uncached(sizeof(T3DVertPacked) * HOOD_MAX_VERTS / 2);
 
     const float R = (float)M_PI / 180.0f;
-    int nt = 9, np = 7, n0, n1 = 0, nt1 = 7, np1 = 7;
-    if (s_hoodUp) {   // over the helmet, open at the face
+    // shell 0: the hood (or the collar), shell 1: the folded hood on the back
+    float t0 = -180 * R, t1 = 180 * R, p0 = -52 * R, p1 = 90 * R, open = -10;   // -10: no opening
+    int nt = 11, np = 6, n0, n1 = 0, nt1 = 7, np1 = 7;
+    if (s_hoodUp) {   // over the helmet and forehead, open at the face
         s_hoodBone = B_HEAD;
-        n0 = shell(s_hoodVerts[0], (float[3]){ -0.34f, 1.07f, 0 }, (float[3]){ 1.08f, 1.08f, 0.84f },
-                   -128 * R, 128 * R, nt, -42 * R, 90 * R, np, 0.45f, s->clothColor);
+        open = 12 * R;
+        n0 = shell(s_hoodVerts[0], (float[3]){ -0.34f, 1.07f, 0 }, (float[3]){ 1.1f, 1.1f, 0.86f },
+                   t0, t1, nt, p0, p1, np, 0.45f, 0.14f, s->clothColor);
     } else {          // gathered round the neck, folds lying on the back
         s_hoodBone = B_SPINE;
+        t0 = -135 * R; t1 = 135 * R; p0 = -80 * R; p1 = 80 * R; nt = 9; np = 7;
         n0 = shell(s_hoodVerts[0], (float[3]){ -0.1f, 2.25f, 0 }, (float[3]){ 1.12f, 0.36f, 1.1f },
-                   -135 * R, 135 * R, nt, -80 * R, 80 * R, np, 0, s->clothColor);
+                   t0, t1, nt, p0, p1, np, 0, 0, s->clothColor);
         n1 = shell(s_hoodVerts[1], (float[3]){ 0.9f, 1.75f, 0 }, (float[3]){ 0.28f, 0.62f, 0.66f },
-                   -90 * R, 90 * R, nt1, -88 * R, 88 * R, np1, 0, s->clothColor);
+                   -90 * R, 90 * R, nt1, -88 * R, 88 * R, np1, 0, 0, s->clothColor);
     }
     rspq_block_begin();
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
@@ -347,11 +377,11 @@ static void hood_build(void)
     rdpq_mode_alphacompare(0);
     t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
     t3d_vert_load(s_hoodVerts[0], 0, n0);
-    shell_tris(nt, np);
+    shell_tris(nt, np, t0, t1, p0, p1, open);
     t3d_tri_sync();
     if (n1) {
         t3d_vert_load(s_hoodVerts[1], 0, n1);
-        shell_tris(nt1, np1);
+        shell_tris(nt1, np1, 0, 0, 0, 0, -10);
         t3d_tri_sync();
     }
     s_hoodBlock = rspq_block_end();

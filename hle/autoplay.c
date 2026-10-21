@@ -112,14 +112,23 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
         cameraLockOnActive = false;
         if (t == 1) { character.pos[0] = boss->pos[0] - 400.0f; character.pos[2] = boss->pos[2]; character_skin_reset_cloth(); }
+#ifdef HLE_SKIN_ACTION
+        // run, a combo, two rolls; the camera steps round every 20 frames
+        const int period = 20; const float dist = 50.0f;
+        if (t < 120) { in->stick_x = (int)(75 * cosf(t * 0.05f)); in->stick_y = (int)(75 * sinf(t * 0.05f)); }
+        if (t >= 120 && t < 260 && t % 30 == 0) { pressed->b = 1; in->btn.b = 1; }
+        if (t == 280 || t == 330) { in->stick_y = 80; pressed->a = 1; in->btn.a = 1; }
+#else
+        const int period = 60; const float dist = 70.0f;
         if (t < 180) { in->stick_x = (int)(75 * cosf(t * 0.05f)); in->stick_y = (int)(75 * sinf(t * 0.05f)); }
+#endif
         float yaw = character.rot[1];
-        float a = -yaw + (float)(t / 60 % 3) * 1.5708f;   // facing direction rotated by 0/90/180
+        float a = -yaw + (float)(t / period % 3) * 1.5708f;   // facing direction rotated by 0/90/180
         float *p = character.pos;
-        customCamPos = (T3DVec3){{ p[0] + 70.0f * sinf(a), p[1] + 30.0f, p[2] + 70.0f * cosf(a) }};
+        customCamPos = (T3DVec3){{ p[0] + dist * sinf(a), p[1] + 30.0f, p[2] + dist * cosf(a) }};
         customCamTarget = (T3DVec3){{ p[0], p[1] + 20.0f, p[2] }};
         camera_mode_smooth(CAMERA_CUSTOM, 0.01f);   // also ends the fight-intro transition
-        if (t % 60 == 0) debugf("[skin] view %d at frame %d\n", t / 60 % 3, frame);
+        if (t % period == 0) debugf("[skin] view %d at frame %d\n", t / period % 3, frame);
         return;
     }
 #endif
