@@ -57,6 +57,7 @@
 #include "fx/skill_fx.h"
 #include "game/fallen_knight/fallen_knight.h"
 #include "game/sun_boss/sun_boss.h"
+#include "game/dragon_boss/dragon_boss.h"
 #include "guardian_ending.h"
 //#include "boulder_hazard.h" // close-range ground-boulder hazard
 
@@ -707,6 +708,7 @@ void scene_reset(void)
     s_bonusEndTimer = 0.0f;
     fallen_knight_free();
     sun_boss_free();
+    dragon_boss_free();
     gameState = GAME_STATE_PLAYING;
     lastMenuActive = false;
     lastAPressed = false;
@@ -1142,6 +1144,7 @@ typedef struct {
     void (*begin)(Boss*), (*skip)(Boss*);
     int phase;
     const char *music;
+    float camScale;     // the intro shots stand this much further off (0: 1, a boss of human size)
 } BonusDef;
 
 static const BonusDef BONUS_DEFS[] = {
@@ -1177,6 +1180,22 @@ static const BonusDef BONUS_DEFS[] = {
         .dropAt = 4,
         .begin = sun_boss_begin, .skip = sun_boss_skip_intro, .phase = SUN_BOSS_PHASE,
         .music = "rom:/audio/music/boss_phase2_cutscene2-22k.wav64",
+    },
+    [BONUS_SHADOWBORN] = {
+        .intro = {
+            "^Before your king,~ ^before\nhis Sun...~ ^there was the\ndark.",
+            "^I was set to guard it.~\n^I have been eating it\never since.",
+            "^It eats me back.~\n<It is winning.",
+            ">Stand still, little one...~\n<let me feed.",
+        },
+        .outro = {
+            "^So... warm...~\n^I had forgotten.",
+            "^Leave me the dark,~\n^knight.~ <It is all\nI ever was.",
+        },
+        .dropAt = 3,
+        .begin = dragon_boss_begin, .skip = dragon_boss_skip_intro, .phase = DRAGON_BOSS_PHASE,
+        .music = "rom:/audio/music/boss_phase1-looping-22k.wav64",
+        .camScale = 2.6f,
     },
 };
 
@@ -1224,6 +1243,15 @@ static void scene_bonus_start_fight(void)
     scene_sync_input_edge_state();
 }
 
+// An intro shot of the spawn point: positions and target are relative to it, scaled to the boss
+static void scene_bonus_shot(const BonusDef *d, const float p0[3], const float p1[3], const float tg[3])
+{
+    float k = d->camScale > 0.0f ? d->camScale : 1.0f;
+    cutscene_manager_set_camera_shot(&sceneContext,
+        (T3DVec3){{ BONUS_SPAWN_X + p0[0] * k, p0[1] * k, p0[2] * k }}, (T3DVec3){{ BONUS_SPAWN_X + p1[0] * k, p1[1] * k, p1[2] * k }},
+        (T3DVec3){{ BONUS_SPAWN_X + tg[0], tg[1] * (k > 1.0f ? 0.8f * k : 1.0f), tg[2] }});
+}
+
 static void scene_bonus_intro_update(bool aJustPressed)
 {
     const BonusDef *d = &BONUS_DEFS[s_bonusFight];
@@ -1240,9 +1268,7 @@ static void scene_bonus_intro_update(bool aJustPressed)
     case 0:     // the empty hall; a voice from nowhere
         cutscene_manager_update_camera(s_bonusDropT - BONUS_GATHER_S);
         if (t >= s_bonusDropT - BONUS_GATHER_S) {     // looking up where crimson light gathers
-            cutscene_manager_set_camera_shot(&sceneContext,
-                (T3DVec3){{ BONUS_SPAWN_X - 62.0f, 8.0f, 38.0f }}, (T3DVec3){{ BONUS_SPAWN_X - 50.0f, 12.0f, 24.0f }},
-                (T3DVec3){{ BONUS_SPAWN_X, 70.0f, 0.0f }});
+            scene_bonus_shot(d, (float[3]){ -62.0f, 8.0f, 38.0f }, (float[3]){ -50.0f, 12.0f, 24.0f }, (float[3]){ 0.0f, 70.0f, 0.0f });
             s_bonusBeat = 1;
         }
         break;
@@ -1256,9 +1282,7 @@ static void scene_bonus_intro_update(bool aJustPressed)
         }
         if (t >= s_bonusDropT) {     // it comes down from the dark
             scene_bonus_begin_boss();
-            cutscene_manager_set_camera_shot(&sceneContext,
-                (T3DVec3){{ BONUS_SPAWN_X - 80.0f, 16.0f, -6.0f }}, (T3DVec3){{ BONUS_SPAWN_X - 66.0f, 20.0f, 14.0f }},
-                (T3DVec3){{ BONUS_SPAWN_X, 26.0f, 0.0f }});
+            scene_bonus_shot(d, (float[3]){ -80.0f, 16.0f, -6.0f }, (float[3]){ -66.0f, 20.0f, 14.0f }, (float[3]){ 0.0f, 26.0f, 0.0f });
             s_bonusBeat = 2;
         }
     } break;
@@ -1324,6 +1348,13 @@ void scene_init_cutscene(void)
             letterbox_show(true);
             customCamPos = camPos;
             customCamTarget = (T3DVec3){{ g_boss->pos[0], g_boss->pos[1] + 14.0f, g_boss->pos[2] }};
+            float k = BONUS_DEFS[s_bonusFight].camScale;
+            if (k > 1.0f) {     // a big body: stand off, on the player's side of it
+                float dx = character.pos[0] - g_boss->pos[0], dz = character.pos[2] - g_boss->pos[2];
+                float d = fmaxf(sqrtf(dx * dx + dz * dz), 1.0f);
+                customCamPos = (T3DVec3){{ g_boss->pos[0] + dx / d * 60.0f * k, g_boss->pos[1] + 28.0f * k,
+                                           g_boss->pos[2] + dz / d * 60.0f * k }};
+            }
             camera_mode_smooth(CAMERA_CUSTOM, 1.0f);
             scene_bonus_schedule(BONUS_DEFS[s_bonusFight].outro, 4, -1, 0.0f);
             audio_stop_music();
@@ -2346,6 +2377,7 @@ void scene_cleanup(void)
     rspq_wait();
     ending_free();
     sun_boss_free();
+    dragon_boss_free();
     //collision_mesh_cleanup();
     scene_delete_environment();
     boss_ground_crush_cleanup();

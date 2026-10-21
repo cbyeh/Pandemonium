@@ -521,8 +521,9 @@ void boss_ui_set_form(int phase)
         "rom:/ui/healthbars/boss/guardian_unbound.ia4.sprite",
         "rom:/ui/healthbars/boss/fallen_knight.ia4.sprite",
         "rom:/ui/healthbars/boss/the_shackled_sun.ia4.sprite",
+        "rom:/ui/healthbars/boss/shadowborn.ia4.sprite",
     };
-    if (phase < 1 || phase > 4 || phase == s_form) return;
+    if (phase < 1 || phase > 5 || phase == s_form) return;
     s_form = phase;
     rspq_wait();    // the old plate may still be referenced by queued draws
     boss_ui_free_sprite(&s_bossHealthBarNameSprite, &s_bossHealthBarNameSurf);

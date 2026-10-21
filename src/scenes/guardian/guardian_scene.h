@@ -71,6 +71,7 @@ typedef enum {
     BONUS_NONE,
     BONUS_FALLEN_KNIGHT,
     BONUS_SHACKLED_SUN,
+    BONUS_SHADOWBORN,
 } BonusFight;
 void scene_set_bonus_fight(BonusFight fight);
 

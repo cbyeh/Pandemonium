@@ -158,7 +158,7 @@ void fallen_knight_begin(Boss* boss)
     play(FKA_IDLE, true);
 
     boss->phaseIndex = FALLEN_KNIGHT_PHASE;
-    boss->name = "Fallen Knight";
+    boss->name = "Fallen Warrior";
     boss->health = boss->maxHealth;
     boss->mode = BOSS_MODE_CINEMATIC;       // not damageable until it lands
     boss->state = BOSS_STATE_INTRO;

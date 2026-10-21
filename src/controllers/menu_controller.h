@@ -75,6 +75,7 @@ typedef enum {
 typedef enum {
     MENU_BONUS_FALLEN_KNIGHT,
     MENU_BONUS_SHACKLED_SUN,
+    MENU_BONUS_SHADOWBORN,
     MENU_BONUS_BACK,
     MENU_BONUS_COUNT
 } BonusMenuOption;

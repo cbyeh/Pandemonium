@@ -257,8 +257,13 @@ void collision_update(void)
         float charX = 0.5f * (charCapA.v[0] + charCapB.v[0]);
         float charZ = 0.5f * (charCapA.v[2] + charCapB.v[2]);
 
-        float bossX = 0.5f * (bossCapA.v[0] + bossCapB.v[0]);
-        float bossZ = 0.5f * (bossCapA.v[2] + bossCapB.v[2]);
+        // The nearest point of the boss's axis (a lying body, like Shadowborn's, is long;
+        // for an upright one this is its centre)
+        float ux = bossCapB.v[0] - bossCapA.v[0], uz = bossCapB.v[2] - bossCapA.v[2], ul2 = ux * ux + uz * uz;
+        float ut = ul2 > 1e-4f ? ((charX - bossCapA.v[0]) * ux + (charZ - bossCapA.v[2]) * uz) / ul2 : 0.5f;
+        ut = ut < 0.0f ? 0.0f : ut > 1.0f ? 1.0f : ut;
+        float bossX = bossCapA.v[0] + ux * ut;
+        float bossZ = bossCapA.v[2] + uz * ut;
 
         float push[3];
         float n[3];
@@ -292,6 +297,8 @@ void collision_update(void)
                 vz -= vn * n[2];
                 character_set_velocity_xz(vx, vz);
             }
+            // a big body (a charging dragon) must not shove the player through the walls
+            collision_resolve_character_scene_bounds();
         }
     }
 

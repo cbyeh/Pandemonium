@@ -5,6 +5,7 @@
 #include "boss_attacks.h"
 #include "game/fallen_knight/fallen_knight.h"
 #include "game/sun_boss/sun_boss.h"
+#include "game/dragon_boss/dragon_boss.h"
 
 #include <libdragon.h>
 #include <t3d/t3dmath.h>
@@ -149,7 +150,7 @@ T3DVec3 boss_get_fallback_lock_focus_point(const Boss* boss)
         return (T3DVec3){{0.0f, 0.0f, 0.0f}};
     }
 
-    float lift = (boss->phaseIndex == SUN_BOSS_PHASE) ? 0.0f : (boss->phaseIndex == FALLEN_KNIGHT_PHASE) ? 18.0f : 40.0f;
+    float lift = (boss->phaseIndex == SUN_BOSS_PHASE) ? 0.0f : (boss->phaseIndex == DRAGON_BOSS_PHASE) ? 30.0f : (boss->phaseIndex == FALLEN_KNIGHT_PHASE) ? 18.0f : 40.0f;
     return (T3DVec3){{boss->pos[0], boss->pos[1] + lift, boss->pos[2]}};
 }
 
@@ -506,7 +507,8 @@ static inline void boss_update_shadow_mat(Boss* boss)
 // against a dummy + a binomial dodge model): they hit softer but more often.
 static inline float boss_target_max_health(int phase)
 {
-    float base = (phase == FALLEN_KNIGHT_PHASE) ? 300.0f : (phase == SUN_BOSS_PHASE) ? 325.0f : 100.0f;
+    float base = (phase == FALLEN_KNIGHT_PHASE) ? 300.0f : (phase == SUN_BOSS_PHASE) ? 325.0f :
+                 (phase == DRAGON_BOSS_PHASE) ? 375.0f : 100.0f;
     return character_skills_enabled() ? base * 2.0f : base;
 }
 
@@ -532,6 +534,10 @@ void boss_update(Boss* boss)
     }
     if (boss->phaseIndex == SUN_BOSS_PHASE) {
         sun_boss_update(boss, deltaTime);
+        return;
+    }
+    if (boss->phaseIndex == DRAGON_BOSS_PHASE) {
+        dragon_boss_update(boss, deltaTime);
         return;
     }
 
@@ -614,6 +620,10 @@ void boss_draw(Boss* boss)
     }
     if (boss->phaseIndex == SUN_BOSS_PHASE) {
         sun_boss_draw(boss);
+        return;
+    }
+    if (boss->phaseIndex == DRAGON_BOSS_PHASE) {
+        dragon_boss_draw(boss);
         return;
     }
     if (boss->phaseIndex == 2) {
