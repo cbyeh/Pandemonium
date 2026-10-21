@@ -1,6 +1,7 @@
 #include <libdragon.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "tower.h"
 #include "character.h"
@@ -9,10 +10,13 @@
 #include "video_controller.h"
 
 // ---- Tuning ----
-#define FLOORS_PER_CIRCLE   3
+#define FLOORS_PER_CIRCLE   5
 #define BOSS_HP_PER_CIRCLE  0.30f     // each circle after the first
 #define BOSS_DMG_PER_CIRCLE 0.20f
 #define DRAFT_CHOICES       3
+#define START_POTIONS       3         // as in the original game
+#define BONUS_HP_IN_TOWER   0.5f      // their health was sized for 7 potions and the skills
+#define HP_PER_SKILL        (1.0f / 3.0f)   // all three unlocked: double, like the Skills setting
 
 typedef struct { const char *name, *desc; uint8_t maxStacks; } BoonDef;
 
@@ -41,12 +45,14 @@ static const UpgradeDef UPGRADES[UPG_COUNT] = {
     [UPG_SKILL_MASTERY]  = { "Skill Mastery",  "Skill cooldowns -8%" },
 };
 static const int UPGRADE_COST[UPG_MAX_LEVEL] = { 30, 70, 120 };
+static const int SKILL_COST[SKILL_COUNT] = { 60, 40, 80 };     // Moon Blade Dance, Halfmoon Slash, Crescent Cleave
 
 static struct {
     bool active;
     int floor;
     uint32_t rng;
     TowerBoss order[FLOORS_PER_CIRCLE];
+    uint8_t skills;                 // unlocked when the run began
     uint8_t stacks[BOON_COUNT];
     int runEmbers, lastFloorEmbers;
     bool unbrokenUsed;
@@ -67,11 +73,13 @@ static uint32_t rng_next(void)
 
 static void shuffle_circle(void)
 {
-    // The Guardian opens every circle; the other two come in either order
+    // The Guardian and its Unbound form open every circle (two floors, no transformation
+    // cutscene between them); the three Bonus bosses follow in a random order
     s.order[0] = TOWER_GUARDIAN;
-    bool swap = rng_next() & 1;
-    s.order[1] = swap ? TOWER_SHACKLED_SUN : TOWER_FALLEN_KNIGHT;
-    s.order[2] = swap ? TOWER_FALLEN_KNIGHT : TOWER_SHACKLED_SUN;
+    s.order[1] = TOWER_UNBOUND;
+    TowerBoss rest[3] = { TOWER_FALLEN_KNIGHT, TOWER_SHACKLED_SUN, TOWER_SHADOWBORN };
+    for (int i = 2; i > 0; i--) { int j = rng_next() % (i + 1); TowerBoss t = rest[i]; rest[i] = rest[j]; rest[j] = t; }
+    for (int i = 0; i < 3; i++) s.order[2 + i] = rest[i];
 }
 
 // ---- Run ----
@@ -82,6 +90,9 @@ void tower_begin_run(uint32_t seed)
     s.active = true;
     s.floor = 1;
     s.rng = seed ? seed : 1;
+    TowerSave t;
+    save_controller_get_tower(&t);
+    s.skills = t.skills;
     shuffle_circle();
 }
 
@@ -93,7 +104,7 @@ TowerBoss tower_floor_boss(void) { return s.order[(s.floor - 1) % FLOORS_PER_CIR
 int  tower_run_embers(void) { return s.runEmbers; }
 int  tower_boon_stacks(BoonId b) { return (s.active && b < BOON_COUNT) ? s.stacks[b] : 0; }
 
-static int floor_embers(void) { return 10 * tower_circle() + 5 * ((s.floor - 1) % FLOORS_PER_CIRCLE); }
+static int floor_embers(void) { return 8 * tower_circle() + 3 * ((s.floor - 1) % FLOORS_PER_CIRCLE); }
 
 void tower_floor_cleared(void)
 {
@@ -122,7 +133,13 @@ void tower_draft_open(void)
 {
     // Three different boons that can still stack
     BoonId pool[BOON_COUNT]; int n = 0;
-    for (int b = 0; b < BOON_COUNT; b++) if (s.stacks[b] < BOONS[b].maxStacks) pool[n++] = b;
+    for (int b = 0; b < BOON_COUNT; b++) {
+        if (s.stacks[b] >= BOONS[b].maxStacks) continue;
+        // skill boons only once there is a skill to use them on
+        if (b == BOON_MOON_MASTERY && !s.skills) continue;
+        if (b == BOON_CRESCENT_ECHO && !(s.skills & (1 << SKILL_MOON_BLADE_DANCE))) continue;
+        pool[n++] = b;
+    }
     s.nChoices = 0;
     while (s.nChoices < DRAFT_CHOICES && n > 0) {
         int k = rng_next() % n;
@@ -262,6 +279,24 @@ bool tower_upgrade_buy(UpgradeId u)
 const char* tower_upgrade_name(UpgradeId u) { return UPGRADES[u].name; }
 const char* tower_upgrade_desc(UpgradeId u) { return UPGRADES[u].desc; }
 
+bool tower_skill_unlocked(int skill)
+{
+    TowerSave t; save_controller_get_tower(&t);
+    return skill >= 0 && skill < SKILL_COUNT && (t.skills >> skill) & 1;
+}
+
+int tower_skill_cost(int skill) { return (skill < 0 || skill >= SKILL_COUNT || tower_skill_unlocked(skill)) ? -1 : SKILL_COST[skill]; }
+
+bool tower_skill_buy(int skill)
+{
+    int cost = tower_skill_cost(skill);
+    TowerSave t; save_controller_get_tower(&t);
+    if (cost < 0 || t.embers < cost) return false;
+    t.embers -= cost;
+    t.skills |= 1 << skill;
+    return save_controller_set_tower(&t);
+}
+
 // ---- Modifiers ----
 
 // Shrine upgrades count only inside a run; the story and Bonus fights stay as tuned
@@ -283,7 +318,8 @@ float tower_mod_damage_taken(void)
     return m;
 }
 
-int   tower_mod_max_potions(void) { return 7 + shrine(UPG_FLASK_CAPACITY) + tower_boon_stacks(BOON_DEEP_FLASK); }
+int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + tower_boon_stacks(BOON_DEEP_FLASK) : 7; }
+bool  tower_mod_skill_allowed(int skill) { return !s.active || ((s.skills >> skill) & 1); }
 float tower_mod_potion_heal(void)
 {
     return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.15f * tower_boon_stacks(BOON_KINDLED_FLASK));
@@ -305,4 +341,18 @@ bool tower_mod_try_unbroken(void)
     return true;
 }
 
-float tower_boss_health_scale(void) { return s.active ? 1.0f + BOSS_HP_PER_CIRCLE * (tower_circle() - 1) : 1.0f; }
+float tower_boss_health_scale(int phase)
+{
+    if (!s.active) return 1.0f;
+    int n = 0;
+    for (int k = 0; k < SKILL_COUNT; k++) n += (s.skills >> k) & 1;
+    float k = (1.0f + BOSS_HP_PER_CIRCLE * (tower_circle() - 1)) * (1.0f + HP_PER_SKILL * n);
+    return phase >= 3 ? k * BONUS_HP_IN_TOWER : k;     // phases 3+ are the Bonus bosses
+}
+
+void tower_floor_restore(void)
+{
+    // A third of the health and one potion back, up to the run's maximum
+    character.health = fminf(character.maxHealth, character.health + character.maxHealth / 3.0f);
+    if (character.healthPotions < tower_mod_max_potions()) character.healthPotions++;
+}

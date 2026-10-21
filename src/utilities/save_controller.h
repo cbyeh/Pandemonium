@@ -57,6 +57,7 @@ typedef struct {
     uint8_t  bestFloor;
     uint8_t  weaponsOwned;   // bit per weapon
     uint8_t  weapon;         // equipped
+    uint8_t  skills;         // bit per D-pad skill unlocked
 } TowerSave;
 void save_controller_get_tower(TowerSave *out);
 bool save_controller_set_tower(const TowerSave *in);

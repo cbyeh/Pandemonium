@@ -5,11 +5,13 @@
 #include <stdint.h>
 
 // The Tower: a boss-rush roguelite. A run climbs floors (one fight each); every
-// three floors make a circle, and each circle after the first scales the bosses up.
-// Between floors the player drafts a Boon (run-only). Cleared floors earn Embers,
-// spent at the Shrine on permanent upgrades (they apply in every mode).
+// five floors make a circle (the Guardian, Guardian Unbound, then the three Bonus
+// bosses in a random order), and each circle after the first scales the bosses up.
+// A run starts as the original game did: 3 potions and the sword only. Between
+// floors the player drafts a Boon (run-only). Cleared floors earn Embers, spent at
+// the Shrine on upgrades and on unlocking the D-pad skills (Tower runs only).
 
-typedef enum { TOWER_GUARDIAN, TOWER_FALLEN_KNIGHT, TOWER_SHACKLED_SUN } TowerBoss;
+typedef enum { TOWER_GUARDIAN, TOWER_UNBOUND, TOWER_FALLEN_KNIGHT, TOWER_SHACKLED_SUN, TOWER_SHADOWBORN } TowerBoss;
 
 typedef enum {
     BOON_EMBER_EDGE, BOON_IRON_SKIN, BOON_DEEP_FLASK, BOON_KINDLED_FLASK, BOON_FLEETFOOT,
@@ -56,9 +58,15 @@ int  tower_upgrade_cost(UpgradeId u);   // -1 at max level
 bool tower_upgrade_buy(UpgradeId u);
 const char* tower_upgrade_name(UpgradeId u);
 const char* tower_upgrade_desc(UpgradeId u);
+// The D-pad skills (CharacterSkill), unlocked once each at the Shrine
+bool tower_skill_unlocked(int skill);
+int  tower_skill_cost(int skill);       // -1 once unlocked
+bool tower_skill_buy(int skill);
 int  tower_best_floor(void);
 
 // ---- Modifiers (Shrine upgrades and Boons, during a run only) ----
+// In a run a skill can be used only once unlocked (the Skills setting is ignored)
+bool  tower_mod_skill_allowed(int skill);
 float tower_mod_damage_dealt(void);
 float tower_mod_damage_taken(void);
 int   tower_mod_max_potions(void);
@@ -70,6 +78,9 @@ float tower_mod_skill_cooldown(void);
 float tower_mod_lifesteal(void);
 int   tower_mod_extra_mbd_waves(void);
 bool  tower_mod_try_unbroken(void);     // spends it: survive a lethal hit at 1 HP
-float tower_boss_health_scale(void);
+// Boss health in a run, from its usual (skills off) health for that phase
+float tower_boss_health_scale(int phase);
+// Between floors: the health and potions given back
+void  tower_floor_restore(void);
 
 #endif

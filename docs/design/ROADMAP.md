@@ -10,11 +10,17 @@ Work happens on the `tower` branch. Each section lists what it is, how it fits t
 
 ## 1. The Tower: a boss-rush roguelite (M, building first)
 A run climbs floors, and each floor is one fight:
-- **Circle 1:** the Guardian (its Unbound form follows straight on, with no cutscene), then the Fallen Knight and the Shackled Sun in a seeded random order.
+- **A circle is five floors:** the Guardian, then Guardian Unbound as a floor of its own (no transformation cutscene), then the Fallen Warrior, the Shackled Sun and Shadowborn in a seeded random order.
 - **Later circles ("Ascension"):** every boss has more HP and hits harder, about +30% HP and +20% damage per circle.
+- **A run starts like the original game:** 3 potions and the sword only. The D-pad skills are unlocked at the Shrine.
+
+Boss health in a run starts from each boss's skills-off health:
+- The Guardian and Unbound keep theirs, so floor 1 plays like the original jam game.
+- The Bonus bosses start at half, since their health was sized for 7 potions and the skills.
+- Each unlocked skill adds a third, so all three unlocked doubles it, the same as the Skills setting does.
 
 Between floors:
-- The player heals 30% and gets a potion back.
+- The player heals a third and gets a potion back, up to the run's maximum.
 - The player drafts **one of three Boons** (run-only perks, below).
 - Each floor cleared earns **Embers**, a persistent currency.
 
@@ -35,17 +41,19 @@ When the player dies, the run ends. Embers are kept, and the best floor is recor
 | Kindled Flask | potions heal +15% |
 | Fleetfoot | rolls cost 40% less stamina |
 | Second Wind | +40% stamina regen |
-| Moon Mastery | skill cooldowns -20% |
+| Moon Mastery | skill cooldowns -20% (offered once a skill is unlocked) |
 | Bloodthirst | heal 6% of damage dealt |
 | Vigor | +25 max HP |
 | Last Stand | +40% damage below 30% HP |
 | Unbroken | once per floor, a lethal hit leaves you at 1 HP |
-| Crescent Echo | Moon Blade Dance casts 2 more waves |
+| Crescent Echo | Moon Blade Dance casts 2 more waves (offered once it is unlocked) |
 
 Boons stack. Duplicates of a stat boon add up, and unique boons leave the pool once taken.
 
 ## 2. The Shrine: permanent upgrades (S to M, building second)
 Spend Embers on the title screen. Upgrades apply only inside Tower runs.
+
+**Skills** are unlocked here, once each: Halfmoon Slash (40 Embers), Moon Blade Dance (60) and Crescent Cleave (80). In a run, only unlocked skills work; the Skills setting is ignored.
 
 | Upgrade | Levels | Per level |
 |---|---|---|
@@ -85,7 +93,7 @@ Needs a per-weapon stats table: damage, animation speed and the hit capsule leng
 
 ## Decisions (2026-10-21)
 - **Shrine upgrades apply only in the Tower.** The story and Bonus fights stay as tuned, so `tower_mod_*` returns 1.0 (or 0) whenever no run is active.
-- **Runs are endless circles**: 3 floors per circle, with Ascension scaling every circle after the first. The score is the best floor reached.
-
-## Open questions
-- Is it fine that the Tower's Guardian skips the Unbound transformation cutscene for pacing?
+- **Runs are endless circles**: 5 floors per circle, with Ascension scaling every circle after the first. The score is the best floor reached.
+- **The Guardian and Guardian Unbound are two separate floors**, with no transformation cutscene between them.
+- **Runs start with 3 potions and basic attacks only**; skills are unlocked at the Shrine, and boss health grows with them.
+- **Shadowborn** (Bonus 3) joins the circle; it may be a little harder than the others.

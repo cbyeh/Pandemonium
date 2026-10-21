@@ -418,7 +418,7 @@ bool save_controller_increment_run_count(void) {
     return blob_write_now();
 }
 
-// _pad[7..8] embers, [9..10] five 3-bit levels, [11] best floor, [12] weapons owned, [13] weapon
+// _pad[7..8] embers, [9..10] five 3-bit levels, [11] best floor, [12] weapons owned, [13] weapon, [14] skills
 void save_controller_get_tower(TowerSave *out)
 {
     memset(out, 0, sizeof(*out));
@@ -430,6 +430,7 @@ void save_controller_get_tower(TowerSave *out)
     out->bestFloor = p[11];
     out->weaponsOwned = p[12];
     out->weapon = p[13];
+    out->skills = p[14];
 }
 
 bool save_controller_set_tower(const TowerSave *in)
@@ -444,6 +445,7 @@ bool save_controller_set_tower(const TowerSave *in)
     p[11] = in->bestFloor;
     p[12] = in->weaponsOwned;
     p[13] = in->weapon;
+    p[14] = in->skills;
     d->checksum = compute_slot_checksum(d);
     extern double nowS;
     s_last_dirty_time_s = nowS;

@@ -132,6 +132,36 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         return;
     }
 #endif
+#ifdef HLE_TEST_TOWER
+    // Self-check of the Tower rules (no fight): circle order, boss health, potions, skills
+    if (frame == 120) {
+        extern void tower_begin_run(uint32_t), tower_end_run(void), tower_next_floor(void);
+        extern int tower_floor_boss(void), tower_mod_max_potions(void);
+        extern float tower_boss_health_scale(int);
+        extern bool tower_mod_skill_allowed(int);
+        int fails = 0;
+        for (uint32_t seed = 1; seed <= 20; seed++) {
+            tower_begin_run(seed);
+            int seen = 0;
+            for (int f = 0; f < 5; f++) {
+                int bss = tower_floor_boss();
+                if ((f == 0 && bss != 0) || (f == 1 && bss != 1)) fails++;
+                seen |= 1 << bss;
+                tower_next_floor();
+            }
+            if (seen != 0x1F) fails++;              // all five, once each
+            if (tower_boss_health_scale(1) < 1.29f || tower_boss_health_scale(1) > 1.31f) fails++;   // circle 2
+        }
+        tower_begin_run(7);
+        if (tower_mod_max_potions() != 3) fails++;
+        if (tower_boss_health_scale(1) != 1.0f || tower_boss_health_scale(5) != 0.5f) fails++;   // no skills unlocked
+        if (tower_mod_skill_allowed(0)) fails++;
+        tower_end_run();
+        if (tower_mod_max_potions() != 7 || !tower_mod_skill_allowed(0) || tower_boss_health_scale(3) != 1.0f) fails++;
+        debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
+    }
+    return;
+#endif
 #ifdef HLE_TEST_UNBOUND
     // Hazard check: reach Guardian Unbound, circle it for 150 s (every hit is logged with
     // its source, the player is topped up), kill it, then keep walking through where its
