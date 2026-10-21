@@ -418,6 +418,39 @@ bool save_controller_increment_run_count(void) {
     return blob_write_now();
 }
 
+// _pad[7..8] embers, [9..10] five 3-bit levels, [11] best floor, [12] weapons owned, [13] weapon
+void save_controller_get_tower(TowerSave *out)
+{
+    memset(out, 0, sizeof(*out));
+    if (!s_initialized) return;
+    const uint8_t *p = s_blob.slots[s_active_slot]._pad;
+    out->embers = (uint16_t)(p[7] | (p[8] << 8));
+    uint16_t lv = (uint16_t)(p[9] | (p[10] << 8));
+    for (int i = 0; i < 5; i++) out->levels[i] = (lv >> (i * 3)) & 7;
+    out->bestFloor = p[11];
+    out->weaponsOwned = p[12];
+    out->weapon = p[13];
+}
+
+bool save_controller_set_tower(const TowerSave *in)
+{
+    if (!s_initialized) return false;
+    SaveData *d = &s_blob.slots[s_active_slot];
+    uint8_t *p = d->_pad;
+    p[7] = in->embers & 0xFF; p[8] = in->embers >> 8;
+    uint16_t lv = 0;
+    for (int i = 0; i < 5; i++) lv |= (uint16_t)((in->levels[i] & 7) << (i * 3));
+    p[9] = lv & 0xFF; p[10] = lv >> 8;
+    p[11] = in->bestFloor;
+    p[12] = in->weaponsOwned;
+    p[13] = in->weapon;
+    d->checksum = compute_slot_checksum(d);
+    extern double nowS;
+    s_last_dirty_time_s = nowS;
+    s_dirty = true;
+    return true;
+}
+
 bool save_controller_record_boss_clear_time_ms(uint32_t clear_time_ms) {
     if (!s_initialized) return false;
     if (clear_time_ms == 0) return false;

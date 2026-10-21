@@ -50,6 +50,17 @@ int  save_controller_get_active_slot(void);
 bool save_controller_load_settings(void);
 bool save_controller_save_settings(void);
 
+// Tower / Shrine progress, kept in the slot's spare bytes (old saves read as zeros)
+typedef struct {
+    uint16_t embers;
+    uint8_t  levels[5];      // Shrine upgrade levels 0..7
+    uint8_t  bestFloor;
+    uint8_t  weaponsOwned;   // bit per weapon
+    uint8_t  weapon;         // equipped
+} TowerSave;
+void save_controller_get_tower(TowerSave *out);
+bool save_controller_set_tower(const TowerSave *in);
+
 // Run + boss stats
 bool save_controller_increment_run_count(void);
 bool save_controller_record_boss_clear_time_ms(uint32_t clear_time_ms);
