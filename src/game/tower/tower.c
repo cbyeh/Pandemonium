@@ -11,7 +11,10 @@
 
 // ---- Tuning ----
 #define FLOORS_PER_CIRCLE   5
-#define BOSS_HP_PER_CIRCLE  0.30f     // each circle after the first
+// The climb starts well below the story fights and passes them by circle 3
+#define BOSS_HP_START       0.70f     // circle 1, then +BOSS_HP_PER_CIRCLE a circle
+#define BOSS_HP_PER_CIRCLE  0.30f
+#define BOSS_DMG_START      0.60f     // circle 1, then +BOSS_DMG_PER_CIRCLE a circle
 #define BOSS_DMG_PER_CIRCLE 0.20f
 #define DRAFT_CHOICES       3
 #define START_POTIONS       3         // as in the original game
@@ -73,13 +76,13 @@ static uint32_t rng_next(void)
 
 static void shuffle_circle(void)
 {
-    // The Guardian and its Unbound form open every circle (two floors, no transformation
-    // cutscene between them); the three Bonus bosses follow in a random order
+    // The Guardian opens every circle, the three Bonus bosses follow in a random order,
+    // and Guardian Unbound closes it (a floor of its own, no transformation cutscene)
     s.order[0] = TOWER_GUARDIAN;
-    s.order[1] = TOWER_UNBOUND;
     TowerBoss rest[3] = { TOWER_FALLEN_KNIGHT, TOWER_SHACKLED_SUN, TOWER_SHADOWBORN };
     for (int i = 2; i > 0; i--) { int j = rng_next() % (i + 1); TowerBoss t = rest[i]; rest[i] = rest[j]; rest[j] = t; }
-    for (int i = 0; i < 3; i++) s.order[2 + i] = rest[i];
+    for (int i = 0; i < 3; i++) s.order[1 + i] = rest[i];
+    s.order[4] = TOWER_UNBOUND;
 }
 
 // ---- Run ----
@@ -314,7 +317,7 @@ float tower_mod_damage_dealt(void)
 float tower_mod_damage_taken(void)
 {
     float m = powf_int(0.85f, tower_boon_stacks(BOON_IRON_SKIN));
-    if (s.active) m *= 1.0f + BOSS_DMG_PER_CIRCLE * (tower_circle() - 1);
+    if (s.active) m *= BOSS_DMG_START + BOSS_DMG_PER_CIRCLE * (tower_circle() - 1);
     return m;
 }
 
@@ -346,7 +349,7 @@ float tower_boss_health_scale(int phase)
     if (!s.active) return 1.0f;
     int n = 0;
     for (int k = 0; k < SKILL_COUNT; k++) n += (s.skills >> k) & 1;
-    float k = (1.0f + BOSS_HP_PER_CIRCLE * (tower_circle() - 1)) * (1.0f + HP_PER_SKILL * n);
+    float k = (BOSS_HP_START + BOSS_HP_PER_CIRCLE * (tower_circle() - 1)) * (1.0f + HP_PER_SKILL * n);
     return phase >= 3 ? k * BONUS_HP_IN_TOWER : k;     // phases 3+ are the Bonus bosses
 }
 

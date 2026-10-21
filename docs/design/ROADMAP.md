@@ -10,8 +10,8 @@ Work happens on the `tower` branch. Each section lists what it is, how it fits t
 
 ## 1. The Tower: a boss-rush roguelite (M, building first)
 A run climbs floors, and each floor is one fight:
-- **A circle is five floors:** the Guardian, then Guardian Unbound as a floor of its own (no transformation cutscene), then the Fallen Warrior, the Shackled Sun and Shadowborn in a seeded random order.
-- **Later circles ("Ascension"):** every boss has more HP and hits harder, about +30% HP and +20% damage per circle.
+- **A circle is five floors:** the Guardian first, then the Fallen Warrior, the Shackled Sun and Shadowborn in a seeded random order, and Guardian Unbound last, as a floor of its own (no transformation cutscene).
+- **The climb starts well below the story fights:** in circle 1 the bosses have 70% of their health and deal 60% of their damage. Each circle adds 30% health and 20% damage, so circle 3 is at full damage and beyond.
 - **A run starts like the original game:** 3 potions and the sword only. The D-pad skills are unlocked at the Shrine.
 
 Boss health in a run starts from each boss's skills-off health:
@@ -94,6 +94,7 @@ Needs a per-weapon stats table: damage, animation speed and the hit capsule leng
 ## Decisions (2026-10-21)
 - **Shrine upgrades apply only in the Tower.** The story and Bonus fights stay as tuned, so `tower_mod_*` returns 1.0 (or 0) whenever no run is active.
 - **Runs are endless circles**: 5 floors per circle, with Ascension scaling every circle after the first. The score is the best floor reached.
-- **The Guardian and Guardian Unbound are two separate floors**, with no transformation cutscene between them.
+- **The Guardian and Guardian Unbound are two separate floors**, with no transformation cutscene between them. Unbound closes each circle.
+- **Tower starts much easier than the story mode**, then catches up by circle 3.
 - **Runs start with 3 potions and basic attacks only**; skills are unlocked at the Shrine, and boss health grows with them.
 - **Shadowborn** (Bonus 3) joins the circle; it may be a little harder than the others.

@@ -5,8 +5,9 @@
 #include <stdint.h>
 
 // The Tower: a boss-rush roguelite. A run climbs floors (one fight each); every
-// five floors make a circle (the Guardian, Guardian Unbound, then the three Bonus
-// bosses in a random order), and each circle after the first scales the bosses up.
+// five floors make a circle (the Guardian, the three Bonus bosses in a random order,
+// then Guardian Unbound), and the bosses start well below the story fights' strength
+// and grow every circle.
 // A run starts as the original game did: 3 potions and the sword only. Between
 // floors the player drafts a Boon (run-only). Cleared floors earn Embers, spent at
 // the Shrine on upgrades and on unlocking the D-pad skills (Tower runs only).

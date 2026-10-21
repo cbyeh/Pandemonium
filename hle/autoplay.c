@@ -14,7 +14,8 @@
 #include "controllers/menu_controller.h"
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #endif
-#ifdef HLE_TEST_AUDIO
+#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_QUIT)
+#include "controllers/menu_controller.h"
 #include "controllers/audio_controller.h"
 #include "scenes/guardian/guardian_scene_sfx.h"
 #include "game/boss/boss.h"
@@ -150,22 +151,44 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             int seen = 0;
             for (int f = 0; f < 5; f++) {
                 int bss = tower_floor_boss();
-                if ((f == 0 && bss != 0) || (f == 1 && bss != 1)) fails++;
+                if ((f == 0 && bss != 0) || (f == 4 && bss != 1)) fails++;    // Guardian first, Unbound last
                 seen |= 1 << bss;
                 tower_next_floor();
             }
             if (seen != 0x1F) fails++;              // all five, once each
-            if (tower_boss_health_scale(1) < 1.29f || tower_boss_health_scale(1) > 1.31f) fails++;   // circle 2
+            if (fabsf(tower_boss_health_scale(1) - 1.0f) > 0.01f) fails++;                    // circle 2: 0.7 + 0.3
         }
         tower_begin_run(7);
         if (tower_mod_max_potions() != 3) fails++;
-        if (tower_boss_health_scale(1) != 1.0f || tower_boss_health_scale(5) != 0.5f) fails++;   // no skills unlocked
+        if (fabsf(tower_boss_health_scale(1) - 0.7f) > 0.01f || fabsf(tower_boss_health_scale(5) - 0.35f) > 0.01f) fails++;   // circle 1, no skills
+        { extern float tower_mod_damage_taken(void); if (fabsf(tower_mod_damage_taken() - 0.6f) > 0.01f) fails++; }
         if (tower_mod_skill_allowed(0)) fails++;
         tower_end_run();
         if (tower_mod_max_potions() != 7 || !tower_mod_skill_allowed(0) || tower_boss_health_scale(3) != 1.0f) fails++;
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }
     return;
+#endif
+#ifdef HLE_TEST_QUIT
+    // Pause mid-fight > Main Menu (4 down: Resume, Restart, Settings, Controls, Main Menu) > A:
+    // back at the title, then into the fight again
+    {
+        static int start = -1, again = 0;
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT) { start = frame; debugf("[quit] fight at %d\n", frame); }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        int t = frame - start;
+        if (t == 60) { pressed->start = 1; in->btn.start = 1; }
+        if (t == 80 || t == 90 || t == 100 || t == 110) pressed->d_down = 1;
+        if (t == 125) { pressed->a = 1; in->btn.a = 1; }
+        if (t == 160) debugf("[quit] after Main Menu: boss %s, title menu %s\n", boss ? "still there" : "gone", menu_controller_is_active() ? "open" : "closed");
+        if (t > 200 && t < 1400 && t % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        if (!again && t > 200 && boss && boss->mode == BOSS_MODE_COMBAT) { again = 1; debugf("[quit] fight again at %d\n", frame); }
+        return;
+    }
 #endif
 #ifdef HLE_TEST_AUDIO
     // Every new sound and track loads and plays: in the fight, play each in turn and
@@ -388,7 +411,24 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_TEST_BONUS_SUN
             if (t == 450) { boss_apply_damage(boss, boss->maxHealth * 0.55f); debugf("[bonus] half at %d\n", frame); }
 #endif
-#ifdef HLE_TEST_BONUS_DRAGON
+#ifdef HLE_TEST_STRIKE
+            // Can the sword land? Locked on, walk in and swing for 60 s (topped up): every
+            // drop in the boss's health is a hit
+            {
+                static float lastHp; static int hits; static float lost;
+                if (t == 1) { lastHp = boss->health; pressed->z = 1; }
+                in->btn.z = 1;
+                float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2];
+                if (sqrtf(dx * dx + dz * dz) > 45.0f) in->stick_y = 70;
+                if (t % 24 == 0) { pressed->b = 1; in->btn.b = 1; }
+                if (boss->health < lastHp - 0.01f) { hits++; lost += lastHp - boss->health; }
+                lastHp = boss->health;
+                if (t == 2000) {
+                    debugf("[strike] boss %d: %d hits, %.0f of %.0f health in 60 s\n", boss->phaseIndex, hits, (double)lost, (double)boss->maxHealth);
+                    boss_apply_damage(boss, boss->maxHealth * 2.0f); phase = 4; t0 = frame;
+                }
+            }
+#elif defined(HLE_TEST_BONUS_DRAGON)
             // a long fight, circling it (every hit is logged, the player is topped up): half at 60 s, dead at 120 s
             in->stick_x = (int)(70 * cosf(t * 0.015f)); in->stick_y = (int)(70 * sinf(t * 0.015f));
             if (t == 2000) { boss_apply_damage(boss, boss->maxHealth * 0.55f); debugf("[bonus] half at %d\n", frame); }

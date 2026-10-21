@@ -1516,6 +1516,13 @@ void scene_cutscene_update(void)
 
 void scene_update(void) {
 
+    if (menu_controller_consume_action() == MENU_ACTION_QUIT_TO_TITLE) {
+        cutscene_manager_clear_dialog();
+        screen_shake_set_shake_mag(0.0f);
+        scene_controller_switch_to_title();
+        return;
+    }
+
     if (gameState == GAME_STATE_VIDEO) {
         return;
     }

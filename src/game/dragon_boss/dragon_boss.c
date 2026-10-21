@@ -26,7 +26,8 @@
 #define TAIL_SEG   17.0f
 #define LEG_L      19.0f        // each leg bone
 #define MESH       16.0f        // the segment and limb meshes are built 16 across, 16 long
-#define HIT_R      15.0f
+#define HIT_R      17.0f
+#define HIT_H      18.0f        // the hit capsule's height above its feet
 #define DROP_H     160.0f       // flies down from this high
 
 #define FL_MAX   40             // flames
@@ -544,12 +545,18 @@ static void rig(Boss *b, float dt)
     }
     feet_update(dt);
 
-    // The hit capsule runs along the back, from the neck (or the head, when it is down) to the hips
-    float a[3];
-    lerp3(a, s.neck[1], s.head, s.head[1] - s.groundY < 16.0f ? 1.0f : 0.0f);
+    // The hit capsule runs the length of the body, from the base of the neck (or the head,
+    // when it is down) to the hips, at the height a sword swings (the spine is above it:
+    // a capsule on the spine was out of reach)
+    float a[3], c[3];
+    bool headDown = s.head[1] - s.groundY < 16.0f;
+    lerp3(a, s.neck[1], s.head, headDown ? 1.0f : 0.0f);
+    memcpy(c, s.hips, sizeof(c));
+    if (!headDown) a[1] = base + HIT_H;
+    c[1] = base + HIT_H;
     for (int m = 0; m < 3; m++) {
         b->capsuleCollider.localCapA.v[m] = a[m] - b->pos[m];
-        b->capsuleCollider.localCapB.v[m] = s.hips[m] - b->pos[m];
+        b->capsuleCollider.localCapB.v[m] = c[m] - b->pos[m];
     }
 }
 
