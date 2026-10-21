@@ -105,6 +105,7 @@ static void enter(SbState st) { s.state = st; s.t = 0.0f; s.step = 0; }
 
 static void sfx_boom(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH1, 1.0f, 0.0f); }
 static void sfx_cast(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SWING2, 1.0f, 0.0f); }
+static void sfx_chain(int k) { audio_play_scene_sfx_dist(k ? SCENE1_SFX_CHAIN2 : SCENE1_SFX_CHAIN1, 1.0f, 0.0f); }
 
 static float speed_mult(void) { return s.unshackled ? 1.35f : 1.0f; }
 
@@ -409,7 +410,7 @@ static void lash_update(Boss *b, float dt)
             for (int i = 1; i <= 2; i++)
                 skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + s.strikeDir[0] * CHAIN_LEN * 0.4f * i, s.groundY,
                                                          b->pos[2] + s.strikeDir[1] * CHAIN_LEN * 0.4f * i }, 0.0f);
-        if (s.t >= wind) { s.step = 1; s.t = 0.0f; sfx_cast(); }
+        if (s.t >= wind) { s.step = 1; s.t = 0.0f; sfx_cast(); sfx_chain(0); }
     } else if (s.step == 1) {   // over the top and down onto the floor
         float k = clamp01(s.t / 0.2f);
         c->kk = 0.6f;
@@ -432,6 +433,7 @@ static void lash_update(Boss *b, float dt)
                                                          b->pos[2] + s.strikeDir[1] * (SUN_R + CHAIN_LEN * 0.3f * i) }, i * 0.7f);
             screen_shake_set_shake_mag(10.0f);
             sfx_boom();
+            sfx_chain(1);
             s.step = 2; s.t = 0.0f;
         }
     } else {                    // let it lie, then let go
@@ -472,7 +474,7 @@ static void sweep_update(Boss *b, float dt)
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * CHAIN_LEN * 0.8f, s.groundY,
                                                      b->pos[2] + cosf(a) * CHAIN_LEN * 0.8f }, a);
         }
-        if (s.t >= WIND) { s.step = 1; s.t = 0.0f; s.hitDone = false; sfx_cast(); }
+        if (s.t >= WIND) { s.step = 1; s.t = 0.0f; s.hitDone = false; sfx_cast(); sfx_chain(1); }
     } else if (s.step == 1) {
         float k = clamp01(s.t / SWING), a0 = s.sweepFrom + s.sweepSpan * clamp01((s.t - dt) / SWING), a = s.sweepFrom + s.sweepSpan * k;
         c->kk = 0.5f;
@@ -579,6 +581,7 @@ void sun_boss_update(Boss* b, float dt)
         s.raysSpin = 8.0f;
         if (s.weights && s.t >= 0.5f) {   // the weights burst and the chains whip free
             s.weights = false;
+            sfx_chain(0); sfx_chain(1);
             for (int k = 0; k < NCH; k++) {
                 skill_fx_spawn_burst_hostile((float[3]){ s.ch[k].p[NN - 1][0], s.groundY, s.ch[k].p[NN - 1][2] }, k * 0.8f);
                 for (int i = 1; i < NN; i++) s.ch[k].q[i][1] -= 0.6f * i;

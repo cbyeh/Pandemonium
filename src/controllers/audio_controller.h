@@ -6,9 +6,10 @@
 
 // Mixer / Channel Layout
 #define MIXER_NUM_CHANNELS   16
-#define CHANNEL_MUSIC        0
+#define CHANNEL_MUSIC        0      // stereo: also takes channel 1
 #define SFX_CH_FIRST         2
-#define SFX_CH_LAST          (MIXER_NUM_CHANNELS - 1)
+#define SFX_CH_LAST          (MIXER_NUM_CHANNELS - 2)
+#define CHANNEL_UI           (MIXER_NUM_CHANNELS - 1)
 
 typedef struct MultiSfx {
     int   sfxIndex;     // scene-local sfx index
@@ -30,6 +31,10 @@ void audio_resume_music(void);
 
 void audio_stop_music_fade(float durationSec);
 void audio_update_fade(float dt);
+
+// Menu sounds, loaded for every scene (CC0, Kenney "Interface Sounds")
+typedef enum { AUDIO_UI_MOVE, AUDIO_UI_CONFIRM, AUDIO_UI_BACK, AUDIO_UI_COUNT } AudioUiSound;
+void audio_play_ui(AudioUiSound sound);
 
 // Scene SFX Loading
 #define AUDIO_SCENE_MAX_SFX  64

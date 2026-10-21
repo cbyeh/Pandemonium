@@ -23,6 +23,18 @@ typedef enum Scene1Sfx
 
     SCENE1_SFX_DRAGON_ROAR,     // CC0, "Deep Monster Roar" by trazzz123 (OpenGameArt)
 
+    // CC0, "80 CC0 RPG SFX" by rubberduck (OpenGameArt)
+    SCENE1_SFX_SPELL_WAVE,
+    SCENE1_SFX_SPELL_CAST,
+    SCENE1_SFX_BLADE_SLASH,
+    SCENE1_SFX_HEAL,
+    SCENE1_SFX_FIRE,
+    SCENE1_SFX_DARK_BEAM,
+    SCENE1_SFX_DARK_NOVA,
+    SCENE1_SFX_ROCK_BLAST,
+    SCENE1_SFX_CHAIN1,
+    SCENE1_SFX_CHAIN2,
+
     // Character SFX
     SCENE1_SFX_CHAR_SWING1,
     
