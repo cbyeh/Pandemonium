@@ -684,6 +684,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
             else if (frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 4) {
+#ifdef HLE_DUMMY_MOVE   // keep running in a wide circle (the cloth in motion)
+            in->stick_x = (int)(70 * cosf(tm * 0.8f)); in->stick_y = (int)(70 * sinf(tm * 0.8f));
+#endif
 #ifdef HLE_DUMMY_STRIKE   // and fight back: locked on, walk in, swing (the stagger meter, hit-stop)
             { static int k; k++;
               if (k == 1) pressed->z = 1;
