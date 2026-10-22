@@ -29,12 +29,50 @@ void joypad_utility_init(void)
     drive_rumble(false);
 }
 
+static int s_layout = LAYOUT_CLASSIC;
+static bool s_gameplay;
+
+void joypad_set_layout(int layout) { s_layout = (layout >= 0 && layout < LAYOUT_COUNT) ? layout : LAYOUT_CLASSIC; }
+int  joypad_get_layout(void) { return s_layout; }
+void joypad_set_gameplay(bool on)
+{
+#ifdef HLE_AUTOPLAY
+    if (on != s_gameplay) debugf("[pad] gameplay %d (layout %d)\n", on, s_layout);
+#endif
+    s_gameplay = on;
+}
+const char* joypad_layout_name(int layout)
+{
+    static const char *N[LAYOUT_COUNT] = { "Classic", "A/B Swapped", "Skills on C" };
+    return N[(layout >= 0 && layout < LAYOUT_COUNT) ? layout : 0];
+}
+
+// The game reads the classic buttons: a layout swaps the physical ones into them
+static void remap(joypad_buttons_t *b)
+{
+    joypad_buttons_t o = *b;
+    if (s_layout == LAYOUT_SWAPPED) { b->a = o.b; b->b = o.a; }
+    if (s_layout == LAYOUT_SKILLS_ON_C) {
+        b->d_up = o.c_up; b->d_down = o.c_down; b->d_left = o.c_left; b->d_right = o.c_right;
+        b->c_up = o.d_up; b->c_down = o.d_down; b->c_left = o.d_left; b->c_right = o.d_right;
+    }
+}
+
+#ifdef HLE_AUTOPLAY
+void joypad_debug_remap(joypad_buttons_t *b) { remap(b); }    // test aid
+#endif
+
 void joypad_update(void)
 {
     joypad_poll();
     joypad = joypad_get_inputs(JOYPAD_PORT_1);
     btn = joypad_get_buttons_pressed(JOYPAD_PORT_1);
     rel = joypad_get_buttons_released(JOYPAD_PORT_1);
+    if (s_gameplay && s_layout != LAYOUT_CLASSIC) {
+        joypad_buttons_t held = joypad.btn;     // a packed member: remapped through a copy
+        remap(&held); joypad.btn = held;
+        remap(&btn); remap(&rel);
+    }
 #ifdef HLE_AUTOPLAY
     extern void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed);
     hle_autoplay(&joypad, &btn);

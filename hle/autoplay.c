@@ -5,8 +5,9 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_SHRINE)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS)
 #include "camera_controller.h"
+#include "joypad_utility.h"
 #include "character_skin.h"
 #include <math.h>
 #include "character.h"
@@ -319,6 +320,39 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         if (step >= 9 && t > 200 && (t - 200) % 60 == 30)
             debugf("[skin] now %d (%s) at %d | cam %.1f,%.1f,%.1f -> %.1f,%.1f,%.1f scale %.3f\n", character_skin_get(), character_skin_name(character_skin_get()), frame,
                    (double)camPos.v[0], (double)camPos.v[1], (double)camPos.v[2], (double)camTarget.v[0], (double)camTarget.v[1], (double)camTarget.v[2], (double)character.scale[0]);
+        return;
+    }
+#endif
+#ifdef HLE_TEST_CONTROLS
+    // Title > Settings > Controls: Right (A/B Swapped), Right (Skills on C), Down, Right (camera 4);
+    // the remap of each layout; then B back
+    {
+        extern void joypad_debug_remap(joypad_buttons_t *b);
+        static int phase = 0, t0 = 0, step = 0;
+        int t = frame - t0;
+        if (phase == 0) {
+            if (menu_controller_is_active()) { phase = 1; t0 = frame; }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 1) {
+            static const char seq[] = "DDDDADDA.R.R.DR";
+            if (t >= 30 && seq[step]) {
+                char c = seq[step];
+                if (c == 'D') pressed->d_down = 1; else if (c == 'R') pressed->d_right = 1; else if (c == 'A') { pressed->a = 1; in->btn.a = 1; }
+                if (c == '.') debugf("[ctl] layout %d (%s), camera %d\n", joypad_get_layout(), joypad_layout_name(joypad_get_layout()), camera_get_speed());
+                step++; t0 = frame;
+            }
+            if (!seq[step] && t == 30) {
+                debugf("[ctl] final: layout %d camera %d sens %.1f\n", joypad_get_layout(), camera_get_speed(), (double)cameraSensitivity);
+                for (int l = 0; l < LAYOUT_COUNT; l++) {
+                    joypad_set_layout(l);
+                    joypad_buttons_t b = { 0 }; b.a = 1; b.c_up = 1;
+                    joypad_debug_remap(&b);
+                    debugf("[ctl] layout %d: physical A+C-up reads a%d b%d c_up%d d_up%d\n", l, b.a, b.b, b.c_up, b.d_up);
+                }
+                joypad_set_layout(LAYOUT_SKILLS_ON_C);
+                phase = 2;
+            }
+        }
         return;
     }
 #endif

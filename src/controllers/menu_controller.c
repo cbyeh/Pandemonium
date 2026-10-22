@@ -13,6 +13,7 @@
 
 #include "../utilities/globals.h"
 #include "../utilities/video_layout.h"
+#include "camera_controller.h"
 
 // Menu state
 static MenuState currentMenu = MENU_MAIN;
@@ -155,7 +156,7 @@ static int get_menu_option_count(MenuState menu)
         case MENU_BONUS:     return MENU_BONUS_COUNT;
         case MENU_TOWER:     return MENU_TOWER_COUNT;
         case MENU_SHRINE:    return MENU_SHRINE_COUNT;
-        case MENU_CONTROLS:  return 1;
+        case MENU_CONTROLS:  return 2;    // Layout, Camera speed (B goes back)
         case MENU_CREDITS:   return 1;
         default:             return 1;
     }
@@ -676,9 +677,14 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             selectedOption = parentSelectedOption;
         }
     } else if (currentMenu == MENU_CONTROLS) {
-        if (aJustPressed || bJustPressed) {
+        if (bJustPressed) {
             currentMenu = parentMenu;
             selectedOption = parentSelectedOption;
+        } else if (aJustPressed || leftJustPressed || rightJustPressed) {
+            int d = leftJustPressed ? -1 : 1;
+            if (selectedOption == 0) joypad_set_layout((joypad_get_layout() + d + LAYOUT_COUNT) % LAYOUT_COUNT);
+            else camera_set_speed((camera_get_speed() - 1 + d + 5) % 5 + 1);
+            (void)save_controller_save_settings();
         }
     } else if (currentMenu == MENU_CREDITS) {
         if (aJustPressed || bJustPressed) {
@@ -1434,30 +1440,38 @@ void menu_controller_draw(void)
             .wrap = WRAP_WORD,
         }, FONT_UNBALANCED, x, y + titleYOffset, "CONTROLS");
 
-        y += (lineHeight * 3) + titleYOffset;
+        y += (lineHeight * 2) + titleYOffset;
+
+        // The two settings (Left/Right or A to change), then what each button does in that layout
+        for (int i = 0; i < 2; i++) {
+            char line[40];
+            if (i == 0) snprintf(line, sizeof line, "Layout: %s", joypad_layout_name(joypad_get_layout()));
+            else snprintf(line, sizeof line, "Camera speed: %d", camera_get_speed());
+            if (i == selectedOption) draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW - 20);
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
+                             FONT_UNBALANCED, x, y, "%s", line);
+            y += lineHeight + 2;
+        }
+        y += lineHeight + 4;
 
         const int listW = 150;
         const int listX = x + (contentW - listW) / 2 + 12;
+        int lay = joypad_get_layout();
+        const int step = lineHeight + 1;
 
         draw_icon_line(iconStick, listX, y, lineHeight, listW, "Move");
-        y += lineHeight + 6;
-
-        draw_icon_line(iconA, listX, y, lineHeight, listW, "Dodge / Interact");
-        y += lineHeight + 6;
-
-        draw_icon_line(iconB, listX, y, lineHeight, listW, "Attack");
-        y += lineHeight + 6;
-
+        y += step;
+        draw_icon_line(iconA, listX, y, lineHeight, listW, lay == LAYOUT_SWAPPED ? "Attack" : "Dodge / Interact");
+        y += step;
+        draw_icon_line(iconB, listX, y, lineHeight, listW, lay == LAYOUT_SWAPPED ? "Dodge / Interact" : "Attack");
+        y += step;
         draw_icon_line(iconZ, listX, y, lineHeight, listW, "Target");
-        y += lineHeight + 6;
-
+        y += step;
         draw_icon_line(iconStart, listX, y, lineHeight, listW, "Pause Menu");
-        y += lineHeight + 6;
-
-        draw_icon_line(iconCLeft, listX, y, lineHeight, listW, "Move Camera");
-        y += lineHeight + 6;
-
-        draw_icon_line(iconDpad, listX, y, lineHeight, listW, "Skills / Potion");
+        y += step;
+        draw_icon_line(iconCLeft, listX, y, lineHeight, listW, lay == LAYOUT_SKILLS_ON_C ? "Skills / Potion" : "Move Camera");
+        y += step;
+        draw_icon_line(iconDpad, listX, y, lineHeight, listW, lay == LAYOUT_SKILLS_ON_C ? "Move Camera" : "Skills / Potion");
     } else if (currentMenu == MENU_CREDITS) {
         rdpq_text_printf(&(rdpq_textparms_t){
             .align = ALIGN_CENTER,

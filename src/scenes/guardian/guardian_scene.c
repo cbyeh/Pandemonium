@@ -1629,6 +1629,10 @@ void scene_cutscene_update(void)
 }
 
 void scene_update(void) {
+    // The button layout applies while the player is in control (not in menus, cutscenes,
+    // the Tower's draft or the death screen, which read A and B as they are)
+    joypad_set_gameplay(gameState == GAME_STATE_PLAYING && !menu_controller_is_active() && cutsceneState == CUTSCENE_NONE
+                        && !s_towerDraft && character_get_state() != CHAR_STATE_DEAD);
 
     if (menu_controller_consume_action() == MENU_ACTION_QUIT_TO_TITLE) {
         cutscene_manager_clear_dialog();

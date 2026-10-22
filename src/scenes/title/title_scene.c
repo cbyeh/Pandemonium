@@ -466,6 +466,7 @@ static void title_scene_update_idle(void)
 
 void title_scene_update(void)
 {
+    joypad_set_gameplay(false);
     if (s_state == TITLE_STATE_INACTIVE || s_state == TITLE_STATE_DONE) {
         return;
     }

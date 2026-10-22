@@ -52,6 +52,8 @@ extern float cameraMinY;          // Minimum pitch angle
 extern float cameraMaxY;          // Maximum pitch angle
 extern float cameraLerpSpeed;     // Camera smoothing speed
 extern float cameraSensitivity;   // Camera rotation sensitivity
+void camera_set_speed(int level);   // 1-5
+int  camera_get_speed(void);
 
 extern float customCamRoll;
 

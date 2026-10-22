@@ -32,6 +32,16 @@ float cameraMinY = -1.4f;            // Minimum pitch angle (about -80 degrees)
 float cameraMaxY = 1.0f;             // Maximum pitch angle (about 57 degrees)
 float cameraLerpSpeed = 8.0f;        // Camera smoothing speed
 float cameraSensitivity = 2.0f;      // Camera rotation sensitivity
+static int s_cameraSpeed = 3;
+
+// Settings > Controls: camera speed 1-5 (3 is the original 2.0)
+void camera_set_speed(int level)
+{
+    static const float SENS[5] = { 1.2f, 1.6f, 2.0f, 2.6f, 3.2f };
+    s_cameraSpeed = level < 1 ? 1 : level > 5 ? 5 : level;
+    cameraSensitivity = SENS[s_cameraSpeed - 1];
+}
+int camera_get_speed(void) { return s_cameraSpeed; }
 
 T3DVec3 customCamPos;
 T3DVec3 customCamTarget;

@@ -16,4 +16,11 @@ void joypad_rumble_stop(void);
 void joypad_set_rumble_enabled(bool enabled);
 bool joypad_is_rumble_enabled(void);
 
+// Button layouts, applied in gameplay only (the menus keep A to confirm, B to go back)
+enum { LAYOUT_CLASSIC, LAYOUT_SWAPPED, LAYOUT_SKILLS_ON_C, LAYOUT_COUNT };
+void joypad_set_layout(int layout);
+int  joypad_get_layout(void);
+const char* joypad_layout_name(int layout);
+void joypad_set_gameplay(bool on);     // the scene says, each frame, whether the player is in control
+
 #endif

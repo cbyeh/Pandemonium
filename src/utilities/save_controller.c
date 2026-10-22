@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "save_controller.h"
+#include "camera_controller.h"
 #include "audio_controller.h"
 #include "joypad_utility.h"
 #include "globals.h"
@@ -383,6 +384,8 @@ bool save_controller_load_settings(void) {
     character_skin_set_hood_up(saved_hood_up(d));
     // a skin this slot hasn't unlocked (an older save, before the unlocks) falls back to the Knight
     character_skin_set(save_progress_skin_unlocked(d, saved_skin(d)) ? saved_skin(d) : SKIN_KNIGHT);
+    joypad_set_layout(d->_pad[20]);                         // 0 (older saves): classic
+    camera_set_speed(d->_pad[21] ? d->_pad[21] : 3);        // 0 (older saves): the original speed
     return true;
 }
 
@@ -403,6 +406,8 @@ bool save_controller_save_settings(void) {
     save_set_skills_enabled(d, character_skills_enabled());
     d->_pad[5] = (uint8_t)character_skin_get();
     d->_pad[6] = character_skin_hood_up() ? 0 : 1;
+    d->_pad[20] = (uint8_t)joypad_get_layout();
+    d->_pad[21] = (uint8_t)camera_get_speed();
 
     d->checksum     = compute_slot_checksum(d);
 
