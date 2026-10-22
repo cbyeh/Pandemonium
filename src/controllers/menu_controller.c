@@ -85,7 +85,7 @@ static const char* settingsMenuOptions[MENU_SETTINGS_COUNT] = {
     "Video",
     "Controls",
     "Skills: %s",
-    "Skin: < %s >",
+    "Skin: %s",           // Left/Right (or A) steps through them; no arrows, so the longest name fits the box
     "Hood: %s",
     "Back",
 };

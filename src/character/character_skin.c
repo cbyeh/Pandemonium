@@ -507,8 +507,11 @@ static void acc_berserk_helm(SkinColor steel)
 
 static void acc_dragonslayer(SkinColor iron)
 {
-    // A slab of raw iron: the stock sword runs from the pommel (1.36, 0.65, 0.2) to the
-    // tip (-8.15, 1.05, -1.0) in the hand's space, its flat across y
+    // The Dragonslayer: a broad straight slab, silver bevelled edges round a black core on
+    // both faces, a chisel point (the black ends in a chevron short of it), a crescent guard,
+    // a wrapped grip and a pommel cap. The stock sword runs from the pommel (1.36, 0.65, 0.2)
+    // to the tip (-8.15, 1.05, -1.0) in the hand's space, its flat across y; this one ends
+    // within the sword's hit length (the same for every skin).
     float o[3] = { 0.2f, 0.66f, 0.15f }, u[3] = { -9.5f, 0.4f, -1.2f };
     float ul = sqrtf(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
     for (int i = 0; i < 3; i++) u[i] /= ul;
@@ -516,22 +519,50 @@ static void acc_dragonslayer(SkinColor iron)
     float wl = sqrtf(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
     for (int i = 0; i < 3; i++) w[i] /= wl;
     float t[3] = { u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0] };
+    // a point at (along, across, thickness) in the blade's frame
+    #define BP(out, s0, s1, s2) for (int m_ = 0; m_ < 3; m_++) (out)[m_] = (o[m_] + u[m_] * (s0) + w[m_] * (s1) + t[m_] * (s2)) * GLTF
     // oriented box: along u from a to b, half widths hw (w) and ht (t)
     #define OBOX(a, b, hw, ht, col) do { \
         float v[8][3]; \
-        for (int k = 0; k < 8; k++) { float s0 = (k & 1) ? (b) : (a), s1 = (k & 2) ? (hw) : -(hw), s2 = (k & 4) ? (ht) : -(ht); \
-            for (int m = 0; m < 3; m++) v[k][m] = (o[m] + u[m] * s0 + w[m] * s1 + t[m] * s2) * GLTF; } \
+        for (int k = 0; k < 8; k++) { BP(v[k], (k & 1) ? (b) : (a), (k & 2) ? (hw) : -(hw), (k & 4) ? (ht) : -(ht)); } \
         static const int F[6][4] = { {0,1,3,2}, {4,6,7,5}, {0,4,5,1}, {2,3,7,6}, {0,2,6,4}, {1,5,7,3} }; \
         for (int f = 0; f < 6; f++) proc_mesh_quad(v[F[f][0]], v[F[f][1]], v[F[f][2]], v[F[f][3]], col, false); } while (0)
-    SkinColor edge = { (uint8_t)fminf(255, iron.r * 1.5f), (uint8_t)fminf(255, iron.g * 1.5f), (uint8_t)fminf(255, iron.b * 1.5f), 1 };
-    // Big but not absurd: a broad blade about 15% longer than the stock sword, ending within
-    // the sword's hit length (the same for every skin) so it never looks longer than it reaches
-    OBOX(-0.8f, 0.7f, 0.14f, 0.14f, proc_rgb(92, 66, 42));    // wrapped grip
-    OBOX(0.7f, 1.0f, 0.45f, 0.18f, rgb(iron));                // squat guard
-    OBOX(1.0f, 8.2f, 0.5f, 0.1f, rgb(iron));                  // the slab
-    OBOX(1.0f, 8.2f, 0.55f, 0.035f, rgb(edge));               // its bevelled edges
-    OBOX(7.7f, 8.9f, 0.36f, 0.09f, rgb(iron));                // the blunt, angled tip
+    const uint32_t steel = proc_rgb(178, 178, 176), core = proc_rgb(22, 22, 24), dark = proc_rgb(40, 30, 26);
+    (void)iron;
+    OBOX(-1.15f, -0.8f, 0.2f, 0.2f, steel);                    // pommel cap
+    OBOX(-0.8f, 0.7f, 0.14f, 0.14f, dark);                     // wrapped grip
+    OBOX(0.7f, 1.0f, 0.62f, 0.2f, steel);                      // crescent guard: a broad bar
+    OBOX(0.72f, 0.98f, 0.42f, 0.24f, steel);                   //   swelling at the middle
+
+    // The blade: L long to the shoulder of the point, P to its tip; HW wide, TH thick at the
+    // spine, the edges bevelled down to a third of it
+    const float S0 = 1.0f, L = 7.6f, P = 8.9f, HW = 0.52f, CW = 0.30f, TH = 0.11f, ET = TH * 0.35f;
+    for (int f = -1; f <= 1; f += 2) {          // each face
+        float a0[3], a1[3], b0[3], b1[3], c0[3], c1[3], tip[3], ch[3];
+        for (int sd = -1; sd <= 1; sd += 2) {   // the silver bevels, either side of the core
+            BP(a0, S0, sd * HW, f * ET); BP(a1, L, sd * HW, f * ET);
+            BP(b0, S0, sd * CW, f * TH); BP(b1, L, sd * CW, f * TH);
+            proc_mesh_quad(a0, a1, b1, b0, steel, false);
+            BP(c0, L, sd * HW, f * ET); BP(tip, P, 0, 0); BP(ch, L + 0.75f, 0, f * TH);
+            BP(c1, L, sd * CW, f * TH);
+            proc_mesh_quad(c0, tip, ch, c1, steel, false);     // the point's bevel
+        }
+        // the black core, a hair proud of the face, ending in a chevron
+        BP(b0, S0, -CW, f * (TH + 0.01f)); BP(b1, L, -CW, f * (TH + 0.01f));
+        BP(c0, L, CW, f * (TH + 0.01f));   BP(c1, S0, CW, f * (TH + 0.01f));
+        proc_mesh_quad(b0, b1, c0, c1, core, false);
+        BP(ch, L + 0.75f, 0, f * (TH + 0.01f));
+        proc_mesh_tri(b1, ch, c0, core, false);
+    }
+    for (int sd = -1; sd <= 1; sd += 2) {       // the edges themselves, and up to the point
+        float a0[3], a1[3], b0[3], b1[3], tip[3];
+        BP(a0, S0, sd * HW, ET); BP(a1, L, sd * HW, ET); BP(b0, S0, sd * HW, -ET); BP(b1, L, sd * HW, -ET);
+        proc_mesh_quad(a0, a1, b1, b0, steel, false);
+        BP(tip, P, 0, 0);
+        proc_mesh_tri(a1, tip, b1, steel, false);
+    }
     #undef OBOX
+    #undef BP
 }
 
 static void acc_build(void)
