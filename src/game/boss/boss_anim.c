@@ -66,6 +66,11 @@ void boss_anim_init(Boss* boss) {
     }
 }
 
+// The aerial barrage's breathing pose (boss_anim_breathe)
+static T3DSkeleton s_breathSkel;
+static bool s_breathReady;
+static float s_breathK = -1.0f;     // < 0: not breathing
+
 void boss_anim_request(Boss* boss, BossAnimState target, float start_time, bool force_restart, BossAnimPriority priority) {
     if (!boss || !boss->animations) return;
     
@@ -140,7 +145,9 @@ void boss_anim_request(Boss* boss, BossAnimState target, float start_time, bool 
         t3d_skeleton_reset(skeleton);
         t3d_anim_attach(anims[boss->currentAnimation], skeleton);
         t3d_anim_set_playing(anims[boss->currentAnimation], true);
+        t3d_anim_set_speed(anims[boss->currentAnimation], 1.0f);    // boss_anim_breathe holds its clip
         t3d_anim_set_time(anims[boss->currentAnimation], start_time);
+        s_breathK = -1.0f;
     }
     
     // Set lock frames based on priority (critical animations lock longer)
@@ -149,6 +156,25 @@ void boss_anim_request(Boss* boss, BossAnimState target, float start_time, bool 
     } else {
         boss->lockFrames = 3;   // Normal lock
     }
+}
+
+// The aerial barrage's levitation pose breathes between two poses of one clip, the far one
+// cached once (seeking the streamed clip every frame cost the frame 10 ms)
+
+void boss_anim_breathe(Boss* boss, int anim, float t0, float t1, float k)
+{
+    T3DAnim* pose = ((T3DAnim**)boss->animations)[anim];
+    T3DSkeleton* skel = (T3DSkeleton*)boss->skeleton;
+    if (s_breathK < 0.0f) {
+        if (!s_breathReady) { s_breathSkel = t3d_skeleton_clone(skel, false); s_breathReady = true; }
+        t3d_anim_attach(pose, &s_breathSkel);
+        t3d_anim_set_time(pose, t1);
+        t3d_anim_update(pose, 0.0f);
+        t3d_anim_attach(pose, skel);
+        t3d_anim_set_time(pose, t0);
+        t3d_anim_set_speed(pose, 0.0f);     // held at t0; boss_anim_request restores the speed
+    }
+    s_breathK = k;
 }
 
 void boss_anim_update(Boss* boss) {
@@ -277,6 +303,12 @@ void boss_anim_update(Boss* boss) {
         }
     }
     
+    if (s_breathK >= 0.0f) {
+        if (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE && boss->currentAnimation == BOSS_ANIM_PHASE2_REVEAL)
+            t3d_skeleton_blend((T3DSkeleton*)boss->skeleton, (T3DSkeleton*)boss->skeleton, &s_breathSkel, s_breathK);
+        else s_breathK = -1.0f;
+    }
+
     // Update main skeleton (ONLY the main skeleton, never the blend skeleton)
     // Only update if we have a valid current animation
     // We ensure the animation is attached in boss_anim_request, so we can safely update here

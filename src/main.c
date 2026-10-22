@@ -125,6 +125,9 @@ int main(void)
 
     for (uint64_t frame = 0;; ++frame)
     {
+#ifdef HLE_LOG_FPS
+        uint32_t pt0 = TICKS_READ(), pt1 = pt0, pt2 = pt0;   // test aid: where a frame goes
+#endif
         // Update time + input first.
         game_time_update();
         joypad_update();
@@ -152,6 +155,9 @@ int main(void)
         } else {
             rdpq_attach(display_get(), display_get_zbuf());
         }
+#ifdef HLE_LOG_FPS
+        pt1 = TICKS_READ();
+#endif
 
         // ===== UPDATE LOOP =====
         mixer_try_play();
@@ -211,6 +217,9 @@ int main(void)
         isTitle = activeScene == SCENE_CONTROLLER_SCENE_TITLE;
         isGuardian = activeScene == SCENE_CONTROLLER_SCENE_GUARDIAN;
 
+#ifdef HLE_LOG_FPS
+        pt2 = TICKS_READ();
+#endif
         // ===== DRAW LOOP =====
         if (!devMenuOpen || cameraNeedsUpdate || isOpeningCredits) {
             scene_controller_draw(&viewport);
@@ -293,6 +302,14 @@ int main(void)
         {
             dev_frame_update();
         }
+#ifdef HLE_LOG_FPS
+        {   // ms per frame: blocked for a free framebuffer (the GPU is behind), update, draw submission
+            static uint32_t wait, upd, drw, n;
+            uint32_t pt3 = TICKS_READ();
+            wait += pt1 - pt0; upd += pt2 - pt1; drw += pt3 - pt2;
+            if (++n == 120) { debugf("[frame] wait %.1f update %.1f draw %.1f ms\n", TICKS_TO_US(wait / n) / 1000.0, TICKS_TO_US(upd / n) / 1000.0, TICKS_TO_US(drw / n) / 1000.0); wait = upd = drw = n = 0; }
+        }
+#endif
 
         if (frame >= 30)
         {

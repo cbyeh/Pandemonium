@@ -2098,8 +2098,14 @@ static void scene_draw_video_trigger(T3DViewport *vp)
     debug_draw_aabb(vp, &mn, &mx, color);
 }
 
+#ifdef HLE_LOG_FPS
+static uint32_t s_prof[8];
+#endif
 void scene_draw(T3DViewport *viewport)
 {
+#ifdef HLE_LOG_FPS
+    s_prof[0] = TICKS_READ();
+#endif
 
     if(gameState == GAME_STATE_VIDEO)
         return;
@@ -2174,6 +2180,10 @@ void scene_draw(T3DViewport *viewport)
     t3d_matrix_set(roomFloorMatrix, true);
     rspq_block_run(roomFloorDpl);
 
+#ifdef HLE_LOG_FPS
+    s_prof[1] = TICKS_READ();
+#endif
+
     rdpq_mode_zbuf(false, false);
 
     // projection effects
@@ -2196,6 +2206,10 @@ void scene_draw(T3DViewport *viewport)
     t3d_matrix_set(pillarsFrontMatrix, true);
     rspq_block_run(pillarsFrontDpl);
 
+#ifdef HLE_LOG_FPS
+    s_prof[2] = TICKS_READ();
+#endif
+
     rdpq_mode_zbuf(false, false);
 
     // floor glow
@@ -2214,11 +2228,19 @@ void scene_draw(T3DViewport *viewport)
 
     // Draw characters
     character_draw();
+
+#ifdef HLE_LOG_FPS
+    s_prof[3] = TICKS_READ();
+#endif
     if (g_boss) {
         boss_draw(g_boss);
     }
 
     msa_draw_visuals(viewport); // multi sword attack (Guardian Unbound)
+
+#ifdef HLE_LOG_FPS
+    s_prof[4] = TICKS_READ();
+#endif
     //boulder_hazard_draw(viewport); // close-range ground boulders
 
     // Fog door (transparent): depth test ON, depth write OFF so it can be drawn late.
@@ -2239,6 +2261,10 @@ void scene_draw(T3DViewport *viewport)
 
     t3d_matrix_pop(1);
 
+#ifdef HLE_LOG_FPS
+    s_prof[5] = TICKS_READ();
+#endif
+
     // Screen-space ribbon trails, drawn right after 3D so they feel "in world"
     sword_trail_draw_all(viewport);
 
@@ -2252,6 +2278,10 @@ void scene_draw(T3DViewport *viewport)
 
     // Player skill waves, arches, pillars and bursts
     skill_fx_draw();
+
+#ifdef HLE_LOG_FPS
+    s_prof[6] = TICKS_READ();
+#endif
 
     // ===== DRAW 2D =====
     // Post-boss interaction prompt ("A") above the defeated boss when close enough to interact
@@ -2480,7 +2510,20 @@ void scene_draw(T3DViewport *viewport)
 
 
     //msa_draw_debug(viewport);
-
+#ifdef HLE_LOG_FPS
+    {   // test aid: CPU ms per draw stage (submission blocks when the RSP queue is full)
+        static const char *N[7] = { "env", "shadow+room", "knight", "boss+msa", "door+chains", "fx", "2d" };
+        static uint32_t acc[8], n;
+        s_prof[7] = TICKS_READ();
+        for (int i = 0; i < 7; i++) acc[i] += s_prof[i + 1] - s_prof[i];
+        if (++n == 120) {
+            debugf("[draw]");
+            for (int i = 0; i < 7; i++) debugf(" %s %.2f", N[i], TICKS_TO_US(acc[i] / n) / 1000.0);
+            debugf("\n");
+            memset(acc, 0, sizeof acc); n = 0;
+        }
+    }
+#endif
 }
 
 void scene_delete_environment(void)

@@ -7,6 +7,7 @@
  */
 
 #include "boss_attacks.h"
+#include "boss_anim.h"
 #include "boss.h"
 
 #include <math.h>
@@ -1235,8 +1236,8 @@ static void boss_attacks_handle_aerial_sword_barrage(Boss* boss, float dt) {
 
     // Hold the levitation pose, breathing slowly through a stretch of it
     if (boss->currentAnimation == BOSS_ANIM_PHASE2_REVEAL && boss->animations) {
-        T3DAnim *pose = ((T3DAnim**)boss->animations)[BOSS_ANIM_PHASE2_REVEAL];
-        t3d_anim_set_time(pose, AERIAL_POSE_TIME + 0.6f * (1.0f - cosf(boss->stateTimer * 1.3f)));
+        boss_anim_breathe(boss, BOSS_ANIM_PHASE2_REVEAL, AERIAL_POSE_TIME, AERIAL_POSE_TIME + 1.2f,
+                          0.5f * (1.0f - cosf(boss->stateTimer * 1.3f)));
     }
     
     // Phase timings
