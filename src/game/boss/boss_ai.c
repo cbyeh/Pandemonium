@@ -799,7 +799,7 @@ void boss_ai_update(Boss* boss, BossIntent* out_intent) {
         boss->currentSpeed = 0.0f;
         out_intent->anim_req = true;
         out_intent->anim = BOSS_ANIM_KNEEL;  // Stagger animation
-        out_intent->priority = BOSS_ANIM_PRIORITY_HIGH;
+        out_intent->priority = BOSS_ANIM_PRIORITY_CRITICAL;   // over a swing's animation lock
         out_intent->force_restart = true;
         return;
     }
@@ -1387,7 +1387,7 @@ void boss_ai_update(Boss* boss, BossIntent* out_intent) {
                 break;
             case BOSS_STATE_STAGGER:
                 out_intent->anim = BOSS_ANIM_KNEEL;
-                out_intent->priority = BOSS_ANIM_PRIORITY_HIGH;
+                out_intent->priority = BOSS_ANIM_PRIORITY_CRITICAL;
                 break;
             case BOSS_STATE_DEAD:
                 // Play collapse once (non-looping) when dead.

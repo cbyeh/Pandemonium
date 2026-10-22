@@ -509,7 +509,7 @@ static inline void boss_update_shadow_mat(Boss* boss)
 // Health per fight without skills; the D-pad skills double it. The bonus bosses are
 // sized to the same difficulty as the Guardian's two phases together (measured damage
 // against a dummy + a binomial dodge model): they hit softer but more often.
-#define POISE_HEALTH_FRAC   0.2f     // stagger meter: this share of max health fills it
+#define POISE_DAMAGE        40.0f    // stagger meter: this much damage fills it
 #define STAGGER_DAMAGE_MULT 1.3f
 #define GUARDIAN_STAGGER_S  2.0f
 
@@ -538,10 +538,19 @@ static void boss_sync_max_health(Boss* boss)
     boss->maxHealth = target;
 }
 
+#ifdef HLE_STAGGER_SHOW
+static bool s_staggerShowFrozen;
+#endif
 // The stagger meter drains once the player lets up; full, the boss staggers as soon as it can
 static void boss_poise_update(Boss* boss, float dt)
 {
     if (boss->staggerT > 0.0f) {
+#ifdef HLE_STAGGER_SHOW   // test aid: the boss freezes this far into its first stagger (screenshots of the pose)
+        { static float in; in += dt; if (in > HLE_STAGGER_SHOW) { s_staggerShowFrozen = true; return; } }
+#endif
+#ifdef HLE_AUTOPLAY
+        { static float lt; lt += dt; if (lt > 0.25f) { lt = 0.0f; debugf("[stagger] t %.2f state %d anim %d pending %u\n", (double)boss->staggerT, boss->state, boss->currentAnimation, boss->pendingRequests); } }
+#endif
         boss->staggerT -= dt;
         if (boss->staggerT <= 0.0f) { boss->staggerT = 0.0f; boss->poise = 0.0f; }
         return;
@@ -558,7 +567,10 @@ static void boss_poise_update(Boss* boss, float dt)
         }
         return;
     }
-    if (boss->poiseIdleT > 2.0f) boss->poise = fmaxf(0.0f, boss->poise - 0.3f * dt);
+    if (boss->poiseIdleT > 3.0f) boss->poise = fmaxf(0.0f, boss->poise - 0.15f * dt);
+#ifdef HLE_AUTOPLAY
+    { static float logT; logT += dt; if (logT > 5.0f) { logT = 0.0f; debugf("[stagger] boss %d meter %.2f hp %.0f/%.0f\n", boss->phaseIndex, (double)boss->poise, (double)boss->health, (double)boss->maxHealth); } }
+#endif
 }
 
 bool boss_try_stagger(Boss* boss)
@@ -584,6 +596,9 @@ void boss_update(Boss* boss)
 {
     if (!boss) return;
     boss_sync_max_health(boss);
+#ifdef HLE_STAGGER_SHOW
+    if (s_staggerShowFrozen) return;
+#endif
     boss_poise_update(boss, deltaTime);
 #ifdef HLE_TEST_FREEZE_BOSS
     if (boss->mode == BOSS_MODE_COMBAT) return;     // test aid: keep the boss out of the way
@@ -734,8 +749,8 @@ void boss_apply_damage(Boss* boss, float amount)
     if (boss->staggerT > 0.0f) amount *= STAGGER_DAMAGE_MULT;     // staggered: hits land harder
     boss->health -= amount;
     if (boss->health < 0.0f) boss->health = 0.0f;
-    if (boss->staggerT <= 0.0f) {      // the stagger meter: about a fifth of its health, dealt without letting up
-        boss->poise = fminf(1.0f, boss->poise + amount / (boss->maxHealth * POISE_HEALTH_FRAC));
+    if (boss->staggerT <= 0.0f) {      // the stagger meter: about ten sword hits, or three charged ones, without letting up
+        boss->poise = fminf(1.0f, boss->poise + amount / POISE_DAMAGE);
         boss->poiseIdleT = 0.0f;
     }
 

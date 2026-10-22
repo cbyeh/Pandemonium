@@ -568,6 +568,17 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (boss->phaseIndex == 2 && boss->mode == BOSS_MODE_COMBAT) { phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
             else if (frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 4) {
+#ifdef HLE_DUMMY_STRIKE   // and fight back: locked on, walk in, swing (the stagger meter, hit-stop)
+            { static int k; k++;
+              if (k == 1) pressed->z = 1;
+              in->btn.z = 1;
+              float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2];
+              if (sqrtf(dx * dx + dz * dz) > 40.0f) in->stick_y = 70;
+              if (k % 24 == 0) { pressed->b = 1; in->btn.b = 1; } }
+#endif
+#ifdef HLE_DUMMY_ROLL     // roll every 0.7 s: some catch a blow right at the start (a perfect dodge)
+            { static int k; if (++k % 42 == 0) { pressed->a = 1; in->btn.a = 1; } }
+#endif
             float prev = tm;
             tm += deltaTime;
             if ((int)(tm / 30.0f) != (int)(prev / 30.0f))
