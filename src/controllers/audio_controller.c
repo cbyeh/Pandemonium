@@ -412,6 +412,9 @@ void audio_play_scene_sfx_dist(int sceneSfxIndex, float baseVolume, float distan
     if (distance < 0.0f) distance = 0.0f;
 
     SfxSlot *slot = sfx_find_free_slot();
+#ifdef HLE_LOG_SFX
+    debugf("[sfx] %d%s\n", sceneSfxIndex, slot ? "" : " (no free channel)");
+#endif
     if (!slot) return;
 
     slot->inUse = true;

@@ -960,6 +960,7 @@ static inline void try_start_roll(const joypad_buttons_t* buttons, const StickIn
     characterState = CHAR_STATE_ROLLING;
     actionTimer = 0.0f;
     s_perfectThisRoll = false;
+    audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.45f, 0.0f);
 
     // Shorten roll when moving so we return to locomotion sooner (prevents long slide)
     float mag = stick ? stick->magnitude : 0.0f;
@@ -2004,6 +2005,7 @@ static inline void start_knockdown_breakaway_roll(void)
     characterState = CHAR_STATE_ROLLING;
     actionTimer = 0.0f;
     s_perfectThisRoll = false;
+    audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.45f, 0.0f);
 
     // Breakaway roll duration: pick whichever feels right.
     // If you want it snappier, use ROLL_DURATION_MOVING.
@@ -3317,6 +3319,7 @@ void character_apply_damage(float amount)
 #endif
 
     joypad_rumble_pulse_seconds(1.0f);
+    audio_play_scene_sfx_dist(SCENE1_SFX_ARMOR_CLANK, amount >= 20.0f ? 0.8f : 0.5f, 0.0f);   // the armour takes it
     if (amount >= 20.0f) game_time_hitstop(0.07f);     // a heavy blow taken
 
     if (character.health <= 0.0f) {

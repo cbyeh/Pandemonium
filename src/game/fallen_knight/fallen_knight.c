@@ -62,6 +62,7 @@ static struct {
     float groundY, velY;
     float moveX, moveZ;     // roll / jump drift
     float cdCleave, cdHalfmoon, cdMoonblade, cdRoll;
+    bool enraged;           // the war cry at half health
 } s;
 
 // ---- Helpers ----
@@ -204,6 +205,7 @@ void fallen_knight_begin(Boss* boss)
     boss->pos[1] = s.groundY + FK_DROP_HEIGHT;
     s.velY = 0.0f;
     s.cdCleave = 5.0f; s.cdHalfmoon = 12.0f; s.cdMoonblade = 9.0f; s.cdRoll = 0.0f;
+    s.enraged = false;
     enter(FK_INTRO);
 }
 
@@ -345,6 +347,14 @@ void fallen_knight_update(Boss* b, float dt)
         b->pos[1] = s.groundY;
     }
 
+
+    // Half health: a war cry and a crimson burst (the fight's turn, like the others' breaks)
+    if (!s.enraged && b->mode == BOSS_MODE_COMBAT && b->health > 0.0f && b->health <= b->maxHealth * 0.5f) {
+        s.enraged = true;
+        audio_play_scene_sfx_dist(SCENE1_SFX_WAR_CRY, 1.0f, 0.0f);
+        skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, b->rot[1]);
+        screen_shake_set_shake_mag(6.0f);
+    }
 
 #ifdef HLE_TEST_DUMMY
     { extern void hle_open_tick(bool, float); hle_open_tick((s.state == FK_CHASE || s.state == FK_RECOVER), dt); }   // test aid: measure the openings
