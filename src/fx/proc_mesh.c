@@ -277,34 +277,6 @@ void proc_mesh_corona(float radius, int tongues, float reach, int seed, bool hot
     }
 }
 
-void proc_mesh_chain_link(float len, float width, float thick, uint32_t rgba, bool unlit)
-{
-    // An oval ring in the xy plane, long along y, with a diamond cross-section
-    enum { NS = 8, NT = 4 };
-    float a = len * 0.5f - width, pts[NS][3], nrm[NS][3];
-    for (int i = 0; i < NS; i++) {
-        float t = 2.0f * T3D_PI * (i + 0.5f) / NS;
-        float cx = cosf(t), cy = sinf(t);
-        pts[i][0] = cx * width; pts[i][1] = cy * width + (cy >= 0 ? a : -a); pts[i][2] = 0;
-        nrm[i][0] = cx; nrm[i][1] = cy; nrm[i][2] = 0;
-    }
-    for (int i = 0; i < NS; i++) {
-        int i1 = (i + 1) % NS;
-        for (int k = 0; k < NT; k++) {
-            float c0 = cosf(T3D_PI * 0.5f * k), s0 = sinf(T3D_PI * 0.5f * k);
-            float c1 = cosf(T3D_PI * 0.5f * (k + 1)), s1 = sinf(T3D_PI * 0.5f * (k + 1));
-            float q[4][3];
-            for (int m = 0; m < 3; m++) {
-                q[0][m] = pts[i][m] + (nrm[i][m] * c0 + (m == 2) * s0) * thick;
-                q[1][m] = pts[i1][m] + (nrm[i1][m] * c0 + (m == 2) * s0) * thick;
-                q[2][m] = pts[i1][m] + (nrm[i1][m] * c1 + (m == 2) * s1) * thick;
-                q[3][m] = pts[i][m] + (nrm[i][m] * c1 + (m == 2) * s1) * thick;
-            }
-            proc_mesh_quad(q[0], q[1], q[2], q[3], rgba, unlit);
-        }
-    }
-}
-
 void proc_mesh_end(ProcMesh *out)
 {
     memset(out, 0, sizeof(*out));

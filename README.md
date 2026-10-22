@@ -49,7 +49,7 @@ Toggle in **Settings > Skills** (title screen). Bosses have double health with s
 - **Between floors:** you get a third of your health and a potion back, and you choose one of three **Boons**. One of the three is always a skill card: learn a D-pad skill, or upgrade one you've learned.
 - **Embers:** cleared floors earn Embers, kept when you die. Spend them at **Tower > Shrine** on permanent upgrades, which only apply in the Tower.
 
-Each save slot keeps its best floor and Embers. **Load Game** shows a slot's progress: story clear time, best Tower floor, Bonus bosses beaten and skins unlocked.
+Each save slot keeps its best floor and Embers. **Load Game** shows a slot's progress: story clear time, best Tower floor, Bonus bosses beaten and skins earned (of the two that unlock).
 
 ### New boss fights
 Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on the title screen.
@@ -159,6 +159,7 @@ Third-party audio added in this fork. Everything here is CC0 (public domain), so
 | 80 CC0 RPG SFX | Skill casts, potion, fire breath, the dark beam and nova, explosions, chains | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-rpg-sfx) |
 | Determined Pursuit (epic orchestra loop) | Shadowborn's theme | Emma_MA | [OpenGameArt](https://opengameart.org/content/determined-pursuit-epic-orchestra-loop) |
 | Boss Battle #2 [Symphonic Metal] | The Shackled Sun's theme | nene | [OpenGameArt](https://opengameart.org/content/boss-battle-2-symphonic-metal) |
+| Battle Theme A | The Fallen Warrior's theme | cynicmusic | [OpenGameArt](https://opengameart.org/content/battle-theme-a) |
 
 ## Licensing
 

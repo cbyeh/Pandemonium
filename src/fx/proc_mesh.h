@@ -37,8 +37,6 @@ void proc_mesh_eye_sphere(float radius, bool facingZ, bool hot);
 // Flame tongues round a disc of `radius` facing +z, up to `reach` long (see
 // proc_mesh_draw_glow: their dark tips fade out).
 void proc_mesh_corona(float radius, int tongues, float reach, int seed, bool hot);
-// One chain link: an oval ring in the xy plane, `len` long along y.
-void proc_mesh_chain_link(float len, float width, float thick, uint32_t rgba, bool unlit);
 void proc_mesh_end(ProcMesh *out);
 
 void proc_mesh_set_transform(ProcMesh *m, const float scale, const float rot[3], const float pos[3]);

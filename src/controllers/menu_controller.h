@@ -30,7 +30,7 @@ typedef enum {
 } MainMenuOption;
 
 typedef enum {
-    MENU_TITLE_CONTINUE,
+    MENU_TITLE_STORY,
     MENU_TITLE_BONUS,
     MENU_TITLE_TOWER,
     MENU_TITLE_LOAD_GAME,

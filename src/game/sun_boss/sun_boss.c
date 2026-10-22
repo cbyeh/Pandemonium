@@ -31,15 +31,15 @@ typedef enum { SB_INTRO, SB_HOVER, SB_GLARE, SB_CORONA, SB_DIVE, SB_REST, SB_LAS
 
 // ---- Shackles: iron chains hanging from the sun to weights that drag on the floor ----
 #define NCH        4               // chains
-#define NN         12              // rope nodes per chain (NN-1 links)
-#define SEG        5.0f            // node spacing
+#define NN         8               // rope nodes per chain (NN-1 links): few and heavy, as each costs CPU
+#define SEG        (55.0f / 7)     // node spacing
 #define CHAIN_LEN  (SEG * (NN - 1))
-#define LINK_LEN   7.0f
+#define LINK_LEN   10.5f
 #define NLINKS     (NCH * (NN - 1))
-#define BAND_A     18              // links in the collar round the eye
-#define BAND_B     13              // links in each side strap
-#define NBAND      (BAND_A + 2 * BAND_B)
 #define MAT_RING   3               // frames the RSP may still be reading
+#define LK_NS      6               // a link: a flat oval band of LK_NS segments (every other one turned
+#define LK_V       (LK_NS * 2)     // a quarter, so the chain reads round): outer and inner edge
+#define LK_PER_LOAD 5              // links per vertex load (60 of the 70-entry cache)
 
 typedef struct {
     float p[NN][3], q[NN][3];      // positions, previous positions (verlet)
@@ -54,9 +54,11 @@ typedef struct {
 static struct {
     bool ready;
     ProcMesh eye, eyeHot;
-    ProcMesh link, linkHot, weight;
+    ProcMesh weight;
     ProcMesh corona[2], coronaHot[2];   // two rings of flames, turning opposite ways
-    T3DMat4FP *chainMat;           // MAT_RING * (NLINKS + NCH + NBAND)
+    T3DMat4FP *chainMat;           // MAT_RING * (1 + NCH): the links' origin, then the weights
+    T3DVertPacked *linkVB[MAT_RING];
+    rspq_block_t *linkBlock[MAT_RING];  // draws its buffer's links: the topology never changes
     int matRing;
     Chain ch[NCH];
     bool chainsReady, weights;
@@ -74,6 +76,8 @@ static struct {
     float raysSpin;
 } s;
 
+
+static void links_init(void);
 
 static inline float clamp01(float x) { return x < 0.0f ? 0.0f : x > 1.0f ? 1.0f : x; }
 
@@ -120,8 +124,7 @@ void sun_boss_free(void)
     rspq_wait();
     proc_mesh_free(&s.eye);
     proc_mesh_free(&s.eyeHot);
-    proc_mesh_free(&s.link);
-    proc_mesh_free(&s.linkHot);
+    for (int i = 0; i < MAT_RING; i++) { rspq_block_free(s.linkBlock[i]); free_uncached(s.linkVB[i]); }
     proc_mesh_free(&s.weight);
     for (int i = 0; i < 2; i++) { proc_mesh_free(&s.corona[i]); proc_mesh_free(&s.coronaHot[i]); }
     free_uncached(s.chainMat);
@@ -133,8 +136,23 @@ void sun_boss_begin(Boss* boss)
     if (!s.ready) {
         proc_mesh_begin(); proc_mesh_eye_sphere(MESH_R, true, false); proc_mesh_end(&s.eye);
         proc_mesh_begin(); proc_mesh_eye_sphere(MESH_R, true, true);  proc_mesh_end(&s.eyeHot);
-        proc_mesh_begin(); proc_mesh_chain_link(LINK_LEN, 1.9f, 0.75f, proc_rgb(118, 100, 88), false); proc_mesh_end(&s.link);
-        proc_mesh_begin(); proc_mesh_chain_link(LINK_LEN, 1.9f, 0.75f, proc_rgb(255, 120, 40), true); proc_mesh_end(&s.linkHot);
+        links_init();
+        for (int i = 0; i < MAT_RING; i++) {
+            s.linkVB[i] = malloc_uncached(sizeof(T3DVertPacked) * NLINKS * LK_V / 2);
+            rspq_block_begin();
+            for (int l = 0; l < NLINKS; l += LK_PER_LOAD) {
+                int cnt = NLINKS - l < LK_PER_LOAD ? NLINKS - l : LK_PER_LOAD;
+                t3d_vert_load(&s.linkVB[i][l * LK_V / 2], 0, cnt * LK_V);
+                for (int j = 0; j < cnt; j++)
+                    for (int k = 0; k < LK_NS; k++) {
+                        int o = j * LK_V, k1 = (k + 1) % LK_NS;
+                        t3d_tri_draw(o + k * 2, o + k1 * 2, o + k1 * 2 + 1);
+                        t3d_tri_draw(o + k * 2, o + k1 * 2 + 1, o + k * 2 + 1);
+                    }
+                t3d_tri_sync();
+            }
+            s.linkBlock[i] = rspq_block_end();
+        }
         proc_mesh_begin();
         proc_mesh_frustum((float[3]){ 0, -3.0f, 0 }, 5.0f, 3.6f, 6.0f, 6, proc_rgb(70, 60, 56));
         proc_mesh_box((float[3]){ 0, 3.6f, 0 }, (float[3]){ 1.2f, 1.0f, 1.2f }, proc_rgb(95, 82, 74));
@@ -143,7 +161,7 @@ void sun_boss_begin(Boss* boss)
             proc_mesh_begin(); proc_mesh_corona(MESH_R, i ? 11 : 16, MESH_R * (i ? 0.45f : 0.8f), i, false); proc_mesh_end(&s.corona[i]);
             proc_mesh_begin(); proc_mesh_corona(MESH_R, i ? 11 : 16, MESH_R * (i ? 0.5f : 0.95f), i, true); proc_mesh_end(&s.coronaHot[i]);
         }
-        s.chainMat = malloc_uncached(sizeof(T3DMat4FP) * MAT_RING * (NLINKS + NCH + NBAND));
+        s.chainMat = malloc_uncached(sizeof(T3DMat4FP) * MAT_RING * (1 + NCH));
         s.ready = true;
     }
     boss->phaseIndex = SUN_BOSS_PHASE;
@@ -342,8 +360,8 @@ static void chains_step(const Boss *b, float h)
             for (int i = 2; i < NN; i++) {
                 float *p = c->p[i];
                 float dx = p[0] - b->pos[0], dy = p[1] - b->pos[1], dz = p[2] - b->pos[2];
-                float dl = sqrtf(dx * dx + dy * dy + dz * dz), rr = SUN_R + 1.5f;
-                if (dl < rr && dl > 1e-3f) { float kf = rr / dl; p[0] = b->pos[0] + dx * kf; p[1] = b->pos[1] + dy * kf; p[2] = b->pos[2] + dz * kf; }
+                float d2 = dx * dx + dy * dy + dz * dz, rr = SUN_R + 1.5f;
+                if (d2 < rr * rr && d2 > 1e-6f) { float kf = rr / sqrtf(d2); p[0] = b->pos[0] + dx * kf; p[1] = b->pos[1] + dy * kf; p[2] = b->pos[2] + dz * kf; }
                 float floorY = s.groundY + ((i == NN - 1 && s.weights) ? 3.0f : 0.9f);
                 if (p[1] < floorY) {   // on the floor: friction (the weights barely slide)
                     p[1] = floorY;
@@ -366,7 +384,7 @@ static void chain_pose(const Boss *b, Chain *c, float dx, float dz, float al, bo
         c->kt[i][0] = r[0] + dx * sinf(al) * d;
         c->kt[i][1] = r[1] + cosf(al) * d;
         c->kt[i][2] = r[2] + dz * sinf(al) * d;
-        if (flat) c->kt[i][1] += (s.groundY + 1.0f - c->kt[i][1]) * clamp01(i / 3.0f);
+        if (flat) c->kt[i][1] += (s.groundY + 1.0f - c->kt[i][1]) * clamp01(i / 2.0f);
     }
 }
 
@@ -614,11 +632,36 @@ void sun_boss_update(Boss* b, float dt)
     }
     b->rot[0] = b->rot[2] = 0.0f;
 
-    if (dt > 0.0f) { float h = fminf(dt, 0.05f) * 0.5f; chains_step(b, h); chains_step(b, h); }
+    if (dt > 0.0f) chains_step(b, fminf(dt, 0.04f));     // one step a frame: two cost 2 ms
 }
 
-// Each link sits between two rope nodes, every other one turned a quarter
-static void link_matrix(T3DMat4FP *out, const float a[3], const float b[3], bool twist, float scale)
+// ---- Links: every link of every chain in one vertex buffer a frame, transformed here.
+// A matrix and a vertex load per link cost the fight 20 frames a second ----
+
+static int16_t s_lkP[LK_V][2];  // one link, LINK_LEN long along y, in the xy plane, in 1/16 units
+
+static void links_init(void)
+{
+    const float width = 2.6f, band = 1.6f, a = LINK_LEN * 0.5f - width;
+    for (int i = 0; i < LK_NS; i++) {
+        float t = 2.0f * T3D_PI * (i + 0.5f) / LK_NS, cx = cosf(t), cy = sinf(t);
+        for (int e = 0; e < 2; e++) {
+            float w = width + (e ? -band : band) * 0.5f;
+            s_lkP[i * 2 + e][0] = (int16_t)lrintf(cx * w * 16.0f);
+            s_lkP[i * 2 + e][1] = (int16_t)lrintf((cy * w + (cy >= 0 ? a : -a)) * 16.0f);
+        }
+    }
+}
+
+static inline void put_vert(T3DVertPacked *vb, int i, const int16_t pos[3], uint32_t rgba)
+{
+    T3DVertPacked *v = &vb[i >> 1];
+    if (i & 1) { v->posB[0] = pos[0]; v->posB[1] = pos[1]; v->posB[2] = pos[2]; v->normB = 0; v->rgbaB = rgba; }
+    else       { v->posA[0] = pos[0]; v->posA[1] = pos[1]; v->posA[2] = pos[2]; v->normA = 0; v->rgbaA = rgba; }
+}
+
+// One link between two rope nodes, every other one turned a quarter, into vb (1/8 units from o)
+static void link_verts(T3DVertPacked *vb, int base, const float a[3], const float b[3], bool twist, bool hot, const float o[3])
 {
     float y[3] = { b[0] - a[0], b[1] - a[1], b[2] - a[2] };
     float l = sqrtf(y[0] * y[0] + y[1] * y[1] + y[2] * y[2]);
@@ -631,73 +674,52 @@ static void link_matrix(T3DMat4FP *out, const float a[3], const float b[3], bool
     for (int m = 0; m < 3; m++) x[m] /= xl;
     float z[3] = { x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0] };
     if (twist) for (int m = 0; m < 3; m++) { float t = x[m]; x[m] = z[m]; z[m] = -t; }
-    float k = scale / 8.0f;     // proc_mesh stores 1/8 units
-    T3DMat4 M = {{
-        { x[0] * k, x[1] * k, x[2] * k, 0 }, { y[0] * k, y[1] * k, y[2] * k, 0 },
-        { z[0] * k, z[1] * k, z[2] * k, 0 }, { (a[0] + b[0]) * 0.5f, (a[1] + b[1]) * 0.5f, (a[2] + b[2]) * 0.5f, 1 },
-    }};
-    t3d_mat4_to_fixed(out, &M);
-}
-
-// Shackle bands bound round the sun while it is chained: a collar framing the eye and
-// a strap down each side, front to back. r: the eye's radius this frame
-static int bands_draw(const Boss *b, float r, T3DMat4FP *mats)
-{
-    static const struct { float c[3], u[3], v[3], rad; int n; } BAND[3] = {
-        { { 0, 0, 0.1f },     { 1, 0, 0 }, { 0, 1, 0 }, 0.995f, BAND_A },
-        { { 0.7f, 0, 0 },     { 0, 1, 0 }, { 0, 0, 1 }, 0.714f, BAND_B },
-        { { -0.7f, 0, 0 },    { 0, 1, 0 }, { 0, 0, 1 }, 0.714f, BAND_B },
-    };
-    float R = r + 0.7f, cy = cosf(b->rot[1]), sy = sinf(b->rot[1]);
-    int mi = 0;
-    for (int k = 0; k < 3; k++) {
-        float prev[3], first[3];
-        for (int i = 0; i <= BAND[k].n; i++) {
-            float th = 2.0f * T3D_PI * i / BAND[k].n, l[3], w[3];
-            for (int m = 0; m < 3; m++)
-                l[m] = (BAND[k].c[m] + BAND[k].rad * (cosf(th) * BAND[k].u[m] + sinf(th) * BAND[k].v[m])) * R;
-            // the sun's yaw (as chain_root: local +z faces the player)
-            w[0] = b->pos[0] + l[0] * cy + l[2] * sy;
-            w[1] = b->pos[1] + l[1];
-            w[2] = b->pos[2] - l[0] * sy + l[2] * cy;
-            if (i == 0) memcpy(first, w, sizeof w);
-            else {
-                link_matrix(&mats[mi], prev, i == BAND[k].n ? first : w, i & 1, 1.0f);
-                t3d_matrix_set(&mats[mi++], true);
-                rspq_block_run(s.link.block);
-            }
-            memcpy(prev, w, sizeof w);
-        }
+    float c[3] = { (a[0] + b[0]) * 0.5f - o[0], (a[1] + b[1]) * 0.5f - o[1], (a[2] + b[2]) * 0.5f - o[2] };
+    uint32_t col = proc_rgb(255, 120, 40);     // hot: glowing, about to strike
+    if (!hot) {     // iron, two-sided, lit by the key light of the proc meshes
+        float d = fabsf(z[0] * -0.45f + z[1] * 0.8f + z[2] * 0.4f), k = 0.4f + 0.75f * d;
+        col = proc_rgb((int)(118 * k), (int)(100 * k), (int)(88 * k));
     }
-    return mi;
+    // Integer from here: 1/8 units = c*8 + (axis*8*256 * local*16) >> 12
+    int32_t C[3], X[3], Y[3];
+    for (int m = 0; m < 3; m++) { C[m] = (int32_t)(c[m] * 8.0f); X[m] = (int32_t)(x[m] * 2048.0f); Y[m] = (int32_t)(y[m] * 2048.0f); }
+    for (int v = 0; v < LK_V; v++) {
+        int32_t px = s_lkP[v][0], py = s_lkP[v][1];
+        int16_t pos[3];
+        for (int m = 0; m < 3; m++) pos[m] = (int16_t)(C[m] + ((X[m] * px + Y[m] * py) >> 12));
+        put_vert(vb, base + v, pos, col);
+    }
 }
 
-static void chains_draw(const Boss *b, float eyeR)
+static void chains_draw(const Boss *b)
 {
-    T3DMat4FP *mats = s.chainMat + s.matRing * (NLINKS + NCH + NBAND);
+    T3DMat4FP *mats = s.chainMat + s.matRing * (1 + NCH);
+    int ring = s.matRing;
+    // Written through the cache, then flushed for the RSP's DMA (uncached stores are slow)
+    T3DVertPacked *vb = CachedAddr(s.linkVB[ring]);
     s.matRing = (s.matRing + 1) % MAT_RING;
+    int n = 0;
+    for (int k = 0; k < NCH; k++)
+        for (int i = 0; i < NN - 1; i++, n++)
+            link_verts(vb, n * LK_V, s.ch[k].p[i], s.ch[k].p[i + 1], i & 1, s.ch[k].hot, b->pos);
+    data_cache_hit_writeback(vb, sizeof(T3DVertPacked) * NLINKS * LK_V / 2);
+
     rdpq_sync_pipe();
     rdpq_mode_push();       // restored at the end: the caller's fog and modes stay
     rdpq_set_mode_standard();
     rdpq_mode_zbuf(true, true);
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
     t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
-    int mi = 0;
-    for (int k = 0; k < NCH; k++) {
-        const Chain *c = &s.ch[k];
-        for (int i = 0; i < NN - 1; i++) {
-            link_matrix(&mats[mi], c->p[i], c->p[i + 1], i & 1, 1.0f);
-            t3d_matrix_set(&mats[mi++], true);
-            rspq_block_run(c->hot ? s.linkHot.block : s.link.block);
-        }
-        if (s.weights) {
-            const float *w = c->p[NN - 1];
-            t3d_mat4fp_from_srt_euler(&mats[mi], (float[3]){ 1 / 8.0f, 1 / 8.0f, 1 / 8.0f }, (float[3]){ 0, k * 0.7f, 0 }, w);
-            t3d_matrix_set(&mats[mi++], true);
+    t3d_mat4fp_from_srt_euler(&mats[0], (float[3]){ 1 / 8.0f, 1 / 8.0f, 1 / 8.0f }, (float[3]){ 0, 0, 0 }, b->pos);
+    t3d_matrix_set(&mats[0], true);
+    rspq_block_run(s.linkBlock[ring]);
+    if (s.weights)
+        for (int k = 0; k < NCH; k++) {
+            const float *w = s.ch[k].p[NN - 1];
+            t3d_mat4fp_from_srt_euler(&mats[1 + k], (float[3]){ 1 / 8.0f, 1 / 8.0f, 1 / 8.0f }, (float[3]){ 0, k * 0.7f, 0 }, w);
+            t3d_matrix_set(&mats[1 + k], true);
             rspq_block_run(s.weight.block);
         }
-    }
-    if (!s.unshackled && s.state != SB_DEAD) bands_draw(b, eyeR, &mats[mi]);
     rdpq_mode_pop();
 }
 
@@ -726,7 +748,7 @@ void sun_boss_draw(Boss* b)
     warn *= 0.7f + 0.3f * sinf(s.life * 18.0f);
     color_t tint = RGBA32(255, 255 - (int)(225 * warn), 255 - (int)(235 * warn), 255);
 
-    if (s.chainsReady) chains_draw(b, MESH_R * scale);
+    if (s.chainsReady) chains_draw(b);
     proc_mesh_draw_tinted(s.unshackled ? &s.eyeHot : &s.eye, false, tint);
     if (dying < 1.0f) for (int i = 0; i < 2; i++) proc_mesh_draw_tinted(&cor[i], true, tint);
 }

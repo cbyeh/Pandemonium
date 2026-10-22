@@ -304,6 +304,9 @@ void audio_play_music(const char *path, bool loop)
     if (musicPlaying)
         audio_stop_music();
 
+#ifdef HLE_AUTOPLAY
+    debugf("[music] %s%s\n", path, loop ? " (loop)" : "");
+#endif
     strncpy(currentMusicPath, path, sizeof(currentMusicPath) - 1);
     currentMusicPath[sizeof(currentMusicPath) - 1] = '\0';
     currentMusicLoop = loop;

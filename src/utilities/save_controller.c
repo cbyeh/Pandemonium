@@ -474,9 +474,7 @@ bool save_progress_skin_unlocked(const SaveData *d, int skin)
 
 int save_progress_skins_unlocked(const SaveData *d)
 {
-    int n = 0;
-    for (int k = 0; k < SKIN_COUNT; k++) n += save_progress_skin_unlocked(d, k);
-    return n;
+    return save_progress_skin_unlocked(d, SKIN_CRIMSON_CLOAK) + save_progress_skin_unlocked(d, SKIN_TEAL_CLOAK);
 }
 
 bool save_controller_skin_unlocked(int skin)

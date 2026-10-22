@@ -72,7 +72,7 @@ static const char* mainMenuOptions[MENU_MAIN_COUNT] = {
 };
 
 static const char* titleMenuOptions[MENU_TITLE_COUNT] = {
-    [MENU_TITLE_CONTINUE]  = "Continue",
+    [MENU_TITLE_STORY]  = "Story",
     [MENU_TITLE_BONUS]     = "Bonus",
     [MENU_TITLE_TOWER]     = "Tower",
     [MENU_TITLE_LOAD_GAME] = "Load Game",
@@ -423,7 +423,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
     } else if (currentMenu == MENU_TITLE) {
         if (aJustPressed) {
             switch (selectedOption) {
-                case MENU_TITLE_CONTINUE: {
+                case MENU_TITLE_STORY: {
                     int lastPlayedSlot = save_controller_get_last_played_slot();
                     int slotToLoad = (lastPlayedSlot >= 0) ? lastPlayedSlot : 0;
 
@@ -917,18 +917,6 @@ void menu_controller_draw(void)
             }
 
             const char *displayText = titleMenuOptions[i];
-            if (i == MENU_TITLE_CONTINUE) {
-                bool allSavesEmpty = true;
-                for (int slot = 0; slot < 3; slot++) {
-                    const SaveData *saveData = save_controller_get_slot_data(slot);
-                    if (saveData && (saveData->run_count > 0 || saveData->best_boss_time_ms > 0)) {
-                        allSavesEmpty = false;
-                        break;
-                    }
-                }
-
-                displayText = allSavesEmpty ? "Play" : "Continue";
-            }
 
             rdpq_text_printf(&(rdpq_textparms_t){
                 .align = ALIGN_LEFT,
@@ -1049,8 +1037,8 @@ void menu_controller_draw(void)
                 if (ms) snprintf(story, sizeof story, "%lu:%02lu", (unsigned long)(ms / 60000), (unsigned long)(ms / 1000 % 60));
                 int bm = save_progress_bonus_mask(saveData);
                 snprintf(l1, sizeof l1, "Story %s   Tower %d", story, save_progress_tower_best_floor(saveData));
-                snprintf(l2, sizeof l2, "Bonus %d/3   Skins %d/%d   Runs %lu", (bm & 1) + ((bm >> 1) & 1) + ((bm >> 2) & 1),
-                         save_progress_skins_unlocked(saveData), SKIN_COUNT, (unsigned long)saveData->run_count);
+                snprintf(l2, sizeof l2, "Bonus %d/3   Skins %d/%d", (bm & 1) + ((bm >> 1) & 1) + ((bm >> 2) & 1),
+                         save_progress_skins_unlocked(saveData), SAVE_SKINS_TO_EARN);
                 rdpq_set_prim_color(RGBA32(200, 200, 200, 255));
                 rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = boxWidth - (slotInnerPadX * 2) },
                                  FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 24, "%s", l1);

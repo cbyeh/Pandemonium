@@ -528,25 +528,17 @@ static void title_scene_draw_3d(void)
     t3d_matrix_pop(1);
 }
 
-static void title_scene_draw_run_counter_panel(void)
+// The story's fastest clear, once there is one
+static void title_scene_draw_best_time_panel(void)
 {
-    const bool savesOn = save_controller_is_enabled();
-    const uint32_t savedRuns = save_controller_get_run_count();
     const uint32_t bestMs = save_controller_get_best_boss_time_ms();
-
-    if (menu_controller_is_title_submenu_active()) {
-        return;
-    }
-
-    if (savesOn && savedRuns == 0 && bestMs == 0) {
+    if (menu_controller_is_title_submenu_active() || !save_controller_is_enabled() || bestMs == 0) {
         return;
     }
 
     const int margin = ui_safe_margin_x();
     const int panelW = 120;
-    const bool showBest = savesOn && bestMs > 0;
-    const int lineCount = 1 + (showBest ? 1 : 0);
-    const int panelH = 6 + (lineCount * 13);
+    const int panelH = 6 + 13;
     const int panelX0 = margin;
     const int panelY0 = SCREEN_HEIGHT - ui_safe_margin_y() - panelH;
 
@@ -555,46 +547,8 @@ static void title_scene_draw_run_counter_panel(void)
     rdpq_fill_rectangle(panelX0, panelY0, panelX0 + panelW, panelY0 + panelH);
 
     rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-
-    int lineY = panelY0 + 13;
-
-    if (savesOn) {
-        rdpq_text_printf(
-            NULL,
-            FONT_UNBALANCED,
-            panelX0 + 6,
-            lineY,
-            "Runs: %lu",
-            (unsigned long)savedRuns
-        );
-    } else {
-        rdpq_text_printf(
-            NULL,
-            FONT_UNBALANCED,
-            panelX0 + 6,
-            lineY,
-            "Runs: --"
-        );
-    }
-
-    lineY += 13;
-
-    if (showBest) {
-        const uint32_t minutes = bestMs / 60000u;
-        const uint32_t seconds = (bestMs / 1000u) % 60u;
-        const uint32_t millis  = bestMs % 1000u;
-
-        rdpq_text_printf(
-            NULL,
-            FONT_UNBALANCED,
-            panelX0 + 6,
-            lineY,
-            "Best: %lu:%02lu.%03lu",
-            (unsigned long)minutes,
-            (unsigned long)seconds,
-            (unsigned long)millis
-        );
-    }
+    rdpq_text_printf(NULL, FONT_UNBALANCED, panelX0 + 6, panelY0 + 13, "Best: %lu:%02lu.%03lu",
+                     (unsigned long)(bestMs / 60000u), (unsigned long)((bestMs / 1000u) % 60u), (unsigned long)(bestMs % 1000u));
 }
 
 static void title_scene_draw_idle_2d(void)
@@ -602,7 +556,7 @@ static void title_scene_draw_idle_2d(void)
     rdpq_set_mode_standard();
     rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
 
-    title_scene_draw_run_counter_panel();
+    title_scene_draw_best_time_panel();
 
     if (
         s_title_text_activation_timer >= TITLE_TEXT_ACTIVATION_TIME &&

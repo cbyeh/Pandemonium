@@ -182,7 +182,7 @@ static const float POST_BOSS_PROMPT_DIST  = 140.0f;   // show A prompt and allow
 static bool s_pendingBossLoopMusic = false;
 static const char *s_bossLoopMusicPath = "rom:/audio/music/boss_phase1-looping-22k.wav64";
 static const char *s_boss2LoopMusicPath = "rom:/audio/music/boss_phase2_cutscene2-22k.wav64";   // Guardian Unbound
-static const char *s_boss3LoopMusicPath = "rom:/audio/music/demonous-22k.wav64";                 // Fallen Knight
+static const char *s_boss3LoopMusicPath = "rom:/audio/music/fallen_warrior_battle-22k.wav64";    // Fallen Warrior
 static BonusFight s_bonusFight = BONUS_NONE;   // set by the title Bonus menu
 static bool  s_tower;             // set by the title Tower menu: the next scene_init climbs
 static bool  s_towerDraft;        // choosing a boon between floors
@@ -1189,7 +1189,7 @@ static const BonusDef BONUS_DEFS[] = {
         },
         .dropAt = 3,
         .begin = fallen_knight_begin, .skip = fallen_knight_skip_intro, .phase = FALLEN_KNIGHT_PHASE,
-        .music = "rom:/audio/music/demonous-22k.wav64",
+        .music = "rom:/audio/music/fallen_warrior_battle-22k.wav64",  // CC0, "Battle Theme A" by cynicmusic
     },
     [BONUS_SHACKLED_SUN] = {
         .intro = {
@@ -1255,7 +1255,6 @@ static void scene_bonus_begin_boss(void)
     const BonusDef *d = &BONUS_DEFS[s_bonusFight];
     d->begin(g_boss);
     boss_ui_set_form(d->phase);
-    if (!audio_is_music_playing()) audio_play_music(d->music, true);   // a skip before the intro started it
 }
 
 static void scene_bonus_start_fight(void)
@@ -1264,7 +1263,10 @@ static void scene_bonus_start_fight(void)
     cutscene_manager_clear_dialog();
     if (g_boss->phaseIndex != d->phase) scene_bonus_begin_boss();
     d->skip(g_boss);
-    scene_init_playing(false);          // the boss music is already looping
+    scene_init_playing(false);
+    // The boss theme starts with the fight; its intro had the Guardian's cutscene music
+    audio_stop_music();
+    audio_play_music(d->music, true);
     s_pendingBossLoopMusic = false;
     character_reset_button_state();
     scene_sync_input_edge_state();
@@ -1450,7 +1452,7 @@ void scene_init_cutscene(void)
             scene_bonus_schedule(BONUS_DEFS[s_bonusFight].intro, 6, BONUS_DEFS[s_bonusFight].dropAt, 0.8f);
             cutsceneTimer = 0.0f;
             audio_stop_music();
-            audio_play_music(BONUS_DEFS[s_bonusFight].music, true);     // the boss theme plays under its intro
+            audio_play_music("rom:/audio/music/boss_phase1_cutscene1-22k.wav64", false);   // as the Guardian's intro; the theme waits for the fight
             cutscene_manager_set_camera_shot(&sceneContext,
                 (T3DVec3){{ -372.0f, 30.0f, 58.0f }}, (T3DVec3){{ -352.0f, 26.0f, 40.0f }},
                 (T3DVec3){{ BONUS_SPAWN_X, 24.0f, 0.0f }});
