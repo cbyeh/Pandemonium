@@ -24,7 +24,7 @@
 #define DROP_H         140.0f          // starts up in the ceiling
 #define INTRO_TIME     3.0f
 #define DRIFT_SPEED    32.0f
-#define KEEP_DIST      55.0f
+#define KEEP_DIST      36.0f           // hovers within sword reach (at 55 it backed out of every swing)
 #define MESH_R         16.0f           // the eye mesh is built at this radius (1/8-unit storage)
 
 typedef enum { SB_INTRO, SB_HOVER, SB_GLARE, SB_CORONA, SB_DIVE, SB_REST, SB_LASH, SB_SWEEP, SB_BREAK, SB_DEAD } SbState;
@@ -176,10 +176,11 @@ void sun_boss_begin(Boss* boss)
     boss->handAttackColliderActive = false;
     boss->sphereAttackColliderActive = false;
     boss->visible = true;
-    // The ball itself (centre at pos)
+    // The ball and the base of its corona (centre at pos): a little past the eye drawn, as a
+    // blade that grazed the eye (radius 14) missed a capsule of 12 most swings
     boss->capsuleCollider.localCapA = (T3DVec3){{ 0.0f, -6.0f, 0.0f }};
     boss->capsuleCollider.localCapB = (T3DVec3){{ 0.0f, 6.0f, 0.0f }};
-    boss->capsuleCollider.radius = SUN_R - 2.0f;
+    boss->capsuleCollider.radius = SUN_R + 4.0f;
 
     s.groundY = character.pos[1];
     boss->pos[1] = s.groundY + DROP_H;
@@ -534,8 +535,9 @@ static void sweep_update(Boss *b, float dt)
 static void choose(Boss *b, float dist)
 {
 #ifdef HLE_SUN_FORCE   // test aid: 1 = lash, 2 = sweep, 3 = dive, 4 = corona, back to back
-    { float dx, dz, d = to_player(b, &dx, &dz);   // within reach of the player
+    if (HLE_SUN_FORCE != 9) { float dx, dz, d = to_player(b, &dx, &dz);   // within reach of the player
       if (d > 50.0f) { b->pos[0] = character.pos[0] - dx / d * 50.0f; b->pos[2] = character.pos[2] - dz / d * 50.0f; } }
+    if (HLE_SUN_FORCE == 9) return;     // 9 = never attacks: it only hovers (can a sword reach it?)
     if (HLE_SUN_FORCE == 1) { lash_start(b, s.unshackled ? 2 : 1); return; }
     if (HLE_SUN_FORCE == 3) { enter(SB_DIVE); debugf("[sun] dive\n"); return; }
     if (HLE_SUN_FORCE == 4) { enter(SB_CORONA); debugf("[sun] corona\n"); return; }

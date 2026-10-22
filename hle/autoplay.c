@@ -671,10 +671,17 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_DUMMY_HALF   // measure the second half: past the Shackled Sun's break (and its cutscene-free 2 s)
                     boss_apply_damage(boss, boss->maxHealth * 0.55f);
 #endif
+#ifdef HLE_DUMMY_SKIN   // the fight in this skin (e.g. a cloak, to time its cloth)
+                    character_skin_set(HLE_DUMMY_SKIN);
+#endif
                     phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
             } else if (t > 60 && frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 3) {    // Unbound: skip the transformation
-            if (boss->phaseIndex == 2 && boss->mode == BOSS_MODE_COMBAT) { phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
+            if (boss->phaseIndex == 2 && boss->mode == BOSS_MODE_COMBAT) {
+#ifdef HLE_DUMMY_SKIN
+                character_skin_set(HLE_DUMMY_SKIN);
+#endif
+                phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
             else if (frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 4) {
 #ifdef HLE_DUMMY_STRIKE   // and fight back: locked on, walk in, swing (the stagger meter, hit-stop)
@@ -787,6 +794,26 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2];
                 if (sqrtf(dx * dx + dz * dz) > 45.0f) in->stick_y = 70;
                 if (t % 24 == 0) { pressed->b = 1; in->btn.b = 1; }
+                {   // the blade's closest approach to the boss's capsule this swing (surface gap)
+                    static float gap = 1e9f, lowY, tipY;
+                    extern T3DVec3 charWeaponCapA, charWeaponCapB;     // the blade, as the collision system has it
+                    const float *sb = charWeaponCapA.v, *st = charWeaponCapB.v;
+                    if (character_get_state() == CHAR_STATE_ATTACKING) {
+                        const float *bp = boss->pos; const T3DVec3 *ca = &boss->capsuleCollider.localCapA, *cb = &boss->capsuleCollider.localCapB;
+                        for (int i = 0; i <= 8; i++) {
+                            float p[3]; for (int m = 0; m < 3; m++) p[m] = sb[m] + (st[m] - sb[m]) * i / 8.0f;
+                            float a0[3] = { bp[0] + ca->v[0], bp[1] + ca->v[1], bp[2] + ca->v[2] }, u[3] = { cb->v[0] - ca->v[0], cb->v[1] - ca->v[1], cb->v[2] - ca->v[2] };
+                            float l2 = u[0]*u[0] + u[1]*u[1] + u[2]*u[2], k = l2 > 0 ? ((p[0]-a0[0])*u[0] + (p[1]-a0[1])*u[1] + (p[2]-a0[2])*u[2]) / l2 : 0;
+                            k = k < 0 ? 0 : k > 1 ? 1 : k;
+                            float e[3] = { a0[0] + u[0]*k - p[0], a0[1] + u[1]*k - p[1], a0[2] + u[2]*k - p[2] };
+                            float g = sqrtf(e[0]*e[0] + e[1]*e[1] + e[2]*e[2]) - boss->capsuleCollider.radius - 2.0f;
+                            if (g < gap) { gap = g; lowY = p[1] - character.pos[1]; tipY = st[1] - character.pos[1]; }
+                        }
+                    }
+                    if (t % 24 == 23) { if (gap < 1e8f) debugf("[strike] blade gap %.0f (closest point %.0f up, tip %.0f up)\n", (double)gap, (double)lowY, (double)tipY); gap = 1e9f; }
+                }
+                if (t % 24 == 12) debugf("[strike] swing: dist %.0f, boss %.0f above the player, %s\n", (double)sqrtf(dx * dx + dz * dz),
+                                         (double)(boss->pos[1] - character.pos[1]), boss->health < lastHp - 0.01f ? "hit" : "-");
                 if (boss->health < lastHp - 0.01f) { hits++; lost += lastHp - boss->health; }
                 lastHp = boss->health;
                 if (t == 2000) {
