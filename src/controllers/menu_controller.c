@@ -117,7 +117,7 @@ static const char* towerMenuOptions[MENU_TOWER_COUNT] = {
 static const char* bonusMenuOptions[MENU_BONUS_COUNT] = {
     "Fallen Warrior",
     "The Shackled Sun",
-    "Shadowborn",
+    "Shadowborne",
     "Back",
 };
 

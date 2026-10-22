@@ -257,7 +257,7 @@ void collision_update(void)
         float charX = 0.5f * (charCapA.v[0] + charCapB.v[0]);
         float charZ = 0.5f * (charCapA.v[2] + charCapB.v[2]);
 
-        // The nearest point of the boss's axis (a lying body, like Shadowborn's, is long;
+        // The nearest point of the boss's axis (a lying body, like Shadowborne's, is long;
         // for an upright one this is its centre)
         float ux = bossCapB.v[0] - bossCapA.v[0], uz = bossCapB.v[2] - bossCapA.v[2], ul2 = ux * ux + uz * uz;
         float ut = ul2 > 1e-4f ? ((charX - bossCapA.v[0]) * ux + (charZ - bossCapA.v[2]) * uz) / ul2 : 0.5f;

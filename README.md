@@ -66,7 +66,7 @@ Each save slot keeps its best floor, Embers and relics. **Load Game** shows a sl
 ### New boss fights
 Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on the title screen.
 
-| Guardian Unbound | Fallen Warrior (Bonus) | The Shackled Sun (Bonus) | Shadowborn (Bonus) |
+| Guardian Unbound | Fallen Warrior (Bonus) | The Shackled Sun (Bonus) | Shadowborne (Bonus) |
 |---|---|---|---|
 | <img src="docs/media/boss_guardian_unbound.png" width="280"> | <img src="docs/media/boss_fallen_warrior.png" width="280"> | <img src="docs/media/boss_shackled_sun.png" width="280"> | <img src="docs/media/boss_shadowborn.png" width="280"> |
 
@@ -169,9 +169,9 @@ Third-party audio added in this fork. Everything here is CC0 (public domain), so
 
 | Asset | Used for | Author | Source |
 |---|---|---|---|
-| CC0 Deep Monster Roar | Shadowborn's roar | trazzz123 | [OpenGameArt](https://opengameart.org/content/cc0-deep-monster-roar) |
+| CC0 Deep Monster Roar | Shadowborne's roar | trazzz123 | [OpenGameArt](https://opengameart.org/content/cc0-deep-monster-roar) |
 | 80 CC0 RPG SFX | Skill casts, potion, fire breath, the dark beam and nova, explosions, chains, the armour clank | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-rpg-sfx) |
-| Determined Pursuit (epic orchestra loop) | Shadowborn's theme | Emma_MA | [OpenGameArt](https://opengameart.org/content/determined-pursuit-epic-orchestra-loop) |
+| Determined Pursuit (epic orchestra loop) | Shadowborne's theme | Emma_MA | [OpenGameArt](https://opengameart.org/content/determined-pursuit-epic-orchestra-loop) |
 | Boss Battle #2 [Symphonic Metal] | The Shackled Sun's theme | nene | [OpenGameArt](https://opengameart.org/content/boss-battle-2-symphonic-metal) |
 | Battle Theme A | The Fallen Warrior's theme | cynicmusic | [OpenGameArt](https://opengameart.org/content/battle-theme-a) |
 

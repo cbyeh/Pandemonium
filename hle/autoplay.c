@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS)
 #include "camera_controller.h"
 #include "joypad_utility.h"
 #include "character_skin.h"
@@ -39,6 +39,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
     static int frame;
     frame++;
+#ifdef HLE_SKILLS_OFF   // the Skills setting off throughout (a loaded save can't turn it back on)
+    { extern void character_set_skills_enabled(bool); character_set_skills_enabled(false); }
+#endif
 #ifdef HLE_LOG_FPS
     {   // game frames per second, every 2 s (for hardware-path runs in Ares)
         static uint32_t last; static int lastFrame;
@@ -648,7 +651,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_TEST_DUMMY
     // Threat measurement: a passive, invincible dummy at the start position; logs the
     // damage each boss lands over 120 s. HLE_DUMMY_BOSS: 1 Guardian, 2 Unbound,
-    // 3 Fallen Warrior, 4 Shackled Sun, 5 Shadowborn.
+    // 3 Fallen Warrior, 4 Shackled Sun, 5 Shadowborne.
     {
         extern float deltaTime;
         static int phase = 0, step = 0, t0 = 0;
@@ -766,7 +769,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #if defined(HLE_TEST_BONUS_SUN)
             static const char seq[] = "DADA";       // Bonus > The Shackled Sun
 #elif defined(HLE_TEST_BONUS_DRAGON)
-            static const char seq[] = "DADDA";      // Bonus > Shadowborn
+            static const char seq[] = "DADDA";      // Bonus > Shadowborne
 #else
             static const char seq[] = "DAA";        // Bonus > Fallen Warrior
 #endif
@@ -825,7 +828,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 }
             }
 #elif defined(HLE_DRAGON_SHOWCASE)
-            // Model check: the camera orbits Shadowborn (front, 3/4, side, back, then the head
+            // Model check: the camera orbits Shadowborne (front, 3/4, side, back, then the head
             // up close), 50 frames a view, the player standing well clear
             {
                 cameraLockOnActive = false;
@@ -1009,6 +1012,47 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
             break;
         }
+        return;
+    }
+#endif
+#ifdef HLE_TEST_SKILL_DMG
+    // Damage per use (with HLE_TEST_FREEZE_BOSS): every 200 frames the Guardian is healed and
+    // the player set 30 in front of it, locked on, then uses HLE_TEST_SKILL_DMG once
+    // (0: the three-swing combo, 1: Moon Blade Dance, 2: Halfmoon Slash, 3: Crescent Cleave)
+    {
+        extern float deltaTime;
+        static int start = -1;
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) start = frame;
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        int t = (frame - start) % 200, cyc = (frame - start) / 200;
+        static float hp0; static int t0;
+        if (t == 0) {
+            boss->health = boss->maxHealth; hp0 = boss->health;
+            float a = atan2f(character.pos[0] - boss->pos[0], character.pos[2] - boss->pos[2]);
+            character.pos[0] = boss->pos[0] + sinf(a) * 30.0f; character.pos[2] = boss->pos[2] + cosf(a) * 30.0f;
+            character.stamina = character.maxStamina;
+        }
+        if (t == 2 && cyc == 0) pressed->z = 1;
+        in->btn.z = 1;
+        if (t == 10) t0 = frame;
+#if HLE_TEST_SKILL_DMG == 0
+        if (t == 10 || t == 28 || t == 46) { pressed->b = 1; in->btn.b = 1; }
+#elif HLE_TEST_SKILL_DMG == 1
+        if (t == 10) pressed->d_up = 1;
+#elif HLE_TEST_SKILL_DMG == 2
+        if (t == 10) pressed->d_right = 1;
+#else
+        if (t == 10) pressed->d_down = 1;
+#endif
+        static int busyEnd;
+        if (t == 11) busyEnd = 0;
+        if (t > 11 && !busyEnd && character_get_state() == CHAR_STATE_NORMAL) busyEnd = frame;
+        if (t == 195) debugf("[sdmg] skill %d: %.1f damage, busy %.2f s\n", HLE_TEST_SKILL_DMG, (double)(hp0 - boss->health),
+                             (double)((busyEnd - t0) * deltaTime));
         return;
     }
 #endif

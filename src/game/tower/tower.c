@@ -293,6 +293,7 @@ static bool knows(int skill) { return (s.skills >> skill) & 1; }
 static bool offerable(BoonId b)
 {
     if (s.stacks[b] >= BOONS[b].maxStacks) return false;
+    if (is_skill_card(b) && !character_skills_enabled()) return false;     // Skills off (the title's setting): none offered
     switch (b) {
     case BOON_MOON_MASTERY:  return s.skills != 0;
     case BOON_CRESCENT_ECHO: return knows(SKILL_MOON_BLADE_DANCE);
@@ -550,7 +551,7 @@ float tower_on_sword_hit(void)
 }
 
 int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + tower_boon_stacks(BOON_DEEP_FLASK) + has_relic(RELIC_FLASK) : 7; }
-bool  tower_mod_skill_allowed(int skill) { return !s.active || knows(skill); }
+bool  tower_mod_skill_allowed(int skill) { return character_skills_enabled() && (!s.active || knows(skill)); }
 float tower_mod_skill_damage(int skill)
 {
     if (skill == SKILL_HALFMOON_SLASH && tower_boon_stacks(BOON_HALFMOON_PLUS)) return 1.5f;
@@ -584,7 +585,7 @@ float tower_boss_health_scale(int phase)
 {
     if (!s.active) return 1.0f;
     int n = 0;
-    for (int k = 0; k < SKILL_COUNT; k++) n += (s.skills >> k) & 1;
+    for (int k = 0; k < SKILL_COUNT; k++) n += character_skills_enabled() && ((s.skills >> k) & 1);
     float k = (BOSS_HP_START + BOSS_HP_PER_CIRCLE * (tower_circle() - 1)) * (1.0f + HP_PER_SKILL * n);
     if (s.night == NIGHT_IRON) k *= 1.25f;
     return phase >= 3 ? k * BONUS_HP_IN_TOWER : k;     // phases 3+ are the Bonus bosses

@@ -506,7 +506,7 @@ static inline void boss_update_shadow_mat(Boss* boss)
     t3d_mat4fp_from_srt_euler((T3DMat4FP*)boss->shadowMat, shadowScale, shadowRot, shadowPos);
 }
 
-// Health per fight without skills; the D-pad skills double it. The bonus bosses are
+// Health per fight, skills or not (the D-pad skills are tuned under the sword). The bonus bosses are
 // sized to the same difficulty as the Guardian's two phases together (measured damage
 // against a dummy + a binomial dodge model): they hit softer but more often.
 #define POISE_DAMAGE        40.0f    // stagger meter: this much damage fills it
@@ -518,7 +518,7 @@ static inline float boss_target_max_health(int phase)
     float base = (phase == FALLEN_KNIGHT_PHASE) ? 300.0f : (phase == SUN_BOSS_PHASE) ? 325.0f :
                  (phase == DRAGON_BOSS_PHASE) ? 375.0f : 100.0f;
     if (tower_active()) return base * tower_boss_health_scale(phase);   // the climb and its unlocked skills
-    return character_skills_enabled() ? base * 2.0f : base;
+    return base;
 }
 
 /** Full health for its current phase (a Tower floor's boss). */

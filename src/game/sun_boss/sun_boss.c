@@ -74,6 +74,8 @@ static struct {
     float rainT[RAIN_MAX], rainPos[RAIN_MAX][2];
     float diveTarget[2];
     float raysSpin;
+    float chainAcc;         // time gathered for the chains' next step (every other frame)
+    bool chainStepped;      // stepped this frame: drawn halfway from the last state
 } s;
 
 
@@ -654,7 +656,17 @@ void sun_boss_update(Boss* b, float dt)
     }
     b->rot[0] = b->rot[2] = 0.0f;
 
-    if (dt > 0.0f) chains_step(b, fminf(dt, 0.04f));     // one step a frame: two cost 2 ms
+#ifdef HLE_LOG_CLOTH     // test aid: the chains' time a frame (simulation; drawing logged in sun_boss_draw)
+    uint32_t t0 = TICKS_READ();
+#endif
+    // The chains step every other frame, on both frames' time, and are drawn in between: half
+    // the cost (0.7 ms a frame on hardware), still moving every frame
+    s.chainAcc += dt;
+    s.chainStepped = !s.chainStepped && dt > 0.0f;
+    if (s.chainStepped) { chains_step(b, fminf(s.chainAcc, 0.08f)); s.chainAcc = 0.0f; }
+#ifdef HLE_LOG_CLOTH
+    { static uint32_t sum; static int n; sum += TICKS_READ() - t0; if (++n == 120) { debugf("[chains] step %lu us a frame\n", (unsigned long)(TICKS_TO_US(sum) / n)); sum = 0; n = 0; } }
+#endif
 }
 
 // ---- Links: every link of every chain in one vertex buffer a frame, transformed here.
@@ -721,9 +733,15 @@ static void chains_draw(const Boss *b)
     T3DVertPacked *vb = CachedAddr(s.linkVB[ring]);
     s.matRing = (s.matRing + 1) % MAT_RING;
     int n = 0;
-    for (int k = 0; k < NCH; k++)
+    const float f = s.chainStepped ? 0.5f : 1.0f;      // from the last state (q) to p
+    for (int k = 0; k < NCH; k++) {
+        float P[NN][3];
+        chain_root(b, &s.ch[k], P[0]);     // on the eye now, wherever it has moved since the step
+        for (int i = 1; i < NN; i++)
+            for (int m = 0; m < 3; m++) P[i][m] = s.ch[k].q[i][m] + (s.ch[k].p[i][m] - s.ch[k].q[i][m]) * f;
         for (int i = 0; i < NN - 1; i++, n++)
-            link_verts(vb, n * LK_V, s.ch[k].p[i], s.ch[k].p[i + 1], i & 1, s.ch[k].hot, b->pos);
+            link_verts(vb, n * LK_V, P[i], P[i + 1], i & 1, s.ch[k].hot, b->pos);
+    }
     data_cache_hit_writeback(vb, sizeof(T3DVertPacked) * NLINKS * LK_V / 2);
 
     rdpq_sync_pipe();
@@ -737,7 +755,8 @@ static void chains_draw(const Boss *b)
     rspq_block_run(s.linkBlock[ring]);
     if (s.weights)
         for (int k = 0; k < NCH; k++) {
-            const float *w = s.ch[k].p[NN - 1];
+            float w[3];
+            for (int m = 0; m < 3; m++) w[m] = s.ch[k].q[NN - 1][m] + (s.ch[k].p[NN - 1][m] - s.ch[k].q[NN - 1][m]) * (s.chainStepped ? 0.5f : 1.0f);
             t3d_mat4fp_from_srt_euler(&mats[1 + k], (float[3]){ 1 / 8.0f, 1 / 8.0f, 1 / 8.0f }, (float[3]){ 0, k * 0.7f, 0 }, w);
             t3d_matrix_set(&mats[1 + k], true);
             rspq_block_run(s.weight.block);
@@ -770,7 +789,13 @@ void sun_boss_draw(Boss* b)
     warn *= 0.7f + 0.3f * sinf(s.life * 18.0f);
     color_t tint = RGBA32(255, 255 - (int)(225 * warn), 255 - (int)(235 * warn), 255);
 
+#ifdef HLE_LOG_CLOTH
+    uint32_t t0 = TICKS_READ();
+#endif
     if (s.chainsReady) chains_draw(b);
+#ifdef HLE_LOG_CLOTH
+    { static uint32_t sum; static int n; sum += TICKS_READ() - t0; if (++n == 120) { debugf("[chains] draw %lu us a frame\n", (unsigned long)(TICKS_TO_US(sum) / n)); sum = 0; n = 0; } }
+#endif
     proc_mesh_draw_tinted(s.unshackled ? &s.eyeHot : &s.eye, false, tint);
     if (dying < 1.0f) for (int i = 0; i < 2; i++) proc_mesh_draw_tinted(&cor[i], true, tint);
 }

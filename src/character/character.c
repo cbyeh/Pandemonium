@@ -1182,7 +1182,11 @@ static const float MBD_AIM_DIST = 60.0f;           // ground distance of the aim
 static const float HALFMOON_CHARGE = 2.0f;         // rooted; a hit cancels it and hurts more
 static const float HALFMOON_END = 3.2f;
 static const float HALFMOON_RADIUS = 85.0f;
-static const float HALFMOON_DAMAGE = 25.0f;        // < 2 strong attacks
+// Skill damage, against one sword hit (4, about 0.65 s): the sword stays the main source; Moon
+// Blade Dance is for getting away (its five crosses: 4, one hit), the Cleave a medium risk for a
+// medium reward (10, 2.5 hits in 1.3 s), the Halfmoon a high risk (a 2 s root a hit breaks) for
+// a high reward (28, 7 hits in 2.8 s)
+static const float HALFMOON_DAMAGE = 28.0f;
 static const float CLEAVE_RELEASE = 0.85f;         // interruptible wind-up (the SkillCleave upswing)
 static const float CLEAVE_END = 1.7f;
 static const int   CLEAVE_BLADES = 5;
@@ -1200,7 +1204,7 @@ float character_get_skill_cooldown_ratio(CharacterSkill skill)
 }
 
 bool character_skills_enabled(void) { return skillsEnabled; }
-// In a Tower run a skill works once unlocked at the Shrine (the Skills setting is ignored)
+// In a Tower run a skill works once learned (and the Skills setting is on)
 bool character_skill_usable(CharacterSkill skill) { return tower_active() ? tower_mod_skill_allowed(skill) : skillsEnabled; }
 void character_set_skills_enabled(bool enabled) { skillsEnabled = enabled; }
 
@@ -1230,6 +1234,9 @@ static void skill_face(float *fx, float *fz)
 
 static void try_start_skill(const joypad_buttons_t *buttons)
 {
+#ifdef HLE_TEST_SKILL_DMG     // test aid: every skill ready, stamina full (a cast per cycle)
+    for (int k = 0; k < SKILL_COUNT; k++) skillCooldowns[k] = 0.0f;
+#endif
     int s = buttons->d_up ? SKILL_MOON_BLADE_DANCE :
             buttons->d_right ? SKILL_HALFMOON_SLASH :
             buttons->d_down ? SKILL_CRESCENT_CLEAVE : -1;
@@ -1292,7 +1299,7 @@ static void skill_fire_moon_blade(void)
     float len = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
     if (len < 1.0f) len = 1.0f;
     float vel[3] = { d[0] / len * MBD_WAVE_SPEED, d[1] / len * MBD_WAVE_SPEED, d[2] / len * MBD_WAVE_SPEED };
-    skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, 1.5f, 1, 0.0f, len / MBD_WAVE_SPEED,   // 5 waves: 7.5, mostly for the dodge
+    skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, 0.8f, 1, 0.0f, len / MBD_WAVE_SPEED,   // 5 waves: 4, for the dodge
                         skillStep == mbd_waves() - 1);
     character_play_swing();
     audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_WAVE, 0.55f, 0.0f);
@@ -1360,7 +1367,7 @@ static void update_skill(float dt)
             float origin[3] = { character.pos[0] + dx * dist, groundY, character.pos[2] + dz * dist };
             // 56/s for 1.6 s: ~100 out, the outer blades ~65 to each side
             skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 56.0f, 0.0f, dz * 56.0f },
-                                1.6f * tower_mod_skill_damage(SKILL_CRESCENT_CLEAVE), 4, 0.3f, 1.6f, false);    // faster: ~3 ticks per blade, ~10-15 a cast
+                                1.25f * tower_mod_skill_damage(SKILL_CRESCENT_CLEAVE), 4, 0.3f, 1.6f, false);    // ~8 ticks a cast in reach: 10
             skill_fx_spawn_burst(origin, a);
             audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_CAST, 0.45f, 0.0f);
             if (skillStep == 0) {
@@ -3015,7 +3022,7 @@ void character_update_camera(void)
 
     float scaledDistance = cameraDistance * 0.04f;
     float scaledHeight = cameraHeight * 0.03f;
-    {   // Shadowborn is huge: stand the camera further back
+    {   // Shadowborne is huge: stand the camera further back
         Boss *bb = boss_get_instance();
         if (bb && bb->phaseIndex == DRAGON_BOSS_PHASE) { scaledDistance *= 1.5f; scaledHeight *= 1.4f; }
     }

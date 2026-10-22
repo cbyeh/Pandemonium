@@ -3,7 +3,7 @@
 
 #include "game/boss/boss.h"
 
-// Shadowborn: Bonus fight 3 (boss phase 5), inspired by Darkeater Midir. A giant
+// Shadowborne: Bonus fight 3 (boss phase 5), inspired by Darkeater Midir. A giant
 // crystal-backed dragon built from procedural parts: it claws, bites, whips its tail,
 // breathes sweeping fire, charges and strafes the hall from the air. At half health
 // the dark takes it: a bursting nova, homing dark orbs, and a long dark beam that
@@ -13,7 +13,7 @@
 
 #define DRAGON_BOSS_PHASE 5
 
-// Turns `boss` into Shadowborn (flies down from above, then fights).
+// Turns `boss` into Shadowborne (flies down from above, then fights).
 void dragon_boss_begin(Boss* boss);
 // Lands it at once and starts the fight (the intro cutscene ends or is skipped).
 void dragon_boss_skip_intro(Boss* boss);

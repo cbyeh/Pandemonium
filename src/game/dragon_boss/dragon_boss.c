@@ -430,7 +430,7 @@ void dragon_boss_begin(Boss* boss)
         s.ready = true;
     }
     boss->phaseIndex = DRAGON_BOSS_PHASE;
-    boss->name = "Shadowborn";
+    boss->name = "Shadowborne";
     boss->health = boss->maxHealth;
     boss->mode = BOSS_MODE_CINEMATIC;       // not damageable until it has landed
     boss->state = BOSS_STATE_INTRO;
@@ -696,13 +696,13 @@ static void claw_update(Boss *b, float dt)
     face_player(b, dt, 1.6f);
     int k = s.step < 2 ? 0 : 1;
     s.tCrouch = 3.0f; s.tNeckPitch = -0.15f;
-    float wind = (k ? 0.4f : 0.55f) / (s.dark ? 1.2f : 1.0f);
+    float wind = (k ? 0.48f : 0.66f) / (s.dark ? 1.2f : 1.0f);     // the raised leg's windup (20% longer: easier to read)
     if (s.step == 0 || s.step == 2) {
         s.tClaw[k] = 1.0f;
         if (s.t >= wind) { claw_strike(b, k); s.step++; s.t = 0.0f; }
     } else if (s.step == 1) {
         s.tClaw[0] = 0.0f;
-        if (s.t >= 0.25f) { s.step = 2; s.t = 0.0f; }
+        if (s.t >= 0.3f) { s.step = 2; s.t = 0.0f; }
     } else if (s.t >= 0.7f) enter(DG_IDLE);
 }
 

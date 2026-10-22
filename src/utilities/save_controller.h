@@ -67,7 +67,7 @@ bool save_controller_set_tower(const TowerSave *in);
 // Progress shown on the Load Game cards (any slot's data; NULL reads as nothing)
 int  save_progress_tower_best_floor(const SaveData *d);
 int  save_progress_tower_embers(const SaveData *d);
-int  save_progress_bonus_mask(const SaveData *d);      // bit per Bonus boss beaten: Fallen Warrior, Shackled Sun, Shadowborn
+int  save_progress_bonus_mask(const SaveData *d);      // bit per Bonus boss beaten: Fallen Warrior, Shackled Sun, Shadowborne
 // The skins earned (of SAVE_SKINS_TO_EARN: the Crimson and Teal cloaks, Wylder; the rest are open from the start)
 #define SAVE_SKINS_TO_EARN 3
 int  save_progress_skins_unlocked(const SaveData *d);
