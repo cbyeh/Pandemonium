@@ -479,6 +479,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #else
             if (t == 90) boss_apply_damage(boss, boss->maxHealth * 2.0f);
 #endif
+            if (t >= 90 && t < 140) {   // stand facing the fallen boss, where its "A" prompt would show
+                float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
+                if (d > 60.0f) { character.pos[0] += dx / d * (d - 60.0f); character.pos[2] += dz / d * (d - 60.0f); }
+            }
             if (tower_draft_is_open() && t % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
 #ifndef HLE_RUN_FLOORS
 #define HLE_RUN_FLOORS 7

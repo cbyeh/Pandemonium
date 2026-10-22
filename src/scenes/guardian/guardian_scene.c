@@ -2296,6 +2296,7 @@ void scene_draw(T3DViewport *viewport)
         T3DVec3 postBossPromptPos;
         bool postBossPromptVisible =
             !scene_is_cutscene_active()
+            && !s_tower     // no talk in the Tower: the draft follows the fall
             && boss_is_interactable(g_boss)
             && g_boss
             && g_boss->state == BOSS_STATE_DEAD
@@ -2305,6 +2306,10 @@ void scene_draw(T3DViewport *viewport)
             postBossPromptPos = get_boss_lock_focus_point();
         }
 
+#ifdef HLE_TEST_TOWER_RUN      // test aid: the defeated boss's "A" prompt, in range
+        if (g_boss && g_boss->state == BOSS_STATE_DEAD && boss_is_interactable(g_boss) && scene_post_boss_in_range(g_boss))
+            debugf("[prompt] in range, shown %d\n", postBossPromptVisible);
+#endif
         boss_ui_draw_post_boss_a_prompt(viewport, &postBossPromptPos, postBossPromptVisible);
     }
 
