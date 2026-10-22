@@ -72,6 +72,7 @@ static struct {
     bool feetReady;
     // Moves
     float cdClaw, cdBite, cdTail, cdBreath, cdCharge, cdFly, cdNova, cdOrbs, cdBeam, cdWhip;
+    float idleWait;
     float sweepFrom, sweepSpan, range, target[3], flyTo[2], emit, fireCd, glow;
     bool hitDone;
     Flame fl[FL_MAX];
@@ -141,6 +142,8 @@ static bool move_by(Boss *b, float dx, float dz)
 static void enter(DgState st)
 {
     s.state = st; s.t = 0.0f; s.step = 0; s.hitDone = false;
+    // Between attacks a pause; now and then (35%) a longer breather, its head low: an opening
+    if (st == DG_IDLE) s.idleWait = (rand_custom_u32() % 100 < 35) ? 3.3f + (rand_custom_u32() % 100) / 100.0f : 1.8f;
 #ifdef HLE_AUTOPLAY
     debugf("[dragon] state %d\n", st);
 #endif
@@ -772,16 +775,15 @@ static void whip_update(Boss *b, float dt)
     const float WIND = 0.8f / (s.dark ? 1.2f : 1.0f), SPIN = 0.6f;
     float rx = s.tl[NTAIL][0] - b->pos[0], rz = s.tl[NTAIL][2] - b->pos[2];
     float reach = sqrtf(rx * rx + rz * rz);
-    if (s.step == 0) {
-        face_player(b, dt, 2.0f);
+    if (s.step == 0) {      // it doesn't turn to face you: the spin reaches all round
         s.tCrouch = 7.0f; s.tNeckPitch = -0.4f; s.tTail = 0.0f; s.poseRate = 5.0f;
         if ((int)(s.t * 6.0f) != (int)((s.t - dt) * 6.0f)) {     // a ring of warnings at the tail's reach
-            float a = b->rot[1] + s.t * 7.0f;
+            float a = b->rot[1] + s.t * 7.0f;     // round the way it will spin
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * reach, s.groundY, b->pos[2] + cosf(a) * reach }, a);
         }
         if (s.t >= WIND) { s.step = 1; s.t = 0.0f; sfx_swing(); }
     } else if (s.step == 1) {
-        b->rot[1] += 2.0f * T3D_PI * dt / SPIN;
+        b->rot[1] = remainderf(b->rot[1] + 2.0f * T3D_PI * dt / SPIN, 2.0f * T3D_PI);     // counter-clockwise on screen
         s.tCrouch = 5.0f; s.tTail = 0.0f; s.poseRate = 12.0f;
         // the whole warned circle, as the tail and body sweep it
         float dx, dz;
@@ -1004,6 +1006,7 @@ static void choose(Boss *b, float dist, float rel)
     return;
 #endif
     bool front = fabsf(rel) < 0.7f, behind = fabsf(rel) > 2.0f;
+    if (dist > 30.0f && dist < 115.0f && s.cdWhip <= 0.0f) { s.cdWhip = 11.0f; enter(DG_WHIP); return; }   // any side
     if (behind && dist < 150.0f && s.cdTail <= 0.0f) { s.cdTail = 3.5f; enter(DG_TAIL); return; }
     if (s.dark) {
         if (s.cdNova <= 0.0f && dist < 110.0f) { s.cdNova = 16.0f; enter(DG_NOVA); return; }
@@ -1011,7 +1014,6 @@ static void choose(Boss *b, float dist, float rel)
         if (s.cdOrbs <= 0.0f) { s.cdOrbs = 13.0f; enter(DG_ORBS); return; }
     }
     if (s.cdFly <= 0.0f && dist > 70.0f) { s.cdFly = 22.0f; enter(DG_FLY); return; }
-    if (front && dist > 45.0f && dist < 120.0f && s.cdWhip <= 0.0f) { s.cdWhip = 11.0f; enter(DG_WHIP); return; }
     if (front && dist < 85.0f && s.cdClaw <= 0.0f) { s.cdClaw = 2.5f; enter(DG_CLAW); return; }
     if (front && dist < 100.0f && s.cdBite <= 0.0f) { s.cdBite = 5.0f; enter(DG_BITE); return; }
     if (front && dist > 70.0f && dist < 200.0f && s.cdBreath <= 0.0f) { s.cdBreath = 9.0f; enter(DG_BREATH); return; }
@@ -1076,7 +1078,10 @@ void dragon_boss_update(Boss* b, float dt)
         float d = turn_toward(b, atan2f(dx, dz), 1.1f * sm, dt);
         if (dist > 75.0f && fabsf(d) < 0.8f) move_by(b, s.F[0] * 30.0f * sm * dt, s.F[2] * 30.0f * sm * dt);
         else if (dist < 50.0f && fabsf(d) < 1.0f) move_by(b, -s.F[0] * 18.0f * dt, -s.F[2] * 18.0f * dt);
-        if (s.t > 1.8f / sm) choose(b, dist, rel);     // a pause between attacks: the opening
+        if (s.idleWait > 2.0f && s.t > 0.3f && s.t < s.idleWait / sm - 0.3f) {   // the breather: head down, panting
+            s.tCrouch = 6.0f; s.tNeckPitch = -0.55f + 0.08f * sinf(s.life * 5.0f); s.tJaw = 0.45f; s.poseRate = 3.0f;
+        }
+        if (s.t > s.idleWait / sm) choose(b, dist, rel);     // a pause between attacks: the opening
         break;
     }
 
@@ -1213,11 +1218,20 @@ void dragon_boss_draw(Boss* b)
         // elbows point back and out, knees forward and out
         for (int m = 0; m < 3; m++) bend[m] = s.F[m] * (k < 2 ? -1.0f : 0.8f) + s.R[m] * side * 0.5f + UP[m] * 0.2f;
         knee(s.shoulder[k], s.foot[k], bend, kn);
+        // The front leg about to slam glows red, pulsing (the claw's windup)
+        bool hot = s.state == DG_CLAW && (s.step == 0 || s.step == 2) && k == (s.step < 2 ? 0 : 1);
+        if (hot) {
+            float w = (0.6f + 0.4f * sinf(s.life * 18.0f)) * clamp01(s.t / 0.3f);
+            // blends toward red by w (a tint would only darken its near-black scales)
+            rdpq_mode_combiner(RDPQ_COMBINER1((PRIM, SHADE, PRIM_ALPHA, SHADE), (0, 0, 0, SHADE)));
+            rdpq_set_prim_color(RGBA32(235, 30, 20, (int)(200 * w)));
+        }
         put_link(&s.limb, s.shoulder[k], kn, k < 2 ? 7.5f : 8.5f, 1.1f);   // thick upper legs, the hind ones thicker
         put_link(&s.limb, kn, s.foot[k], 5.5f, 1.05f);
         static const float Y[3] = { 0, 1, 0 };
         float fx[3]; cross3(fx, Y, s.F);
         put(&s.mFoot, s.foot[k], fx, Y, s.F, 1.0f, 1.0f, 1.0f);     // the foot, flat, facing forward
+        if (hot) rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
     }
 
     put(s.dark ? &s.mHeadDark : &s.mHead, s.head, s.hx, s.hy, s.hz, 1.0f, 1.0f, 1.0f);

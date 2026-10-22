@@ -194,6 +194,7 @@ static void update_arc_hit(SkillFx *f, Boss *b)
         float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
         if (dist - character.capsuleCollider.radius > arc_radius(f)) return;
         if (dist > 1e-3f && (dx*fx + dz*fz) / dist < -0.2f) return;
+        if (character.pos[1] > f->pos[1] + 2.0f) return;     // a wave along the floor: one in the air clears it
         f->hitsLeft = 0;
         character_apply_damage(f->damage);
         return;
