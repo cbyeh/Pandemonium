@@ -524,11 +524,13 @@ static void acc_dragonslayer(SkinColor iron)
         static const int F[6][4] = { {0,1,3,2}, {4,6,7,5}, {0,4,5,1}, {2,3,7,6}, {0,2,6,4}, {1,5,7,3} }; \
         for (int f = 0; f < 6; f++) proc_mesh_quad(v[F[f][0]], v[F[f][1]], v[F[f][2]], v[F[f][3]], col, false); } while (0)
     SkinColor edge = { (uint8_t)fminf(255, iron.r * 1.5f), (uint8_t)fminf(255, iron.g * 1.5f), (uint8_t)fminf(255, iron.b * 1.5f), 1 };
+    // Big but not absurd: a broad blade about 15% longer than the stock sword, ending within
+    // the sword's hit length (the same for every skin) so it never looks longer than it reaches
     OBOX(-0.8f, 0.7f, 0.14f, 0.14f, proc_rgb(92, 66, 42));    // wrapped grip
-    OBOX(0.7f, 1.0f, 0.55f, 0.2f, rgb(iron));                 // squat guard
-    OBOX(1.0f, 10.4f, 0.72f, 0.12f, rgb(iron));               // the slab
-    OBOX(1.0f, 10.4f, 0.78f, 0.04f, rgb(edge));               // its bevelled edges
-    OBOX(9.7f, 10.7f, 0.5f, 0.11f, rgb(iron));                // the blunt, angled tip
+    OBOX(0.7f, 1.0f, 0.45f, 0.18f, rgb(iron));                // squat guard
+    OBOX(1.0f, 8.2f, 0.5f, 0.1f, rgb(iron));                  // the slab
+    OBOX(1.0f, 8.2f, 0.55f, 0.035f, rgb(edge));               // its bevelled edges
+    OBOX(7.7f, 8.9f, 0.36f, 0.09f, rgb(iron));                // the blunt, angled tip
     #undef OBOX
 }
 
