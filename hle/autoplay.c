@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS)
 #include "camera_controller.h"
 #include "character_skin.h"
 #include <math.h>
@@ -14,7 +14,7 @@
 #include "controllers/menu_controller.h"
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #endif
-#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT)
+#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT)
 #include "utilities/save_controller.h"
 #include "controllers/menu_controller.h"
 #include "controllers/audio_controller.h"
@@ -258,6 +258,21 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         }
         int t = frame - start;
         if (step < 4 && t == 30 + step * 15) { if (step < 3) pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; }
+        return;
+    }
+#endif
+#ifdef HLE_TEST_MARKS
+    {   // test aid: a save with the story and two Bonus bosses beaten, then Title > Bonus
+        static int start = -1, step = 0;
+        if (start < 0) {
+            if (menu_controller_is_active()) {
+                start = frame; (void)save_controller_record_boss_clear_time_ms(754321);
+                save_controller_mark_bonus_beaten(0); save_controller_mark_bonus_beaten(2);
+            } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        int t = frame - start;
+        if (step < 2 && t == 200 + step * 15) { if (step < 1) pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; }
         return;
     }
 #endif

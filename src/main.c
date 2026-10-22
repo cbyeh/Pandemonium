@@ -75,6 +75,8 @@ int main(void)
     }
 
     rdpq_text_register_font(FONT_UNBALANCED, font1);
+    rdpq_font_style(font1, FONT_STYLE_GOLD, &(rdpq_fontstyle_t){ .color = RGBA32(255, 200, 90, 255) });
+    rdpq_font_style(font1, FONT_STYLE_GREY, &(rdpq_fontstyle_t){ .color = RGBA32(130, 130, 130, 255) });
 
     game_time_init();
     joypad_utility_init();

@@ -842,6 +842,27 @@ static void draw_menu_selection_highlight_centered(int contentX, int y, int cont
     draw_menu_selection_highlight(x, y, w, lineH);
 }
 
+// Beaten (the story cleared, a Bonus boss slain on this save): gold text and a small
+// gold diamond after it
+static void draw_menu_line(int x, int y, int w, int h, rdpq_align_t align, const char *text, bool beaten)
+{
+    rdpq_textparms_t tp = { .align = align, .width = w, .height = h, .wrap = WRAP_WORD,
+                            .style_id = beaten ? FONT_STYLE_GOLD : FONT_STYLE_WHITE };
+    int nb = strlen(text);
+    rdpq_paragraph_t *pg = rdpq_paragraph_build(&tp, FONT_UNBALANCED, text, &nb);
+    rdpq_paragraph_render(pg, x, y);
+    int mx = x + (int)pg->bbox.x1 + 5, my = y + (int)((pg->bbox.y0 + pg->bbox.y1) * 0.5f);
+    rdpq_paragraph_free(pg);
+    if (!beaten) return;
+    static const uint8_t ROW[7] = { 1, 3, 5, 7, 5, 3, 1 };
+    rdpq_sync_pipe();
+    rdpq_set_mode_standard();
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+    rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+    rdpq_set_prim_color(RGBA32(255, 200, 90, 255));
+    for (int r = 0; r < 7; r++) rdpq_fill_rectangle(mx + 3 - ROW[r] / 2, my - 3 + r, mx + 3 - ROW[r] / 2 + ROW[r], my - 2 + r);
+}
+
 static void draw_icon_line(sprite_t *icon, int x, int rowBaselineY, int lineH, int w, const char *text)
 {
     const int gap = 8;
@@ -916,13 +937,8 @@ void menu_controller_draw(void)
                 rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
             }
 
-            const char *displayText = titleMenuOptions[i];
-
-            rdpq_text_printf(&(rdpq_textparms_t){
-                .align = ALIGN_LEFT,
-                .width = menuW,
-                .wrap = WRAP_WORD,
-            }, FONT_UNBALANCED, menuX, y, "%s", displayText);
+            bool beaten = i == MENU_TITLE_STORY && save_controller_get_best_boss_time_ms() > 0;
+            draw_menu_line(menuX, y, menuW, 0, ALIGN_LEFT, titleMenuOptions[i], beaten);
 
             y += lineHeight + 6;
         }
@@ -1199,13 +1215,12 @@ void menu_controller_draw(void)
             } else {
                 rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
             }
-            if (locked) rdpq_set_prim_color(RGBA32(130, 130, 130, 255));   // greyed out
-
             rdpq_text_printf(&(rdpq_textparms_t){
                 .align = ALIGN_CENTER,
                 .width = contentW,
                 .height = contentH,
                 .wrap = WRAP_WORD,
+                .style_id = locked ? FONT_STYLE_GREY : FONT_STYLE_WHITE,   // greyed out
             }, FONT_UNBALANCED, x, y, "%s", optionText);
 
             y += lineHeight + 2;
@@ -1230,12 +1245,9 @@ void menu_controller_draw(void)
                 rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
             }
 
-            rdpq_text_printf(&(rdpq_textparms_t){
-                .align = ALIGN_CENTER,
-                .width = contentW,
-                .height = contentH,
-                .wrap = WRAP_WORD,
-            }, FONT_UNBALANCED, x, y, "%s", bonusMenuOptions[i]);
+            const SaveData *sd = save_controller_get_slot_data(save_controller_get_active_slot());
+            bool beaten = i < 3 && (save_progress_bonus_mask(sd) & (1 << i));
+            draw_menu_line(x, y, contentW, contentH, ALIGN_CENTER, bonusMenuOptions[i], beaten);
 
             y += lineHeight + 2;
         }

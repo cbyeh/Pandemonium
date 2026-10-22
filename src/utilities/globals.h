@@ -30,4 +30,11 @@ enum {
     FONT_UNBALANCED = 2,
 };
 
+// FONT_UNBALANCED's styles: the text colour comes from these, not the prim colour
+enum {
+    FONT_STYLE_WHITE = 0,
+    FONT_STYLE_GOLD  = 1,     // beaten: the story cleared, a Bonus boss slain
+    FONT_STYLE_GREY  = 2,     // unavailable
+};
+
 #endif
