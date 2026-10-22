@@ -15,7 +15,6 @@
 #include "scene_controller.h"
 #include "dev.h"
 #include "dev/crt_safe_area_overlay.h"
-#include "controllers/fmv_controller.h"
 #include "character/character.h"
 
 int main(void)
@@ -134,15 +133,6 @@ int main(void)
 
         // Debounced EEPROM save flush.
         save_controller_update();
-
-        // ------------------------------------------------------------
-        // VIDEO PUMP
-        // Must be before any rdpq_attach() in the frame.
-        // ------------------------------------------------------------
-        if (video_player_pump_and_play(&viewport)) {
-            // Video played. The utility restores display/rdpq/t3d and can restart through scene_controller.
-            continue;
-        }
 
         SceneControllerSceneId activeScene = scene_controller_get_active_scene();
         bool isOpeningCredits = activeScene == SCENE_CONTROLLER_SCENE_OPENING_CREDITS;

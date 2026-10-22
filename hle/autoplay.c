@@ -76,11 +76,6 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         last = now; (void)last;
     }
 #endif
-#ifdef HLE_TEST_VIDEO
-    extern void video_player_request(const char *rom_video_path);
-    if (frame == 30) video_player_request("rom:/video.h264");
-    return;
-#endif
 #ifdef HLE_TEST_ROLLCANCEL
     // A during an attack, the Halfmoon charge and an airborne Moon Blade Dance
     // (states: 0 normal, 1 rolling, 2 attacking, 9 skill)

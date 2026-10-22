@@ -18,7 +18,7 @@ INCDIR = include
 ASSDIR = assets
 OBJDIR = $(BUILD_DIR)
 ifeq ($(HLE),1)
-# Separate assets: the HLE build ships a CPU-decodable video (see below)
+# Separate converted assets for the HLE build
 FILESYSTEMDIR = $(BUILD_DIR)/filesystem
 else
 FILESYSTEMDIR = filesystem
@@ -53,10 +53,6 @@ assets_gltf = $(filter %.glb,$(asset_files))
 assets_wav = $(filter %.wav,$(asset_files))
 assets_ttf = $(filter %.ttf,$(asset_files))
 assets_bin = $(filter %.bin,$(asset_files))
-assets_h264 = $(filter %.h264,$(asset_files))
-# The ending renders live now (src/scenes/guardian/guardian_ending.c): assets/video.mp4 is no
-# longer shipped, only its soundtrack (video.wav). Restore this filter to ship videos again.
-assets_mp4 =
 
 # Convert asset paths to filesystem output paths, preserving subdirs
 ASSETSCONV = $(patsubst $(ASSDIR)/%.png,$(FILESYSTEMDIR)/%.sprite,$(assets_png)) \
@@ -64,26 +60,11 @@ ASSETSCONV = $(patsubst $(ASSDIR)/%.png,$(FILESYSTEMDIR)/%.sprite,$(assets_png))
 	$(patsubst $(ASSDIR)/%.ttf,$(FILESYSTEMDIR)/%.font64,$(assets_ttf)) \
 	$(patsubst $(ASSDIR)/%.glb,$(FILESYSTEMDIR)/%.t3dm,$(assets_gltf)) \
 	$(patsubst $(ASSDIR)/%.wav,$(FILESYSTEMDIR)/%.wav64,$(assets_wav)) \
-	$(patsubst $(ASSDIR)/%.bin,$(FILESYSTEMDIR)/%.bin,$(assets_bin)) \
-	$(patsubst $(ASSDIR)/%.h264,$(FILESYSTEMDIR)/%.h264,$(assets_h264)) \
-	$(patsubst $(ASSDIR)/%.mp4,$(FILESYSTEMDIR)/%.h264,$(assets_mp4))
+	$(patsubst $(ASSDIR)/%.bin,$(FILESYSTEMDIR)/%.bin,$(assets_bin))
 
-ifeq ($(HLE),1)
-# H.264 needs the RSP: ship a CPU-decodable block video instead (hle/tools/hbvenc.c, needs ffmpeg)
-ASSETSCONV := $(filter-out %.h264,$(ASSETSCONV)) $(patsubst $(ASSDIR)/%.mp4,$(FILESYSTEMDIR)/%.hbv,$(assets_mp4))
-HBVENC = $(BUILD_DIR)/hbvenc
-$(HBVENC): hle/tools/hbvenc.c
-	@mkdir -p $(dir $@)
-	cc -O2 -o $@ $<
-$(FILESYSTEMDIR)/%.hbv: $(ASSDIR)/%.mp4 $(HBVENC)
-	@mkdir -p $(dir $@) $(BUILD_DIR)/hbv/$(dir $*)
-	@echo "    [VIDEO-HBV] $@"
-	ffmpeg -v error -i "$<" -vf scale=320:240,fps=15 -f rawvideo -pix_fmt rgb24 - | $(HBVENC) 320 240 15 $(BUILD_DIR)/hbv/$*.hbv
-	$(N64_BINDIR)/mkasset -c 2 -w 32 -o $(dir $@) $(BUILD_DIR)/hbv/$*.hbv
-endif
 
 # TODO:
-CODEFILES   =  $(shell find $(SRCDIR) -name "*.c" ! -path "$(SRCDIR)/objects/boss.c")
+CODEFILES   =  $(shell find $(SRCDIR) -name "*.c")
 CODEOBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(CODEFILES))
 
 ifeq ($(HLE),1)
@@ -173,16 +154,6 @@ $(COLLISION_STAMP): $(COLLISION_DEPS)
 	@$(COLLISION_PY) -m pip install --upgrade pip >/dev/null
 	@$(COLLISION_PY) -m pip install -r $(COLLISION_DEPS)
 	@touch $(COLLISION_STAMP)
-
-$(FILESYSTEMDIR)/%.h264: $(ASSDIR)/%.mp4
-	@mkdir -p $(dir $@)
-	@echo "    [VIDEO-H264] $@"
-	$(N64_BINDIR)/videoconv64 -c h264 -w 320 -r 24 -q 60 --no-audio -o $(dir $@) "$<"
-
-$(FILESYSTEMDIR)/%.h264: $(ASSDIR)/%.h264
-	@mkdir -p $(dir $@)
-	@echo "    [H264] $@"
-	cp $< $@
 
 $(FILESYSTEMDIR)/%.wav64: $(ASSDIR)/%.wav
 	@mkdir -p $(dir $@)

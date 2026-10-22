@@ -47,7 +47,6 @@
 #include "debug_draw.h"
 #include "utilities/simple_collision_utility.h"
 
-#include "../../controllers/fmv_controller.h"
 
 #include "multi_sword_attacks.h" // TODO: call only from boss
 #include "fx/lightning_fx.h"
