@@ -790,8 +790,15 @@ void boss_ai_update(Boss* boss, BossIntent* out_intent) {
         boss->pendingRequests &= ~0x01;  // Clear flag
         boss->state = BOSS_STATE_STAGGER;
         boss->stateTimer = 0.0f;
+        // The stagger meter broke: whatever it was swinging stops, and it sinks to a knee
+        boss->isAttacking = false;
+        boss->attackAnimTimer = 0.0f;
+        boss->handAttackColliderActive = false;
+        boss->sphereAttackColliderActive = false;
+        boss->velX = boss->velZ = 0.0f;
+        boss->currentSpeed = 0.0f;
         out_intent->anim_req = true;
-        out_intent->anim = BOSS_ANIM_ATTACK;  // Stagger animation
+        out_intent->anim = BOSS_ANIM_KNEEL;  // Stagger animation
         out_intent->priority = BOSS_ANIM_PRIORITY_HIGH;
         out_intent->force_restart = true;
         return;
@@ -981,7 +988,9 @@ void boss_ai_update(Boss* boss, BossIntent* out_intent) {
             break;
             
         case BOSS_STATE_STAGGER:
-            if (boss->stateTimer > 0.5f) {
+            boss->handAttackColliderActive = false;
+            boss->sphereAttackColliderActive = false;
+            if (boss->staggerT <= 0.0f || boss->stateTimer > 2.5f) {
                 boss->state = BOSS_STATE_RECOVER;
                 boss->stateTimer = 0.0f;
             }
@@ -1377,7 +1386,7 @@ void boss_ai_update(Boss* boss, BossIntent* out_intent) {
                 out_intent->anim = BOSS_ANIM_WALK;
                 break;
             case BOSS_STATE_STAGGER:
-                out_intent->anim = BOSS_ANIM_ATTACK;
+                out_intent->anim = BOSS_ANIM_KNEEL;
                 out_intent->priority = BOSS_ANIM_PRIORITY_HIGH;
                 break;
             case BOSS_STATE_DEAD:

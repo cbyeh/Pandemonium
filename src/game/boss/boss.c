@@ -24,6 +24,9 @@
 #include "../../fx/sword_trail.h"
 #include "../../fx/skill_fx.h"
 #include "environmental_mechanics/multi_sword_attacks.h"
+#include "../../fx/screen_shake.h"
+#include "../../controllers/audio_controller.h"
+#include "../../scenes/guardian/guardian_scene_sfx.h"
 
 // Forward declarations for internal functions
 static void boss_apply_intent(Boss* boss, const BossIntent* intent);
@@ -506,6 +509,10 @@ static inline void boss_update_shadow_mat(Boss* boss)
 // Health per fight without skills; the D-pad skills double it. The bonus bosses are
 // sized to the same difficulty as the Guardian's two phases together (measured damage
 // against a dummy + a binomial dodge model): they hit softer but more often.
+#define POISE_HEALTH_FRAC   0.2f     // stagger meter: this share of max health fills it
+#define STAGGER_DAMAGE_MULT 1.3f
+#define GUARDIAN_STAGGER_S  2.0f
+
 static inline float boss_target_max_health(int phase)
 {
     float base = (phase == FALLEN_KNIGHT_PHASE) ? 300.0f : (phase == SUN_BOSS_PHASE) ? 325.0f :
@@ -531,10 +538,53 @@ static void boss_sync_max_health(Boss* boss)
     boss->maxHealth = target;
 }
 
+// The stagger meter drains once the player lets up; full, the boss staggers as soon as it can
+static void boss_poise_update(Boss* boss, float dt)
+{
+    if (boss->staggerT > 0.0f) {
+        boss->staggerT -= dt;
+        if (boss->staggerT <= 0.0f) { boss->staggerT = 0.0f; boss->poise = 0.0f; }
+        return;
+    }
+    if (boss->mode != BOSS_MODE_COMBAT || boss->health <= 0.0f) { boss->poise = 0.0f; return; }
+    boss->poiseIdleT += dt;
+    if (boss->poise >= 1.0f) {
+        if (boss_try_stagger(boss)) {
+            screen_shake_set_shake_mag(8.0f);
+            audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH2, 0.9f, 0.0f);
+#ifdef HLE_AUTOPLAY
+            debugf("[stagger] boss %d staggered for %.1f s\n", boss->phaseIndex, (double)boss->staggerT);
+#endif
+        }
+        return;
+    }
+    if (boss->poiseIdleT > 2.0f) boss->poise = fmaxf(0.0f, boss->poise - 0.3f * dt);
+}
+
+bool boss_try_stagger(Boss* boss)
+{
+    if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) return fallen_knight_stagger(boss);
+    if (boss->phaseIndex == SUN_BOSS_PHASE) return sun_boss_stagger(boss);
+    if (boss->phaseIndex == DRAGON_BOSS_PHASE) return dragon_boss_stagger(boss);
+    // The Guardian, both forms: down on one knee, on the ground and between airborne moves only
+    switch (boss->state) {
+        case BOSS_STATE_NEUTRAL: case BOSS_STATE_CHASE: case BOSS_STATE_STRAFE: case BOSS_STATE_RECOVER:
+        case BOSS_STATE_COMBO_ATTACK: case BOSS_STATE_COMBO_STARTER: case BOSS_STATE_COMBO_LUNGE:
+        case BOSS_STATE_LUNGE_STARTER: case BOSS_STATE_ATTACK1: case BOSS_STATE_STOMP:
+            break;
+        default:
+            return false;
+    }
+    boss->pendingRequests |= 0x01;      // BOSS_REQ_STAGGER: boss_ai plays it
+    boss->staggerT = GUARDIAN_STAGGER_S;
+    return true;
+}
+
 void boss_update(Boss* boss)
 {
     if (!boss) return;
     boss_sync_max_health(boss);
+    boss_poise_update(boss, deltaTime);
 #ifdef HLE_TEST_FREEZE_BOSS
     if (boss->mode == BOSS_MODE_COMBAT) return;     // test aid: keep the boss out of the way
 #endif
@@ -681,8 +731,13 @@ void boss_apply_damage(Boss* boss, float amount)
         amount *= tower_mod_damage_dealt();
         character.health = fminf(character.maxHealth, character.health + amount * tower_mod_lifesteal());
     }
+    if (boss->staggerT > 0.0f) amount *= STAGGER_DAMAGE_MULT;     // staggered: hits land harder
     boss->health -= amount;
     if (boss->health < 0.0f) boss->health = 0.0f;
+    if (boss->staggerT <= 0.0f) {      // the stagger meter: about a fifth of its health, dealt without letting up
+        boss->poise = fminf(1.0f, boss->poise + amount / (boss->maxHealth * POISE_HEALTH_FRAC));
+        boss->poiseIdleT = 0.0f;
+    }
 
     boss->damageFlashTimer = 0.25f;
 
@@ -959,6 +1014,7 @@ void boss_init(Boss* boss)
     boss->visible = true;
     boss->mode = BOSS_MODE_INACTIVE;
     boss->pendingRequests = 0;
+    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
 
     boss_anim_init(boss);
     boss_ai_init(boss);
@@ -1069,6 +1125,7 @@ void boss_reset(Boss* boss)
     boss->visible = true;
     boss->mode = BOSS_MODE_INACTIVE;
     boss->pendingRequests = 0;
+    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
 
     boss_ai_init(boss);
     boss_anim_init(boss);

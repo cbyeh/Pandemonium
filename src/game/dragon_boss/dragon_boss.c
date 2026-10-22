@@ -147,6 +147,18 @@ static void enter(DgState st)
 }
 
 static bool player_low(void) { return character.pos[1] - s.groundY < 10.0f; }
+bool dragon_boss_stagger(Boss* b)
+{
+    (void)b;
+    // Not in the air, not already spent
+    if (!s.ready || s.state == DG_INTRO || s.state == DG_FLY || s.state == DG_TIRED || s.state == DG_DEAD || s.alt > 1.0f) return false;
+    s.beamOn = false; s.glow = 0.0f;
+    enter(DG_TIRED);
+    s.t = 1.0f;         // 2.5 s of its 3.5 s rest
+    b->staggerT = 2.5f;
+    return true;
+}
+
 static void player_chest(float o[3]) { o[0] = character.pos[0]; o[1] = character.pos[1] + 12.0f; o[2] = character.pos[2]; }
 
 static void sfx_boom(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH2, 1.0f, 0.0f); }
@@ -419,6 +431,7 @@ void dragon_boss_begin(Boss* boss)
     boss->health = boss->maxHealth;
     boss->mode = BOSS_MODE_CINEMATIC;       // not damageable until it has landed
     boss->state = BOSS_STATE_INTRO;
+    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
     boss->damageFlashTimer = 0.0f;
     boss->velX = boss->velZ = 0.0f;
     boss->handAttackColliderActive = false;

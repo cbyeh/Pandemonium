@@ -964,6 +964,7 @@ static void scene_place_character(void)
 
 void scene_init_playing(bool skippedCutscene)
 {
+    game_time_clear_effects();
     scene_place_character();
 
     // Skip dialog and cutscene

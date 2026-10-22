@@ -16,6 +16,7 @@ void boss_ui_set_form(int phase);
 void boss_ui_snap_health_trail(float ratio);
 
 void boss_ui_draw_health_bar(const char *name, float ratio, float flash);
+void boss_ui_draw_poise_bar(float poise, bool staggered, float time);
 
 void boss_ui_draw_lockon_marker(
     T3DViewport *viewport,

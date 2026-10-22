@@ -1,6 +1,7 @@
 #include "boss_ui.h"
 
 #include <libdragon.h>
+#include <math.h>
 
 #include "../../utilities/globals.h"
 #include "../../utilities/game_time.h"
@@ -575,6 +576,25 @@ void boss_ui_draw_health_bar(const char *name, float ratio, float flash)
     boss_ui_draw_health_fill(&layout, ratio, flash, s_bossUiIntro);
     boss_ui_draw_health_frame(&layout);
     boss_ui_draw_health_name(&layout);
+}
+
+// The stagger meter: a thin gold line under the health fill, growing from the centre;
+// full and flickering while the boss is staggered
+void boss_ui_draw_poise_bar(float poise, bool staggered, float time)
+{
+    if (poise <= 0.01f && !staggered) return;
+    BossUiHealthLayout layout = boss_ui_make_health_layout();
+    boss_ui_prepare_flat_ui_pipe();
+    int center = layout.fillX + layout.fillW / 2;
+    int half = (int)((float)(layout.fillW / 2) * boss_ui_clampf(staggered ? 1.0f : poise, 0.0f, 1.0f) * s_bossUiIntro);
+    int y0 = layout.fillY + layout.fillH + 2, y1 = y0 + 2;
+    if (staggered) {
+        int k = 200 + (int)(55.0f * (0.5f + 0.5f * sinf(time * 20.0f)));
+        rdpq_set_prim_color(RGBA32(255, k, 120 + (k - 200), 230));
+    } else {
+        rdpq_set_prim_color(RGBA32(230, 180, 60, 200));
+    }
+    if (half > 0) rdpq_fill_rectangle(center - half, y0, center + half, y1);
 }
 
 void boss_ui_draw_lockon_marker(

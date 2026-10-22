@@ -87,6 +87,10 @@ static const float ROLL_MOVING_MAG      = 0.20f; // stick magnitude threshold
 // can be hit — keeps the recovery frames of the roll vulnerable.
 static const float ROLL_IFRAME_START = 0.02f;
 static const float ROLL_IFRAME_END   = 0.72f;
+// A blow dodged this soon after the roll starts: a moment of slow motion and stamina back
+static const float PERFECT_DODGE_S = 0.2f;
+static const float PERFECT_DODGE_STAMINA = 25.0f;
+static bool s_perfectThisRoll;
 
 static const float ROLL_ANIM_SPEED = 1.0f;
 static const float ATTACK_DURATION = 0.9f; // (legacy, not used directly)
@@ -956,6 +960,7 @@ static inline void try_start_roll(const joypad_buttons_t* buttons, const StickIn
 
     characterState = CHAR_STATE_ROLLING;
     actionTimer = 0.0f;
+    s_perfectThisRoll = false;
 
     // Shorten roll when moving so we return to locomotion sooner (prevents long slide)
     float mag = stick ? stick->magnitude : 0.0f;
@@ -1999,6 +2004,7 @@ static inline void start_knockdown_breakaway_roll(void)
     // Breakaway => transition into rolling (invuln maintained by your state check)
     characterState = CHAR_STATE_ROLLING;
     actionTimer = 0.0f;
+    s_perfectThisRoll = false;
 
     // Breakaway roll duration: pick whichever feels right.
     // If you want it snappier, use ROLL_DURATION_MOVING.
@@ -2809,6 +2815,10 @@ void character_update(void)
                 Boss* boss = boss_get_instance();
                 if (boss) {
                     boss_apply_damage(boss, damage);
+                    // Hit-stop: the blow lands with weight (heavier for the charged attack)
+                    bool strong = characterState == CHAR_STATE_ATTACKING_STRONG;
+                    game_time_hitstop(strong ? 0.085f : 0.045f);
+                    if (strong) screen_shake_set_shake_mag(5.0f);
 
                     // Spawn blood at the actual sword/boss contact point. The sword tip alone
                     // extends past the boss capsule, so we converge on the closest points
@@ -3265,7 +3275,21 @@ void character_draw_ui(void)
 void character_apply_damage(float amount)
 {
     if (amount <= 0.0f) return;
-    if (character_is_invulnerable()) return;
+    if (character_is_invulnerable()) {
+        // A perfect dodge: a real blow (not a hazard's tick) caught in the first moments of a roll
+        if (characterState == CHAR_STATE_ROLLING && !s_perfectThisRoll && amount >= 6.0f
+            && actionTimer * currentActionDuration <= PERFECT_DODGE_S) {
+            s_perfectThisRoll = true;
+            game_time_slowmo(0.45f, 0.35f);
+            character.stamina = fminf(character.maxStamina, character.stamina + PERFECT_DODGE_STAMINA);
+            skill_fx_spawn_burst(character.pos, character.rot[1]);
+            audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_CAST, 0.8f, 0.0f);
+#ifdef HLE_AUTOPLAY
+            debugf("[feel] perfect dodge of %.0f\n", (double)amount);
+#endif
+        }
+        return;
+    }
     // Once the boss has fallen, whatever is still in flight is harmless
     { Boss *b = boss_get_instance(); if (b && b->state == BOSS_STATE_DEAD) return; }
 #ifdef HLE_TEST_DUMMY
@@ -3287,6 +3311,7 @@ void character_apply_damage(float amount)
 #endif
 
     joypad_rumble_pulse_seconds(1.0f);
+    if (amount >= 20.0f) game_time_hitstop(0.07f);     // a heavy blow taken
 
     if (character.health <= 0.0f) {
         character_set_state(CHAR_STATE_DEAD);

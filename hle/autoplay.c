@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY)
 #include "camera_controller.h"
 #include "character_skin.h"
 #include <math.h>
@@ -253,6 +253,22 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         }
         int t = frame - start;
         if (step < 4 && t == 30 + step * 15) { if (step < 3) pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; }
+        return;
+    }
+#endif
+#ifdef HLE_TEST_BKEY
+    {   // test aid: B on each title menu row must do nothing there (it only goes back)
+        extern int scene_controller_get_active_scene(void);
+        static int start = -1;
+        if (start < 0) {
+            if (menu_controller_is_active()) start = frame;
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        int t = frame - start, row = t / 60;
+        if (row < 6 && t % 60 == 20) { pressed->b = 1; in->btn.b = 1; debugf("[bkey] B on row %d\n", row); }
+        if (row < 6 && t % 60 == 50) { debugf("[bkey] row %d: scene %d menu %d submenu %d\n", row, scene_controller_get_active_scene(), menu_controller_is_active(), menu_controller_is_title_submenu_active()); }
+        if (row < 5 && t % 60 == 55) pressed->d_down = 1;
         return;
     }
 #endif

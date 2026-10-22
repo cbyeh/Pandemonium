@@ -401,6 +401,7 @@ void boss_render_debug(Boss* boss, void* viewport)
     }
 
     boss_ui_draw_health_bar(boss->name, ratio, flash);
+    { extern float gameTime; boss_ui_draw_poise_bar(boss->poise, boss->staggerT > 0.0f, gameTime); }
 
     if (!DEV_MODE || !debugDraw) {
         return;

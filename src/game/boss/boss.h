@@ -272,6 +272,9 @@ typedef struct Boss {
 
     // Pending requests (set by external triggers, read by AI)
     unsigned int pendingRequests;
+
+    // Stagger meter: hits fill it (0..1), it drains when left alone; full, the boss staggers
+    float poise, poiseIdleT, staggerT;     // staggerT > 0: staggered, hits land harder
 } Boss;
 
 // Intent/command struct - what AI wants to happen this frame
@@ -308,6 +311,8 @@ bool boss_is_interactable(const Boss* boss);
 
 void boss_update(Boss* boss);
 void boss_draw(Boss* boss);
+// A broken stagger meter: each boss's own stagger (false if it can't right now: airborne, mid-cast)
+bool boss_try_stagger(Boss* boss);
 void boss_draw_ui(Boss* boss, void* viewport); // T3DViewport* but avoiding header dependency
 
 void boss_turn_towards_yaw(Boss *boss, float targetYaw, float maxTurn);

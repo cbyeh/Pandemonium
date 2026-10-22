@@ -34,16 +34,16 @@ extern T3DModel* characterModel;       // the player's knight model (character.c
 
 enum {
     FKA_IDLE, FKA_WALK, FKA_RUN, FKA_ROLL, FKA_ATTACK1, FKA_ATTACK2, FKA_ATTACK3,
-    FKA_CHARGED, FKA_CLEAVE, FKA_HALFMOON, FKA_DEATH, FKA_BACKFLIP, FKA_COUNT
+    FKA_CHARGED, FKA_CLEAVE, FKA_HALFMOON, FKA_DEATH, FKA_BACKFLIP, FKA_KNOCKDOWN, FKA_COUNT
 };
 static const char *ANIM_NAMES[FKA_COUNT] = {
     "Idle", "Walk1", "Run", "Roll", "Attack1", "Attack2", "Attack3",
-    "AttackCharged", "SkillCleave", "SkillHalfmoon", "Death", "SkillBackflip",
+    "AttackCharged", "SkillCleave", "SkillHalfmoon", "Death", "SkillBackflip", "Knockdown",
 };
 static const bool ANIM_LOOP[FKA_COUNT] = { true, true, true };
 
 typedef enum {
-    FK_INTRO, FK_CHASE, FK_COMBO, FK_ROLL, FK_CLEAVE, FK_HALFMOON, FK_MOONBLADE, FK_RECOVER, FK_DEAD,
+    FK_INTRO, FK_CHASE, FK_COMBO, FK_ROLL, FK_CLEAVE, FK_HALFMOON, FK_MOONBLADE, FK_RECOVER, FK_STAGGER, FK_DEAD,
 } FkState;
 
 static struct {
@@ -189,6 +189,7 @@ void fallen_knight_begin(Boss* boss)
     boss->health = boss->maxHealth;
     boss->mode = BOSS_MODE_CINEMATIC;       // not damageable until it lands
     boss->state = BOSS_STATE_INTRO;
+    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
     boss->damageFlashTimer = 0.0f;
     boss->velX = boss->velZ = 0.0f;
     boss->handAttackColliderActive = false;
@@ -217,6 +218,17 @@ void fallen_knight_skip_intro(Boss* boss)
     boss->mode = BOSS_MODE_COMBAT;
     boss->state = BOSS_STATE_NEUTRAL;
     enter(FK_CHASE);
+}
+
+bool fallen_knight_stagger(Boss* b)
+{
+    // Knocked down where it stands; not in the air (the leap) or already down
+    if (!s.ready || s.state == FK_INTRO || s.state == FK_MOONBLADE || s.state == FK_STAGGER || s.state == FK_DEAD) return false;
+    b->pos[1] = s.groundY;
+    enter(FK_STAGGER);
+    play(FKA_KNOCKDOWN, true);
+    b->staggerT = 2.2f;
+    return true;
 }
 
 // ---- Skills (hostile versions of the player's) ----
@@ -400,6 +412,11 @@ void fallen_knight_update(Boss* b, float dt)
     case FK_CLEAVE:    cleave_update(b);       break;
     case FK_HALFMOON:  halfmoon_update(b, dt); break;
     case FK_MOONBLADE: moonblade_update(b, dt); break;
+
+    case FK_STAGGER:
+        // Down from the stagger: it gets up when the clip ends and the stagger is over
+        if (b->staggerT <= 0.0f && clip_done()) enter(FK_RECOVER);
+        break;
 
     case FK_RECOVER:
         // A breather after every move: the opening to hit back

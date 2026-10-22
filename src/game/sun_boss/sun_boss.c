@@ -169,6 +169,7 @@ void sun_boss_begin(Boss* boss)
     boss->health = boss->maxHealth;
     boss->mode = BOSS_MODE_CINEMATIC;       // not damageable until it has come down
     boss->state = BOSS_STATE_INTRO;
+    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
     boss->damageFlashTimer = 0.0f;
     boss->velX = boss->velZ = 0.0f;
     boss->handAttackColliderActive = false;
@@ -301,6 +302,18 @@ static void dive_update(Boss *b, float dt)
     }
 }
 
+
+bool sun_boss_stagger(Boss* b)
+{
+    // Knocked out of the air onto the floor, dimmed (as after a dive); not mid-dive or breaking free
+    if (!s.ready || s.state == SB_INTRO || s.state == SB_DIVE || s.state == SB_REST || s.state == SB_BREAK || s.state == SB_DEAD) return false;
+    for (int k = 0; k < NCH; k++) s.ch[k].kin = s.ch[k].hot = false;
+    skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.0f);
+    enter(SB_REST);
+    s.t = 3.0f / speed_mult() - 2.5f;     // 2.5 s on the floor
+    b->staggerT = 2.5f;
+    return true;
+}
 
 // ---- Shackles ----
 
@@ -598,7 +611,8 @@ void sun_boss_update(Boss* b, float dt)
     case SB_SWEEP:  sweep_update(b, dt); break;
 
     case SB_REST:
-        // Dimmed on the floor: the opening
+        // Dimmed on the floor: the opening (a stagger drops it there from the air)
+        b->pos[1] += (s.groundY + REST_H - b->pos[1]) * fminf(1.0f, dt * 8.0f);
         if (s.t > 3.0f / sm) enter(SB_HOVER);
         break;
 
