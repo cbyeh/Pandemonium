@@ -47,6 +47,8 @@ void proc_mesh_draw(const ProcMesh *m);
 // Glow (unlit triangles): blended over what is behind by brightness, no depth write.
 // Never additive: the real RDP wraps an overflowing sum instead of clamping.
 void proc_mesh_draw_glow(const ProcMesh *m);
+// Either, with the vertex colours multiplied by tint
+void proc_mesh_draw_tinted(const ProcMesh *m, bool glow, color_t tint);
 void proc_mesh_free(ProcMesh *m);
 
 static inline uint32_t proc_rgb(int r, int g, int b) { return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xFF; }

@@ -16,6 +16,8 @@
 #include "../../scenes/guardian/guardian_scene_sfx.h"
 #include "../../scenes/guardian/guardian_scene_bounds.h"
 #include "utilities/general_utility.h"
+#include "utilities/game_math.h"
+#include "utilities/simple_collision_utility.h"
 
 extern T3DModel* characterModel;       // the player's knight model (character.c)
 
@@ -51,6 +53,7 @@ static struct {
     int anim;
     float blendT;           // crossfade timer (0 = done)
     T3DMat4FP *mat;
+    int swordBone;          // "Hand-Right": the blade runs along its -X
 
     FkState state;
     float t;                // time in state
@@ -101,6 +104,8 @@ static void move(Boss *b, float vx, float vz, float dt)
     if (scene_bounds_check_room(nx, b->pos[1], nz)) { b->pos[0] = nx; b->pos[2] = nz; }
 }
 
+static inline float clamp01f(float x) { return x < 0.0f ? 0.0f : x > 1.0f ? 1.0f : x; }
+
 static void enter(FkState st)
 {
     s.state = st;
@@ -111,16 +116,37 @@ static void enter(FkState st)
 
 static void swing_sfx(void) { audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_SWING1, 1.0f, 0.0f); }
 
-/** Melee hit: once per swing, inside the clip's damage window, if the player is in front. */
+/** The blade in world space, from the last pose (as the player's sword: 640 units along the hand's -X) */
+static bool sword_segment(float base[3], float tip[3])
+{
+    if (s.swordBone < 0) return false;
+    const T3DMat4FP *B = &s.skel.boneMatricesFP[s.swordBone];
+    float m0[3], m1[3];
+    mat4fp_mul_point_f32_row3_colbasis(B, (float[3]){ 0.0f, 0.0f, 0.0f }, m0);
+    mat4fp_mul_point_f32_row3_colbasis(B, (float[3]){ -640.0f, 0.0f, 0.0f }, m1);
+    mat4fp_mul_point_f32_row3_colbasis(s.mat, m0, base);
+    mat4fp_mul_point_f32_row3_colbasis(s.mat, m1, tip);
+    return true;
+}
+
+/** Melee hit: once per swing, inside the clip's damage window, only where the blade meets the player */
 static void melee_check(Boss *b, float t0, float t1, float damage)
 {
+    (void)b;
     float clip = t3d_anim_get_time(&s.anims[s.anim]);
     if (s.hitDone || clip < t0 || clip > t1) return;
-    float dx, dz, dist = to_player(b, &dx, &dz);
-    float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
-    if (dist > FK_MELEE_RANGE || (dist > 1e-3f && (dx * fx + dz * fz) / dist < 0.3f)) return;
+    float base[3], tip[3];
+    if (!sword_segment(base, tip)) return;
+    const float *p = character.pos;
+    const T3DVec3 *a = &character.capsuleCollider.localCapA, *c = &character.capsuleCollider.localCapB;
+    float pa[3] = { p[0] + a->v[0], p[1] + a->v[1], p[2] + a->v[2] };
+    float pb[3] = { p[0] + c->v[0], p[1] + c->v[1], p[2] + c->v[2] };
+    if (!scu_capsule_vs_capsule_f(base, tip, 3.0f, pa, pb, character.capsuleCollider.radius)) return;
     s.hitDone = true;
     character_apply_damage(damage);
+#ifdef HLE_TEST_DUMMY
+    debugf("[fk] hit by clip %d at %.2f s\n", s.anim, (double)clip);
+#endif
 }
 
 static bool clip_done(void)
@@ -152,6 +178,7 @@ void fallen_knight_begin(Boss* boss)
             t3d_anim_set_playing(&s.anims[i], false);
         }
         s.mat = malloc_uncached(sizeof(T3DMat4FP));
+        s.swordBone = t3d_skeleton_find_bone(&s.skel, "Hand-Right");
         s.ready = true;
     }
     s.anim = -1;
@@ -281,6 +308,10 @@ static void choose(Boss *b, float dist)
 #ifdef HLE_TEST_FK_LEAP
     if (s.cdMoonblade <= 0.0f) { s.cdMoonblade = 4.0f; enter(FK_MOONBLADE); debugf("[fk] leap\n"); return; }   // test aid: leap often
 #endif
+#ifdef HLE_FK_FORCE   // test aid: 1 = halfmoon, 2 = cleave, back to back
+    if (HLE_FK_FORCE == 1) { enter(FK_HALFMOON); play(FKA_HALFMOON, true); debugf("[fk] halfmoon\n"); return; }
+    if (HLE_FK_FORCE == 2) { enter(FK_CLEAVE); play(FKA_CLEAVE, true); debugf("[fk] cleave\n"); return; }
+#endif
     if (s.cdHalfmoon <= 0.0f && dist < 70.0f) { s.cdHalfmoon = 16.0f; enter(FK_HALFMOON); play(FKA_HALFMOON, true); return; }
     if (s.cdMoonblade <= 0.0f && dist > 40.0f) { s.cdMoonblade = 12.0f; enter(FK_MOONBLADE); return; }
     if (s.cdCleave <= 0.0f && dist < 60.0f) { s.cdCleave = 9.0f; enter(FK_CLEAVE); play(FKA_CLEAVE, true); return; }
@@ -344,7 +375,11 @@ void fallen_knight_update(Boss* b, float dt)
 
     case FK_COMBO:
         face_player(b, dt, 2.5f);
-        melee_check(b, 0.25f, 0.6f, FK_MELEE_DAMAGE);
+        {   // the strike of each clip, measured from the blade's speed (the windups before it can't hurt)
+            static const float win[3][2] = { { 0.55f, 0.85f }, { 0.42f, 0.75f }, { 0.9f, 1.2f } };
+            const float *w = win[s.anim == FKA_ATTACK2 ? 1 : s.anim == FKA_ATTACK3 ? 2 : 0];
+            melee_check(b, w[0], w[1], FK_MELEE_DAMAGE);
+        }
         if (clip_done()) {
             if (s.step < 3 && dist < FK_MELEE_RANGE + 6.0f) {
                 s.step++;
@@ -392,9 +427,14 @@ void fallen_knight_update(Boss* b, float dt)
 void fallen_knight_draw(Boss* b)
 {
     if (!s.ready || !b->visible) return;
-    // Dark crimson armour; brighter while it flashes from a hit
+    // Dark crimson armour; brighter while it flashes from a hit, and glowing red, pulsing,
+    // while it winds up a skill (the Halfmoon's charge, the Cleave's crouch)
     bool flash = b->damageFlashTimer > 0.0f;
-    t3d_light_set_ambient(flash ? (uint8_t[4]){ 255, 120, 120, 255 } : (uint8_t[4]){ 120, 45, 70, 255 });
+    float warn = s.state == FK_HALFMOON && s.step == 0 ? clamp01f(s.t / 0.6f)
+               : s.state == FK_CLEAVE && s.step == 0 ? clamp01f(s.t / 0.4f) : 0.0f;
+    warn *= 0.7f + 0.3f * sinf(s.t * 18.0f);
+    uint8_t amb[4] = { (uint8_t)(120 + 135 * warn), (uint8_t)(45 - 30 * warn), (uint8_t)(70 - 55 * warn), 255 };
+    t3d_light_set_ambient(flash ? (uint8_t[4]){ 255, 120, 120, 255 } : amb);
     t3d_matrix_set(s.mat, true);
     t3d_model_draw_skinned(characterModel, &s.skel);
     t3d_light_set_ambient((uint8_t[4]){ 255, 255, 255, 255 });

@@ -277,23 +277,6 @@ void proc_mesh_corona(float radius, int tongues, float reach, int seed, bool hot
     }
 }
 
-void proc_mesh_draw_glow(const ProcMesh *m)
-{
-    if (!m->block) return;
-    rdpq_sync_pipe();
-    rdpq_mode_push();       // restored at the end: the caller's fog and modes stay
-    rdpq_set_mode_standard();
-    rdpq_mode_zbuf(true, false);
-    rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
-    // Blended by brightness, not added: the real RDP wraps an overflowing sum (the Sun's
-    // corona tips speckled green on hardware; HLE renderers clamp, so it never showed there)
-    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-    t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
-    t3d_matrix_set(m->mat, true);
-    rspq_block_run(m->block);
-    rdpq_mode_pop();
-}
-
 void proc_mesh_chain_link(float len, float width, float thick, uint32_t rgba, bool unlit)
 {
     // An oval ring in the xy plane, long along y, with a diamond cross-section
@@ -359,19 +342,28 @@ void proc_mesh_set_transform(ProcMesh *m, const float scale, const float rot[3],
     t3d_mat4fp_from_srt_euler(m->mat, (float[3]){ s, s, s }, rot, pos);
 }
 
-void proc_mesh_draw(const ProcMesh *m)
+// tint multiplies the vertex colours (white: as built), e.g. a boss glowing red before a strike
+static void draw(const ProcMesh *m, bool glow, color_t tint)
 {
     if (!m->block) return;
     rdpq_sync_pipe();
     rdpq_mode_push();       // restored at the end: the caller's fog and modes stay
     rdpq_set_mode_standard();
-    rdpq_mode_zbuf(true, true);
-    rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
+    rdpq_mode_zbuf(true, !glow);
+    if (color_to_packed32(tint) == 0xFFFFFFFF) rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
+    else { rdpq_mode_combiner(RDPQ_COMBINER1((SHADE, 0, PRIM, 0), (0, 0, 0, SHADE))); rdpq_set_prim_color(tint); }
+    // Glow is blended by brightness, not added: the real RDP wraps an overflowing sum (the Sun's
+    // corona tips speckled green on hardware; HLE renderers clamp, so it never showed there)
+    if (glow) rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
     t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
     t3d_matrix_set(m->mat, true);
     rspq_block_run(m->block);
     rdpq_mode_pop();
 }
+
+void proc_mesh_draw(const ProcMesh *m) { draw(m, false, RGBA32(255, 255, 255, 255)); }
+void proc_mesh_draw_glow(const ProcMesh *m) { draw(m, true, RGBA32(255, 255, 255, 255)); }
+void proc_mesh_draw_tinted(const ProcMesh *m, bool glow, color_t tint) { draw(m, glow, tint); }
 
 void proc_mesh_free(ProcMesh *m)
 {

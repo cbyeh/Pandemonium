@@ -36,6 +36,9 @@ typedef enum { SB_INTRO, SB_HOVER, SB_GLARE, SB_CORONA, SB_DIVE, SB_REST, SB_LAS
 #define CHAIN_LEN  (SEG * (NN - 1))
 #define LINK_LEN   7.0f
 #define NLINKS     (NCH * (NN - 1))
+#define BAND_A     18              // links in the collar round the eye
+#define BAND_B     13              // links in each side strap
+#define NBAND      (BAND_A + 2 * BAND_B)
 #define MAT_RING   3               // frames the RSP may still be reading
 
 typedef struct {
@@ -53,7 +56,7 @@ static struct {
     ProcMesh eye, eyeHot;
     ProcMesh link, linkHot, weight;
     ProcMesh corona[2], coronaHot[2];   // two rings of flames, turning opposite ways
-    T3DMat4FP *chainMat;           // MAT_RING * (NLINKS + NCH)
+    T3DMat4FP *chainMat;           // MAT_RING * (NLINKS + NCH + NBAND)
     int matRing;
     Chain ch[NCH];
     bool chainsReady, weights;
@@ -140,7 +143,7 @@ void sun_boss_begin(Boss* boss)
             proc_mesh_begin(); proc_mesh_corona(MESH_R, i ? 11 : 16, MESH_R * (i ? 0.45f : 0.8f), i, false); proc_mesh_end(&s.corona[i]);
             proc_mesh_begin(); proc_mesh_corona(MESH_R, i ? 11 : 16, MESH_R * (i ? 0.5f : 0.95f), i, true); proc_mesh_end(&s.coronaHot[i]);
         }
-        s.chainMat = malloc_uncached(sizeof(T3DMat4FP) * MAT_RING * (NLINKS + NCH));
+        s.chainMat = malloc_uncached(sizeof(T3DMat4FP) * MAT_RING * (NLINKS + NCH + NBAND));
         s.ready = true;
     }
     boss->phaseIndex = SUN_BOSS_PHASE;
@@ -497,10 +500,12 @@ static void sweep_update(Boss *b, float dt)
 
 static void choose(Boss *b, float dist)
 {
-#ifdef HLE_SUN_FORCE   // test aid: 1 = lash, 2 = sweep, back to back
+#ifdef HLE_SUN_FORCE   // test aid: 1 = lash, 2 = sweep, 3 = dive, 4 = corona, back to back
     { float dx, dz, d = to_player(b, &dx, &dz);   // within reach of the player
       if (d > 50.0f) { b->pos[0] = character.pos[0] - dx / d * 50.0f; b->pos[2] = character.pos[2] - dz / d * 50.0f; } }
     if (HLE_SUN_FORCE == 1) { lash_start(b, s.unshackled ? 2 : 1); return; }
+    if (HLE_SUN_FORCE == 3) { enter(SB_DIVE); debugf("[sun] dive\n"); return; }
+    if (HLE_SUN_FORCE == 4) { enter(SB_CORONA); debugf("[sun] corona\n"); return; }
     if (HLE_SUN_FORCE == 2) { float dx, dz; to_player(b, &dx, &dz); s.lashChain = nearest_chain(b, dx, dz); enter(SB_SWEEP); debugf("[sun] sweep\n"); return; }
 #endif
     if (s.cdDive <= 0.0f && dist < 90.0f) { s.cdDive = 13.0f; enter(SB_DIVE); return; }
@@ -634,9 +639,42 @@ static void link_matrix(T3DMat4FP *out, const float a[3], const float b[3], bool
     t3d_mat4_to_fixed(out, &M);
 }
 
-static void chains_draw(void)
+// Shackle bands bound round the sun while it is chained: a collar framing the eye and
+// a strap down each side, front to back. r: the eye's radius this frame
+static int bands_draw(const Boss *b, float r, T3DMat4FP *mats)
 {
-    T3DMat4FP *mats = s.chainMat + s.matRing * (NLINKS + NCH);
+    static const struct { float c[3], u[3], v[3], rad; int n; } BAND[3] = {
+        { { 0, 0, 0.1f },     { 1, 0, 0 }, { 0, 1, 0 }, 0.995f, BAND_A },
+        { { 0.7f, 0, 0 },     { 0, 1, 0 }, { 0, 0, 1 }, 0.714f, BAND_B },
+        { { -0.7f, 0, 0 },    { 0, 1, 0 }, { 0, 0, 1 }, 0.714f, BAND_B },
+    };
+    float R = r + 0.7f, cy = cosf(b->rot[1]), sy = sinf(b->rot[1]);
+    int mi = 0;
+    for (int k = 0; k < 3; k++) {
+        float prev[3], first[3];
+        for (int i = 0; i <= BAND[k].n; i++) {
+            float th = 2.0f * T3D_PI * i / BAND[k].n, l[3], w[3];
+            for (int m = 0; m < 3; m++)
+                l[m] = (BAND[k].c[m] + BAND[k].rad * (cosf(th) * BAND[k].u[m] + sinf(th) * BAND[k].v[m])) * R;
+            // the sun's yaw (as chain_root: local +z faces the player)
+            w[0] = b->pos[0] + l[0] * cy + l[2] * sy;
+            w[1] = b->pos[1] + l[1];
+            w[2] = b->pos[2] - l[0] * sy + l[2] * cy;
+            if (i == 0) memcpy(first, w, sizeof w);
+            else {
+                link_matrix(&mats[mi], prev, i == BAND[k].n ? first : w, i & 1, 1.0f);
+                t3d_matrix_set(&mats[mi++], true);
+                rspq_block_run(s.link.block);
+            }
+            memcpy(prev, w, sizeof w);
+        }
+    }
+    return mi;
+}
+
+static void chains_draw(const Boss *b, float eyeR)
+{
+    T3DMat4FP *mats = s.chainMat + s.matRing * (NLINKS + NCH + NBAND);
     s.matRing = (s.matRing + 1) % MAT_RING;
     rdpq_sync_pipe();
     rdpq_mode_push();       // restored at the end: the caller's fog and modes stay
@@ -659,6 +697,7 @@ static void chains_draw(void)
             rspq_block_run(s.weight.block);
         }
     }
+    if (!s.unshackled && s.state != SB_DEAD) bands_draw(b, eyeR, &mats[mi]);
     rdpq_mode_pop();
 }
 
@@ -681,7 +720,13 @@ void sun_boss_draw(Boss* b)
     for (int i = 0; i < 2; i++)
         proc_mesh_set_transform(&cor[i], cs, (float[3]){ 0.0f, yaw, i ? -spinAngle * 1.3f : spinAngle }, b->pos);
 
-    if (s.chainsReady) chains_draw();
-    proc_mesh_draw(s.unshackled ? &s.eyeHot : &s.eye);
-    if (dying < 1.0f) for (int i = 0; i < 2; i++) proc_mesh_draw_glow(&cor[i]);
+    // Glows blood red, pulsing, before it slams down (the dive) or bursts (the corona)
+    float warn = s.state == SB_DIVE ? (s.step ? 1.0f : clamp01((s.t - 0.2f) / 0.6f))
+               : s.state == SB_CORONA && s.step == 0 ? clamp01(s.t / 0.5f) : 0.0f;
+    warn *= 0.7f + 0.3f * sinf(s.life * 18.0f);
+    color_t tint = RGBA32(255, 255 - (int)(225 * warn), 255 - (int)(235 * warn), 255);
+
+    if (s.chainsReady) chains_draw(b, MESH_R * scale);
+    proc_mesh_draw_tinted(s.unshackled ? &s.eyeHot : &s.eye, false, tint);
+    if (dying < 1.0f) for (int i = 0; i < 2; i++) proc_mesh_draw_tinted(&cor[i], true, tint);
 }

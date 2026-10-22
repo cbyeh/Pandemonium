@@ -260,6 +260,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         static const char seq[] = "DDDDADDDD";
         int t = frame - start;
         if (step < 9 && t >= 20 + step * 15 && t < 20 + step * 15 + 1) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; }
+        {   // the longest frame after each switch (a long one jerks the fog gate's scroll)
+            static uint32_t last; static int worst;
+            uint32_t now = get_ticks_ms();
+            int d = last ? (int)(now - last) : 0; last = now;
+            if (step >= 9 && t > 200) { if (d > worst) worst = d; if ((t - 200) % 60 == 59) { debugf("[skin] worst frame %d ms\n", worst); worst = 0; } }
+        }
         if (step >= 9 && t > 200 && (t - 200) % 60 == 0 && (t - 200) / 60 <= 8) {
             pressed->d_right = 1;
             debugf("[skin] right at %d\n", frame);
