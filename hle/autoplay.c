@@ -432,7 +432,19 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
             if (t == 30) pressed->d_up = 1;
             if (t == 34) debugf("[run] D-up: state %d (%s)\n", character_get_state(), character_get_state() == CHAR_STATE_SKILL ? "cast: Moon Blade Dance learned" : "no skill");
+#ifdef HLE_RUN_STRIKE      // fight with the sword for 20 s first (the boons that hook into hits)
+            if (t < 1200) {
+                if (t == 1) pressed->z = 1;
+                in->btn.z = 1;
+                float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2];
+                if (sqrtf(dx * dx + dz * dz) > 40.0f) in->stick_y = 70;
+                if (t % 24 == 0) { pressed->b = 1; in->btn.b = 1; }
+                if (t % 300 == 299) debugf("[run] boss hp %.0f/%.0f\n", (double)boss->health, (double)boss->maxHealth);
+            }
+            if (t == 1200) boss_apply_damage(boss, boss->maxHealth * 2.0f);
+#else
             if (t == 90) boss_apply_damage(boss, boss->maxHealth * 2.0f);
+#endif
             if (tower_draft_is_open() && t % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
 #ifndef HLE_RUN_FLOORS
 #define HLE_RUN_FLOORS 7

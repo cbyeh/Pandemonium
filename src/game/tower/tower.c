@@ -226,6 +226,9 @@ void tower_begin_run(uint32_t seed)
     s.floor = 1;
     s.rng = seed ? seed : 1;
     shuffle_circle();
+#ifdef HLE_TOWER_GIVE   // test aid: start the run holding this boon
+    s.stacks[HLE_TOWER_GIVE] = 1;
+#endif
     // The equipped relic holds for the whole climb
     int e = tower_relic_equipped();
     if (e >= 0) {
@@ -539,7 +542,11 @@ void tower_on_perfect_dodge(void)
 float tower_on_sword_hit(void)
 {
     if (!tower_boon_stacks(BOON_STORM_BLADE)) return 0.0f;
-    return (++s.hitCount % 4 == 0) ? 12.0f : 0.0f;
+    bool storm = ++s.hitCount % 4 == 0;
+#ifdef HLE_AUTOPLAY
+    if (storm) debugf("[boon] Storm Blade: lightning on hit %d\n", s.hitCount);
+#endif
+    return storm ? 12.0f : 0.0f;
 }
 
 int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + tower_boon_stacks(BOON_DEEP_FLASK) + has_relic(RELIC_FLASK) : 7; }
