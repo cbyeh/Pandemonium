@@ -24,7 +24,7 @@
 #define DROP_H         140.0f          // starts up in the ceiling
 #define INTRO_TIME     3.0f
 #define DRIFT_SPEED    32.0f
-#define KEEP_DIST      55.0f
+#define KEEP_DIST      36.0f           // hovers within sword reach (at 55 it backed out of every swing)
 #define MESH_R         16.0f           // the eye mesh is built at this radius (1/8-unit storage)
 
 typedef enum { SB_INTRO, SB_HOVER, SB_GLARE, SB_CORONA, SB_DIVE, SB_REST, SB_LASH, SB_SWEEP, SB_BREAK, SB_DEAD } SbState;
@@ -115,6 +115,7 @@ static void sfx_cast(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SWING2, 1
 static void sfx_chain(int k) { audio_play_scene_sfx_dist(k ? SCENE1_SFX_CHAIN2 : SCENE1_SFX_CHAIN1, 1.0f, 0.0f); }
 
 static float speed_mult(void) { return s.unshackled ? 1.35f : 1.0f; }
+static float hurt(float d) { return s.unshackled ? d * 1.2f : d; }     // unshackled, it hits 20% harder
 
 // ---- Lifetime ----
 
@@ -174,10 +175,11 @@ void sun_boss_begin(Boss* boss)
     boss->handAttackColliderActive = false;
     boss->sphereAttackColliderActive = false;
     boss->visible = true;
-    // The ball itself (centre at pos)
+    // The ball and the base of its corona (centre at pos): a little past the eye drawn, as a
+    // blade that grazed the eye (radius 14) missed a capsule of 12 most swings
     boss->capsuleCollider.localCapA = (T3DVec3){{ 0.0f, -6.0f, 0.0f }};
     boss->capsuleCollider.localCapB = (T3DVec3){{ 0.0f, 6.0f, 0.0f }};
-    boss->capsuleCollider.radius = SUN_R - 2.0f;
+    boss->capsuleCollider.radius = SUN_R + 4.0f;
 
     s.groundY = character.pos[1];
     boss->pos[1] = s.groundY + DROP_H;
@@ -217,7 +219,7 @@ static void glare_update(Boss *b, float dt)
         float vy = h > 1e-3f ? dy / h * SPEED : 0.0f, vh = h > 1e-3f ? d / h * SPEED : SPEED;
         float o[3] = { b->pos[0] + sinf(a) * SUN_R, b->pos[1], b->pos[2] + cosf(a) * SUN_R };
         skill_fx_spawn_wave_hostile(SKILL_WAVE_X, o, (float[3]){ sinf(a) * vh, vy, cosf(a) * vh },
-                                    10.0f, 1, 0.0f, 2.4f, false);
+                                    hurt(10.0f), 1, 0.0f, 2.4f, false);
         sfx_cast();
         s.step++;
     }
@@ -248,7 +250,7 @@ static void rain_tick(float dt)
         s.rainT[i] -= dt;
         if (s.rainT[i] < 0.0f) {
             float p[3] = { s.rainPos[i][0], s.groundY, s.rainPos[i][1] };
-            skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, p, (float[3]){ 0, 0, 0 }, 14.0f, 1, 0.0f, 0.9f, false);
+            skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, p, (float[3]){ 0, 0, 0 }, hurt(14.0f), 1, 0.0f, 0.9f, false);
             if (i == 0) screen_shake_set_shake_mag(4.0f);
         }
     }
@@ -264,8 +266,8 @@ static void corona_update(Boss *b, float dt)
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, s.t * 4.0f);
         if (s.t >= 1.3f / speed_mult()) {
             float o[3] = { b->pos[0], s.groundY + 6.0f, b->pos[2] };
-            skill_fx_spawn_arc_hostile(o, b->rot[1], 85.0f, 22.0f);
-            skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 85.0f, 22.0f);
+            skill_fx_spawn_arc_hostile(o, b->rot[1], 85.0f, hurt(22.0f));
+            skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 85.0f, hurt(22.0f));
             screen_shake_set_shake_mag(12.0f);
             sfx_boom();
             s.step = 1;
@@ -291,7 +293,7 @@ static void dive_update(Boss *b, float dt)
             b->pos[1] = s.groundY + REST_H;
             float dx, dz;
             // A shockwave along the floor: wide, but jumping over it (Moon Blade Dance) avoids it
-            if (to_player(b, &dx, &dz) < 34.0f && character.pos[1] - s.groundY < 6.0f) character_apply_damage(20.0f);
+            if (to_player(b, &dx, &dz) < 34.0f && character.pos[1] - s.groundY < 6.0f) character_apply_damage(hurt(20.0f));
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.0f);
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.5f);
             screen_shake_set_shake_mag(14.0f);
@@ -448,7 +450,7 @@ static void lash_update(Boss *b, float dt)
                      (double)(c->kt[NN-1][0]-r[0]), (double)(c->kt[NN-1][1]-r[1]), (double)(c->kt[NN-1][2]-r[2])); }
 #endif
             if (along > 0.0f && along < CHAIN_LEN + SUN_R + 4.0f && side < 9.0f && character.pos[1] - s.groundY < 8.0f)
-                character_apply_damage(16.0f);
+                character_apply_damage(hurt(16.0f));
             for (int i = 1; i <= 3; i++)
                 skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + s.strikeDir[0] * (SUN_R + CHAIN_LEN * 0.3f * i), s.groundY,
                                                          b->pos[2] + s.strikeDir[1] * (SUN_R + CHAIN_LEN * 0.3f * i) }, i * 0.7f);
@@ -467,6 +469,7 @@ static void lash_update(Boss *b, float dt)
                 int prev = s.lashChain;
                 s.lashChain = nearest_chain(b, dx, dz);
                 if (s.lashChain == prev) s.lashChain = (prev + 1) % NCH;
+                s.ch[prev].hot = s.ch[prev].kin = false;    // it went on to the next before this one cooled (stayed orange)
                 s.ch[s.lashChain].hot = true; s.hitDone = false;
                 s.state = SB_LASH; s.t = 0.0f; s.step = 0;
             } else enter(SB_HOVER);
@@ -506,7 +509,7 @@ static void sweep_update(Boss *b, float dt)
         if (!s.hitDone && (r0 > 0) != (r1 > 0) && fabsf(r0) < 1.0f && dist < SUN_R + CHAIN_LEN + 4.0f
             && character.pos[1] - s.groundY < 6.0f) {
             s.hitDone = true;
-            character_apply_damage(14.0f);
+            character_apply_damage(hurt(14.0f));
         }
         if (k >= 1.0f) { s.step = 2; s.t = 0.0f; screen_shake_set_shake_mag(6.0f); }
     } else {
@@ -519,8 +522,9 @@ static void sweep_update(Boss *b, float dt)
 static void choose(Boss *b, float dist)
 {
 #ifdef HLE_SUN_FORCE   // test aid: 1 = lash, 2 = sweep, 3 = dive, 4 = corona, back to back
-    { float dx, dz, d = to_player(b, &dx, &dz);   // within reach of the player
+    if (HLE_SUN_FORCE != 9) { float dx, dz, d = to_player(b, &dx, &dz);   // within reach of the player
       if (d > 50.0f) { b->pos[0] = character.pos[0] - dx / d * 50.0f; b->pos[2] = character.pos[2] - dz / d * 50.0f; } }
+    if (HLE_SUN_FORCE == 9) return;     // 9 = never attacks: it only hovers (can a sword reach it?)
     if (HLE_SUN_FORCE == 1) { lash_start(b, s.unshackled ? 2 : 1); return; }
     if (HLE_SUN_FORCE == 3) { enter(SB_DIVE); debugf("[sun] dive\n"); return; }
     if (HLE_SUN_FORCE == 4) { enter(SB_CORONA); debugf("[sun] corona\n"); return; }
@@ -557,6 +561,7 @@ void sun_boss_update(Boss* b, float dt)
 
     if (b->state == BOSS_STATE_DEAD && s.state != SB_DEAD) {
         enter(SB_DEAD);
+        for (int k = 0; k < NCH; k++) s.ch[k].kin = s.ch[k].hot = false;
         for (int i = 0; i < RAIN_MAX; i++) s.rainT[i] = -1.0f;
     }
     // Half health: the shackles break
@@ -580,6 +585,9 @@ void sun_boss_update(Boss* b, float dt)
         break;
 
     case SB_HOVER: {
+#ifdef HLE_SUN_FORCE    // test aid: a chain left glowing after an attack
+        if (s.t <= dt) { int hot = 0; for (int k = 0; k < NCH; k++) hot += s.ch[k].hot; debugf("[sun] hover, %d chains hot\n", hot); }
+#endif
         // Drift around the player at a distance, bobbing
         face_player(b, dt, 3.0f);
         s.orbit += dt * 0.35f * sm;

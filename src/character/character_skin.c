@@ -412,8 +412,12 @@ static void hood_build(void)
         t0 = -135 * R; t1 = 135 * R; p0 = -80 * R; p1 = 80 * R; nt = 9; np = 7;
         n0 = shell(s_hoodVerts[0], (float[3]){ -0.1f, 2.25f, 0 }, (float[3]){ 1.12f, 0.36f, 1.1f },
                    t0, t1, nt, p0, p1, np, 0, 0, s->cl[0].color);
-        n1 = shell(s_hoodVerts[1], (float[3]){ 0.9f, 1.75f, 0 }, (float[3]){ 0.28f, 0.62f, 0.66f },
-                   -90 * R, 90 * R, nt1, -88 * R, 88 * R, np1, 0, 0, s->cl[0].color);
+        // outside the cloak (it hangs from x 1.25 at the shoulders; at 0.9 the fold was buried in it),
+        // a little darker so it reads against the cloak
+        SkinColor c = s->cl[0].color;
+        c.r = c.r * 4 / 5; c.g = c.g * 4 / 5; c.b = c.b * 4 / 5;
+        n1 = shell(s_hoodVerts[1], (float[3]){ 1.4f, 2.2f, 0 }, (float[3]){ 0.38f, 0.58f, 1.0f },
+                   -90 * R, 90 * R, nt1, -88 * R, 88 * R, np1, 0, 0, c);
     }
     rspq_block_begin();
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);

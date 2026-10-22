@@ -2804,6 +2804,11 @@ void character_update(void)
         float hitEnd   = (characterState == CHAR_STATE_ATTACKING_STRONG) ? STRONG_ATTACK_HIT_END   : 1.0f;
         float damage = (characterState == CHAR_STATE_ATTACKING_STRONG) ? STRONG_ATTACK_DAMAGE : 4.0f;
 
+#ifdef HLE_TEST_STRIKE     // test aid: blade contact inside and outside the hit window
+        if (charWeaponCollision && !character.currentAttackHasHit)
+            debugf("[strike] contact at %.2f s (window %.2f-%.2f)%s\n", (double)actionTimer, (double)hitStart, (double)hitEnd,
+                   actionTimer > hitStart && actionTimer < hitEnd ? "" : " OUTSIDE");
+#endif
         if (actionTimer > hitStart && actionTimer < hitEnd) {
             if (!character.currentAttackHasHit && charWeaponCollision) {
                 Boss* boss = boss_get_instance();

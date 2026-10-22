@@ -32,6 +32,7 @@ typedef struct {
 } SkillFx;
 
 static bool s_spawnHostile;     // palette/target for effects spawned now
+static float s_spawnRoll;       // a crescent's tilt, for waves spawned now
 
 static SkillFx s_fx[SKILL_FX_MAX];
 
@@ -79,6 +80,21 @@ void skill_fx_spawn_wave(SkillWaveShape shape, const float pos[3], const float v
     f->hitInterval = hitInterval;
     f->life = life;
     f->pillarOnEnd = pillarOnEnd;
+    f->yaw = s_spawnRoll;
+}
+
+void skill_fx_spawn_crescent_hostile(const float pos[3], const float vel[3], float roll, float damage, float life)
+{
+    s_spawnRoll = roll;
+    skill_fx_spawn_wave_hostile(SKILL_WAVE_CRESCENT, pos, vel, damage, 1, 0.0f, life, false);
+    s_spawnRoll = 0.0f;
+}
+
+void skill_fx_spawn_pillar_hostile(const float pos[3])
+{
+    s_spawnHostile = true;
+    skill_fx_spawn_pillar(pos);
+    s_spawnHostile = false;
 }
 
 void skill_fx_spawn_burst_hostile(const float pos[3], float yaw)
@@ -226,7 +242,7 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
         r = 7.0f;
     } else {
         memcpy(c, f->pos, sizeof(c));
-        r = f->hostile ? 12.0f : 14.0f;     // the player's crosses are wider
+        r = f->shape == SKILL_WAVE_CRESCENT ? 14.0f : f->hostile ? 12.0f : 14.0f;     // the player's crosses are wider
     }
     if (f->hostile) {
         if (!sphere_hits_player(c, r)) return;
@@ -237,7 +253,7 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
     }
     f->hitsLeft--;
     f->hitTimer = f->hitInterval;
-    if (f->shape == SKILL_WAVE_X && f->hitsLeft <= 0) f->life = f->age;   // spent
+    if (f->shape != SKILL_WAVE_BLADE && f->hitsLeft <= 0) f->life = f->age;   // spent
 }
 
 void skill_fx_update(float dt)
@@ -254,7 +270,7 @@ void skill_fx_update(float dt)
             update_arc_hit(f, b);
         }
         if (f->age >= f->life) {
-            if (f->type == FX_WAVE && f->shape == SKILL_WAVE_X) {
+            if (f->type == FX_WAVE && f->shape != SKILL_WAVE_BLADE) {
                 float ground[3] = { f->pos[0], f->pos[1], f->pos[2] };
                 float yaw = atan2f(-f->vel[0], f->vel[2]);
                 f->type = FX_NONE;      // free the slot before spawning the impact
@@ -408,8 +424,9 @@ static void draw_xwave(const SkillFx *f)
     float d[3], s[3], u[3];
     dir_basis(f->vel, d, s, u);
     float a = fade(f, 0.1f, 0.3f);
-    for (int k = 0; k < 2; k++) {
-        float ca = 0.7071f, sa = k ? -0.7071f : 0.7071f;    // +-45 degrees
+    bool one = f->shape == SKILL_WAVE_CRESCENT;
+    for (int k = 0; k < (one ? 1 : 2); k++) {
+        float ca = one ? cosf(f->yaw) : 0.7071f, sa = one ? sinf(f->yaw) : k ? -0.7071f : 0.7071f;    // +-45 degrees, or its tilt
         float e[3] = { s[0]*ca + u[0]*sa, s[1]*ca + u[1]*sa, s[2]*ca + u[2]*sa };
         float outer[N][3], inner[N][3];
         uint32_t co[N], ci[N];
@@ -436,8 +453,8 @@ static void draw_xwave(const SkillFx *f)
             float t = -1.0f + 2.0f * i / (N - 1);
             float bulge = 1.0f - t * t;
             for (int c = 0; c < 3; c++) {
-                outer[i][c] = f->pos[c] + e[c] * t * 24.0f + d[c] * bulge * 3.0f;
-                inner[i][c] = outer[i][c] - d[c] * bulge * 4.0f;
+                outer[i][c] = f->pos[c] + e[c] * t * (one ? 30.0f : 24.0f) + d[c] * bulge * (one ? 6.0f : 3.0f);
+                inner[i][c] = outer[i][c] - d[c] * bulge * (one ? 6.0f : 4.0f);
             }
             co[i] = rgba(235, 250, 255, a);
             ci[i] = rgba(90, 200, 255, a * 0.2f);
@@ -574,7 +591,7 @@ void skill_fx_draw(void)
         s_drawHostile = f->hostile;
         switch (f->type) {
             case FX_ARC:    draw_arc(f); break;
-            case FX_WAVE:   if (f->shape == SKILL_WAVE_X) draw_xwave(f); else draw_blade(f); break;
+            case FX_WAVE:   if (f->shape != SKILL_WAVE_BLADE) draw_xwave(f); else draw_blade(f); break;
             case FX_PILLAR: draw_pillar(f); break;
             case FX_BURST:  draw_burst(f); break;
             default: break;

@@ -10,6 +10,7 @@
 typedef enum {
     SKILL_WAVE_X,       // Moon Blade Dance: two crossed crescents
     SKILL_WAVE_BLADE,   // Crescent Cleave: tall, slightly curved light blade rising out of the ground
+    SKILL_WAVE_CRESCENT,    // Moonlight Splitter (the Fallen Warrior): one flying crescent, tilted
 } SkillWaveShape;
 
 void skill_fx_init(void);
@@ -35,9 +36,12 @@ void skill_fx_spawn_burst(const float pos[3], float yaw);
 // Hostile versions (the Fallen Knight): same shapes in a crimson palette, hitting
 // the player instead of the boss.
 void skill_fx_spawn_burst_hostile(const float pos[3], float yaw);
+void skill_fx_spawn_pillar_hostile(const float pos[3]);
 void skill_fx_spawn_arc_hostile(const float pos[3], float yaw, float radius, float damage);
 void skill_fx_spawn_wave_hostile(SkillWaveShape shape, const float pos[3], const float vel[3],
                                  float damage, int hits, float hitInterval, float life, bool pillarOnEnd);
+// One crescent flying along `vel`, its blade turned `roll` from level (one hit)
+void skill_fx_spawn_crescent_hostile(const float pos[3], const float vel[3], float roll, float damage, float life);
 
 // Removes the bosses' effects, keeping the player's.
 void skill_fx_clear_hostile(void);
