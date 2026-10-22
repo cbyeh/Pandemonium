@@ -805,6 +805,27 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (t == 900) { boss_apply_damage(boss, boss->maxHealth * 0.55f); debugf("[bonus] half at %d\n", frame); }
                 if (t == 1800) { boss_apply_damage(boss, boss->maxHealth * 2.0f); phase = 4; t0 = frame; }
             }
+#elif defined(HLE_TEST_DRAGON_AIR)
+            // Claw rings (HLE_DRAGON_FORCE=2): held 45 in front of it, in the air for the first
+            // 1000 frames, then on the floor; every hit is logged
+            {
+                float a = boss->rot[1];
+                character.pos[0] = boss->pos[0] + sinf(a) * 45.0f; character.pos[2] = boss->pos[2] + cosf(a) * 45.0f;
+                character.pos[1] = boss->pos[1] + (t < 1000 ? 25.0f : 0.0f);
+                cameraLockOnActive = false;     // a 3/4 view from its left front, to see the legs
+                customCamPos = (T3DVec3){{ boss->pos[0] + sinf(a + 0.9f) * 150.0f, boss->pos[1] + 40.0f, boss->pos[2] + cosf(a + 0.9f) * 150.0f }};
+                customCamTarget = (T3DVec3){{ boss->pos[0] + sinf(a) * 25.0f, boss->pos[1] + 20.0f, boss->pos[2] + cosf(a) * 25.0f }};
+                camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+                if (t == 1000) debugf("[air] now on the floor\n");
+                if (t == 2000) { debugf("[air] done\n"); boss_apply_damage(boss, boss->maxHealth * 2.0f); phase = 4; t0 = frame; }
+            }
+#elif defined(HLE_TEST_DRAGON_WHIP)
+            // The spin (HLE_DRAGON_FORCE=14): stand behind it; log its yaw through each spin
+            {
+                float a = boss->rot[1] + T3D_PI;
+                if (t == 1) { character.pos[0] = boss->pos[0] + sinf(a) * 70.0f; character.pos[2] = boss->pos[2] + cosf(a) * 70.0f; }
+                if (t % 4 == 0) debugf("[whip] f%d yaw %.2f\n", frame, (double)boss->rot[1]);
+            }
 #elif defined(HLE_TEST_BONUS_DRAGON)
             // a long fight, circling it (every hit is logged, the player is topped up): half at 60 s, dead at 120 s
             in->stick_x = (int)(70 * cosf(t * 0.015f)); in->stick_y = (int)(70 * sinf(t * 0.015f));
