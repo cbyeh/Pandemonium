@@ -33,9 +33,10 @@ Toggle in **Settings > Skills** (title screen). Bosses have double health with s
 | <img src="docs/media/skill_moon_blade_dance.gif" width="320"> | <img src="docs/media/skill_halfmoon_slash.gif" width="320"> | <img src="docs/media/skill_crescent_cleave.gif" width="320"> |
 
 ### Skins
-**Settings > Skin**: the Knight, the Umber Cloak, Wolf Knight, Black Swordsman and Scarlet Valkyrie from the start. Two more unlock:
+**Settings > Skin**: the Knight, the Umber Cloak, Wolf Knight, Black Swordsman and Scarlet Valkyrie from the start. Three more unlock:
 - **Crimson Cloak:** beat the story (the Guardian, then Guardian Unbound).
 - **Teal Cloak:** reach floor 10 of the Tower (two full circles).
+- **Wylder:** buy him at **Tower > Shrine** for 80 Embers.
 
 **Settings > Hood** puts a cloak's hood up or down.
 
@@ -47,9 +48,20 @@ Toggle in **Settings > Skills** (title screen). Bosses have double health with s
 - **Difficulty:** the climb starts well below the story fights, and the bosses grow stronger every circle.
 - **Your start:** you begin as the original game did, with 3 potions and the sword only.
 - **Between floors:** you get a third of your health and a potion back, and you choose one of three **Boons**. One of the three is always a skill card: learn a D-pad skill, or upgrade one you've learned.
-- **Embers:** cleared floors earn Embers, kept when you die. Spend them at **Tower > Shrine** on permanent upgrades, which only apply in the Tower.
+- **Boons** come in Common, Rare and Legendary (bronze, blue and gold cards). Legendaries get likelier every circle. Some change how you play: Phantom Step and Riposte reward perfect dodges, Crushing Blows and Executioner reward staggers, Storm Blade calls lightning on every fourth hit, Blood Pact trades potion strength for damage.
+- **Nights:** from the second circle, each circle draws a night: Blood Moon, Iron Night or Starfall. Each is a trade-off that pays more Embers, announced before the circle starts.
+- **Relics:** clearing a circle finds a relic with two random effects. You keep three; choose one to carry at **Tower > Shrine**.
+- **Embers:** cleared floors earn Embers, kept when you die. Spend them at **Tower > Shrine** on permanent upgrades, which only apply in the Tower, and on the Wylder skin.
 
-Each save slot keeps its best floor and Embers. **Load Game** shows a slot's progress: story clear time, best Tower floor, Bonus bosses beaten and skins earned (of the two that unlock).
+Each save slot keeps its best floor, Embers and relics. **Load Game** shows a slot's progress: story clear time, best Tower floor, Bonus bosses beaten and skins earned (of the three that unlock).
+
+### Combat
+- **Hit-stop:** blows land with a short freeze (longer for the charged attack and heavy hits you take).
+- **Perfect dodge:** roll just as a blow lands for a moment of slow motion and stamina back.
+- **Stagger:** keep up the pressure (about ten hits without letting up) to break a boss's stance: the thin gold line under its health. A staggered boss takes 30% more damage.
+
+### Settings
+- **Controls:** three button layouts (Classic, A/B Swapped, Skills on C) and camera speed 1-5. The Controls page shows what each button does.
 
 ### New boss fights
 Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on the title screen.
@@ -158,7 +170,7 @@ Third-party audio added in this fork. Everything here is CC0 (public domain), so
 | Asset | Used for | Author | Source |
 |---|---|---|---|
 | CC0 Deep Monster Roar | Shadowborn's roar | trazzz123 | [OpenGameArt](https://opengameart.org/content/cc0-deep-monster-roar) |
-| 80 CC0 RPG SFX | Skill casts, potion, fire breath, the dark beam and nova, explosions, chains | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-rpg-sfx) |
+| 80 CC0 RPG SFX | Skill casts, potion, fire breath, the dark beam and nova, explosions, chains, the armour clank | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-rpg-sfx) |
 | Determined Pursuit (epic orchestra loop) | Shadowborn's theme | Emma_MA | [OpenGameArt](https://opengameart.org/content/determined-pursuit-epic-orchestra-loop) |
 | Boss Battle #2 [Symphonic Metal] | The Shackled Sun's theme | nene | [OpenGameArt](https://opengameart.org/content/boss-battle-2-symphonic-metal) |
 | Battle Theme A | The Fallen Warrior's theme | cynicmusic | [OpenGameArt](https://opengameart.org/content/battle-theme-a) |
