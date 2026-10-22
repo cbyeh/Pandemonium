@@ -10,7 +10,7 @@
 #define PM_BATCH_TRIS 22            // 66 vertices per load (< the 70-entry vertex cache)
 #define PM_UNIT       8.0f          // stored at 1/8 unit precision (int16 positions)
 
-typedef struct { int16_t p[3][3]; uint32_t c; } PmTri;
+typedef struct { int16_t p[3][3]; uint32_t c[3]; } PmTri;     // a colour per corner (smooth shading)
 
 static PmTri *s_tris;
 static int s_ntris;
@@ -38,7 +38,7 @@ void proc_mesh_tri(const float a[3], const float b[3], const float c[3], uint32_
     // Unlit (glowing): alpha follows brightness, so proc_mesh_draw_glow fades the dark parts out
     if (unlit) {
         int r = rgba >> 24, g = (rgba >> 16) & 0xFF, b = (rgba >> 8) & 0xFF, m = r > g ? (r > b ? r : b) : (g > b ? g : b);
-        t->c = (rgba & ~0xFFu) | (uint32_t)m;
+        t->c[0] = t->c[1] = t->c[2] = (rgba & ~0xFFu) | (uint32_t)m;
         return;
     }
     // Two-sided flat shading: a key light from above-front plus ambient
@@ -46,7 +46,59 @@ void proc_mesh_tri(const float a[3], const float b[3], const float c[3], uint32_
     float n[3] = { e1[1]*e2[2]-e1[2]*e2[1], e1[2]*e2[0]-e1[0]*e2[2], e1[0]*e2[1]-e1[1]*e2[0] };
     float len = sqrtf(n[0]*n[0] + n[1]*n[1] + n[2]*n[2]);
     float d = len > 1e-6f ? fabsf(n[0] * -0.45f + n[1] * 0.8f + n[2] * 0.4f) / len : 0.5f;
-    t->c = shade(rgba, 0.4f + 0.75f * d);
+    t->c[0] = t->c[1] = t->c[2] = shade(rgba, 0.4f + 0.75f * d);
+}
+
+// The same key light as the flat faces, one-sided for a smooth surface (plus a little bounce)
+static float smooth_light(const float n[3])
+{
+    float l = sqrtf(n[0]*n[0] + n[1]*n[1] + n[2]*n[2]);
+    float d = l > 1e-6f ? (n[0] * -0.45f + n[1] * 0.8f + n[2] * 0.4f) / l : 0.0f;
+    return 0.42f + 0.72f * (d > 0.0f ? d : 0.0f) + 0.14f * (d < 0.0f ? -d : 0.0f);
+}
+
+void proc_mesh_tri_smooth(const float a[3], const float b[3], const float c[3],
+                          const float na[3], const float nb[3], const float nc[3], uint32_t rgba)
+{
+    if (s_ntris >= PM_MAX_TRIS) return;
+    PmTri *t = &s_tris[s_ntris++];
+    const float *v[3] = { a, b, c }, *n[3] = { na, nb, nc };
+    for (int i = 0; i < 3; i++) {
+        for (int k = 0; k < 3; k++) t->p[i][k] = (int16_t)lrintf(v[i][k] * PM_UNIT);
+        t->c[i] = shade(rgba, smooth_light(n[i]));
+    }
+}
+
+void proc_mesh_loft(const float *pts, int rings, int sides, const uint32_t *cols, uint32_t rgba, bool capEnd)
+{
+    // Normals point out from each ring's centre: a smooth tube
+    for (int r = 0; r + 1 < rings; r++) {
+        float c0[3] = { 0 }, c1[3] = { 0 };
+        for (int i = 0; i < sides; i++)
+            for (int k = 0; k < 3; k++) { c0[k] += pts[(r * sides + i) * 3 + k] / sides; c1[k] += pts[((r + 1) * sides + i) * 3 + k] / sides; }
+        for (int i = 0; i < sides; i++) {
+            int j = (i + 1) % sides;
+            const float *p00 = &pts[(r * sides + i) * 3], *p01 = &pts[(r * sides + j) * 3];
+            const float *p10 = &pts[((r + 1) * sides + i) * 3], *p11 = &pts[((r + 1) * sides + j) * 3];
+            float n00[3], n01[3], n10[3], n11[3];
+            for (int k = 0; k < 3; k++) { n00[k] = p00[k] - c0[k]; n01[k] = p01[k] - c0[k]; n10[k] = p10[k] - c1[k]; n11[k] = p11[k] - c1[k]; }
+            uint32_t col = cols ? cols[r * sides + i] : rgba;
+            proc_mesh_tri_smooth(p00, p01, p11, n00, n01, n11, col);
+            proc_mesh_tri_smooth(p00, p11, p10, n00, n11, n10, col);
+        }
+    }
+    if (capEnd && rings > 0) {     // a fan to the last ring's centre
+        int r = rings - 1;
+        float c[3] = { 0 }, axis[3];
+        for (int i = 0; i < sides; i++) for (int k = 0; k < 3; k++) c[k] += pts[(r * sides + i) * 3 + k] / sides;
+        for (int k = 0; k < 3; k++) axis[k] = c[k] - (rings > 1 ? 0.0f : c[k]);
+        if (rings > 1) { float p[3] = { 0 }; for (int i = 0; i < sides; i++) for (int k = 0; k < 3; k++) p[k] += pts[((r - 1) * sides + i) * 3 + k] / sides;
+                         for (int k = 0; k < 3; k++) axis[k] = c[k] - p[k]; }
+        for (int i = 0; i < sides; i++) {
+            int j = (i + 1) % sides;
+            proc_mesh_tri_smooth(&pts[(r * sides + i) * 3], &pts[(r * sides + j) * 3], c, axis, axis, axis, cols ? cols[(r > 0 ? r - 1 : 0) * sides + i] : rgba);
+        }
+    }
 }
 
 void proc_mesh_quad(const float a[3], const float b[3], const float c[3], const float d[3], uint32_t rgba, bool unlit)
@@ -281,8 +333,8 @@ void proc_mesh_end(ProcMesh *out)
             int vi = (t / PM_BATCH_TRIS) * perBatch + (t % PM_BATCH_TRIS) * 3 + i;
             T3DVertPacked *v = &out->verts[vi >> 1];
             const int16_t *p = s_tris[t].p[i];
-            if (vi & 1) { memcpy(v->posB, p, 6); v->normB = norm; v->rgbaB = s_tris[t].c; }
-            else        { memcpy(v->posA, p, 6); v->normA = norm; v->rgbaA = s_tris[t].c; }
+            if (vi & 1) { memcpy(v->posB, p, 6); v->normB = norm; v->rgbaB = s_tris[t].c[i]; }
+            else        { memcpy(v->posA, p, 6); v->normA = norm; v->rgbaA = s_tris[t].c[i]; }
         }
     }
     rspq_block_begin();

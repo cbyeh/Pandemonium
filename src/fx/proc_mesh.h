@@ -20,6 +20,12 @@ void proc_mesh_begin(void);
 // Shaded by how the face turns to the light; `unlit` keeps the colour as is (glows).
 void proc_mesh_tri(const float a[3], const float b[3], const float c[3], uint32_t rgba, bool unlit);
 void proc_mesh_quad(const float a[3], const float b[3], const float c[3], const float d[3], uint32_t rgba, bool unlit);
+// Smooth: each corner shaded from its own normal
+void proc_mesh_tri_smooth(const float a[3], const float b[3], const float c[3],
+                          const float na[3], const float nb[3], const float nc[3], uint32_t rgba);
+// A smooth tube through `rings` rings of `sides` points (pts[ring][side][xyz]); `cols` gives
+// each quad's colour (ring-major, NULL: all `rgba`); `capEnd` closes the last ring with a fan.
+void proc_mesh_loft(const float *pts, int rings, int sides, const uint32_t *cols, uint32_t rgba, bool capEnd);
 void proc_mesh_box(const float center[3], const float half[3], uint32_t rgba);
 // Cone from a ring around `base` (perpendicular to base->tip) to `tip`.
 void proc_mesh_spike(const float base[3], const float tip[3], float radius, int sides, uint32_t rgba);

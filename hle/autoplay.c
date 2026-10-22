@@ -38,6 +38,13 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
     static int frame;
     frame++;
+#ifdef HLE_LOG_FPS
+    {   // game frames per second, every 2 s (for hardware-path runs in Ares)
+        static uint32_t last; static int lastFrame;
+        uint32_t now = get_ticks_ms();
+        if (now - last >= 2000) { if (last) debugf("[fps] %.1f\n", (double)((frame - lastFrame) * 1000.0f / (now - last))); last = now; lastFrame = frame; }
+    }
+#endif
 #ifdef HLE_TEST_TASKS
     {   // gfx tasks per game frame (a frame should be exactly one)
         extern uint32_t gsp_epoch;
@@ -532,6 +539,21 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                     debugf("[strike] boss %d: %d hits, %.0f of %.0f health in 60 s\n", boss->phaseIndex, hits, (double)lost, (double)boss->maxHealth);
                     boss_apply_damage(boss, boss->maxHealth * 2.0f); phase = 4; t0 = frame;
                 }
+            }
+#elif defined(HLE_DRAGON_SHOWCASE)
+            // Model check: the camera orbits Shadowborn (front, 3/4, side, back, then the head
+            // up close), 50 frames a view, the player standing well clear
+            {
+                cameraLockOnActive = false;
+                if (t == 1) { character.pos[0] = boss->pos[0] - 260.0f; character.pos[2] = boss->pos[2] + 200.0f; }
+                static const float A[6] = { 0.0f, 0.8f, 1.57f, 2.4f, 3.14f, 0.35f }, D[6] = { 150, 150, 160, 150, 160, 70 }, H[6] = { 50, 60, 45, 70, 60, 45 };
+                int v = (t / 50) % 6;
+                float a = boss->rot[1] + A[v], *bp = boss->pos;
+                customCamPos = (T3DVec3){{ bp[0] + sinf(a) * D[v], bp[1] + H[v], bp[2] + cosf(a) * D[v] }};
+                customCamTarget = (T3DVec3){{ bp[0] + sinf(boss->rot[1]) * (v == 5 ? 70.0f : 0.0f), bp[1] + (v == 5 ? 55.0f : 30.0f), bp[2] + cosf(boss->rot[1]) * (v == 5 ? 70.0f : 0.0f) }};
+                camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+                if (t == 900) { boss_apply_damage(boss, boss->maxHealth * 0.55f); debugf("[bonus] half at %d\n", frame); }
+                if (t == 1800) { boss_apply_damage(boss, boss->maxHealth * 2.0f); phase = 4; t0 = frame; }
             }
 #elif defined(HLE_TEST_BONUS_DRAGON)
             // a long fight, circling it (every hit is logged, the player is topped up): half at 60 s, dead at 120 s

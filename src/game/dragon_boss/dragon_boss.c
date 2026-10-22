@@ -52,7 +52,7 @@ typedef struct { float p[2], t; bool on; } Blast;
 
 static struct {
     bool ready;
-    ProcMesh seg, segDark, limb, mHead, mHeadDark, mJaw, wing, wingDark, flame, mOrb;
+    ProcMesh seg, segDark, tseg, tsegDark, limb, mFoot, mHead, mHeadDark, mJaw, wing, wingDark, tip, tipDark, flame, mOrb;
     T3DMat4FP *mats;
     int matRing, mi;
     DgState state;
@@ -186,87 +186,184 @@ static void crystal(const float base[3], const float tip[3], float r, uint32_t c
 
 static uint32_t crystal_col(bool dark) { return dark ? proc_rgb(200, 96, 255) : proc_rgb(150, 178, 240); }
 
-// A body segment along +z: an eight-sided tube tapering to 0.82, crystals down the back
+// An elliptical ring of `n` points across the z plane, its underside flattened (a jaw line)
+static void ring(float *out, int n, float z, float w, float h, float yc, float flatBelow)
+{
+    for (int i = 0; i < n; i++) {
+        float a = 2.0f * T3D_PI * i / n;
+        float y = yc + sinf(a) * h;
+        if (y < yc - flatBelow) y = yc - flatBelow;
+        out[i * 3 + 0] = cosf(a) * w; out[i * 3 + 1] = y; out[i * 3 + 2] = z;
+    }
+}
+
+// Scale colours round a ring: the back in two shades (scales), the underside in plates
+static void scale_cols(uint32_t *cols, int rings, int n, uint32_t back, uint32_t back2, uint32_t belly, int bellyQuads)
+{
+    for (int r = 0; r < rings; r++)
+        for (int i = 0; i < n; i++) {
+            // quad i spans angles i..i+1 from the right side, going up first; the belly is the last ones
+            bool under = i >= n - bellyQuads - n / 4 && i < n - n / 4 + bellyQuads / 2 + 1 && sinf(2.0f * T3D_PI * (i + 0.5f) / n) < -0.35f;
+            cols[r * n + i] = under ? ((r & 1) ? belly : (belly & 0xF0F0F0FFu)) : (((i + r) & 1) ? back : back2);
+        }
+}
+
+// A body or neck segment along +z: a smooth ten-sided tube tapering to 0.82, scaled back,
+// banded belly plates, crystals down the spine and a ridge of small ones on each flank
 static void build_seg(ProcMesh *out, bool dark)
 {
-    proc_mesh_begin();
-    enum { N = 8 };
-    for (int i = 0; i < N; i++) {
-        float a0 = 2.0f * T3D_PI * i / N + T3D_PI / N, a1 = 2.0f * T3D_PI * (i + 1) / N + T3D_PI / N;
-        float p0[3] = { cosf(a0) * MESH, sinf(a0) * MESH, 0 }, p1[3] = { cosf(a1) * MESH, sinf(a1) * MESH, 0 };
-        float q0[3] = { p0[0] * 0.82f, p0[1] * 0.82f, MESH }, q1[3] = { p1[0] * 0.82f, p1[1] * 0.82f, MESH };
-        proc_mesh_quad(p0, p1, q1, q0, (sinf(a0) + sinf(a1)) < -0.6f ? COL_BELLY : COL_BACK, false);
+    enum { N = 10, R = 3 };
+    float pts[R * N * 3];
+    for (int r = 0; r < R; r++) {
+        float k = 1.0f - 0.18f * r / (R - 1), pinch = (r == 1) ? 0.95f : 1.0f;   // a plate seam halfway
+        ring(&pts[r * N * 3], N, MESH * r / (R - 1), MESH * k * pinch, MESH * k * pinch * 0.92f, 0.0f, 99.0f);
     }
+    uint32_t cols[(R - 1) * N];
+    scale_cols(cols, R - 1, N, COL_BACK, proc_rgb(42, 38, 50), COL_BELLY, 2);
+    proc_mesh_begin();
+    proc_mesh_loft(pts, R, N, cols, COL_BACK, false);
     uint32_t cr = crystal_col(dark);
-    crystal((float[3]){ 0, MESH * 0.9f, 3.0f }, (float[3]){ 0, MESH * 1.95f, -5.0f }, 4.0f, cr);
-    crystal((float[3]){ 0, MESH * 0.82f, 11.0f }, (float[3]){ 0, MESH * 1.55f, 6.0f }, 3.0f, cr);
+    crystal((float[3]){ 0, MESH * 0.88f, 3.0f }, (float[3]){ 0, MESH * 1.95f, -5.0f }, 4.0f, cr);
+    crystal((float[3]){ 0, MESH * 0.8f, 11.0f }, (float[3]){ 0, MESH * 1.55f, 6.0f }, 3.0f, cr);
     for (int sd = -1; sd <= 1; sd += 2)
-        crystal((float[3]){ sd * MESH * 0.62f, MESH * 0.62f, 7.0f }, (float[3]){ sd * MESH * 1.15f, MESH * 1.05f, 2.0f }, 2.2f, cr);
+        crystal((float[3]){ sd * MESH * 0.62f, MESH * 0.6f, 7.0f }, (float[3]){ sd * MESH * 1.15f, MESH * 1.02f, 2.0f }, 2.2f, cr);
     proc_mesh_end(out);
 }
 
-// A leg bone along +z: a plain six-sided tube
+// A tail segment: the same, lighter (eight sides, one crystal)
+static void build_tail_seg(ProcMesh *out, bool dark)
+{
+    enum { N = 8, R = 2 };
+    float pts[R * N * 3];
+    for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, MESH * r, MESH * (1.0f - 0.18f * r), MESH * (1.0f - 0.18f * r) * 0.9f, 0.0f, 99.0f);
+    uint32_t cols[N];
+    scale_cols(cols, 1, N, COL_BACK, proc_rgb(42, 38, 50), COL_BELLY, 2);
+    proc_mesh_begin();
+    proc_mesh_loft(pts, R, N, cols, COL_BACK, false);
+    crystal((float[3]){ 0, MESH * 0.85f, 6.0f }, (float[3]){ 0, MESH * 1.8f, -2.0f }, 3.5f, crystal_col(dark));
+    proc_mesh_end(out);
+}
+
+// A leg bone along +z: a smooth six-sided tube
 static void build_limb(void)
 {
+    enum { N = 6, R = 2 };
+    float pts[R * N * 3];
+    for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, MESH * r, MESH * (1.0f - 0.2f * r), MESH * (1.0f - 0.2f * r), 0.0f, 99.0f);
     proc_mesh_begin();
-    enum { N = 6 };
-    for (int i = 0; i < N; i++) {
-        float a0 = 2.0f * T3D_PI * i / N, a1 = 2.0f * T3D_PI * (i + 1) / N;
-        float p0[3] = { cosf(a0) * MESH, sinf(a0) * MESH, 0 }, p1[3] = { cosf(a1) * MESH, sinf(a1) * MESH, 0 };
-        float q0[3] = { p0[0] * 0.8f, p0[1] * 0.8f, MESH }, q1[3] = { p1[0] * 0.8f, p1[1] * 0.8f, MESH };
-        proc_mesh_quad(p0, p1, q1, q0, COL_BACK, false);
-    }
+    proc_mesh_loft(pts, R, N, NULL, COL_BACK, false);
     proc_mesh_end(&s.limb);
 }
 
-// The head, +z forward from the top of the neck: skull, snout, swept-back horns, a crystal crest
+// A foot, +z forward, sole on y = 0: a pad and three hooked claws
+static void build_foot(void)
+{
+    proc_mesh_begin();
+    proc_mesh_box((float[3]){ 0, 1.5f, 1.5f }, (float[3]){ 3.4f, 1.6f, 3.6f }, COL_BACK);
+    for (int k = -1; k <= 1; k++) {
+        float x = k * 2.4f;
+        proc_mesh_spike((float[3]){ x, 1.6f, 4.6f }, (float[3]){ x * 1.2f, 0.0f, 8.2f }, 1.0f, 3, COL_IVORY);
+    }
+    proc_mesh_spike((float[3]){ 0, 1.8f, -1.6f }, (float[3]){ 0, 0.2f, -4.0f }, 0.8f, 3, COL_IVORY);   // the dewclaw
+    proc_mesh_end(&s.mFoot);
+}
+
+// The head, +z forward from the top of the neck: a lofted skull tapering to the snout, a flat
+// jaw line, brows over glowing eyes, swept horns, cheek spikes, nostrils, the upper teeth
 static void build_head(ProcMesh *out, bool dark)
 {
+    enum { N = 8, R = 8 };
+    static const float Z[R] = { -2, 2, 7, 11, 15, 19, 23, 26.5f };
+    static const float W[R] = { 5.6f, 6.8f, 6.7f, 5.7f, 4.7f, 4.0f, 3.4f, 1.9f };
+    static const float H[R] = { 5.0f, 5.6f, 5.4f, 4.2f, 3.3f, 2.8f, 2.3f, 1.3f };
+    static const float Y[R] = { 2.0f, 2.6f, 2.9f, 2.4f, 1.6f, 1.0f, 0.6f, 0.3f };
+    float pts[R * N * 3];
+    for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, Z[r], W[r], H[r], Y[r], H[r] * 0.45f);
+    uint32_t cols[(R - 1) * N];
+    for (int r = 0; r < R - 1; r++)
+        for (int i = 0; i < N; i++) {
+            float sn = sinf(2.0f * T3D_PI * (i + 0.5f) / N);
+            cols[r * N + i] = sn < -0.3f ? proc_rgb(70, 30, 34) : (((i + r) & 1) ? COL_BACK : proc_rgb(42, 38, 50));   // the mouth line
+        }
     uint32_t cr = crystal_col(dark), eye = dark ? proc_rgb(240, 90, 255) : proc_rgb(255, 130, 40);
     proc_mesh_begin();
-    proc_mesh_box((float[3]){ 0, 2.0f, 5.0f }, (float[3]){ 6.5f, 5.0f, 6.5f }, COL_BACK);       // skull
-    proc_mesh_box((float[3]){ 0, 0.5f, 16.0f }, (float[3]){ 4.2f, 3.0f, 6.5f }, COL_BACK);      // snout
-    proc_mesh_box((float[3]){ 0, 3.6f, 12.5f }, (float[3]){ 5.2f, 1.3f, 3.6f }, COL_BACK);      // brow
-    proc_mesh_spike((float[3]){ 0, 0.5f, 22.0f }, (float[3]){ 0, -0.6f, 26.5f }, 3.0f, 4, COL_BACK);
+    proc_mesh_loft(pts, R, N, cols, COL_BACK, true);
     for (int sd = -1; sd <= 1; sd += 2) {
-        proc_mesh_spike((float[3]){ sd * 4.5f, 6.0f, 2.0f }, (float[3]){ sd * 8.5f, 13.0f, -15.0f }, 2.2f, 4, COL_BONE);
-        proc_mesh_spike((float[3]){ sd * 6.0f, 2.0f, 0.0f }, (float[3]){ sd * 12.5f, 3.0f, -9.0f }, 1.6f, 4, COL_BONE);
-        crystal((float[3]){ sd * 5.1f, 3.4f, 13.5f }, (float[3]){ sd * 6.3f, 3.9f, 9.5f }, 1.1f, eye);    // eyes
-        for (int k = 0; k < 3; k++)
-            crystal((float[3]){ sd * 3.3f, -2.3f, 13.0f + k * 3.5f }, (float[3]){ sd * 3.1f, -4.6f, 13.6f + k * 3.5f }, 0.7f, COL_IVORY);
+        proc_mesh_box((float[3]){ sd * 4.1f, 6.0f, 11.0f }, (float[3]){ 1.6f, 0.9f, 3.2f }, COL_BACK);                     // brow
+        crystal((float[3]){ sd * 4.9f, 4.4f, 13.5f }, (float[3]){ sd * 5.9f, 4.7f, 9.5f }, 1.1f, eye);                        // eye
+        proc_mesh_spike((float[3]){ sd * 4.0f, 6.4f, 4.0f }, (float[3]){ sd * 8.5f, 13.5f, -15.0f }, 2.3f, 4, COL_BONE);   // horns
+        proc_mesh_spike((float[3]){ sd * 6.0f, 3.0f, 1.0f }, (float[3]){ sd * 12.5f, 3.5f, -9.0f }, 1.6f, 4, COL_BONE);
+        proc_mesh_spike((float[3]){ sd * 5.6f, 0.8f, 7.0f }, (float[3]){ sd * 9.0f, -0.5f, 2.0f }, 1.0f, 3, COL_BONE);     // cheek
+        proc_mesh_box((float[3]){ sd * 1.4f, 1.4f, 25.6f }, (float[3]){ 0.5f, 0.4f, 0.6f }, proc_rgb(20, 14, 16));        // nostril
+        for (int k = 0; k < 4; k++)
+            crystal((float[3]){ sd * (3.6f - k * 0.4f), -0.4f, 12.0f + k * 3.6f }, (float[3]){ sd * (3.4f - k * 0.4f), -2.8f, 12.6f + k * 3.6f }, 0.7f, COL_IVORY);
     }
-    crystal((float[3]){ 0, 6.6f, 4.0f }, (float[3]){ 0, 13.0f, -5.0f }, 2.6f, cr);
-    crystal((float[3]){ 0, 6.0f, -1.0f }, (float[3]){ 0, 10.0f, -9.0f }, 2.0f, cr);
+    crystal((float[3]){ 0, 7.4f, 4.0f }, (float[3]){ 0, 13.5f, -5.0f }, 2.6f, cr);                                           // crest
+    crystal((float[3]){ 0, 6.8f, -1.0f }, (float[3]){ 0, 10.5f, -9.0f }, 2.0f, cr);
+    crystal((float[3]){ 0, 3.0f, 21.0f }, (float[3]){ 0, 5.4f, 19.0f }, 0.9f, cr);                                            // nose horn
     proc_mesh_end(out);
 }
 
-// The lower jaw, +z forward from its hinge
+// The lower jaw, +z forward from its hinge: lofted, the mouth inside on top, teeth up
 static void build_jaw(void)
 {
+    enum { N = 6, R = 5 };
+    static const float Z[R] = { 0, 6, 12, 18, 22.5f };
+    static const float W[R] = { 4.6f, 4.4f, 3.8f, 3.0f, 1.6f };
+    static const float H[R] = { 2.2f, 2.0f, 1.8f, 1.4f, 0.8f };
+    float pts[R * N * 3];
+    for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, Z[r], W[r], H[r], -1.6f, 99.0f);
+    uint32_t cols[(R - 1) * N];
+    for (int r = 0; r < R - 1; r++)
+        for (int i = 0; i < N; i++) cols[r * N + i] = sinf(2.0f * T3D_PI * (i + 0.5f) / N) > 0.3f ? proc_rgb(110, 40, 44) : COL_BELLY;
     proc_mesh_begin();
-    proc_mesh_box((float[3]){ 0, -1.5f, 9.0f }, (float[3]){ 3.8f, 1.6f, 9.0f }, COL_BELLY);
+    proc_mesh_loft(pts, R, N, cols, COL_BELLY, true);
     for (int sd = -1; sd <= 1; sd += 2)
-        for (int k = 0; k < 3; k++)
-            crystal((float[3]){ sd * 3.0f, 0.0f, 8.0f + k * 3.5f }, (float[3]){ sd * 2.8f, 2.2f, 8.6f + k * 3.5f }, 0.6f, COL_IVORY);
+        for (int k = 0; k < 4; k++)
+            crystal((float[3]){ sd * (3.2f - k * 0.45f), 0.2f, 7.0f + k * 3.6f }, (float[3]){ sd * (3.0f - k * 0.45f), 2.6f, 7.6f + k * 3.6f }, 0.6f, COL_IVORY);
     proc_mesh_end(&s.mJaw);
 }
 
-// The right wing, spanning +x: arm and finger bones, a dark membrane, crystals on the edge
+// The right wing, spanning +x: arm, wrist claw and five fingers; the membrane scalloped
+// between the fingertips; crystals along the leading edge
 static void build_wing(ProcMesh *out, bool dark)
 {
-    const float root[3] = { 0, 0, 0 }, elbow[3] = { 30, 6, 4 }, wrist[3] = { 58, 10, -6 }, back[3] = { 2, -2, -30 };
-    const float tip[4][3] = { { 86, 4, -18 }, { 72, 0, -40 }, { 50, -2, -52 }, { 26, -3, -46 } };
+    const float root[3] = { 0, 0, 0 }, elbow[3] = { 30, 6, 4 }, wrist[3] = { 58, 10, -6 }, back[3] = { 2, -2, -32 };
+    const float tip[5][3] = { { 88, 5, -14 }, { 80, 2, -32 }, { 66, 0, -46 }, { 48, -2, -54 }, { 28, -3, -48 } };
     proc_mesh_begin();
     proc_mesh_spike(root, elbow, 2.6f, 4, COL_BONE);
-    proc_mesh_spike(elbow, wrist, 2.0f, 4, COL_BONE);
-    for (int i = 0; i < 4; i++) proc_mesh_spike(wrist, tip[i], 1.2f, 3, COL_BONE);
-    for (int i = 0; i < 3; i++) proc_mesh_tri(wrist, tip[i], tip[i + 1], COL_MEMB, false);
-    proc_mesh_tri(wrist, tip[3], elbow, COL_MEMB, false);
-    proc_mesh_tri(elbow, tip[3], back, COL_MEMB, false);
-    proc_mesh_tri(elbow, back, root, COL_MEMB, false);
+    proc_mesh_spike(elbow, wrist, 2.1f, 4, COL_BONE);
+    proc_mesh_spike(wrist, (float[3]){ wrist[0] + 6, wrist[1] + 3, wrist[2] + 6 }, 1.0f, 3, COL_IVORY);    // wrist claw
+    for (int i = 0; i < 5; i++) proc_mesh_spike(wrist, tip[i], 1.2f, 3, COL_BONE);
+    const uint32_t memb = COL_MEMB, memb2 = proc_rgb(52, 36, 58);
+    for (int i = 0; i < 4; i++) {
+        // the edge between two fingertips sags in toward the wrist
+        float mid[3];
+        for (int k = 0; k < 3; k++) mid[k] = (tip[i][k] + tip[i + 1][k]) * 0.5f * 0.78f + wrist[k] * 0.22f;
+        proc_mesh_tri(wrist, tip[i], mid, (i & 1) ? memb : memb2, false);
+        proc_mesh_tri(wrist, mid, tip[i + 1], (i & 1) ? memb2 : memb, false);
+    }
+    float mid[3];
+    for (int k = 0; k < 3; k++) mid[k] = (tip[4][k] + back[k]) * 0.5f * 0.8f + elbow[k] * 0.2f;
+    proc_mesh_tri(wrist, tip[4], elbow, memb, false);
+    proc_mesh_tri(elbow, tip[4], mid, memb2, false);
+    proc_mesh_tri(elbow, mid, back, memb, false);
+    proc_mesh_tri(elbow, back, root, memb2, false);
     uint32_t cr = crystal_col(dark);
     crystal(elbow, (float[3]){ elbow[0] + 1, elbow[1] + 8, elbow[2] + 4 }, 2.0f, cr);
     crystal(wrist, (float[3]){ wrist[0] + 5, wrist[1] + 9, wrist[2] + 2 }, 2.2f, cr);
+    crystal((float[3]){ 44, 8, -1 }, (float[3]){ 46, 13, 2 }, 1.4f, cr);
+    proc_mesh_end(out);
+}
+
+// The tail's tip: a crystal blade along +z
+static void build_tail_tip(ProcMesh *out, bool dark)
+{
+    uint32_t cr = crystal_col(dark);
+    proc_mesh_begin();
+    crystal((float[3]){ 0, 0, 0 }, (float[3]){ 0, 0, 16.0f }, 3.4f, cr);
+    for (int sd = -1; sd <= 1; sd += 2)
+        crystal((float[3]){ 0, 0, 3.0f }, (float[3]){ sd * 6.0f, 1.0f, 8.0f }, 1.6f, cr);
     proc_mesh_end(out);
 }
 
@@ -286,7 +383,7 @@ void dragon_boss_free(void)
 {
     if (!s.ready) return;
     rspq_wait();
-    ProcMesh *all[] = { &s.seg, &s.segDark, &s.limb, &s.mHead, &s.mHeadDark, &s.mJaw, &s.wing, &s.wingDark, &s.flame, &s.mOrb };
+    ProcMesh *all[] = { &s.seg, &s.segDark, &s.tseg, &s.tsegDark, &s.limb, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.wing, &s.wingDark, &s.tip, &s.tipDark, &s.flame, &s.mOrb };
     for (unsigned i = 0; i < sizeof(all) / sizeof(all[0]); i++) proc_mesh_free(all[i]);
     free_uncached(s.mats);
     memset(&s, 0, sizeof(s));
@@ -305,7 +402,10 @@ void dragon_boss_begin(Boss* boss)
 {
     if (!s.ready) {
         build_seg(&s.seg, false); build_seg(&s.segDark, true);
+        build_tail_seg(&s.tseg, false); build_tail_seg(&s.tsegDark, true);
+        build_tail_tip(&s.tip, false); build_tail_tip(&s.tipDark, true);
         build_limb();
+        build_foot();
         build_head(&s.mHead, false); build_head(&s.mHeadDark, true);
         build_jaw();
         build_wing(&s.wing, false); build_wing(&s.wingDark, true);
@@ -1058,15 +1158,25 @@ void dragon_boss_draw(Boss* b)
     put_link(seg, m1, m2, 17.5f, 1.2f);
     put_link(seg, m2, s.hips, 16.0f, 1.25f);
     for (int i = 0; i < NNECK; i++) put_link(seg, s.neck[i], s.neck[i + 1], 11.0f - i * 1.2f, 1.25f);
-    for (int i = 0; i < NTAIL; i++) put_link(seg, s.tl[i], s.tl[i + 1], 14.5f - i * 1.8f, 1.2f);
+    const ProcMesh *tseg = s.dark ? &s.tsegDark : &s.tseg;
+    for (int i = 0; i < NTAIL; i++) put_link(i < 2 ? seg : tseg, s.tl[i], s.tl[i + 1], 14.5f - i * 1.8f, 1.2f);
+    {   // the crystal blade at its tip, along the last segment
+        float d[3] = { s.tl[NTAIL][0] - s.tl[NTAIL - 1][0], s.tl[NTAIL][1] - s.tl[NTAIL - 1][1], s.tl[NTAIL][2] - s.tl[NTAIL - 1][2] }, e[3];
+        norm3(d);
+        mad3(e, s.tl[NTAIL], d, 16.0f);
+        put_link(s.dark ? &s.tipDark : &s.tip, s.tl[NTAIL], e, MESH, 1.0f);
+    }
 
     for (int k = 0; k < 4; k++) {
         float side = (k & 1) ? 1.0f : -1.0f, bend[3], kn[3];
         // elbows point back and out, knees forward and out
         for (int m = 0; m < 3; m++) bend[m] = s.F[m] * (k < 2 ? -1.0f : 0.8f) + s.R[m] * side * 0.5f + UP[m] * 0.2f;
         knee(s.shoulder[k], s.foot[k], bend, kn);
-        put_link(&s.limb, s.shoulder[k], kn, 6.0f, 1.1f);
-        put_link(&s.limb, kn, s.foot[k], 5.0f, 1.05f);
+        put_link(&s.limb, s.shoulder[k], kn, k < 2 ? 7.5f : 8.5f, 1.1f);   // thick upper legs, the hind ones thicker
+        put_link(&s.limb, kn, s.foot[k], 5.5f, 1.05f);
+        static const float Y[3] = { 0, 1, 0 };
+        float fx[3]; cross3(fx, Y, s.F);
+        put(&s.mFoot, s.foot[k], fx, Y, s.F, 1.0f, 1.0f, 1.0f);     // the foot, flat, facing forward
     }
 
     put(s.dark ? &s.mHeadDark : &s.mHead, s.head, s.hx, s.hy, s.hz, 1.0f, 1.0f, 1.0f);
