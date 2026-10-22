@@ -1234,6 +1234,8 @@ void menu_controller_draw(void)
             .height = contentH,
             .wrap = WRAP_WORD,
         }, FONT_UNBALANCED, x, y + titleYOffset, "BONUS");
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .style_id = FONT_STYLE_GREY },
+                         FONT_UNBALANCED, x, y + titleYOffset + lineHeight + 2, "Test your might");
 
         y += (lineHeight * 3) + titleYOffset;
 
@@ -1258,7 +1260,7 @@ void menu_controller_draw(void)
                          FONT_UNBALANCED, x, y + titleYOffset, "TOWER");
         y += (lineHeight * 2) + titleYOffset;
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GREY },
-                         FONT_UNBALANCED, x, y, "Boss after boss,\never higher.");
+                         FONT_UNBALANCED, x, y, "Boss after boss\nEver higher");
         y += lineHeight * 2 + 4;
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GOLD },
                          FONT_UNBALANCED, x, y, "Best floor %d", tower_best_floor());
