@@ -1257,9 +1257,9 @@ void menu_controller_draw(void)
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
                          FONT_UNBALANCED, x, y + titleYOffset, "TOWER");
         y += (lineHeight * 2) + titleYOffset;
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
-                         FONT_UNBALANCED, x, y, "Boss after boss, ever higher.");
-        y += lineHeight + 4;
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GREY },
+                         FONT_UNBALANCED, x, y, "Boss after boss,\never higher.");
+        y += lineHeight * 2 + 4;
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GOLD },
                          FONT_UNBALANCED, x, y, "Best floor %d", tower_best_floor());
         y += lineHeight;
@@ -1478,6 +1478,15 @@ void menu_controller_draw(void)
             .height = contentH,
             .wrap = WRAP_WORD,
         }, FONT_UNBALANCED, x, y, "HelloNewman");
+
+        y += lineHeight + 6;
+
+        rdpq_text_printf(&(rdpq_textparms_t){
+            .align = ALIGN_CENTER,
+            .width = contentW,
+            .height = contentH,
+            .wrap = WRAP_WORD,
+        }, FONT_UNBALANCED, x, y, "Aethrone");
     }
 }
 

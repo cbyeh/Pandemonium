@@ -252,7 +252,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             return;
         }
         int t = frame - start;
-        if (step < 4 && t == 30 + step * 15) { if (step < 3) pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; }
+#ifndef HLE_MENU_ROW
+#define HLE_MENU_ROW 3      // Load Game; 5: Credits
+#endif
+        if (step < HLE_MENU_ROW + 1 && t == 30 + step * 15) { if (step < HLE_MENU_ROW) pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; }
         return;
     }
 #endif
