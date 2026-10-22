@@ -4,7 +4,7 @@ behind, facing the giant Guardian before the Shackled Sun) inside the N64-box fr
 
     pip install numpy pillow && python3 tools/cover_render.py [--ss 2]
 
-The right-hand info band is lifted from the earlier cover in git (a11c905)."""
+The right-hand info band is lifted from the first cover in git (dfe2a2b)."""
 import argparse, io, os, subprocess
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -484,28 +484,56 @@ def gradient_text(img, xy, text, fnt, top, bot, stroke, extrude):
     grad[:] = np.array(top, f32) * (1 - k) + np.array(bot, f32) * k
     img.paste(Image.fromarray(grad.astype(np.uint8)), (0, 0), mask)
 
+def libdragon_logo(w):
+    """The libdragon logo, from its boot screen: red dragon, the lettering dark for a light box."""
+    shot = Image.open(os.path.join(ROOT, 'docs', 'media', 'libdragon_logo.png')).convert('RGB')
+    a = np.asarray(shot, f32) / 255
+    red = (a[..., 0] - a[..., 2]) > 0.3                  # the dragon
+    white = a.min(axis=2) > 0.6                           # the lettering
+    rgba = np.zeros(a.shape[:2] + (4,), f32)
+    rgba[red] = (0.72, 0.12, 0.10, 1.0)
+    rgba[white] = (0.22, 0.07, 0.05, 1.0)
+    im = Image.fromarray((rgba * 255).astype(np.uint8), 'RGBA')
+    im = im.crop(im.getbbox())
+    return im.resize((w, round(im.size[1] * w / im.size[0])), Image.LANCZOS)
+
 def frame(art):
-    old = subprocess.run(['git', '-C', ROOT, 'show', 'a11c905:metadata/cover.jpg'], capture_output=True, check=True).stdout
+    # The side band of the first cover (dark red, the 2025 N64brew Game Jam tag)
+    old = subprocess.run(['git', '-C', ROOT, 'show', 'dfe2a2b:metadata/cover.jpg'], capture_output=True, check=True).stdout
     old = Image.open(io.BytesIO(old)).convert('RGB')
     img = Image.new('RGB', (W, H))
     img.paste(art, (0, 0))
-    d = ImageDraw.Draw(img)
-    # yellow corner flash continues into the art area
-    d.polygon([(770, 0), (ART_W, 0), (ART_W, 41)], fill=(249, 196, 30))
-    d.line([(766, -2), (ART_W, 40)], fill=(141, 19, 18), width=7)
     img.paste(old.crop((ART_W, 0, W, H)), (ART_W, 0))
-    logo = font('Impact.ttf', 104)
-    tw = d.textlength('PANDEMONIUM', font=logo)
-    gradient_text(img, ((ART_W - tw) / 2 - 6, 4), 'PANDEMONIUM', logo, (255, 236, 150), (255, 120, 20), (110, 14, 6), 7)
+    d = ImageDraw.Draw(img)
+    # "Made with": the libdragon logo over Tiny3D, in the cream box (x 859-982, y 544-636)
+    d.rectangle((863, 548, 978, 632), fill=(248, 239, 210))
+    small = font('Georgia Bold.ttf', 14)
+    d.text((920, 556), 'Made with', font=small, fill=(60, 20, 14), anchor='mt')
+    logo = libdragon_logo(70)
+    img.paste(logo, (921 - logo.size[0] // 2, 573), logo)
+    d.text((920, 628), 'Tiny3D', font=font('Georgia Bold.ttf', 16), fill=(60, 20, 14), anchor='mb')
+    # The title in engraved capitals, from one edge of the art to the other
+    size = 120
+    while True:
+        title = ImageFont.truetype('/System/Library/Fonts/Supplemental/Copperplate.ttc', size, index=2)
+        tw = d.textlength('PANDEMONIUM', font=title)
+        if tw <= ART_W - 36: break
+        size -= 1
+    gradient_text(img, ((ART_W - tw) / 2 - 3, 10), 'PANDEMONIUM', title, (255, 236, 150), (255, 120, 20), (110, 14, 6), 5)
     return img
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--ss', type=float, default=2, help='supersampling factor')
     ap.add_argument('--out', default=os.path.join(ROOT, 'metadata', 'cover.jpg'))
+    ap.add_argument('--art', help='cache the rendered art here (PNG) and reuse it when it exists')
     a = ap.parse_args()
-    hdr, sun_uv = render(a.ss)
-    art = to_img(post(hdr, sun_uv, np.random.default_rng(7))).resize((ART_W, H), Image.LANCZOS)
+    if a.art and os.path.exists(a.art):
+        art = Image.open(a.art).convert('RGB')
+    else:
+        hdr, sun_uv = render(a.ss)
+        art = to_img(post(hdr, sun_uv, np.random.default_rng(7))).resize((ART_W, H), Image.LANCZOS)
+        if a.art: art.save(a.art)
     frame(art).save(a.out, quality=92)
 
 if __name__ == '__main__':
