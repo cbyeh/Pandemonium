@@ -43,7 +43,7 @@
 #define COL_IVORY  proc_rgb(232, 226, 210)
 
 typedef enum { DG_INTRO, DG_IDLE, DG_CLAW, DG_BITE, DG_TAIL, DG_BREATH, DG_CHARGE, DG_FLY,
-               DG_ROAR, DG_NOVA, DG_ORBS, DG_BEAM, DG_TIRED, DG_DEAD } DgState;
+               DG_ROAR, DG_NOVA, DG_ORBS, DG_BEAM, DG_TIRED, DG_DEAD, DG_WHIP } DgState;
 
 typedef struct { float p[3], from[3], t; bool moving; } Foot;
 typedef struct { float p[3], v[3], age, life, size; } Flame;
@@ -71,7 +71,7 @@ static struct {
     Foot feet[4];
     bool feetReady;
     // Moves
-    float cdClaw, cdBite, cdTail, cdBreath, cdCharge, cdFly, cdNova, cdOrbs, cdBeam;
+    float cdClaw, cdBite, cdTail, cdBreath, cdCharge, cdFly, cdNova, cdOrbs, cdBeam, cdWhip;
     float sweepFrom, sweepSpan, range, target[3], flyTo[2], emit, fireCd, glow;
     bool hitDone;
     Flame fl[FL_MAX];
@@ -450,6 +450,7 @@ void dragon_boss_begin(Boss* boss)
     s.feetReady = false;
     s.neckReach = s.tNeckReach = 1.0f;
     s.wingSpan = 1.0f; s.wingRaise = 0.3f;
+    s.cdWhip = 8.0f;
     s.cdClaw = 2.0f; s.cdBite = 4.0f; s.cdTail = 3.0f; s.cdBreath = 6.0f; s.cdCharge = 9.0f; s.cdFly = 16.0f;
     s.cdNova = 0.0f; s.cdOrbs = 4.0f; s.cdBeam = 9.0f;
     clear_hazards();
@@ -777,6 +778,42 @@ static void tail_update(Boss *b, float dt)
     }
 }
 
+static void whip_update(Boss *b, float dt)
+{
+    // Spins a full turn with its tail out, a scything whip all round it: jump it, roll
+    // through, or be out of the tail's reach. Warned by bursts on the floor at that reach.
+    const float WIND = 0.8f / (s.dark ? 1.2f : 1.0f), SPIN = 0.6f;
+    float rx = s.tl[NTAIL][0] - b->pos[0], rz = s.tl[NTAIL][2] - b->pos[2];
+    float reach = sqrtf(rx * rx + rz * rz);
+    if (s.step == 0) {
+        face_player(b, dt, 2.0f);
+        s.tCrouch = 7.0f; s.tNeckPitch = -0.4f; s.tTail = 0.0f; s.poseRate = 5.0f;
+        if ((int)(s.t * 6.0f) != (int)((s.t - dt) * 6.0f)) {     // a ring of warnings at the tail's reach
+            float a = b->rot[1] + s.t * 7.0f;
+            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * reach, s.groundY, b->pos[2] + cosf(a) * reach }, a);
+        }
+        if (s.t >= WIND) { s.step = 1; s.t = 0.0f; sfx_swing(); }
+    } else if (s.step == 1) {
+        b->rot[1] += 2.0f * T3D_PI * dt / SPIN;
+        s.tCrouch = 5.0f; s.tTail = 0.0f; s.poseRate = 12.0f;
+        // the whole warned circle, as the tail and body sweep it
+        float dx, dz;
+        if (!s.hitDone && player_low() && s.t > SPIN * 0.3f && to_player(b, &dx, &dz) < reach + 6.0f) {
+            s.hitDone = true;
+            character_apply_damage(22.0f);
+        }
+        if (s.t >= SPIN) {
+            skill_fx_spawn_burst_hostile((float[3]){ s.tl[NTAIL][0], s.groundY, s.tl[NTAIL][2] }, 0.0f);
+            screen_shake_set_shake_mag(7.0f);
+            sfx_boom();
+            s.step = 2; s.t = 0.0f;
+        }
+    } else {
+        s.poseRate = 3.0f;
+        if (s.t >= 0.8f) enter(DG_IDLE);       // dizzy a moment: the opening
+    }
+}
+
 // A point on the floor at `dist` from the root, at world yaw `a`
 static void floor_point(const Boss *b, float a, float dist, float out[3])
 {
@@ -987,6 +1024,7 @@ static void choose(Boss *b, float dist, float rel)
         if (s.cdOrbs <= 0.0f) { s.cdOrbs = 13.0f; enter(DG_ORBS); return; }
     }
     if (s.cdFly <= 0.0f && dist > 70.0f) { s.cdFly = 22.0f; enter(DG_FLY); return; }
+    if (front && dist > 45.0f && dist < 120.0f && s.cdWhip <= 0.0f) { s.cdWhip = 11.0f; enter(DG_WHIP); return; }
     if (front && dist < 85.0f && s.cdClaw <= 0.0f) { s.cdClaw = 2.5f; enter(DG_CLAW); return; }
     if (front && dist < 100.0f && s.cdBite <= 0.0f) { s.cdBite = 5.0f; enter(DG_BITE); return; }
     if (front && dist > 70.0f && dist < 200.0f && s.cdBreath <= 0.0f) { s.cdBreath = 9.0f; enter(DG_BREATH); return; }
@@ -1000,6 +1038,7 @@ void dragon_boss_update(Boss* b, float dt)
     s.t += dt;
     s.life += dt;
     float sm = s.dark ? 1.2f : 1.0f;
+    s.cdWhip -= dt * sm;
     s.cdClaw -= dt * sm; s.cdBite -= dt * sm; s.cdTail -= dt * sm; s.cdBreath -= dt * sm; s.cdCharge -= dt * sm;
     s.cdFly -= dt * sm; s.cdNova -= dt * sm; s.cdOrbs -= dt * sm; s.cdBeam -= dt * sm;
     s.fireCd -= dt;
@@ -1057,6 +1096,7 @@ void dragon_boss_update(Boss* b, float dt)
     case DG_CLAW:   claw_update(b, dt); break;
     case DG_BITE:   bite_update(b, dt); break;
     case DG_TAIL:   tail_update(b, dt); break;
+    case DG_WHIP:   whip_update(b, dt); break;
     case DG_BREATH: breath_update(b, dt); break;
     case DG_CHARGE: charge_update(b, dt); break;
     case DG_FLY:    fly_update(b, dt); break;
