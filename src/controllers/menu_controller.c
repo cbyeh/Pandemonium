@@ -1288,10 +1288,10 @@ void menu_controller_draw(void)
     } else if (currentMenu == MENU_SHRINE) {
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
                          FONT_UNBALANCED, x, y + titleYOffset, "SHRINE");
-        y += lineHeight * 2 + titleYOffset + 2;
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GOLD },
-                         FONT_UNBALANCED, x, y, "Embers %d", tower_embers());
-        y += lineHeight + 4;
+        // Embers on the title's row: the rows and the description below need the room
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 8, .height = contentH, .style_id = FONT_STYLE_GOLD },
+                         FONT_UNBALANCED, x, y + titleYOffset, "Embers %d", tower_embers());
+        y += lineHeight * 2 + titleYOffset;
         for (int i = 0; i < MENU_SHRINE_COUNT; i++) {
             char name[40], right[24];
             right[0] = 0;

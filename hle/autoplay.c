@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_SHRINE)
 #include "camera_controller.h"
 #include "character_skin.h"
 #include <math.h>
@@ -14,7 +14,7 @@
 #include "controllers/menu_controller.h"
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #endif
-#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT)
+#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT)
 #include "utilities/save_controller.h"
 #include "controllers/menu_controller.h"
 #include "controllers/audio_controller.h"
@@ -322,6 +322,34 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         return;
     }
 #endif
+#ifdef HLE_TEST_SHRINE
+    // The Shrine's relic and Wylder rows: 200 Embers and two relics; Tower > Shrine, down to
+    // Relic, right twice (the second relic), down, A (buy Wylder); then the checks
+    {
+        extern int tower_relic_equipped(void), tower_embers(void); extern bool tower_wylder_owned(void);
+        static int phase = 0, t0 = 0, step = 0;
+        int t = frame - t0;
+        if (phase == 0) {
+            if (menu_controller_is_active()) {
+                TowerSave ts; save_controller_get_tower(&ts); ts.embers = 200; ts.relics[0] = 0x12; ts.relics[1] = 0x67; save_controller_set_tower(&ts);
+                phase = 1; t0 = frame;
+            } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 1) {
+            static const char seq[] = "DDADADDDDDRRDA";
+            if (t >= 25 && seq[step]) {
+                char c = seq[step];
+                if (c == 'D') pressed->d_down = 1; else if (c == 'R') pressed->d_right = 1; else { pressed->a = 1; in->btn.a = 1; }
+                step++; t0 = frame;
+            }
+            if (!seq[step] && t == 40) {
+                debugf("[shrine] relic equipped %d, Wylder owned %d, skin unlocked %d, Embers %d\n", tower_relic_equipped(),
+                       tower_wylder_owned(), save_controller_skin_unlocked(SKIN_WYLDER), tower_embers());
+                pressed->d_up = 1; phase = 2;
+            }
+        }
+        return;
+    }
+#endif
 #ifdef HLE_TEST_TOWER_UI
     // Screens and the skill cards: 200 Embers; Title > Tower > Shrine: buy Honed Blade
     // (row 3); back, Climb; no skill works on floor 1; kill the boss: the draft, take its
@@ -406,7 +434,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (t == 34) debugf("[run] D-up: state %d (%s)\n", character_get_state(), character_get_state() == CHAR_STATE_SKILL ? "cast: Moon Blade Dance learned" : "no skill");
             if (t == 90) boss_apply_damage(boss, boss->maxHealth * 2.0f);
             if (tower_draft_is_open() && t % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
-            if (lastFloor == 7 && t == 60) { phase = 3; t0 = frame; character_apply_damage(9999.0f); }
+#ifndef HLE_RUN_FLOORS
+#define HLE_RUN_FLOORS 7
+#endif
+            if (lastFloor == HLE_RUN_FLOORS && t == 60) { phase = 3; t0 = frame; character_apply_damage(9999.0f); }
         } else if (phase == 3) {
             if (t == 30) debugf("[run] died: state %d, \"%s\"\n", character_get_state(), tower_death_summary());
             if (t > 150 && t % 30 == 0) { pressed->a = 1; in->btn.a = 1; in->btn.a = 1; }

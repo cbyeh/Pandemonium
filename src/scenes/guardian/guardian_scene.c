@@ -2376,17 +2376,15 @@ void scene_draw(T3DViewport *viewport)
                 .width = SCREEN_WIDTH,
             }, FONT_UNBALANCED, 0, SCREEN_HEIGHT / 2 - 12, "%s", "You Died");
             if (s_tower) {
-                rdpq_set_prim_color(RGBA32(255, 210, 120, 255));
-                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = SCREEN_WIDTH },
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = SCREEN_WIDTH, .style_id = FONT_STYLE_GOLD },
                                  FONT_UNBALANCED, 0, SCREEN_HEIGHT / 2 + 2, "%s", tower_death_summary());
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
             }
 
             // Delay restart prompt so rapid gameplay A-mashing doesn't instantly restart.
             if (deathRestartLockoutTimer >= DEATH_RESTART_LOCKOUT_S) {
                 const char *label = "Restart";
                 const int gap = 6;
-                const int y = (SCREEN_HEIGHT / 2) + 20;
+                const int y = (SCREEN_HEIGHT / 2) + (s_tower ? 34 : 20);    // below the Tower's two summary lines
 
                 // Source sprite is 64×64; scale down to match other UI button sizes.
                 const float kTargetPx = 20.0f;

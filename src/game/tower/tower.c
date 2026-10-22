@@ -36,14 +36,14 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_BLOODTHIRST]   = { "Bloodthirst",   "Heal 6% of damage dealt",      2, TIER_RARE },
     [BOON_VIGOR]         = { "Vigor",         "+25 max health",               3, TIER_COMMON },
     [BOON_LAST_STAND]    = { "Last Stand",    "+40% damage below 30% health", 1, TIER_RARE },
-    [BOON_UNBROKEN]      = { "Unbroken",      "Once a floor, live through a killing blow", 1, TIER_LEGENDARY },
+    [BOON_UNBROKEN]      = { "Unbroken",      "Survive one killing blow a floor", 1, TIER_LEGENDARY },
     [BOON_CRESCENT_ECHO] = { "Moon Blade Dance+", "2 more waves", 1, TIER_RARE },
-    [BOON_PHANTOM_STEP]  = { "Phantom Step",  "Easier perfect dodges; each heals 8%", 1, TIER_RARE },
-    [BOON_RIPOSTE]       = { "Riposte",       "+50% damage for 2.5 s after a perfect dodge", 1, TIER_RARE },
+    [BOON_PHANTOM_STEP]  = { "Phantom Step",  "Easier perfect dodges, each heals 8%", 1, TIER_RARE },
+    [BOON_RIPOSTE]       = { "Riposte",       "Perfect dodge: +50% damage", 1, TIER_RARE },
     [BOON_CRUSHING_BLOWS]= { "Crushing Blows","Bosses stagger 40% sooner",    1, TIER_RARE },
     [BOON_EXECUTIONER]   = { "Executioner",   "Staggered bosses take +60%",   1, TIER_LEGENDARY },
     [BOON_STORM_BLADE]   = { "Storm Blade",   "Every 4th hit calls lightning", 1, TIER_LEGENDARY },
-    [BOON_BLOOD_PACT]    = { "Blood Pact",    "+35% damage, potions heal 25% less", 1, TIER_LEGENDARY },
+    [BOON_BLOOD_PACT]    = { "Blood Pact",    "+35% damage, potions -25%", 1, TIER_LEGENDARY },
     [BOON_LEARN_MOONBLADE] = { "Moon Blade Dance", "Learn it: D-up", 1, TIER_COMMON },
     [BOON_LEARN_HALFMOON]  = { "Halfmoon Slash",   "Learn it: D-right", 1, TIER_COMMON },
     [BOON_LEARN_CLEAVE]    = { "Crescent Cleave",  "Learn it: D-down", 1, TIER_COMMON },
@@ -123,6 +123,9 @@ static void shuffle_circle(void)
     for (int i = 0; i < 3; i++) s.order[1 + i] = rest[i];
     s.order[4] = TOWER_UNBOUND;
     s.night = s.nextNight;
+#ifdef HLE_AUTOPLAY
+    debugf("[night] circle from floor %d: %s\n", s.floor, NIGHTS[s.night].name[0] ? NIGHTS[s.night].name : "none");
+#endif
 }
 
 // ---- Relics ----
@@ -196,6 +199,9 @@ static void relic_award(void)
     t.relics[slot] = r;
     save_controller_set_tower(&t);
     s.relicFound = true;
+#ifdef HLE_AUTOPLAY
+    debugf("[relic] %s: %s (slot %d)\n", tower_relic_name(slot), tower_relic_desc(slot), slot);
+#endif
 }
 
 // ---- Wylder ----
@@ -324,6 +330,11 @@ void tower_draft_open(void)
     }
     s.sel = 0;
     s.draftOpen = true;
+#ifdef HLE_AUTOPLAY
+    debugf("[draft] floor %d:", s.floor);
+    for (int i = 0; i < s.nChoices; i++) debugf(" %s (%d)", BOONS[s.choices[i]].name, BOONS[s.choices[i]].tier);
+    debugf("%s\n", s.relicFound ? " | relic found" : "");
+#endif
 }
 
 bool tower_draft_is_open(void) { return s.draftOpen; }
@@ -406,8 +417,6 @@ void tower_draft_draw(void)
         static const int NAME_STYLE[3] = { FONT_STYLE_WHITE, FONT_STYLE_BLUE, FONT_STYLE_GOLD };
         text_style(x + 4, y0 + 18, cw - 8, ALIGN_CENTER, NAME_STYLE[b->tier], b->name);
         text(x + 6, y0 + 52, cw - 12, ALIGN_CENTER, b->desc);     // below a name of up to two lines
-        if (b->tier != TIER_COMMON)
-            text_style(x, y0 + ch - 22, cw, ALIGN_CENTER, NAME_STYLE[b->tier], b->tier == TIER_RARE ? "Rare" : "Legendary");
         if (s.stacks[s.choices[i]] > 0) {
             snprintf(line, sizeof line, "Have %d", s.stacks[s.choices[i]]);
             text_style(x, y0 + ch - 8, cw, ALIGN_CENTER, FONT_STYLE_GREY, line);
@@ -426,7 +435,7 @@ void tower_draft_draw(void)
 
 void tower_hud_draw(void)
 {
-    if (!s.active) return;
+    if (!s.active || s.draftOpen) return;     // the draft has its own header
     char line[32];
     // inside the title-safe area, like the rest of the HUD (TVs and accurate emulators show the edges)
     const int w = SCREEN_WIDTH - ui_safe_margin_x(), top = ui_safe_margin_y() + 10;
