@@ -419,20 +419,29 @@ void character_ui_draw_c_buttons(void)
     rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
     rdpq_mode_filter(FILTER_BILINEAR);
     character_ui_draw_icon(s_keySprite, &s_keySurf, leftX, leftY, keyPx);
-    // Only the skills that can be used (the Skills setting, or a Tower run's unlocks)
+    // All four keys always show, so the potion reads as D-Left; a skill not usable (the Skills
+    // setting, or not yet learned in a Tower run) is a dimmed blank key
     const struct { CharacterSkill s; sprite_t *spr; const surface_t *surf; int x, y; } keys[] = {
         { SKILL_MOON_BLADE_DANCE, s_skillMoonBladeSprite, &s_skillMoonBladeSurf, upX, upY },
         { SKILL_HALFMOON_SLASH,   s_skillHalfmoonSprite,  &s_skillHalfmoonSurf,  rightX, rightY },
         { SKILL_CRESCENT_CLEAVE,  s_skillCleaveSprite,    &s_skillCleaveSurf,    downX, downY },
     };
     for (int i = 0; i < 3; i++) {
-        if (!character_skill_usable(keys[i].s)) continue;
         rdpq_set_mode_standard();
         rdpq_mode_alphacompare(0);
         rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
         rdpq_mode_filter(FILTER_BILINEAR);
         character_ui_draw_icon(s_keySprite, &s_keySurf, keys[i].x, keys[i].y, keyPx);
-        character_ui_draw_skill(keys[i].s, keys[i].spr, keys[i].surf, keys[i].x, keys[i].y, keyPx);
+        if (character_skill_usable(keys[i].s)) {
+            character_ui_draw_skill(keys[i].s, keys[i].spr, keys[i].surf, keys[i].x, keys[i].y, keyPx);
+        } else {
+            int half = (int)(keyPx * 0.40f);
+            rdpq_set_mode_standard();
+            rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+            rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+            rdpq_set_prim_color(RGBA32(0, 0, 0, 140));
+            rdpq_fill_rectangle(keys[i].x - half, keys[i].y - half, keys[i].x + half, keys[i].y + half);
+        }
     }
 
     // Only show the potion bottle + count while the player has potions.
