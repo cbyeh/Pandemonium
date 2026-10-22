@@ -110,8 +110,12 @@ static void bone_world(const T3DMat4FP *modelMat, int b, float x, float y, float
 #define CLOTH_ROWS 8
 #define CLOTH_N (CLOTH_COLS * CLOTH_ROWS)
 #define RING 4                          // frames the RSP may still be reading
+// One step a frame, CLOTH_ITERS passes over the links, the body pushed out on the last: two
+// steps of six (three of them colliding) cost 17 ms a frame on hardware, halving the frame rate
+#define CLOTH_ITERS 4
 
-typedef struct { float a[3], b[3], r; } Capsule;
+// ab, il2 (1/|ab|^2), r2 and a bounding sphere (m, br2) are worked out once a frame (cloth_bodies)
+typedef struct { float a[3], b[3], r, ab[3], il2, r2, m[3], br2; } Capsule;
 
 typedef struct {
     int cols, rows;
@@ -122,6 +126,10 @@ typedef struct {
     float time;
     T3DVertPacked *vb[RING];
     T3DMat4FP *mat[RING];
+    rspq_block_t *tris[RING];   // loads its buffer and draws the grid: recorded once (per width)
+    int trisCols;
+    float acc;                  // time gathered for the next step (it steps every other frame)
+    bool stepped;               // stepped this frame: drawn halfway from the last state (q) to p
     int ring;
 } Cloth;
 
@@ -182,6 +190,15 @@ static void cloth_bodies(const T3DMat4FP *M)
     #undef SPHERE
     #undef CAPS
     s_bodyCount = n;
+    for (int i = 0; i < n; i++) {
+        Capsule *c = &b[i];
+        float l2 = 0.0f;
+        for (int k = 0; k < 3; k++) { c->ab[k] = c->b[k] - c->a[k]; l2 += c->ab[k] * c->ab[k]; c->m[k] = (c->a[k] + c->b[k]) * 0.5f; }
+        c->il2 = l2 > 0.0f ? 1.0f / l2 : 0.0f;
+        c->r2 = c->r * c->r;
+        float br = sqrtf(l2) * 0.5f + c->r;
+        c->br2 = br * br;
+    }
 }
 
 static void cloth_reset(Cloth *cl, const ClothSpec *sp)
@@ -210,21 +227,24 @@ static void link(float *a, float *b, float rest, bool pinA)
     for (int i = 0; i < 3; i++) { a[i] += d[i] * k * wa; b[i] -= d[i] * k * wb; }
 }
 
-// pad: hair over a cape rides a little further out, so it lies on the cape
-static void collide(float *p, float pad)
+#ifdef HLE_LOG_CLOTH
+static uint32_t s_bodyT, s_stepT, s_subT, s_colT, s_ancT, s_vtxT, s_matT, s_wbT;
+#endif
+// Pushes a particle out of the body. The hot loop of the cloth (every particle against every
+// capsule): far capsules are skipped on their bounding sphere, and the root is taken only inside
+static void collide(float *p)
 {
     for (int i = 0; i < s_bodyCount; i++) {
         const Capsule *c = &s_body[i];
-        float ab[3] = { c->b[0] - c->a[0], c->b[1] - c->a[1], c->b[2] - c->a[2] };
+        float mx = p[0] - c->m[0], my = p[1] - c->m[1], mz = p[2] - c->m[2];
+        if (mx * mx + my * my + mz * mz >= c->br2) continue;
         float ap[3] = { p[0] - c->a[0], p[1] - c->a[1], p[2] - c->a[2] };
-        float l2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
-        float h = l2 > 0 ? (ap[0] * ab[0] + ap[1] * ab[1] + ap[2] * ab[2]) / l2 : 0;
+        float h = (ap[0] * c->ab[0] + ap[1] * c->ab[1] + ap[2] * c->ab[2]) * c->il2;
         h = h < 0 ? 0 : h > 1 ? 1 : h;
-        float d[3] = { ap[0] - ab[0] * h, ap[1] - ab[1] * h, ap[2] - ab[2] * h };
-        float dl = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-        float r = c->r + (i == 3 ? 0.0f : pad);   // not round the head: that is where it is pinned
-        if (dl < r && dl > 1e-4f) {
-            float k = (r - dl) / dl;
+        float d[3] = { ap[0] - c->ab[0] * h, ap[1] - c->ab[1] * h, ap[2] - c->ab[2] * h };
+        float dl2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+        if (dl2 < c->r2 && dl2 > 1e-8f) {
+            float dl = sqrtf(dl2), k = (c->r - dl) / dl;
             p[0] += d[0] * k; p[1] += d[1] * k; p[2] += d[2] * k;
         }
     }
@@ -236,10 +256,12 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
     const float g = -220.0f * h * h;
     cl->time += h;
     const float damp = strands(sp) ? 0.92f : 0.97f;
+    float wind[CLOTH_COLS];     // a gust down each column (sinf is a software call: once a column, not a particle)
+    for (int c = 0; c < cl->cols; c++) wind[c] = (14.0f + 10.0f * sinf(cl->time * 1.7f + c * 0.6f)) * h * h / cl->rows;
     for (int r = 1; r < cl->rows; r++)
         for (int c = 0; c < cl->cols; c++) {
             float *p = PC(cl, c, r), *q = cl->q[r * cl->cols + c];
-            float gust = (14.0f + 10.0f * sinf(cl->time * 1.7f + c * 0.6f)) * h * h * r / cl->rows;
+            float gust = wind[c] * r;
             for (int i = 0; i < 3; i++) {
                 float v = (p[i] - q[i]) * damp;
                 q[i] = p[i];
@@ -247,7 +269,7 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
             }
             p[1] += g;
         }
-    for (int it = 0; it < 6; it++) {
+    for (int it = 0; it < CLOTH_ITERS; it++) {
         for (int c = 0; c < cl->cols; c++) {
             memcpy(PC(cl, c, 0), cl->anchor[c], sizeof(float[3]));
             if (sp->kind == CLOTH_PLUME) memcpy(PC(cl, c, 1), cl->anchor2[c], sizeof(float[3]));
@@ -264,22 +286,28 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
         int loose = sp->tattered ? cl->rows - 3 : cl->rows;   // tatters hang as free strands
         for (int r = 1; r < loose; r++)
             for (int c = 0; c < cl->cols - 1; c++) link(PC(cl, c, r), PC(cl, c + 1, r), cl->hrest[r], false);
-        if (it >= 3) for (int i = cl->cols; i < cl->cols * cl->rows; i++) {
+#ifdef HLE_LOG_CLOTH
+        uint32_t tc = TICKS_READ();
+#endif
+        if (it == CLOTH_ITERS - 1) for (int i = cl->cols; i < cl->cols * cl->rows; i++) {
             float *p = cl->p[i];
-            collide(p, 0.0f);
+            collide(p);
             if (plane) {
                 float d = (p[0] - plane[0]) * plane[3] + (p[1] - plane[1]) * plane[4] + (p[2] - plane[2]) * plane[5];
                 if (d < 0) for (int m = 0; m < 3; m++) p[m] -= d * plane[3 + m];
             }
         }
-        // Never above the pins (a cloak) or above the head (a plume streams back, it can't stand up)
-        for (int r = 1; r < cl->rows; r++)
-            for (int c = 0; c < cl->cols; c++) {
-                float top = sp->kind == CLOTH_PLUME ? cl->anchor2[c][1] : cl->anchor[c][1];
-                float maxY = top - (sp->kind == CLOTH_PLUME ? 0.02f : 0.15f) * r * cl->vrest[c];
-                if (PC(cl, c, r)[1] > maxY) PC(cl, c, r)[1] = maxY;
-            }
+#ifdef HLE_LOG_CLOTH
+        s_colT += TICKS_READ() - tc;
+#endif
     }
+    // Never above the pins (a cloak) or above the head (a plume streams back, it can't stand up)
+    for (int r = 1; r < cl->rows; r++)
+        for (int c = 0; c < cl->cols; c++) {
+            float top = sp->kind == CLOTH_PLUME ? cl->anchor2[c][1] : cl->anchor[c][1];
+            float maxY = top - (sp->kind == CLOTH_PLUME ? 0.02f : 0.15f) * r * cl->vrest[c];
+            if (PC(cl, c, r)[1] > maxY) PC(cl, c, r)[1] = maxY;
+        }
     if (sp->kind == CLOTH_PLUME)   // the links above may have nudged its stiff root
         for (int c = 0; c < cl->cols; c++) memcpy(PC(cl, c, 1), cl->anchor2[c], sizeof(float[3]));
 }
@@ -297,13 +325,16 @@ static uint32_t shade(SkinColor c, const float n[3], float bias)
     float d = fabsf(n[0] * L[0] + n[1] * L[1] + n[2] * L[2]);
     float s = (0.3f + 0.7f * d) * bias;
     // t3d lights the knight's vertex colours by the ambient colour alone
-    float amb[3] = { colorAmbient[0] / 255.0f, colorAmbient[1] / 255.0f, colorAmbient[2] / 255.0f };
+    const float K = 1.0f / 255.0f;      // a multiply: a divide is 29 cycles, three a vertex
+    float amb[3] = { colorAmbient[0] * K, colorAmbient[1] * K, colorAmbient[2] * K };
     int r = c.r * s * amb[0], g = c.g * s * amb[1], b = c.b * s * amb[2];
     r = r > 255 ? 255 : r; g = g > 255 ? 255 : g; b = b > 255 ? 255 : b;
     return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xFF;
 }
 
-static void cloth_draw(Cloth *cl, const ClothSpec *sp, const float origin[3])
+// k blends the free particles from their last state (q) to the current (p): the cloth steps
+// every other frame and is drawn in between, so it moves every frame at half the cost
+static void cloth_draw(Cloth *cl, const ClothSpec *sp, const float origin[3], float k)
 {
     if (!cl->vb[0]) {
         for (int i = 0; i < RING; i++) {
@@ -311,28 +342,71 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const float origin[3])
             cl->mat[i] = malloc_uncached(sizeof(T3DMat4FP));
         }
     }
-    T3DVertPacked *vb = cl->vb[cl->ring];
+    if (cl->trisCols != cl->cols) {   // the grid's triangles never change: built once, not each frame
+        rspq_wait();
+        for (int k = 0; k < RING; k++) {
+            if (cl->tris[k]) rspq_block_free(cl->tris[k]);
+            rspq_block_begin();
+            t3d_vert_load(cl->vb[k], 0, cl->cols * cl->rows);
+            for (int r = 0; r < cl->rows - 1; r++)
+                for (int c = 0; c < cl->cols - 1; c++) {
+                    int i = r * cl->cols + c;
+                    t3d_tri_draw(i, i + cl->cols, i + 1);
+                    t3d_tri_draw(i + 1, i + cl->cols, i + cl->cols + 1);
+                }
+            t3d_tri_sync();
+            cl->tris[k] = rspq_block_end();
+        }
+        cl->trisCols = cl->cols;
+    }
+    // Written through the cache, then flushed for the RSP's DMA: uncached stores cost the
+    // vertices 0.8 ms a frame
+    T3DVertPacked *vb = CachedAddr(cl->vb[cl->ring]);
     T3DMat4FP *mat = cl->mat[cl->ring];
+    rspq_block_t *tris = cl->tris[cl->ring];
     cl->ring = (cl->ring + 1) % RING;
 
+#ifdef HLE_LOG_CLOTH
+    uint32_t tb = TICKS_READ();
+#endif
     // Positions relative to the character in 1/8 world units, for sub-unit precision
     const float SUB = 8.0f;
     t3d_mat4fp_from_srt_euler(mat, (float[3]){ 1 / SUB, 1 / SUB, 1 / SUB }, (float[3]){ 0, 0, 0 }, origin);
+#ifdef HLE_LOG_CLOTH
+    s_matT += TICKS_READ() - tb;
+#endif
+    float D[CLOTH_N][3];
+    int pinned = (sp->kind == CLOTH_PLUME ? 2 : 1) * cl->cols;     // the pinned rows sit on their pins now
+    for (int i = 0; i < cl->cols * cl->rows; i++)
+        for (int m = 0; m < 3; m++) D[i][m] = i < pinned ? cl->p[i][m] : cl->q[i][m] + (cl->p[i][m] - cl->q[i][m]) * k;
+    #define DC(c, r) D[(r) * cl->cols + (c)]
     for (int r = 0; r < cl->rows; r++)
         for (int c = 0; c < cl->cols; c++) {
-            const float *l = PC(cl, c > 0 ? c - 1 : c, r), *rr = PC(cl, c < cl->cols - 1 ? c + 1 : c, r);
-            const float *u = PC(cl, c, r > 0 ? r - 1 : r), *d = PC(cl, c, r < cl->rows - 1 ? r + 1 : r);
+            const float *l = DC(c > 0 ? c - 1 : c, r), *rr = DC(c < cl->cols - 1 ? c + 1 : c, r);
+            const float *u = DC(c, r > 0 ? r - 1 : r), *d = DC(c, r < cl->rows - 1 ? r + 1 : r);
             float a[3] = { rr[0] - l[0], rr[1] - l[1], rr[2] - l[2] }, b[3] = { d[0] - u[0], d[1] - u[1], d[2] - u[2] };
             float n[3] = { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] };
-            float nl = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]) + 1e-6f;
-            n[0] /= nl; n[1] /= nl; n[2] /= nl;
-            const float *p = PC(cl, c, r);
+            float nl = 1.0f / (sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]) + 1e-6f);
+            n[0] *= nl; n[1] *= nl; n[2] *= nl;
+            const float *p = DC(c, r);
             int16_t pos[3] = { (int16_t)((p[0] - origin[0]) * SUB), (int16_t)((p[1] - origin[1]) * SUB), (int16_t)((p[2] - origin[2]) * SUB) };
             // strands get a sheen down the middle, cloth darkens toward the hem
             float bias = strands(sp) ? 0.85f + 0.3f * (c == cl->cols / 2) : 1.0f - 0.25f * r / cl->rows;
             put_vert(vb, r * cl->cols + c, pos, shade(sp->color, n, bias));
         }
+    #undef DC
+#ifdef HLE_LOG_CLOTH
+    uint32_t tw = TICKS_READ();
+#endif
+    data_cache_hit_writeback(vb, sizeof(T3DVertPacked) * CLOTH_N / 2);
+#ifdef HLE_LOG_CLOTH
+    s_wbT += TICKS_READ() - tw;
+#endif
 
+#ifdef HLE_LOG_CLOTH
+    uint32_t tv = TICKS_READ();
+    s_vtxT += tv - tb;
+#endif
     rdpq_sync_pipe();
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
     rdpq_mode_blender(0);
@@ -340,14 +414,10 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const float origin[3])
     rdpq_mode_alphacompare(0);
     t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
     t3d_matrix_set(mat, true);
-    t3d_vert_load(vb, 0, cl->cols * cl->rows);
-    for (int r = 0; r < cl->rows - 1; r++)
-        for (int c = 0; c < cl->cols - 1; c++) {
-            int i = r * cl->cols + c;
-            t3d_tri_draw(i, i + cl->cols, i + 1);
-            t3d_tri_draw(i + 1, i + cl->cols, i + cl->cols + 1);
-        }
-    t3d_tri_sync();
+    rspq_block_run(tris);
+#ifdef HLE_LOG_CLOTH
+    s_subT += TICKS_READ() - tv;
+#endif
 }
 
 /* -----------------------------------------------------------------------------
@@ -759,7 +829,16 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
     acc_draw(skel, modelMat);
     if (s->cl[0].kind == CLOTH_NONE) return;
 
-    cloth_bodies(modelMat);
+#ifdef HLE_LOG_CLOTH   // test aid: the cloth's CPU time a frame (CPU cycles: on an interpreter, its cost too)
+    uint32_t t0 = TICKS_READ();
+#endif
+    static bool odd;        // the cloth steps every other frame (both pieces together)
+    odd = !odd;
+    bool step = odd && dt > 0.0f;
+    if (step) cloth_bodies(modelMat);     // the body only matters to a step
+#ifdef HLE_LOG_CLOTH
+    s_bodyT += TICKS_READ() - t0;
+#endif
     // "Back" is the model's +X axis in world space
     float o[3], x1[3], back[3];
     mat4fp_mul_point_f32_row3_colbasis(modelMat, (float[3]){ 0, 0, 0 }, o);
@@ -774,11 +853,14 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
         if (sp->kind == CLOTH_NONE) continue;
         cl->cols = sp->kind == CLOTH_CLOAK ? CLOTH_COLS : sp->kind == CLOTH_HAIR ? 3 : 2;
         cl->rows = CLOTH_ROWS;
+#ifdef HLE_LOG_CLOTH
+        uint32_t ta = TICKS_READ();
+#endif
         float prev[CLOTH_COLS][3]; memcpy(prev, cl->anchor, sizeof prev);
         float *prev0 = prev[0];
         cloth_anchors(cl, sp, modelMat);
         float dx = cl->anchor[0][0] - prev0[0], dy = cl->anchor[0][1] - prev0[1], dz = cl->anchor[0][2] - prev0[2];
-        if (!cl->valid || dx * dx + dy * dy + dz * dz > 40.0f * 40.0f) cloth_reset(cl, sp);   // first frame or teleport
+        if (!cl->valid || dx * dx + dy * dy + dz * dz > 40.0f * 40.0f) { cloth_reset(cl, sp); cl->acc = 0.0f; }   // first frame or teleport
         else {      // carried partly with its pins (the run and the turns): it streams back at a slant, not flat out
             const float follow = sp->kind == CLOTH_CLOAK ? 0.55f : 0.35f;
             for (int c = 0; c < cl->cols; c++) {
@@ -789,6 +871,9 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
                 }
             }
         }
+#ifdef HLE_LOG_CLOTH
+        s_ancT += TICKS_READ() - ta;
+#endif
         // hair over a cape: kept behind a plane just outside the cape's top edge
         float plane[6], *pl = NULL;
         if (strands(sp) && cape) {
@@ -797,9 +882,27 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
             plane[3] = back[0] / hl; plane[4] = 0.0f; plane[5] = back[2] / hl;
             pl = plane;
         }
-        if (dt > 0.0f) { cloth_step(cl, sp, dt * 0.5f, back, pl); cloth_step(cl, sp, dt * 0.5f, back, pl); }
+#ifdef HLE_LOG_CLOTH
+        uint32_t ts = TICKS_READ();
+#endif
+        // A step every other frame, of both frames' time
+        cl->acc += dt;
+        cl->stepped = step;
+        if (cl->stepped) { cloth_step(cl, sp, fminf(cl->acc, 0.07f), back, pl); cl->acc = 0.0f; }
+        for (int c = 0; c < cl->cols; c++) {     // the pins follow the body every frame
+            memcpy(PC(cl, c, 0), cl->anchor[c], sizeof(float[3]));
+            if (sp->kind == CLOTH_PLUME) memcpy(PC(cl, c, 1), cl->anchor2[c], sizeof(float[3]));
+        }
+#ifdef HLE_LOG_CLOTH
+        s_stepT += TICKS_READ() - ts;
+#endif
         if (pl) t3d_state_set_depth_offset(-0x40);   // where it lies on the cape, it wins
-        cloth_draw(cl, sp, pos);
+        cloth_draw(cl, sp, pos, cl->stepped ? 0.5f : 1.0f);
         if (pl) t3d_state_set_depth_offset(0);
     }
+#ifdef HLE_LOG_CLOTH
+    { static uint32_t sum; static int n; sum += TICKS_READ() - t0;
+      if (++n == 120) { debugf("[cloth] %lu us a frame: bodies %lu, simulation %lu, draw submit %lu (collision %lu) anchors %lu vertices %lu (matrix %lu, flush %lu)\n", (unsigned long)(TICKS_TO_US(sum) / n),
+                               (unsigned long)(TICKS_TO_US(s_bodyT) / n), (unsigned long)(TICKS_TO_US(s_stepT) / n), (unsigned long)(TICKS_TO_US(s_subT) / n), (unsigned long)(TICKS_TO_US(s_colT) / n), (unsigned long)(TICKS_TO_US(s_ancT) / n), (unsigned long)(TICKS_TO_US(s_vtxT) / n), (unsigned long)(TICKS_TO_US(s_matT) / n), (unsigned long)(TICKS_TO_US(s_wbT) / n)); sum = s_bodyT = s_stepT = s_subT = s_colT = s_ancT = s_vtxT = s_matT = s_wbT = 0; n = 0; } }
+#endif
 }
