@@ -1257,10 +1257,15 @@ void menu_controller_draw(void)
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
                          FONT_UNBALANCED, x, y + titleYOffset, "TOWER");
         y += (lineHeight * 2) + titleYOffset;
-        rdpq_set_prim_color(RGBA32(255, 210, 120, 255));
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW },
-                         FONT_UNBALANCED, x, y, "Embers %d   Best floor %d", tower_embers(), tower_best_floor());
-        y += lineHeight * 2;
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
+                         FONT_UNBALANCED, x, y, "Boss after boss, ever higher.");
+        y += lineHeight + 4;
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GOLD },
+                         FONT_UNBALANCED, x, y, "Best floor %d", tower_best_floor());
+        y += lineHeight;
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GOLD },
+                         FONT_UNBALANCED, x, y, "Embers %d", tower_embers());
+        y += lineHeight + 6;
         for (int i = 0; i < MENU_TOWER_COUNT; i++) {
             if (i == selectedOption) {
                 draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
@@ -1277,8 +1282,7 @@ void menu_controller_draw(void)
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
                          FONT_UNBALANCED, x, y + titleYOffset, "SHRINE");
         y += lineHeight * 2 + titleYOffset + 2;
-        rdpq_set_prim_color(RGBA32(255, 210, 120, 255));
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW },
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GOLD },
                          FONT_UNBALANCED, x, y, "Embers %d", tower_embers());
         y += lineHeight + 4;
         for (int i = 0; i < MENU_SHRINE_COUNT; i++) {
@@ -1297,18 +1301,18 @@ void menu_controller_draw(void)
             } else {
                 rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
             }
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW - 16 },
+            // A text box from y, as the highlight expects (a bare y would be the baseline: a line low)
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW - 16, .height = contentH },
                              FONT_UNBALANCED, x + 8, y, "%s", name);
             if (right[0])
-                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 16 },
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 16, .height = contentH },
                                  FONT_UNBALANCED, x + 8, y, "%s", right);
             y += lineHeight + 1;
         }
         // What the selected one does
         const char *desc = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_desc((UpgradeId)selectedOption)
                                                                  : "Skills are learned in the climb";
-        rdpq_set_prim_color(RGBA32(180, 180, 180, 255));
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW },
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
                          FONT_UNBALANCED, x, y + 6, "%s", desc);
         rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
     } else if (currentMenu == MENU_AUDIO) {
