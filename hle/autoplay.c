@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW)
 #include "camera_controller.h"
 #include "character_skin.h"
 #include <math.h>
@@ -508,6 +508,31 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             in->stick_x = (int)(80 * cosf(t * 0.03f)); in->stick_y = (int)(80 * sinf(t * 0.03f));
             if (t == 300) { debugf("[ub] after-death window over ms %lu\n", (unsigned long)get_ticks_ms()); phase = 4; }
         }
+        return;
+    }
+#endif
+#ifdef HLE_TEST_ANIMVIEW
+    // A Guardian clip (HLE_TEST_ANIMVIEW = its index; with HLE_TEST_FREEZE_BOSS), posed at
+    // 0, 0.4, 0.8 ... s, 60 frames each, from the side
+    {
+        static int start = -1;
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) start = frame;
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        int t = frame - start;
+        T3DAnim *a = ((T3DAnim**)boss->animations)[HLE_TEST_ANIMVIEW];
+        if (t == 1) { t3d_anim_attach(a, (T3DSkeleton*)boss->skeleton); t3d_anim_set_playing(a, true); debugf("[anim] clip %d lasts %.2f s\n", HLE_TEST_ANIMVIEW, (double)a->animRef->duration); }
+        float at = (t / 60) * 0.4f;
+        if (t % 60 == 1) { t3d_anim_set_time(a, at); t3d_anim_update(a, 0.0f); t3d_skeleton_update((T3DSkeleton*)boss->skeleton); }
+        if (t % 60 == 30) { T3DVec3 h = {0}; boss_get_head_world_pos(boss, &h); debugf("[anim] at %.1f s head y %.1f\n", (double)at, (double)h.v[1]); }
+        cameraLockOnActive = false;
+        character.pos[0] = boss->pos[0] + 120.0f; character.pos[2] = boss->pos[2];
+        customCamPos = (T3DVec3){{ boss->pos[0] + 60.0f, boss->pos[1] + 30.0f, boss->pos[2] + 70.0f }};
+        customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + 22.0f, boss->pos[2] }};
+        camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
         return;
     }
 #endif
