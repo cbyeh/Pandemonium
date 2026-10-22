@@ -1145,6 +1145,7 @@ void dragon_boss_draw(Boss* b)
     s.matRing = (s.matRing + 1) % MAT_RING;
     s.mi = 0;
     rdpq_sync_pipe();
+    rdpq_mode_push();       // restored at the end: the caller's fog and modes stay
     rdpq_set_mode_standard();
     rdpq_mode_zbuf(true, true);
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
@@ -1227,4 +1228,5 @@ void dragon_boss_draw(Boss* b)
         }
     }
     if (s.glow > 0.01f) put_glow(s.dark || s.state == DG_BEAM || s.state == DG_NOVA ? &s.mOrb : &s.flame, s.mouth, 2.0f + 5.0f * s.glow);
+    rdpq_mode_pop();
 }

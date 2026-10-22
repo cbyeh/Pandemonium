@@ -281,6 +281,7 @@ void proc_mesh_draw_glow(const ProcMesh *m)
 {
     if (!m->block) return;
     rdpq_sync_pipe();
+    rdpq_mode_push();       // restored at the end: the caller's fog and modes stay
     rdpq_set_mode_standard();
     rdpq_mode_zbuf(true, false);
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
@@ -290,6 +291,7 @@ void proc_mesh_draw_glow(const ProcMesh *m)
     t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
     t3d_matrix_set(m->mat, true);
     rspq_block_run(m->block);
+    rdpq_mode_pop();
 }
 
 void proc_mesh_chain_link(float len, float width, float thick, uint32_t rgba, bool unlit)
@@ -361,12 +363,14 @@ void proc_mesh_draw(const ProcMesh *m)
 {
     if (!m->block) return;
     rdpq_sync_pipe();
+    rdpq_mode_push();       // restored at the end: the caller's fog and modes stay
     rdpq_set_mode_standard();
     rdpq_mode_zbuf(true, true);
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
     t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
     t3d_matrix_set(m->mat, true);
     rspq_block_run(m->block);
+    rdpq_mode_pop();
 }
 
 void proc_mesh_free(ProcMesh *m)

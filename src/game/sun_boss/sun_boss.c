@@ -639,6 +639,7 @@ static void chains_draw(void)
     T3DMat4FP *mats = s.chainMat + s.matRing * (NLINKS + NCH);
     s.matRing = (s.matRing + 1) % MAT_RING;
     rdpq_sync_pipe();
+    rdpq_mode_push();       // restored at the end: the caller's fog and modes stay
     rdpq_set_mode_standard();
     rdpq_mode_zbuf(true, true);
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
@@ -658,6 +659,7 @@ static void chains_draw(void)
             rspq_block_run(s.weight.block);
         }
     }
+    rdpq_mode_pop();
 }
 
 void sun_boss_draw(Boss* b)

@@ -585,6 +585,9 @@ static void acc_draw(const T3DSkeleton *skel, const T3DMat4FP *modelMat)
 {
     if (!s_accCount) return;
     rdpq_sync_pipe();
+    // Save the scene's render mode and restore it after: a reset mode here turned the
+    // title's fog off for whatever drew next (the fog gate dimmed with these skins)
+    rdpq_mode_push();
     rdpq_set_mode_standard();
     rdpq_mode_zbuf(true, true);
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
@@ -596,6 +599,7 @@ static void acc_draw(const T3DSkeleton *skel, const T3DMat4FP *modelMat)
         rspq_block_run(s_acc[i].m.block);
         t3d_matrix_pop(2);
     }
+    rdpq_mode_pop();
 }
 
 /* -----------------------------------------------------------------------------
