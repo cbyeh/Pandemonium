@@ -35,6 +35,8 @@ enum {
     FONT_STYLE_WHITE = 0,
     FONT_STYLE_GOLD  = 1,     // beaten: the story cleared, a Bonus boss slain
     FONT_STYLE_GREY  = 2,     // unavailable
+    FONT_STYLE_BLUE  = 3,     // rare
+    FONT_STYLE_RED   = 4,     // danger: the Tower's ascensions and nights
 };
 
 #endif

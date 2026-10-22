@@ -437,6 +437,8 @@ void save_controller_get_tower(TowerSave *out)
     out->bestFloor = p[11];
     out->weaponsOwned = p[12];
     out->weapon = p[13];
+    out->flags = p[19];      // (14 held the old skills: stale on older saves)
+    for (int i = 0; i < 3; i++) out->relics[i] = p[16 + i];
 }
 
 bool save_controller_set_tower(const TowerSave *in)
@@ -451,6 +453,8 @@ bool save_controller_set_tower(const TowerSave *in)
     p[11] = in->bestFloor;
     p[12] = in->weaponsOwned;
     p[13] = in->weapon;
+    p[19] = in->flags;
+    for (int i = 0; i < 3; i++) p[16 + i] = in->relics[i];
     d->checksum = compute_slot_checksum(d);
     extern double nowS;
     s_last_dirty_time_s = nowS;
@@ -469,12 +473,14 @@ bool save_progress_skin_unlocked(const SaveData *d, int skin)
 {
     if (skin == SKIN_CRIMSON_CLOAK) return d && d->best_boss_time_ms > 0;
     if (skin == SKIN_TEAL_CLOAK) return save_progress_tower_best_floor(d) >= 10;
+    if (skin == SKIN_WYLDER) return d && (d->_pad[19] & TOWER_FLAG_WYLDER);   // bought at the Shrine
     return skin >= 0 && skin < SKIN_COUNT;
 }
 
 int save_progress_skins_unlocked(const SaveData *d)
 {
-    return save_progress_skin_unlocked(d, SKIN_CRIMSON_CLOAK) + save_progress_skin_unlocked(d, SKIN_TEAL_CLOAK);
+    return save_progress_skin_unlocked(d, SKIN_CRIMSON_CLOAK) + save_progress_skin_unlocked(d, SKIN_TEAL_CLOAK)
+         + save_progress_skin_unlocked(d, SKIN_WYLDER);
 }
 
 bool save_controller_skin_unlocked(int skin)

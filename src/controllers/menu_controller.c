@@ -737,7 +737,12 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
         if (back) {
             currentMenu = MENU_TOWER;
             selectedOption = MENU_TOWER_SHRINE;
-        } else if (aJustPressed) {
+        } else if (selectedOption == MENU_SHRINE_RELIC && (aJustPressed || leftJustPressed || rightJustPressed)) {
+            tower_relic_cycle(leftJustPressed ? -1 : 1);
+            save_controller_save_settings();
+        } else if (selectedOption == MENU_SHRINE_WYLDER && aJustPressed) {
+            if (tower_wylder_buy()) save_controller_save_settings();
+        } else if (aJustPressed && selectedOption < MENU_SHRINE_UPGRADES) {
             if (tower_upgrade_buy((UpgradeId)selectedOption)) save_controller_save_settings();
         }
     }
@@ -1106,7 +1111,7 @@ void menu_controller_draw(void)
 
     if (currentMenu == MENU_SETTINGS || currentMenu == MENU_AUDIO || currentMenu == MENU_VIDEO) {
         dialogHeight = 230;
-    } else if (currentMenu == MENU_CONTROLS || currentMenu == MENU_CREDITS) {
+    } else if (currentMenu == MENU_CONTROLS || currentMenu == MENU_CREDITS || currentMenu == MENU_SHRINE) {
         dialogHeight = 230;
     }
 
@@ -1292,6 +1297,11 @@ void menu_controller_draw(void)
                 int c = tower_upgrade_cost((UpgradeId)i);
                 snprintf(name, sizeof name, "%s %d/%d", tower_upgrade_name((UpgradeId)i), tower_upgrade_level((UpgradeId)i), UPG_MAX_LEVEL);
                 if (c < 0) snprintf(right, sizeof right, "max"); else snprintf(right, sizeof right, "%d", c);
+            } else if (i == MENU_SHRINE_RELIC) {
+                snprintf(name, sizeof name, "Relic: %s", tower_relic_name(tower_relic_equipped()));
+            } else if (i == MENU_SHRINE_WYLDER) {
+                snprintf(name, sizeof name, "Wylder (skin)");
+                if (tower_wylder_cost() < 0) snprintf(right, sizeof right, "owned"); else snprintf(right, sizeof right, "%d", tower_wylder_cost());
             } else {
                 snprintf(name, sizeof name, "Back");
             }
@@ -1311,7 +1321,11 @@ void menu_controller_draw(void)
         }
         // What the selected one does
         const char *desc = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_desc((UpgradeId)selectedOption)
-                                                                 : "Skills are learned in the climb";
+                         : selectedOption == MENU_SHRINE_RELIC ? (!tower_relic_count() ? "Clear a circle to find a relic"
+                                                                  : tower_relic_equipped() < 0 ? "Left/Right: choose one for the climb"
+                                                                  : tower_relic_desc(tower_relic_equipped()))
+                         : selectedOption == MENU_SHRINE_WYLDER ? "A tracker's winged helm and blue coat"
+                         : "Skills are learned in the climb";
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
                          FONT_UNBALANCED, x, y + 6, "%s", desc);
         rdpq_set_prim_color(RGBA32(255, 255, 255, 255));

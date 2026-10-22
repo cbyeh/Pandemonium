@@ -87,8 +87,7 @@ static const float ROLL_MOVING_MAG      = 0.20f; // stick magnitude threshold
 // can be hit — keeps the recovery frames of the roll vulnerable.
 static const float ROLL_IFRAME_START = 0.02f;
 static const float ROLL_IFRAME_END   = 0.72f;
-// A blow dodged this soon after the roll starts: a moment of slow motion and stamina back
-static const float PERFECT_DODGE_S = 0.2f;
+// A blow dodged in a roll's first 0.2 s (tower_mod_perfect_window): a moment of slow motion and stamina back
 static const float PERFECT_DODGE_STAMINA = 25.0f;
 static bool s_perfectThisRoll;
 
@@ -2819,6 +2818,12 @@ void character_update(void)
                     bool strong = characterState == CHAR_STATE_ATTACKING_STRONG;
                     game_time_hitstop(strong ? 0.085f : 0.045f);
                     if (strong) screen_shake_set_shake_mag(5.0f);
+                    float storm = tower_on_sword_hit();     // Storm Blade: lightning on every 4th hit
+                    if (storm > 0.0f) {
+                        boss_apply_damage(boss, storm);
+                        skill_fx_spawn_pillar(boss->pos);
+                        audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_WAVE, 0.8f, 0.0f);
+                    }
 
                     // Spawn blood at the actual sword/boss contact point. The sword tip alone
                     // extends past the boss capsule, so we converge on the closest points
@@ -3278,8 +3283,9 @@ void character_apply_damage(float amount)
     if (character_is_invulnerable()) {
         // A perfect dodge: a real blow (not a hazard's tick) caught in the first moments of a roll
         if (characterState == CHAR_STATE_ROLLING && !s_perfectThisRoll && amount >= 6.0f
-            && actionTimer * currentActionDuration <= PERFECT_DODGE_S) {
+            && actionTimer * currentActionDuration <= tower_mod_perfect_window()) {
             s_perfectThisRoll = true;
+            tower_on_perfect_dodge();
             game_time_slowmo(0.45f, 0.35f);
             character.stamina = fminf(character.maxStamina, character.stamina + PERFECT_DODGE_STAMINA);
             skill_fx_spawn_burst(character.pos, character.rot[1]);

@@ -22,27 +22,56 @@
 #define BONUS_HP_IN_TOWER   0.5f      // their health was sized for 7 potions and the skills
 #define HP_PER_SKILL        (1.0f / 3.0f)   // all three unlocked: double, like the Skills setting
 
-typedef struct { const char *name, *desc; uint8_t maxStacks; } BoonDef;
+enum { TIER_COMMON, TIER_RARE, TIER_LEGENDARY };
+typedef struct { const char *name, *desc; uint8_t maxStacks, tier; } BoonDef;
 
 static const BoonDef BOONS[BOON_COUNT] = {
-    [BOON_EMBER_EDGE]    = { "Ember Edge",    "+15% damage",                  3 },
-    [BOON_IRON_SKIN]     = { "Iron Skin",     "-15% damage taken",            2 },
-    [BOON_DEEP_FLASK]    = { "Deep Flask",    "+1 potion",                    3 },
-    [BOON_KINDLED_FLASK] = { "Kindled Flask", "Potions heal 15% more",        2 },
-    [BOON_FLEETFOOT]     = { "Fleetfoot",     "Rolls cost 40% less stamina",  1 },
-    [BOON_SECOND_WIND]   = { "Second Wind",   "+40% stamina regen",           2 },
-    [BOON_MOON_MASTERY]  = { "Moon Mastery",  "Skill cooldowns -20%",         2 },
-    [BOON_BLOODTHIRST]   = { "Bloodthirst",   "Heal 6% of damage dealt",      2 },
-    [BOON_VIGOR]         = { "Vigor",         "+25 max health",               3 },
-    [BOON_LAST_STAND]    = { "Last Stand",    "+40% damage below 30% health", 1 },
-    [BOON_UNBROKEN]      = { "Unbroken",      "Once a floor, live through a killing blow", 1 },
-    [BOON_CRESCENT_ECHO] = { "Moon Blade Dance+", "2 more waves", 1 },
-    [BOON_LEARN_MOONBLADE] = { "Moon Blade Dance", "Learn it: D-up", 1 },
-    [BOON_LEARN_HALFMOON]  = { "Halfmoon Slash",   "Learn it: D-right", 1 },
-    [BOON_LEARN_CLEAVE]    = { "Crescent Cleave",  "Learn it: D-down", 1 },
-    [BOON_HALFMOON_PLUS]   = { "Halfmoon Slash+",  "+50% damage", 1 },
-    [BOON_CLEAVE_PLUS]     = { "Crescent Cleave+", "+50% damage", 1 },
+    [BOON_EMBER_EDGE]    = { "Ember Edge",    "+15% damage",                  3, TIER_COMMON },
+    [BOON_IRON_SKIN]     = { "Iron Skin",     "-15% damage taken",            2, TIER_COMMON },
+    [BOON_DEEP_FLASK]    = { "Deep Flask",    "+1 potion",                    3, TIER_COMMON },
+    [BOON_KINDLED_FLASK] = { "Kindled Flask", "Potions heal 15% more",        2, TIER_COMMON },
+    [BOON_FLEETFOOT]     = { "Fleetfoot",     "Rolls cost 40% less stamina",  1, TIER_RARE },
+    [BOON_SECOND_WIND]   = { "Second Wind",   "+40% stamina regen",           2, TIER_COMMON },
+    [BOON_MOON_MASTERY]  = { "Moon Mastery",  "Skill cooldowns -20%",         2, TIER_RARE },
+    [BOON_BLOODTHIRST]   = { "Bloodthirst",   "Heal 6% of damage dealt",      2, TIER_RARE },
+    [BOON_VIGOR]         = { "Vigor",         "+25 max health",               3, TIER_COMMON },
+    [BOON_LAST_STAND]    = { "Last Stand",    "+40% damage below 30% health", 1, TIER_RARE },
+    [BOON_UNBROKEN]      = { "Unbroken",      "Once a floor, live through a killing blow", 1, TIER_LEGENDARY },
+    [BOON_CRESCENT_ECHO] = { "Moon Blade Dance+", "2 more waves", 1, TIER_RARE },
+    [BOON_PHANTOM_STEP]  = { "Phantom Step",  "Easier perfect dodges; each heals 8%", 1, TIER_RARE },
+    [BOON_RIPOSTE]       = { "Riposte",       "+50% damage for 2.5 s after a perfect dodge", 1, TIER_RARE },
+    [BOON_CRUSHING_BLOWS]= { "Crushing Blows","Bosses stagger 40% sooner",    1, TIER_RARE },
+    [BOON_EXECUTIONER]   = { "Executioner",   "Staggered bosses take +60%",   1, TIER_LEGENDARY },
+    [BOON_STORM_BLADE]   = { "Storm Blade",   "Every 4th hit calls lightning", 1, TIER_LEGENDARY },
+    [BOON_BLOOD_PACT]    = { "Blood Pact",    "+35% damage, potions heal 25% less", 1, TIER_LEGENDARY },
+    [BOON_LEARN_MOONBLADE] = { "Moon Blade Dance", "Learn it: D-up", 1, TIER_COMMON },
+    [BOON_LEARN_HALFMOON]  = { "Halfmoon Slash",   "Learn it: D-right", 1, TIER_COMMON },
+    [BOON_LEARN_CLEAVE]    = { "Crescent Cleave",  "Learn it: D-down", 1, TIER_COMMON },
+    [BOON_HALFMOON_PLUS]   = { "Halfmoon Slash+",  "+50% damage", 1, TIER_RARE },
+    [BOON_CLEAVE_PLUS]     = { "Crescent Cleave+", "+50% damage", 1, TIER_RARE },
 };
+
+// ---- Nights (from the second circle) ----
+typedef enum { NIGHT_NONE, NIGHT_BLOOD_MOON, NIGHT_IRON, NIGHT_STARFALL, NIGHT_COUNT } Night;
+static const struct { const char *name, *desc; float embers; } NIGHTS[NIGHT_COUNT] = {
+    [NIGHT_NONE]       = { "", "", 1.0f },
+    [NIGHT_BLOOD_MOON] = { "Blood Moon", "Bosses hit 20% harder", 1.5f },
+    [NIGHT_IRON]       = { "Iron Night", "Bosses +25% health; they stagger sooner", 1.3f },
+    [NIGHT_STARFALL]   = { "Starfall",   "Skills recharge 30% faster; bosses hit 10% harder", 1.2f },
+};
+
+// ---- Relics: two of these effects each ----
+enum { RELIC_NONE, RELIC_DAMAGE, RELIC_WARD, RELIC_FLASK, RELIC_HEALTH, RELIC_STAMINA, RELIC_EMBERS, RELIC_SKILL, RELIC_FX_COUNT };
+static const struct { const char *adj, *desc; } RELIC_FX[RELIC_FX_COUNT] = {
+    [RELIC_DAMAGE]  = { "Keen",    "+6% damage" },
+    [RELIC_WARD]    = { "Warding", "-6% damage taken" },
+    [RELIC_FLASK]   = { "Brimming","+1 potion" },
+    [RELIC_HEALTH]  = { "Hale",    "+15 max health" },
+    [RELIC_STAMINA] = { "Swift",   "+20% stamina regen" },
+    [RELIC_EMBERS]  = { "Gilded",  "+20% Embers" },
+    [RELIC_SKILL]   = { "Sage",    "Start knowing a skill" },
+};
+#define WYLDER_COST 80
 
 typedef struct { const char *name, *desc; } UpgradeDef;
 
@@ -64,6 +93,11 @@ static struct {
     uint8_t stacks[BOON_COUNT];
     int runEmbers, lastFloorEmbers;
     bool unbrokenUsed;
+    Night night, nextNight;
+    uint8_t relicFx[2];             // the equipped relic's effects, for this run
+    bool relicFound;
+    int hitCount;                   // sword hits landed (Storm Blade)
+    double riposteUntil;
     // draft
     bool draftOpen;
     BoonId choices[DRAFT_CHOICES];
@@ -88,6 +122,93 @@ static void shuffle_circle(void)
     for (int i = 2; i > 0; i--) { int j = rng_next() % (i + 1); TowerBoss t = rest[i]; rest[i] = rest[j]; rest[j] = t; }
     for (int i = 0; i < 3; i++) s.order[1 + i] = rest[i];
     s.order[4] = TOWER_UNBOUND;
+    s.night = s.nextNight;
+}
+
+// ---- Relics ----
+
+static int relic_fx(uint8_t r, int k) { return k ? (r & 15) : (r >> 4); }
+static bool has_relic(int fx) { return s.active && (s.relicFx[0] == fx || s.relicFx[1] == fx); }
+
+int tower_relic_count(void)
+{
+    TowerSave t; save_controller_get_tower(&t);
+    int n = 0;
+    for (int i = 0; i < TOWER_RELIC_SLOTS; i++) n += t.relics[i] != 0;
+    return n;
+}
+
+const char* tower_relic_name(int i)
+{
+    static char name[40];
+    TowerSave t; save_controller_get_tower(&t);
+    if (i < 0 || i >= TOWER_RELIC_SLOTS || !t.relics[i]) return "None";
+    snprintf(name, sizeof name, "%s %s Relic", RELIC_FX[relic_fx(t.relics[i], 0)].adj, RELIC_FX[relic_fx(t.relics[i], 1)].adj);
+    return name;
+}
+
+const char* tower_relic_desc(int i)
+{
+    static char desc[64];
+    TowerSave t; save_controller_get_tower(&t);
+    if (i < 0 || i >= TOWER_RELIC_SLOTS || !t.relics[i]) return "Clear a circle to find a relic";
+    snprintf(desc, sizeof desc, "%s, %s", RELIC_FX[relic_fx(t.relics[i], 0)].desc, RELIC_FX[relic_fx(t.relics[i], 1)].desc);
+    return desc;
+}
+
+int tower_relic_equipped(void)
+{
+    TowerSave t; save_controller_get_tower(&t);
+    int e = ((t.flags >> 1) & 3) - 1;
+    return (e >= 0 && t.relics[e]) ? e : -1;
+}
+
+void tower_relic_cycle(int dir)
+{
+    TowerSave t; save_controller_get_tower(&t);
+    int e = tower_relic_equipped();
+    for (int n = 0; n < TOWER_RELIC_SLOTS + 1; n++) {   // the next filled slot, or none
+        e += dir;
+        if (e >= TOWER_RELIC_SLOTS) e = -1;
+        if (e < -1) e = TOWER_RELIC_SLOTS - 1;
+        if (e < 0 || t.relics[e]) break;
+    }
+    t.flags = (uint8_t)((t.flags & ~6) | ((e + 1) << 1));
+    save_controller_set_tower(&t);
+}
+
+// A circle cleared: a relic of two random effects; with all slots full the oldest goes
+static void relic_award(void)
+{
+    TowerSave t; save_controller_get_tower(&t);
+    int a = 1 + rng_next() % (RELIC_FX_COUNT - 1), b;
+    do b = 1 + rng_next() % (RELIC_FX_COUNT - 1); while (b == a);
+    uint8_t r = (uint8_t)((a << 4) | b);
+    int slot = -1;
+    for (int i = 0; i < TOWER_RELIC_SLOTS; i++) if (!t.relics[i]) { slot = i; break; }
+    if (slot < 0) {
+        int e = ((t.flags >> 1) & 3) - 1;
+        for (int i = 0; i < TOWER_RELIC_SLOTS - 1; i++) t.relics[i] = t.relics[i + 1];
+        slot = TOWER_RELIC_SLOTS - 1;
+        e = e == 0 ? -1 : e - 1;            // the equipped one moved up a slot, or was the oldest
+        t.flags = (uint8_t)((t.flags & ~6) | ((e + 1) << 1));
+    }
+    t.relics[slot] = r;
+    save_controller_set_tower(&t);
+    s.relicFound = true;
+}
+
+// ---- Wylder ----
+
+bool tower_wylder_owned(void) { TowerSave t; save_controller_get_tower(&t); return t.flags & TOWER_FLAG_WYLDER; }
+int  tower_wylder_cost(void) { return tower_wylder_owned() ? -1 : WYLDER_COST; }
+bool tower_wylder_buy(void)
+{
+    TowerSave t; save_controller_get_tower(&t);
+    if ((t.flags & TOWER_FLAG_WYLDER) || t.embers < WYLDER_COST) return false;
+    t.embers -= WYLDER_COST;
+    t.flags |= TOWER_FLAG_WYLDER;
+    return save_controller_set_tower(&t);
 }
 
 // ---- Run ----
@@ -99,6 +220,13 @@ void tower_begin_run(uint32_t seed)
     s.floor = 1;
     s.rng = seed ? seed : 1;
     shuffle_circle();
+    // The equipped relic holds for the whole climb
+    int e = tower_relic_equipped();
+    if (e >= 0) {
+        TowerSave t; save_controller_get_tower(&t);
+        s.relicFx[0] = relic_fx(t.relics[e], 0); s.relicFx[1] = relic_fx(t.relics[e], 1);
+        if (has_relic(RELIC_SKILL)) s.skills |= 1 << (rng_next() % SKILL_COUNT);
+    }
 }
 
 void tower_end_run(void) { s.active = false; s.draftOpen = false; }
@@ -109,7 +237,12 @@ TowerBoss tower_floor_boss(void) { return s.order[(s.floor - 1) % FLOORS_PER_CIR
 int  tower_run_embers(void) { return s.runEmbers; }
 int  tower_boon_stacks(BoonId b) { return (s.active && b < BOON_COUNT) ? s.stacks[b] : 0; }
 
-static int floor_embers(void) { return 8 * tower_circle() + 3 * ((s.floor - 1) % FLOORS_PER_CIRCLE); }
+static int floor_embers(void)
+{
+    float e = (8 * tower_circle() + 3 * ((s.floor - 1) % FLOORS_PER_CIRCLE)) * NIGHTS[s.night].embers;
+    if (has_relic(RELIC_EMBERS)) e *= 1.2f;
+    return (int)(e + 0.5f);
+}
 
 void tower_floor_cleared(void)
 {
@@ -122,6 +255,11 @@ void tower_floor_cleared(void)
     t.embers = e > 65535 ? 65535 : e;
     if (s.floor > t.bestFloor) t.bestFloor = s.floor > 255 ? 255 : s.floor;
     save_controller_set_tower(&t);
+    s.relicFound = false;
+    if (s.floor % FLOORS_PER_CIRCLE == 0) {     // a circle cleared: a relic, and the next circle's night
+        relic_award();
+        s.nextNight = (Night)(1 + rng_next() % (NIGHT_COUNT - 1));
+    }
     tower_draft_open();
 }
 
@@ -170,8 +308,17 @@ void tower_draft_open(void)
         skills[k] = skills[--ns];
         for (int i = 0; i < ns; i++) pool[n++] = skills[i];   // the rest may still turn up
     }
+    // The rest by rarity: legendary 6% on the first circle, +4% a circle (up to 25%); rare 30%
     while (s.nChoices < DRAFT_CHOICES && n > 0) {
-        int k = rng_next() % n;
+        int leg = 6 + 4 * (tower_circle() - 1), r = rng_next() % 100;
+        if (leg > 25) leg = 25;
+        int want = r < leg ? TIER_LEGENDARY : r < leg + 30 ? TIER_RARE : TIER_COMMON;
+        int k = -1;
+        for (int tries = 0; tries < 3 && k < 0; tries++) {     // that tier, or the next lower one (wrapping)
+            int tier = (want + 3 - tries) % 3, cand[BOON_COUNT], nc = 0;
+            for (int i = 0; i < n; i++) if (BOONS[pool[i]].tier == tier) cand[nc++] = i;
+            if (nc) k = cand[rng_next() % nc];
+        }
         s.choices[s.nChoices++] = pool[k];
         pool[k] = pool[--n];
     }
@@ -205,10 +352,12 @@ bool tower_draft_update(bool left, bool right, bool confirm)
     return false;
 }
 
-static void text(int x, int y, int w, rdpq_align_t align, const char *str)
+static void text_style(int x, int y, int w, rdpq_align_t align, int style, const char *str)
 {
-    rdpq_text_printf(&(rdpq_textparms_t){ .align = align, .width = w, .wrap = WRAP_WORD }, FONT_UNBALANCED, x, y, "%s", str);
+    rdpq_text_printf(&(rdpq_textparms_t){ .align = align, .width = w, .wrap = WRAP_WORD, .style_id = style }, FONT_UNBALANCED, x, y, "%s", str);
 }
+
+static void text(int x, int y, int w, rdpq_align_t align, const char *str) { text_style(x, y, w, align, FONT_STYLE_WHITE, str); }
 
 static void flat_mode(void)
 {
@@ -225,12 +374,17 @@ void tower_draft_draw(void)
     rdpq_set_prim_color(RGBA32(0, 0, 0, 170));
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    char line[64];
-    rdpq_set_prim_color(RGBA32(255, 210, 120, 255));
+    char line[80];
     snprintf(line, sizeof line, "Floor %d cleared   +%d Embers", s.floor, s.lastFloorEmbers);
-    text(0, 36, SCREEN_WIDTH, ALIGN_CENTER, line);
-    rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-    text(0, 58, SCREEN_WIDTH, ALIGN_CENTER, "Choose a Boon");
+    text_style(0, 30, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
+    if (s.relicFound) {
+        TowerSave t; save_controller_get_tower(&t);
+        int last = 0;
+        for (int i = 0; i < TOWER_RELIC_SLOTS; i++) if (t.relics[i]) last = i;
+        snprintf(line, sizeof line, "Relic found: %s", tower_relic_name(last));
+        text_style(0, 44, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_BLUE, line);
+    }
+    text(0, 60, SCREEN_WIDTH, ALIGN_CENTER, "Choose a Boon");
 
     const int cw = 96, ch = 112, gap = 6, y0 = 76;
     int x0 = (SCREEN_WIDTH - (cw * s.nChoices + gap * (s.nChoices - 1))) / 2;
@@ -239,24 +393,35 @@ void tower_draft_draw(void)
         const BoonDef *b = &BOONS[s.choices[i]];
         flat_mode();
         bool on = i == s.sel;
-        rdpq_set_prim_color(on ? RGBA32(230, 150, 50, 255) : RGBA32(90, 70, 50, 255));
+        // The frame tells the rarity: bronze, blue, gold (brighter when selected)
+        static const color_t FRAME[3][2] = {
+            { RGBA32(90, 70, 50, 255),  RGBA32(230, 150, 50, 255) },
+            { RGBA32(50, 80, 150, 255), RGBA32(110, 170, 255, 255) },
+            { RGBA32(150, 115, 30, 255), RGBA32(255, 215, 90, 255) },
+        };
+        rdpq_set_prim_color(FRAME[b->tier][on]);
         rdpq_fill_rectangle(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2);
         rdpq_set_prim_color(on ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
         rdpq_fill_rectangle(x, y0, x + cw, y0 + ch);
-        rdpq_set_prim_color(on ? RGBA32(255, 220, 140, 255) : RGBA32(220, 200, 170, 255));
-        text(x + 4, y0 + 18, cw - 8, ALIGN_CENTER, b->name);
-        rdpq_set_prim_color(RGBA32(235, 235, 235, 255));
+        static const int NAME_STYLE[3] = { FONT_STYLE_WHITE, FONT_STYLE_BLUE, FONT_STYLE_GOLD };
+        text_style(x + 4, y0 + 18, cw - 8, ALIGN_CENTER, NAME_STYLE[b->tier], b->name);
         text(x + 6, y0 + 52, cw - 12, ALIGN_CENTER, b->desc);     // below a name of up to two lines
+        if (b->tier != TIER_COMMON)
+            text_style(x, y0 + ch - 22, cw, ALIGN_CENTER, NAME_STYLE[b->tier], b->tier == TIER_RARE ? "Rare" : "Legendary");
         if (s.stacks[s.choices[i]] > 0) {
             snprintf(line, sizeof line, "Have %d", s.stacks[s.choices[i]]);
-            rdpq_set_prim_color(RGBA32(170, 170, 170, 255));
-            text(x, y0 + ch - 10, cw, ALIGN_CENTER, line);
+            text_style(x, y0 + ch - 8, cw, ALIGN_CENTER, FONT_STYLE_GREY, line);
         }
     }
-    rdpq_set_prim_color(RGBA32(200, 200, 200, 255));
-    snprintf(line, sizeof line, "Next: floor %d%s", s.floor + 1,
-             (s.floor % FLOORS_PER_CIRCLE == 0) ? "  (the bosses grow stronger)" : "");
-    text(0, y0 + ch + 22, SCREEN_WIDTH, ALIGN_CENTER, line);
+    if (s.floor % FLOORS_PER_CIRCLE == 0) {     // a new circle: stronger, and its night
+        snprintf(line, sizeof line, "Next: floor %d. The bosses grow stronger", s.floor + 1);
+        text_style(0, y0 + ch + 18, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+        snprintf(line, sizeof line, "%s falls: %s", NIGHTS[s.nextNight].name, NIGHTS[s.nextNight].desc);
+        text_style(16, y0 + ch + 32, SCREEN_WIDTH - 32, ALIGN_CENTER, FONT_STYLE_RED, line);
+    } else {
+        snprintf(line, sizeof line, "Next: floor %d", s.floor + 1);
+        text_style(0, y0 + ch + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+    }
 }
 
 void tower_hud_draw(void)
@@ -266,19 +431,20 @@ void tower_hud_draw(void)
     // inside the title-safe area, like the rest of the HUD (TVs and accurate emulators show the edges)
     const int w = SCREEN_WIDTH - ui_safe_margin_x(), top = ui_safe_margin_y() + 10;
     snprintf(line, sizeof line, "Floor %d", s.floor);
-    rdpq_set_prim_color(RGBA32(255, 210, 120, 255));
-    text(0, top, w, ALIGN_RIGHT, line);
+    text_style(0, top, w, ALIGN_RIGHT, FONT_STYLE_GOLD, line);
     if (tower_circle() > 1) {
         snprintf(line, sizeof line, "Ascension %d", tower_circle() - 1);
-        rdpq_set_prim_color(RGBA32(230, 120, 90, 255));
-        text(0, top + 12, w, ALIGN_RIGHT, line);
+        text_style(0, top + 12, w, ALIGN_RIGHT, FONT_STYLE_RED, line);
+        if (s.night) text_style(0, top + 24, w, ALIGN_RIGHT, FONT_STYLE_RED, NIGHTS[s.night].name);
     }
 }
 
 const char* tower_death_summary(void)
 {
-    static char line[64];
-    snprintf(line, sizeof line, "Floor %d   +%d Embers (%d)", s.floor, s.runEmbers, tower_embers());
+    static char line[96];
+    int boons = 0;
+    for (int b = 0; b < BOON_COUNT; b++) boons += s.stacks[b];
+    snprintf(line, sizeof line, "Floor %d   +%d Embers (%d)\n%d boons taken", s.floor, s.runEmbers, tower_embers(), boons);
     return line;
 }
 
@@ -310,6 +476,8 @@ bool tower_upgrade_buy(UpgradeId u)
     return save_controller_set_tower(&t);
 }
 
+const char* tower_night_name(void) { return s.active ? NIGHTS[s.night].name : ""; }
+
 const char* tower_upgrade_name(UpgradeId u) { return UPGRADES[u].name; }
 const char* tower_upgrade_desc(UpgradeId u) { return UPGRADES[u].desc; }
 
@@ -324,6 +492,10 @@ float tower_mod_damage_dealt(void)
 {
     float m = (1.0f + 0.08f * shrine(UPG_HONED_BLADE)) * (1.0f + 0.15f * tower_boon_stacks(BOON_EMBER_EDGE));
     if (tower_boon_stacks(BOON_LAST_STAND) && character.health < character.maxHealth * 0.3f) m *= 1.4f;
+    if (tower_boon_stacks(BOON_BLOOD_PACT)) m *= 1.35f;
+    extern double nowS;
+    if (tower_boon_stacks(BOON_RIPOSTE) && nowS < s.riposteUntil) m *= 1.5f;
+    if (has_relic(RELIC_DAMAGE)) m *= 1.06f;
     return m;
 }
 
@@ -331,10 +503,37 @@ float tower_mod_damage_taken(void)
 {
     float m = powf_int(0.85f, tower_boon_stacks(BOON_IRON_SKIN));
     if (s.active) m *= BOSS_DMG_START + BOSS_DMG_PER_CIRCLE * (tower_circle() - 1);
+    if (s.active && s.night == NIGHT_BLOOD_MOON) m *= 1.2f;
+    if (s.active && s.night == NIGHT_STARFALL) m *= 1.1f;
+    if (has_relic(RELIC_WARD)) m *= 0.94f;
     return m;
 }
 
-int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + tower_boon_stacks(BOON_DEEP_FLASK) : 7; }
+float tower_mod_poise(void)
+{
+    float m = 1.0f;
+    if (tower_boon_stacks(BOON_CRUSHING_BLOWS)) m *= 1.4f;
+    if (s.active && s.night == NIGHT_IRON) m *= 1.5f;
+    return m;
+}
+float tower_mod_stagger_damage(void) { return tower_boon_stacks(BOON_EXECUTIONER) ? 1.6f / 1.3f : 1.0f; }
+float tower_mod_perfect_window(void) { return tower_boon_stacks(BOON_PHANTOM_STEP) ? 0.35f : 0.2f; }
+
+void tower_on_perfect_dodge(void)
+{
+    if (!s.active) return;
+    if (tower_boon_stacks(BOON_PHANTOM_STEP)) character.health = fminf(character.maxHealth, character.health + character.maxHealth * 0.08f);
+    extern double nowS;
+    if (tower_boon_stacks(BOON_RIPOSTE)) s.riposteUntil = nowS + 2.5;
+}
+
+float tower_on_sword_hit(void)
+{
+    if (!tower_boon_stacks(BOON_STORM_BLADE)) return 0.0f;
+    return (++s.hitCount % 4 == 0) ? 12.0f : 0.0f;
+}
+
+int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + tower_boon_stacks(BOON_DEEP_FLASK) + has_relic(RELIC_FLASK) : 7; }
 bool  tower_mod_skill_allowed(int skill) { return !s.active || knows(skill); }
 float tower_mod_skill_damage(int skill)
 {
@@ -344,14 +543,16 @@ float tower_mod_skill_damage(int skill)
 }
 float tower_mod_potion_heal(void)
 {
-    return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.15f * tower_boon_stacks(BOON_KINDLED_FLASK));
+    return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.15f * tower_boon_stacks(BOON_KINDLED_FLASK))
+           * (tower_boon_stacks(BOON_BLOOD_PACT) ? 0.75f : 1.0f);
 }
-float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR); }
+float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH); }
 float tower_mod_roll_cost(void) { return tower_boon_stacks(BOON_FLEETFOOT) ? 0.6f : 1.0f; }
-float tower_mod_stamina_regen(void) { return 1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND); }
+float tower_mod_stamina_regen(void) { return (1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND)) * (has_relic(RELIC_STAMINA) ? 1.2f : 1.0f); }
 float tower_mod_skill_cooldown(void)
 {
-    return (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * powf_int(0.8f, tower_boon_stacks(BOON_MOON_MASTERY));
+    return (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * powf_int(0.8f, tower_boon_stacks(BOON_MOON_MASTERY))
+           * ((s.active && s.night == NIGHT_STARFALL) ? 0.7f : 1.0f);
 }
 float tower_mod_lifesteal(void) { return 0.06f * tower_boon_stacks(BOON_BLOODTHIRST); }
 int   tower_mod_extra_mbd_waves(void) { return tower_boon_stacks(BOON_CRESCENT_ECHO) ? 2 : 0; }
@@ -369,6 +570,7 @@ float tower_boss_health_scale(int phase)
     int n = 0;
     for (int k = 0; k < SKILL_COUNT; k++) n += (s.skills >> k) & 1;
     float k = (BOSS_HP_START + BOSS_HP_PER_CIRCLE * (tower_circle() - 1)) * (1.0f + HP_PER_SKILL * n);
+    if (s.night == NIGHT_IRON) k *= 1.25f;
     return phase >= 3 ? k * BONUS_HP_IN_TOWER : k;     // phases 3+ are the Bonus bosses
 }
 

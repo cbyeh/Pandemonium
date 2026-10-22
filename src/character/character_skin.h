@@ -16,6 +16,7 @@ typedef enum {
     SKIN_WOLF_KNIGHT,
     SKIN_BLACK_SWORDSMAN,
     SKIN_SCARLET_VALKYRIE,
+    SKIN_WYLDER,
     SKIN_COUNT
 } CharacterSkinId;
 

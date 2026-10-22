@@ -731,11 +731,11 @@ void boss_apply_damage(Boss* boss, float amount)
         amount *= tower_mod_damage_dealt();
         character.health = fminf(character.maxHealth, character.health + amount * tower_mod_lifesteal());
     }
-    if (boss->staggerT > 0.0f) amount *= STAGGER_DAMAGE_MULT;     // staggered: hits land harder
+    if (boss->staggerT > 0.0f) amount *= STAGGER_DAMAGE_MULT * tower_mod_stagger_damage();     // staggered: hits land harder
     boss->health -= amount;
     if (boss->health < 0.0f) boss->health = 0.0f;
     if (boss->staggerT <= 0.0f) {      // the stagger meter: about ten sword hits, or three charged ones, without letting up
-        boss->poise = fminf(1.0f, boss->poise + amount / POISE_DAMAGE);
+        boss->poise = fminf(1.0f, boss->poise + amount * tower_mod_poise() / POISE_DAMAGE);
         boss->poiseIdleT = 0.0f;
     }
 

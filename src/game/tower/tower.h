@@ -19,6 +19,8 @@ typedef enum {
     BOON_EMBER_EDGE, BOON_IRON_SKIN, BOON_DEEP_FLASK, BOON_KINDLED_FLASK, BOON_FLEETFOOT,
     BOON_SECOND_WIND, BOON_MOON_MASTERY, BOON_BLOODTHIRST, BOON_VIGOR, BOON_LAST_STAND,
     BOON_UNBROKEN, BOON_CRESCENT_ECHO,
+    // Rare and legendary: change how a run plays
+    BOON_PHANTOM_STEP, BOON_RIPOSTE, BOON_CRUSHING_BLOWS, BOON_EXECUTIONER, BOON_STORM_BLADE, BOON_BLOOD_PACT,
     // Skill cards: learn a skill for the run, then upgrade it
     BOON_LEARN_MOONBLADE, BOON_LEARN_HALFMOON, BOON_LEARN_CLEAVE, BOON_HALFMOON_PLUS, BOON_CLEAVE_PLUS,
     BOON_COUNT
@@ -55,6 +57,22 @@ void tower_draft_draw(void);
 void tower_hud_draw(void);              // floor / circle during a run fight
 const char* tower_death_summary(void);   // a line for the death screen
 
+// ---- Nights: from the second circle each circle has one (a trade-off, more Embers) ----
+const char* tower_night_name(void);     // "" for none
+
+// ---- Relics: earned by clearing a circle, up to three kept; one equipped at the Shrine ----
+#define TOWER_RELIC_SLOTS 3
+int  tower_relic_count(void);
+const char* tower_relic_name(int i);
+const char* tower_relic_desc(int i);
+int  tower_relic_equipped(void);        // -1: none
+void tower_relic_cycle(int dir);        // none -> each relic -> none
+
+// ---- Wylder, a skin bought at the Shrine ----
+bool tower_wylder_owned(void);
+int  tower_wylder_cost(void);
+bool tower_wylder_buy(void);
+
 // ---- Shrine (persistent, per save slot) ----
 int  tower_embers(void);
 int  tower_upgrade_level(UpgradeId u);
@@ -79,6 +97,11 @@ float tower_mod_skill_cooldown(void);
 float tower_mod_lifesteal(void);
 int   tower_mod_extra_mbd_waves(void);
 bool  tower_mod_try_unbroken(void);     // spends it: survive a lethal hit at 1 HP
+float tower_mod_poise(void);            // how fast the bosses' stagger meters fill
+float tower_mod_stagger_damage(void);   // extra on top of the staggered bonus
+float tower_mod_perfect_window(void);   // seconds of a roll that count as a perfect dodge
+void  tower_on_perfect_dodge(void);
+float tower_on_sword_hit(void);         // a landed sword hit: extra damage (Storm Blade), 0 mostly
 // Boss health in a run, from its usual (skills off) health for that phase
 float tower_boss_health_scale(int phase);
 // Between floors: the health and potions given back

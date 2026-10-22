@@ -31,7 +31,8 @@ typedef struct {
 } ClothSpec;
 
 // Accessories: procedural meshes riding a bone (see acc_build)
-enum { ACC_WINGED_HELM = 1, ACC_FUR_COLLAR = 2, ACC_BERSERK_HELM = 4, ACC_DRAGONSLAYER = 8 };
+enum { ACC_WINGED_HELM = 1, ACC_FUR_COLLAR = 2, ACC_BERSERK_HELM = 4, ACC_DRAGONSLAYER = 8,
+       ACC_WYLDER_HELM = 16, ACC_SCARF = 32, ACC_CLAW_SHOT = 64 };
 
 typedef struct {
     const char *name;
@@ -62,6 +63,12 @@ static const SkinDef SKINS[SKIN_COUNT] = {
                                 .chain = C(72, 60, 40), .hidePlume = true,
                                 .cl = { { CLOTH_HAIR, C(196, 64, 30), true, 3.4f, 0.3f }, { CLOTH_CLOAK, C(86, 12, 16), false, 4.8f, 0.55f, 0.8f } },
                                 .acc = ACC_WINGED_HELM | ACC_FUR_COLLAR },
+    // Wylder (Nightreign): a winged silver helm, a dark scarf, a royal-blue tabard and long coat,
+    // the claw shot on his left forearm
+    [SKIN_WYLDER]           = { "Wylder", .armor = C(92, 96, 112), .helm = C(176, 180, 194), .cloth = C(30, 56, 150),
+                                .chain = C(58, 60, 72), .hidePlume = true,
+                                .cl = { { CLOTH_CLOAK, C(38, 66, 170), false, 6.0f, 0.45f } },
+                                .acc = ACC_WYLDER_HELM | ACC_SCARF | ACC_CLAW_SHOT },
 };
 
 static int  s_skin = SKIN_KNIGHT;
@@ -470,6 +477,53 @@ static void acc_winged_helm(SkinColor gold)
         }
 }
 
+static void acc_wylder_helm(SkinColor silver)
+{
+    // Wings on both temples, swept up and back like a Norse helm's: five feathers a side,
+    // flaring out from the helm a little
+    for (int side = -1; side <= 1; side += 2)
+        for (int k = 0; k < 5; k++) {
+            float a = (80.0f - k * 12.0f) * (float)M_PI / 180.0f, len = 1.7f - 0.14f * k, w = 0.28f - 0.02f * k;
+            float bx = -0.2f + 0.12f * k, by = 1.55f + 0.05f * k, bz = side * 0.62f;
+            float dx = cosf(a), dy = sinf(a);
+            // each feather's face tilted 45 degrees outward, so the wing reads from behind too
+            const float ci = 0.7071f, so = 0.7071f;
+            float l[4][3], r[4][3];
+            for (int i = 0; i < 4; i++) {
+                float t = i / 3.0f, ww = w * (1.0f - 0.6f * t), bend = 0.35f * t * t;
+                float px = bx + dx * len * t + bend, py = by + dy * len * t, pz = bz + side * 0.4f * t;
+                float wx = -dy * ww * ci, wy = dx * ww * ci, wz = side * ww * so;
+                G(l[i], px + wx, py + wy, pz + wz); G(r[i], px - wx, py - wy, pz - wz);
+            }
+            SkinColor c = silver; float f = 0.8f + 0.06f * k;
+            c.r = (uint8_t)fminf(255, c.r * f); c.g = (uint8_t)fminf(255, c.g * f); c.b = (uint8_t)fminf(255, c.b * f);
+            strip(l, r, 4, rgb(c));
+        }
+}
+
+static void acc_claw_shot(void)
+{
+    // A grapnel on the forearm, halfway to the wrist: a steel housing and three claws at its
+    // wrist end (the forearm's direction comes from the rig: the hand's rest offset)
+    const T3DChunkBone *hand = &s_skel->skeletonRef->bones[s_bone[B_HAND_L]];
+    float v[3] = { hand->position.v[0] / GLTF, hand->position.v[1] / GLTF, hand->position.v[2] / GLTF };
+    int ax = fabsf(v[0]) > fabsf(v[1]) ? (fabsf(v[0]) > fabsf(v[2]) ? 0 : 2) : (fabsf(v[1]) > fabsf(v[2]) ? 1 : 2);
+    float c[3] = { v[0] * 0.5f * GLTF, v[1] * 0.5f * GLTF, v[2] * 0.5f * GLTF };
+    float h[3] = { 0.24f * GLTF, 0.24f * GLTF, 0.24f * GLTF };
+    h[ax] = fabsf(v[ax]) * 0.28f * GLTF;
+    c[(ax + 1) % 3] += 0.28f * GLTF;        // on the outside of the arm
+    proc_mesh_box(c, h, proc_rgb(110, 114, 126));
+    for (int k = -1; k <= 1; k++) {         // the claws, pointing toward the wrist
+        float base[3] = { c[0], c[1], c[2] }, tip[3];
+        base[ax] += (v[ax] > 0 ? 1 : -1) * h[ax];
+        base[(ax + 2) % 3] += k * 0.14f * GLTF;
+        memcpy(tip, base, sizeof tip);
+        tip[ax] += (v[ax] > 0 ? 1 : -1) * 0.32f * GLTF;
+        tip[(ax + 1) % 3] += 0.08f * GLTF;
+        proc_mesh_spike(base, tip, 0.07f * GLTF, 4, proc_rgb(150, 154, 166));
+    }
+}
+
 static void ring(float cx, float cy, float rx, float ry, float rz, float th0, float th1, int nt, int np, uint32_t col, float fluff)
 {
     for (int j = 0; j < np; j++)
@@ -581,6 +635,9 @@ static void acc_build(void)
     ACC(ACC_FUR_COLLAR, B_SPINE, ring(-0.1f, 2.62f, 1.32f, 0.38f, 1.42f, -2.5f, 2.5f, 16, 3, proc_rgb(156, 132, 100), 0.08f));
     ACC(ACC_BERSERK_HELM, B_HEAD, acc_berserk_helm(s->helm));
     ACC(ACC_DRAGONSLAYER, B_HAND_R, acc_dragonslayer((SkinColor)C(70, 68, 70)));
+    ACC(ACC_WYLDER_HELM, B_HEAD, acc_wylder_helm(s->helm));
+    ACC(ACC_SCARF, B_SPINE, ring(-0.1f, 2.66f, 1.2f, 0.36f, 1.28f, -2.6f, 2.6f, 16, 3, proc_rgb(48, 50, 60), 0.03f));
+    ACC(ACC_CLAW_SHOT, B_FORE_L, acc_claw_shot());
     #undef ACC
 }
 
