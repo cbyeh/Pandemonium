@@ -227,12 +227,13 @@ static void scale_cols(uint32_t *cols, int rings, int n, uint32_t back, uint32_t
 // banded belly plates, crystals down the spine and a ridge of small ones on each flank
 static void build_seg(ProcMesh *out, bool dark)
 {
-    enum { N = 10, R = 3 };
+    // Starts with a closed dome behind z = 0: where the chain of segments bends, the next one's
+    // dome fills the gap on the outside of the bend (an open tube showed the hall through it)
+    enum { N = 10, R = 5 };
+    static const float Z[R] = { -0.3f, -0.18f, 0.0f, 0.5f, 1.0f }, K[R] = { 0.0f, 0.75f, 1.0f, 0.95f * 0.91f, 0.82f };
     float pts[R * N * 3];
-    for (int r = 0; r < R; r++) {
-        float k = 1.0f - 0.18f * r / (R - 1), pinch = (r == 1) ? 0.95f : 1.0f;   // a plate seam halfway
-        ring(&pts[r * N * 3], N, MESH * r / (R - 1), MESH * k * pinch, MESH * k * pinch * 0.92f, 0.0f, 99.0f);
-    }
+    for (int r = 0; r < R; r++)
+        ring(&pts[r * N * 3], N, MESH * Z[r], MESH * K[r], MESH * K[r] * 0.92f, 0.0f, 99.0f);
     uint32_t cols[(R - 1) * N];
     scale_cols(cols, R - 1, N, COL_BACK, proc_rgb(42, 38, 50), COL_BELLY, 2);
     proc_mesh_begin();
@@ -248,11 +249,12 @@ static void build_seg(ProcMesh *out, bool dark)
 // A tail segment: the same, lighter (eight sides, one crystal)
 static void build_tail_seg(ProcMesh *out, bool dark)
 {
-    enum { N = 8, R = 2 };
+    enum { N = 8, R = 4 };      // with a closed dome at its start, as the body's
+    static const float Z[R] = { -0.3f, -0.18f, 0.0f, 1.0f }, K[R] = { 0.0f, 0.75f, 1.0f, 0.82f };
     float pts[R * N * 3];
-    for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, MESH * r, MESH * (1.0f - 0.18f * r), MESH * (1.0f - 0.18f * r) * 0.9f, 0.0f, 99.0f);
-    uint32_t cols[N];
-    scale_cols(cols, 1, N, COL_BACK, proc_rgb(42, 38, 50), COL_BELLY, 2);
+    for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, MESH * Z[r], MESH * K[r], MESH * K[r] * 0.9f, 0.0f, 99.0f);
+    uint32_t cols[(R - 1) * N];
+    scale_cols(cols, R - 1, N, COL_BACK, proc_rgb(42, 38, 50), COL_BELLY, 2);
     proc_mesh_begin();
     proc_mesh_loft(pts, R, N, cols, COL_BACK, false);
     crystal((float[3]){ 0, MESH * 0.85f, 6.0f }, (float[3]){ 0, MESH * 1.8f, -2.0f }, 3.5f, crystal_col(dark));
@@ -262,9 +264,12 @@ static void build_tail_seg(ProcMesh *out, bool dark)
 // A leg bone along +z: a smooth six-sided tube
 static void build_limb(void)
 {
-    enum { N = 6, R = 2 };
+    // A leg bone: rounded and closed at both ends, the domes reaching past the joints, so the
+    // upper and lower bones overlap at the knee like a ball joint (open tubes showed through)
+    enum { N = 6, R = 6 };
+    static const float Z[R] = { -0.3f, -0.17f, 0.0f, 1.0f, 1.15f, 1.27f }, K[R] = { 0.0f, 0.75f, 1.0f, 0.8f, 0.6f, 0.0f };
     float pts[R * N * 3];
-    for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, MESH * r, MESH * (1.0f - 0.2f * r), MESH * (1.0f - 0.2f * r), 0.0f, 99.0f);
+    for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, MESH * Z[r], MESH * K[r], MESH * K[r], 0.0f, 99.0f);
     proc_mesh_begin();
     proc_mesh_loft(pts, R, N, NULL, COL_BACK, false);
     proc_mesh_end(&s.limb);
@@ -577,10 +582,20 @@ static void feet_update(float dt)
         Foot *f = &s.feet[k];
         float rest[3];
         foot_rest(k, rest);
-        if (s.alt > 4.0f) {                     // in the air the legs hang
-            float hang[3];
-            mad3(hang, s.shoulder[k], UP, -LEG_L * 1.6f);
-            mad3(hang, hang, s.F, -8.0f);
+        if (s.alt > 4.0f) {
+            // In the air: the front legs folded up under the chest, the hind ones trailing back,
+            // each swaying on its own; reaching down for the floor as it comes in to land
+            float hang[3], sway = sinf(s.life * 2.3f + k * 1.7f);
+            if (k < 2) {
+                mad3(hang, s.shoulder[k], s.F, 9.0f + 2.0f * sway);
+                mad3(hang, hang, UP, -LEG_L * 0.75f);
+            } else {
+                mad3(hang, s.shoulder[k], s.F, -LEG_L * 1.3f - 3.0f * sway);
+                mad3(hang, hang, UP, -LEG_L * 0.85f);
+            }
+            float reach = clamp01((40.0f - s.alt) / 36.0f);     // 0 high up, 1 at the floor
+            lerp3(hang, hang, rest, reach);
+            if (reach > 0.0f) hang[1] = fmaxf(hang[1], s.groundY);
             lerp3(f->p, f->p, hang, fminf(1.0f, dt * 6.0f));
             f->moving = false;
         } else if (f->moving) {
@@ -592,7 +607,8 @@ static void feet_update(float dt)
         } else {
             f->p[1] = fmaxf(s.groundY, f->p[1] - 90.0f * dt);
             float dx = f->p[0] - rest[0], dz = f->p[2] - rest[2];
-            if (dx * dx + dz * dz > 16.0f * 16.0f && !s.feet[k ^ 1].moving) {
+            bool fidget = s.state == DG_IDLE && k < 2 && (rand_custom_u32() % 1000) < (uint32_t)(dt * 250.0f);   // ~1 in 4 s a paw
+            if ((fidget || dx * dx + dz * dz > 16.0f * 16.0f) && !s.feet[k ^ 1].moving) {
                 f->moving = true; f->t = 0.0f;
                 memcpy(f->from, f->p, sizeof(f->p));
             }
@@ -1239,8 +1255,8 @@ void dragon_boss_draw(Boss* b)
             rdpq_mode_combiner(RDPQ_COMBINER1((PRIM, SHADE, PRIM_ALPHA, SHADE), (0, 0, 0, SHADE)));
             rdpq_set_prim_color(RGBA32(235, 30, 20, (int)(200 * w)));
         }
-        put_link(&s.limb, s.shoulder[k], kn, k < 2 ? 7.5f : 8.5f, 1.1f);   // thick upper legs, the hind ones thicker
-        put_link(&s.limb, kn, s.foot[k], 5.5f, 1.05f);
+        put_link(&s.limb, s.shoulder[k], kn, k < 2 ? 7.5f : 8.5f, 1.0f);   // thick upper legs, the hind ones thicker
+        put_link(&s.limb, kn, s.foot[k], 5.5f, 1.0f);
         static const float Y[3] = { 0, 1, 0 };
         float fx[3]; cross3(fx, Y, s.F);
         put(&s.mFoot, s.foot[k], fx, Y, s.F, 1.0f, 1.0f, 1.0f);     // the foot, flat, facing forward
