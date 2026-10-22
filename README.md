@@ -150,6 +150,8 @@ HelloNewman:
 - Github: HellooooNewman
 - Discord: HelloNewman
 
+Aethrone
+
 ### Credits
 Third-party audio added in this fork. Everything here is CC0 (public domain), so no attribution is required, but it's given anyway.
 
