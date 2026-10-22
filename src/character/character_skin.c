@@ -42,7 +42,7 @@ typedef struct {
     uint8_t acc;
 } SkinDef;
 
-#define CLOAK(r, g, b) { CLOTH_CLOAK, C(r, g, b), false, 5.4f, 0.7f }
+#define CLOAK(r, g, b) { CLOTH_CLOAK, C(r, g, b), false, 5.4f, 0.4f }
 
 static const SkinDef SKINS[SKIN_COUNT] = {
     [SKIN_KNIGHT]           = { "Knight" },
@@ -52,15 +52,15 @@ static const SkinDef SKINS[SKIN_COUNT] = {
     // Artorias: dark silver plate, bright mail, a torn royal-blue cloak, a long black plume
     [SKIN_WOLF_KNIGHT]      = { "Wolf Knight", .armor = C(112, 104, 100), .helm = C(146, 142, 146), .chain = C(165, 175, 196),
                                 .cloth = C(30, 52, 108), .hidePlume = true,
-                                .cl = { { CLOTH_CLOAK, C(42, 74, 152), true, 4.6f, 0.8f }, { CLOTH_PLUME, C(22, 22, 30), false, 3.6f, 0.4f } } },
+                                .cl = { { CLOTH_CLOAK, C(42, 74, 152), true, 4.6f, 0.5f }, { CLOTH_PLUME, C(22, 22, 30), false, 3.6f, 0.4f } } },
     // Guts: blackened plate, a spined wolf helm with burning eyes, a ragged black cloak, the Dragonslayer
     [SKIN_BLACK_SWORDSMAN]  = { "Black Swordsman", .armor = C(58, 57, 63), .helm = C(52, 51, 58), .cloth = C(24, 22, 22),
                                 .chain = C(22, 22, 24), .hidePlume = true, .hideSword = true,
-                                .cl = { { CLOTH_CLOAK, C(26, 24, 27), true, 6.2f, 0.9f } }, .acc = ACC_BERSERK_HELM | ACC_DRAGONSLAYER },
+                                .cl = { { CLOTH_CLOAK, C(26, 24, 27), true, 6.2f, 0.55f } }, .acc = ACC_BERSERK_HELM | ACC_DRAGONSLAYER },
     // Malenia: brass plate, an olive pleated dress, a winged helm, a fur collar, red hair over a crimson cape
     [SKIN_SCARLET_VALKYRIE] = { "Scarlet Valkyrie", .armor = C(196, 156, 82), .helm = C(208, 168, 92), .cloth = C(98, 80, 50),
                                 .chain = C(72, 60, 40), .hidePlume = true,
-                                .cl = { { CLOTH_HAIR, C(196, 64, 30), true, 3.4f, 0.3f }, { CLOTH_CLOAK, C(86, 12, 16), false, 4.8f, 0.9f, 0.8f } },
+                                .cl = { { CLOTH_HAIR, C(196, 64, 30), true, 3.4f, 0.3f }, { CLOTH_CLOAK, C(86, 12, 16), false, 4.8f, 0.55f, 0.8f } },
                                 .acc = ACC_WINGED_HELM | ACC_FUR_COLLAR },
 };
 
@@ -119,7 +119,7 @@ typedef struct {
 } Cloth;
 
 static Cloth s_cloth[2];
-static Capsule s_body[18];
+static Capsule s_body[20];
 static int s_bodyCount;
 
 static const uint8_t TATTER[CLOTH_COLS] = { 100, 15, 60, 5, 80, 25, 90 };  // % of the last three segments
@@ -159,6 +159,9 @@ static void cloth_bodies(const T3DMat4FP *M)
     SPHERE(B_HEAD, -0.34f, 1.07f, 0, 0.9f);          // hair and plume roots sit on it
     // sword hilt (the blade runs along the hand's -X): crossguard and pommel
     bone_world(M, B_HAND_R, -0.3f, 0, 0, b[n].a); bone_world(M, B_HAND_R, 1.25f, 0, 0, b[n].b); b[n].r = (0.7f + m) * GU; n++;
+    // and the blade, pommel to tip (the stock sword's line; the Dragonslayer lies along it, broader)
+    bone_world(M, B_HAND_R, 0.2f, 0.7f, 0.1f, b[n].a); bone_world(M, B_HAND_R, -8.0f, 1.05f, -1.0f, b[n].b);
+    b[n].r = ((SKINS[s_skin].acc & ACC_DRAGONSLAYER) ? 0.75f : 0.4f) * GU + m * GU; n++;
     CAPS(B_ARM_L, B_FORE_L, 0.62f + m);              // pauldrons and upper arms
     CAPS(B_ARM_R, B_FORE_R, 0.62f + m);
     SPHERE(B_FORE_L, 0, 0, 0, 0.88f + m);             // pointed elbow guards
@@ -710,10 +713,21 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
         if (sp->kind == CLOTH_NONE) continue;
         cl->cols = sp->kind == CLOTH_CLOAK ? CLOTH_COLS : sp->kind == CLOTH_HAIR ? 3 : 2;
         cl->rows = CLOTH_ROWS;
-        float prev0[3]; memcpy(prev0, cl->anchor[0], sizeof prev0);
+        float prev[CLOTH_COLS][3]; memcpy(prev, cl->anchor, sizeof prev);
+        float *prev0 = prev[0];
         cloth_anchors(cl, sp, modelMat);
         float dx = cl->anchor[0][0] - prev0[0], dy = cl->anchor[0][1] - prev0[1], dz = cl->anchor[0][2] - prev0[2];
         if (!cl->valid || dx * dx + dy * dy + dz * dz > 40.0f * 40.0f) cloth_reset(cl, sp);   // first frame or teleport
+        else {      // carried partly with its pins (the run and the turns): it streams back at a slant, not flat out
+            const float follow = sp->kind == CLOTH_CLOAK ? 0.55f : 0.35f;
+            for (int c = 0; c < cl->cols; c++) {
+                float mx = (cl->anchor[c][0] - prev[c][0]) * follow, mz = (cl->anchor[c][2] - prev[c][2]) * follow;
+                for (int r = 1; r < cl->rows; r++) {
+                    float *p = PC(cl, c, r), *q = cl->q[r * cl->cols + c];
+                    p[0] += mx; p[2] += mz; q[0] += mx; q[2] += mz;
+                }
+            }
+        }
         // hair over a cape: kept behind a plane just outside the cape's top edge
         float plane[6], *pl = NULL;
         if (strands(sp) && cape) {
