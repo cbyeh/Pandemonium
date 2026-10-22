@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT)
 #include "camera_controller.h"
 #include "character_skin.h"
 #include <math.h>
@@ -14,7 +14,7 @@
 #include "controllers/menu_controller.h"
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #endif
-#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE)
+#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT)
 #include "utilities/save_controller.h"
 #include "controllers/menu_controller.h"
 #include "controllers/audio_controller.h"
@@ -184,6 +184,69 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }
     return;
+#endif
+#ifdef HLE_TEST_SKIN_SLOT
+    // Run twice: the first run (booting on Save 1 with the Knight) loads Save 2, quits to the
+    // title (pause > Main Menu) and picks Wolf Knight; the second reports the slot and skin
+    {
+        static int phase = 0, t0 = 0, step = 0;
+        int t = frame - t0;
+        static const char *seqs[3] = { "DDDADA", "", "DDDDADDDDRR" };     // Load Game > Save 2 | Settings > Skin, Right x2
+        if (phase == 0) {
+            if (menu_controller_is_active()) {
+                debugf("[slot] booted on slot %d with skin %d (%s)\n", save_controller_get_active_slot(), character_skin_get(), character_skin_name(character_skin_get()));
+                phase = (save_controller_get_active_slot() == 0 && character_skin_get() == 0) ? 1 : 9; t0 = frame;
+            } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 1 || phase == 3) {
+            const char *q = seqs[phase - 1];
+            if (q[step] && t >= 20 + step * 15 && t < 21 + step * 15) {
+                char c = q[step];
+                if (c == 'D') pressed->d_down = 1; else if (c == 'R') pressed->d_right = 1; else { pressed->a = 1; in->btn.a = 1; }
+                step++;
+            }
+            if (!q[step] && t > 20 + step * 15 + 60) {
+                if (phase == 3) { debugf("[slot] set skin %d on slot %d\n", character_skin_get(), save_controller_get_active_slot()); phase = 9; }
+                else { phase = 2; t0 = frame; step = 0; }
+            }
+        } else if (phase == 2) {   // in the game: skip the intro, pause, Main Menu
+            Boss *boss = boss_get_instance();
+            static int pt = -1;
+            if (pt < 0 && t % 30 == 0 && !(boss && boss->mode == BOSS_MODE_COMBAT)) { pressed->a = 1; in->btn.a = 1; }   // skip the intro
+            if (pt < 0 && boss && boss->mode == BOSS_MODE_COMBAT) pt = t;
+            if (pt >= 0) {
+                int u = t - pt;
+                if (u == 30) { pressed->start = 1; in->btn.start = 1; }
+                if (u == 50 || u == 60 || u == 70 || u == 80) pressed->d_down = 1;
+                if (u == 100) { pressed->a = 1; in->btn.a = 1; }
+                if (u > 160 && menu_controller_is_active()) { phase = 3; t0 = frame; step = 0; }
+            }
+        }
+        return;
+    }
+#endif
+#ifdef HLE_TEST_SKIN_SAVE
+    // Run twice with the same ROM: the first run (booting with the Knight) picks Wolf Knight
+    // in Title > Settings > Skin; the second reports what it booted with
+    {
+        static int start = -1, step = 0;
+        if (start < 0) {
+            if (menu_controller_is_active()) {
+                start = frame;
+                debugf("[save] booted with skin %d (%s), slot %d\n", character_skin_get(), character_skin_name(character_skin_get()), save_controller_get_active_slot());
+            } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        if (character_skin_get() != 0 && step == 0) return;    // second run: nothing to do
+        static const char seq[] = "DDDDADDDDRRR";               // Settings, Skin, Right x3: Knight > Umber > Wolf (locked ones skipped)
+        int t = frame - start;
+        if (seq[step] && t >= 20 + step * 15 && t < 21 + step * 15) {
+            char c = seq[step];
+            if (c == 'D') pressed->d_down = 1; else if (c == 'R') pressed->d_right = 1; else { pressed->a = 1; in->btn.a = 1; }
+            step++;
+        }
+        if (!seq[step] && t == 400) debugf("[save] set skin %d (%s)\n", character_skin_get(), character_skin_name(character_skin_get()));
+        return;
+    }
 #endif
 #ifdef HLE_TEST_SKIN_TITLE
     // Title > Settings (4 down) > Skin (4 down), then Right every 60 frames through the skins

@@ -252,6 +252,10 @@ static bool blob_read_or_seed_defaults(void) {
     if (!s_initialized) return false;
 
     // Layout mismatch / brand new EEPROM / another game: wipe + seed defaults
+#ifdef HLE_TEST_SKIN_SAVE
+    { uint8_t b0[8]; eeprom_read(0, b0); debugf("[save] eeprom type %d, block 0: %02x %02x %02x %02x %02x %02x %02x %02x\n", eeprom_present(),
+                                                b0[0], b0[1], b0[2], b0[3], b0[4], b0[5], b0[6], b0[7]); }
+#endif
     if (!eepfs_verify_signature()) {
         debugf("EEPROMFS signature mismatch: wiping + seeding defaults\n");
         eepfs_wipe();
@@ -302,9 +306,11 @@ void save_controller_init(void) {
     s_initialized = true;
     debugf("EEPROMFS initialized. Using %d save slots.\n", SAVE_SLOT_COUNT);
 
-    // Load blob or seed defaults, then select default slot 0 ("Save 1")
+    // Load blob or seed defaults, then select the last played slot (its skin and settings
+    // are the ones that were chosen last; Save 1 if none has been played)
     (void)blob_read_or_seed_defaults();
-    (void)save_controller_set_active_slot(0);
+    int last = save_controller_get_last_played_slot();
+    (void)save_controller_set_active_slot(last >= 0 ? last : 0);
 }
 
 void save_controller_update(void) {
