@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <stdbool.h>
 #include <string.h>
 
@@ -284,7 +285,7 @@ void dialog_controller_draw(bool isVertical, int x, int y, int width, int height
 
 void dialog_controller_free(void)
 {
-    rspq_wait();
+    gpu_wait();
 
     if (dialogBox) {
         sprite_free(dialogBox);

@@ -1,4 +1,5 @@
 #include "blood_particles_fx.h"
+#include "gpu_frame.h"
 
 #include <libdragon.h>
 
@@ -325,7 +326,7 @@ static void blood_particles_fx_draw_tpx_textured(
 
     tpx_state_set_tex_params(0, 0);
 
-    tpx_particle_draw_tex_s16(buffer, drawCount);
+    tpx_particle_draw_tex_s16(gpu_copy(buffer, sizeof(TPXParticleS16) * ((drawCount + 1) / 2)), drawCount);   // rewritten next frame
 
     tpx_matrix_pop(1);
 }
@@ -350,7 +351,7 @@ static void blood_particles_fx_draw_tpx_untextured(
 
     tpx_matrix_push(&s_particleMatrices[s_frameIdx]);
     tpx_state_set_scale(1.0f, 1.0f);
-    tpx_particle_draw_s16(buffer, drawCount);
+    tpx_particle_draw_s16(gpu_copy(buffer, sizeof(TPXParticleS16) * ((drawCount + 1) / 2)), drawCount);   // rewritten next frame
     tpx_matrix_pop(1);
 }
 

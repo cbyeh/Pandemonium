@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dmath.h>
 #include <t3d/t3dmodel.h>
@@ -126,7 +127,7 @@ static float hurt(float d) { return s.unshackled ? d * 1.2f : d; }     // unshac
 void sun_boss_free(void)
 {
     if (!s.ready) return;
-    rspq_wait();
+    gpu_wait();
     proc_mesh_free(&s.eye);
     proc_mesh_free(&s.eyeHot);
     for (int i = 0; i < MAT_RING; i++) { rspq_block_free(s.linkBlock[i]); free_uncached(s.linkVB[i]); }
@@ -144,7 +145,7 @@ void sun_boss_begin(Boss* boss)
         links_init();
         for (int i = 0; i < MAT_RING; i++) {
             s.linkVB[i] = malloc_uncached(sizeof(T3DVertPacked) * NLINKS * LK_V / 2);
-            rspq_block_begin();
+            gpu_block_begin();
             for (int l = 0; l < NLINKS; l += LK_PER_LOAD) {
                 int cnt = NLINKS - l < LK_PER_LOAD ? NLINKS - l : LK_PER_LOAD;
                 t3d_vert_load(&s.linkVB[i][l * LK_V / 2], 0, cnt * LK_V);
@@ -156,7 +157,7 @@ void sun_boss_begin(Boss* boss)
                     }
                 t3d_tri_sync();
             }
-            s.linkBlock[i] = rspq_block_end();
+            s.linkBlock[i] = gpu_block_end();
         }
         proc_mesh_begin();
         proc_mesh_frustum((float[3]){ 0, -3.0f, 0 }, 5.0f, 3.6f, 6.0f, 6, proc_rgb(70, 60, 56));

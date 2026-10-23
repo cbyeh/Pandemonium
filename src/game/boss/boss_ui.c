@@ -1,6 +1,7 @@
 #include "boss_ui.h"
 
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <math.h>
 
 #include "../../utilities/globals.h"
@@ -528,7 +529,7 @@ void boss_ui_set_form(int phase)
     };
     if (phase < 1 || phase > 5 || phase == s_form) return;
     s_form = phase;
-    rspq_wait();    // the old plate may still be referenced by queued draws
+    gpu_wait();    // the old plate may still be referenced by queued draws
     boss_ui_free_sprite(&s_bossHealthBarNameSprite, &s_bossHealthBarNameSurf);
     boss_ui_load_sprite(&s_bossHealthBarNameSprite, &s_bossHealthBarNameSurf, plates[phase - 1]);
 }

@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dmath.h>
 #include <math.h>
@@ -289,11 +290,8 @@ void skill_fx_update(float dt)
 
 #define BUILD_MAX_VERTS 68              // < T3D vertex cache (70), even
 #define BUILD_MAX_TRIS  96
-#define BUILD_RING      24              // buffers in flight (the RSP reads them later)
 
-static T3DVertPacked *s_ring[BUILD_RING];
 static T3DMat4FP *s_identity;
-static int s_ringIdx;
 
 static T3DVertPacked *s_vb;
 static int s_nverts, s_ntris;
@@ -308,8 +306,7 @@ static void build_flush(void)
             t3d_tri_draw(s_tris[i][0], s_tris[i][1], s_tris[i][2]);
         t3d_tri_sync();
     }
-    s_vb = s_ring[s_ringIdx];
-    s_ringIdx = (s_ringIdx + 1) % BUILD_RING;
+    s_vb = gpu_alloc(sizeof(T3DVertPacked) * (BUILD_MAX_VERTS / 2));    // this frame's (the RSP reads it later)
     s_nverts = s_ntris = 0;
 }
 
@@ -547,8 +544,6 @@ static void draw_begin(void)
         T3DMat4 id;
         t3d_mat4_identity(&id);
         t3d_mat4_to_fixed(s_identity, &id);
-        for (int i = 0; i < BUILD_RING; i++)
-            s_ring[i] = malloc_uncached(sizeof(T3DVertPacked) * (BUILD_MAX_VERTS / 2));
         s_norm = t3d_vert_pack_normal(&(T3DVec3){{ 0, 0, 1 }});
     }
 
@@ -564,8 +559,7 @@ static void draw_begin(void)
     t3d_matrix_push(s_identity);
 
     s_nverts = s_ntris = 0;
-    s_vb = s_ring[s_ringIdx];
-    s_ringIdx = (s_ringIdx + 1) % BUILD_RING;
+    s_vb = gpu_alloc(sizeof(T3DVertPacked) * (BUILD_MAX_VERTS / 2));
 }
 
 static void draw_end(void)

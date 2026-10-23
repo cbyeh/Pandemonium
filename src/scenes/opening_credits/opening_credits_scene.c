@@ -26,6 +26,7 @@ SOFTWARE.
 #include "opening_credits_scene.h"
 
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <math.h>
 
 #include "../../controllers/audio_controller.h"
@@ -189,7 +190,7 @@ void opening_credits_scene_exit(void)
     s_state = OPENING_CREDITS_STATE_INACTIVE;
     s_result = OPENING_CREDITS_SCENE_RESULT_NONE;
 
-    rspq_wait();
+    gpu_wait();
 }
 
 void opening_credits_scene_update(void)

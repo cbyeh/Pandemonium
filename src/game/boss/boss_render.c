@@ -3,6 +3,7 @@
 #include "boss_ui.h"
 
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dskeleton.h>
 #include <t3d/t3dmodel.h>
@@ -205,23 +206,23 @@ static bool filter_swords(void *u, const T3DObject *obj) { (void)u; return !is_d
 static void boss_record_blocks(Boss *boss)
 {
     T3DSkeleton* skel = (T3DSkeleton*)boss->skeleton;
-    const T3DMat4FP *mats = (skel && skel->bufferCount == 1) ? skel->boneMatricesFP
-                          : (const T3DMat4FP*)t3d_segment_placeholder(T3D_SEGMENT_SKELETON);
+    (void)skel;
+    const T3DMat4FP *mats = gpu_skeleton_matrices();     // this frame's copy (boss_render_draw)
     if (s_recModel) {
-        rspq_wait();
+        gpu_wait();
         for (int k = 0; k < FLASH_LEVELS; k++) rspq_block_free(s_recMain[k]);
         rspq_block_free(s_recSwords);
     }
     for (int k = 0; k < FLASH_LEVELS; k++) {
         if (k) boss_flash_apply_tint(0.35f * k / (FLASH_LEVELS - 1)); else boss_flash_restore();
-        rspq_block_begin();
+        gpu_block_begin();
         t3d_model_draw_custom(boss->model, (T3DModelDrawConf){ .filterCb = filter_main, .matrices = mats });
-        s_recMain[k] = rspq_block_end();
+        s_recMain[k] = gpu_block_end();
     }
     boss_flash_restore();
-    rspq_block_begin();
+    gpu_block_begin();
     t3d_model_draw_custom(boss->model, (T3DModelDrawConf){ .filterCb = filter_swords, .matrices = mats });
-    s_recSwords = rspq_block_end();
+    s_recSwords = gpu_block_end();
     s_recModel = boss->model;
 }
 
@@ -231,13 +232,13 @@ static bool filter_dynamic(void *u, const T3DObject *obj) { (void)u; return is_d
 void boss_render_forget_model(void)
 {
     if (!s_recModel) return;
-    rspq_wait();
+    gpu_wait();
     for (int k = 0; k < FLASH_LEVELS; k++) rspq_block_free(s_recMain[k]);
     rspq_block_free(s_recSwords);
     s_recModel = NULL;
 }
 
-static void boss_draw_scrolling(Boss* boss)
+static void boss_draw_scrolling(Boss* boss, const T3DMat4FP *modelMat)
 {
     BossDrawUserData ud = {
         .scroll = &bossScrollDyn,
@@ -249,7 +250,7 @@ static void boss_draw_scrolling(Boss* boss)
     // If the scrolling texture was not loaded, avoid the custom dyn texture path.
     // This prevents startup crashes if the sprite is not present in the current ROM.
     if (!bossScrollDyn.spr) {
-        t3d_matrix_set(boss->modelMat, true);
+        t3d_matrix_set(modelMat, true);
 
         t3d_model_draw_custom(boss->model, (T3DModelDrawConf){
             .userData = &ud,
@@ -264,7 +265,7 @@ static void boss_draw_scrolling(Boss* boss)
         return;
     }
 
-    t3d_matrix_set(boss->modelMat, true);
+    t3d_matrix_set(modelMat, true);
 
     t3d_model_draw_custom(boss->model, (T3DModelDrawConf){
         .userData = &ud,
@@ -297,7 +298,7 @@ void boss_draw_shadow(Boss* boss)
 
     if (a > 0) {
         rdpq_set_prim_color(RGBA32(0, 0, 0, a));
-        t3d_matrix_set((T3DMat4FP*)boss->shadowMat, true);
+        t3d_matrix_set(gpu_mat((T3DMat4FP*)boss->shadowMat), true);
         rspq_block_run((rspq_block_t*)boss->dpl_shadow);
     }
 }
@@ -339,10 +340,14 @@ void boss_render_draw(Boss* boss)
     // The recorded body at the nearest flash tint, the swords while it lives, the scrolling parts live
     int level = (int)(tint / 0.35f * (FLASH_LEVELS - 1) + 0.5f);
     if (level < 0) level = 0; else if (level > FLASH_LEVELS - 1) level = FLASH_LEVELS - 1;
-    t3d_matrix_set(boss->modelMat, true);
+    const T3DMat4FP *modelMat = gpu_mat(boss->modelMat);
+    T3DSkeleton *skel = (T3DSkeleton*)boss->skeleton;
+    T3DMat4FP *bones = skel ? gpu_skeleton_begin(skel) : NULL;
+    t3d_matrix_set(modelMat, true);
     rspq_block_run(s_recMain[level]);
     if (boss->state != BOSS_STATE_DEAD) rspq_block_run(s_recSwords);
-    boss_draw_scrolling(boss);
+    boss_draw_scrolling(boss, modelMat);
+    if (skel) gpu_skeleton_end(skel, bones);
 
     // Draw sword attached to Hand-Right bone.
     if (boss->handRightBoneIndex >= 0 && boss->swordDpl && boss->swordMatFP) {

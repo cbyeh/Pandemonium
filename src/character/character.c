@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dskeleton.h>
 #include <t3d/t3danim.h>
@@ -2570,9 +2571,9 @@ void character_init(void)
 
     rspq_block_t* dpl_model = character_skin_record(characterModel, skeleton);
 
-    rspq_block_begin();
+    gpu_block_begin();
     t3d_model_draw(characterShadowModel);
-    rspq_block_t* dpl_shadow = rspq_block_end();
+    rspq_block_t* dpl_shadow = gpu_block_end();
 
     CapsuleCollider collider = {
         .localCapA = {{0.0f, 4.0f, 0.0f}},
@@ -3260,7 +3261,7 @@ void character_draw_shadow(void)
 
     if (a > 0) {
         rdpq_set_prim_color(RGBA32(0, 0, 0, a));
-        t3d_matrix_set(character.shadowMat, true);
+        t3d_matrix_set(gpu_mat(character.shadowMat), true);
         rspq_block_run(character.dpl_shadow);
     }
 }
@@ -3280,9 +3281,12 @@ void character_draw(void)
 
     rdpq_set_prim_color(RGBA32(cr, cg, cb, ca));
 
-    t3d_matrix_set(character.modelMat, true);
+    const T3DMat4FP *modelMat = gpu_mat(character.modelMat);
+    T3DMat4FP *bones = character.skeleton ? gpu_skeleton_begin(character.skeleton) : NULL;
+    t3d_matrix_set(modelMat, true);
     rspq_block_run(character.dpl_model);
-    character_skin_draw_extras(character.skeleton, character.modelMat, character.pos, deltaTime);
+    character_skin_draw_extras(character.skeleton, modelMat, character.pos, deltaTime);
+    if (character.skeleton) gpu_skeleton_end(character.skeleton, bones);
 }
 
 void character_draw_ui(void)
@@ -3389,7 +3393,7 @@ void character_apply_damage(float amount)
 
 void character_delete(void)
 {
-    rspq_wait();
+    gpu_wait();
 
     t3d_model_free(characterModel);
 
@@ -3423,25 +3427,25 @@ void character_delete(void)
     }
 
     if (character.modelMat) {
-        rspq_wait();
+        gpu_wait();
         free_uncached(character.modelMat);
         character.modelMat = NULL;
     }
 
     if (character.shadowMat) {
-        rspq_wait();
+        gpu_wait();
         free_uncached(character.shadowMat);
         character.shadowMat = NULL;
     }
 
     if (character.dpl_model) {
-        rspq_wait();
+        gpu_wait();
         rspq_block_free(character.dpl_model);
         character.dpl_model = NULL;
     }
 
     if (character.dpl_shadow) {
-        rspq_wait();
+        gpu_wait();
         rspq_block_free(character.dpl_shadow);
         character.dpl_shadow = NULL;
     }

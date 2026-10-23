@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dmath.h>
 #include <t3d/t3dmodel.h>
@@ -199,7 +200,7 @@ static void build_sun(void)
 void ending_free(void)
 {
     if (!s_ready) return;
-    rspq_wait();
+    gpu_wait();
     proc_mesh_free(&s_throne);
     proc_mesh_free(&s_king);
     proc_mesh_free(&s_arms);
@@ -407,7 +408,7 @@ static void draw_sun(const float pos[3], float scale, bool lookUp)
     rdpq_sync_pipe();
     rdpq_mode_zbuf(false, false);
     t3d_matrix_push_pos(1);
-        t3d_matrix_set(s_raysMat, true);
+        t3d_matrix_set(gpu_mat(s_raysMat), true);
         t3d_model_draw_custom(s_raysModel, (T3DModelDrawConf){ .userData = &s_raysScroll, .tileCb = tile_scroll });
         proc_mesh_draw(&s_sun);
     t3d_matrix_pop(1);

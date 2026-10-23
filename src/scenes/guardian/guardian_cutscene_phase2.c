@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <rdpq.h>
 #include <rdpq_mode.h>
 
@@ -124,9 +125,9 @@ static void cutscene_guardian_phase2_make_model_block(
 {
     if (!model || !outDpl) return;
 
-    rspq_block_begin();
+    gpu_block_begin();
         t3d_model_draw(model);
-    *outDpl = rspq_block_end();
+    *outDpl = gpu_block_end();
 }
 
 static void cutscene_guardian_phase2_set_matrix_default(
@@ -250,22 +251,22 @@ static void cutscene_guardian_phase2_draw_standard_room(
 
     t3d_matrix_push_pos(1);
         if (ctx->mapMatrix && ctx->mapDpl) {
-            t3d_matrix_set(ctx->mapMatrix, true);
+            t3d_matrix_set(gpu_mat(ctx->mapMatrix), true);
             rspq_block_run(ctx->mapDpl);
         }
 
         if (ctx->roomFloorMatrix && ctx->roomFloorDpl) {
-            t3d_matrix_set(ctx->roomFloorMatrix, true);
+            t3d_matrix_set(gpu_mat(ctx->roomFloorMatrix), true);
             rspq_block_run(ctx->roomFloorDpl);
         }
 
         if (ctx->roomLedgeMatrix && ctx->roomLedgeDpl) {
-            t3d_matrix_set(ctx->roomLedgeMatrix, true);
+            t3d_matrix_set(gpu_mat(ctx->roomLedgeMatrix), true);
             rspq_block_run(ctx->roomLedgeDpl);
         }
 
         if (ctx->pillarsMatrix && ctx->pillarsDpl) {
-            t3d_matrix_set(ctx->pillarsMatrix, true);
+            t3d_matrix_set(gpu_mat(ctx->pillarsMatrix), true);
             rspq_block_run(ctx->pillarsDpl);
         }
     t3d_matrix_pop(1);
@@ -284,12 +285,12 @@ static void cutscene_guardian_phase2_draw_standard_room(
 
     t3d_matrix_push_pos(1);
         if (ctx->sunshaftsMatrix && ctx->sunshaftsDpl) {
-            t3d_matrix_set(ctx->sunshaftsMatrix, true);
+            t3d_matrix_set(gpu_mat(ctx->sunshaftsMatrix), true);
             rspq_block_run(ctx->sunshaftsDpl);
         }
 
         if (ctx->pillarsFrontMatrix && ctx->pillarsFrontDpl) {
-            t3d_matrix_set(ctx->pillarsFrontMatrix, true);
+            t3d_matrix_set(gpu_mat(ctx->pillarsFrontMatrix), true);
             rspq_block_run(ctx->pillarsFrontDpl);
         }
     t3d_matrix_pop(1);
@@ -337,9 +338,9 @@ void cutscene_guardian_phase2_load(void)
         t3d_anim_set_looping(s_bnwChainsAnimations[s_currentBnwChainsAnimation], true);
         t3d_anim_set_playing(s_bnwChainsAnimations[s_currentBnwChainsAnimation], true);
 
-        rspq_block_begin();
-            t3d_model_draw_skinned(s_bnwChainsModel, s_bnwChainsSkeleton);
-        s_bnwChainsDpl = rspq_block_end();
+        gpu_block_begin();
+            t3d_model_draw_custom(s_bnwChainsModel, (T3DModelDrawConf){ .matrices = gpu_skeleton_matrices() });   // the bones: gpu_skeleton_begin
+        s_bnwChainsDpl = gpu_block_end();
 
         s_bnwChainsMatrix = cutscene_guardian_phase2_alloc_matrix();
         cutscene_guardian_phase2_set_matrix_origin(s_bnwChainsMatrix);
@@ -397,7 +398,7 @@ void cutscene_guardian_phase2_unload(void)
 {
     if (!s_loaded) return;
 
-    rspq_wait();
+    gpu_wait();
 
     cutscene_guardian_phase2_free_dpl(&s_bnwBossDpl);
     cutscene_guardian_phase2_free_dpl(&s_bnwChainsDpl);
@@ -830,7 +831,7 @@ void cutscene_guardian_phase2_draw(SceneContext *ctx, T3DViewport *viewport)
 
             t3d_matrix_push_pos(1);
                 if (s_shackledSunGlowMatrix && s_shackledSunGlowModel) {
-                    t3d_matrix_set(s_shackledSunGlowMatrix, true);
+                    t3d_matrix_set(gpu_mat(s_shackledSunGlowMatrix), true);
                     t3d_model_draw_custom(s_shackledSunGlowModel, (T3DModelDrawConf){
                         .userData = &s_shackledSunGlowScrollParams,
                         .tileCb = tile_scroll,
@@ -840,7 +841,7 @@ void cutscene_guardian_phase2_draw(SceneContext *ctx, T3DViewport *viewport)
 
             t3d_matrix_push_pos(1);
                 if (s_shackles2Matrix && s_shacklesModel) {
-                    t3d_matrix_set(s_shackles2Matrix, true);
+                    t3d_matrix_set(gpu_mat(s_shackles2Matrix), true);
                     t3d_model_draw_custom(s_shacklesModel, (T3DModelDrawConf){
                         .userData = &s_shackles2ScrollParams,
                         .tileCb = tile_scroll,
@@ -848,12 +849,12 @@ void cutscene_guardian_phase2_draw(SceneContext *ctx, T3DViewport *viewport)
                 }
 
                 if (s_shackledSunMatrix && s_shackledSunDpl) {
-                    t3d_matrix_set(s_shackledSunMatrix, true);
+                    t3d_matrix_set(gpu_mat(s_shackledSunMatrix), true);
                     rspq_block_run(s_shackledSunDpl);
                 }
 
                 if (s_shacklesMatrix && s_shacklesModel) {
-                    t3d_matrix_set(s_shacklesMatrix, true);
+                    t3d_matrix_set(gpu_mat(s_shacklesMatrix), true);
                     t3d_model_draw_custom(s_shacklesModel, (T3DModelDrawConf){
                         .userData = &s_shacklesScrollParams,
                         .tileCb = tile_scroll,
@@ -876,7 +877,7 @@ void cutscene_guardian_phase2_draw(SceneContext *ctx, T3DViewport *viewport)
 
             t3d_matrix_push_pos(1);
                 if (s_bnwBossMatrix && s_bnwBossDpl) {
-                    t3d_matrix_set(s_bnwBossMatrix, true);
+                    t3d_matrix_set(gpu_mat(s_bnwBossMatrix), true);
                     rspq_block_run(s_bnwBossDpl);
                 }
             t3d_matrix_pop(1);
@@ -885,8 +886,8 @@ void cutscene_guardian_phase2_draw(SceneContext *ctx, T3DViewport *viewport)
 
             t3d_matrix_push_pos(1);
                 if (s_bnwChainsMatrix && s_bnwChainsDpl) {
-                    t3d_matrix_set(s_bnwChainsMatrix, true);
-                    rspq_block_run(s_bnwChainsDpl);
+                    t3d_matrix_set(gpu_mat(s_bnwChainsMatrix), true);
+                    { T3DMat4FP *bones = gpu_skeleton_begin(s_bnwChainsSkeleton); rspq_block_run(s_bnwChainsDpl); gpu_skeleton_end(s_bnwChainsSkeleton, bones); }
                 }
             t3d_matrix_pop(1);
 
@@ -894,14 +895,14 @@ void cutscene_guardian_phase2_draw(SceneContext *ctx, T3DViewport *viewport)
 
             t3d_matrix_push_pos(1);
                 if (s_floorSpinBnwMatrix && s_floorSpinBnwDpl) {
-                    t3d_matrix_set(s_floorSpinBnwMatrix, true);
+                    t3d_matrix_set(gpu_mat(s_floorSpinBnwMatrix), true);
                     rspq_block_run(s_floorSpinBnwDpl);
                 }
 
                 rdpq_set_prim_color(RGBA32(0, 0, 0, 255));
 
                 if (s_floorGlowBnwMatrix && s_floorGlowBnwModel) {
-                    t3d_matrix_set(s_floorGlowBnwMatrix, true);
+                    t3d_matrix_set(gpu_mat(s_floorGlowBnwMatrix), true);
                     t3d_model_draw_custom(s_floorGlowBnwModel, (T3DModelDrawConf){
                         .userData = &s_floorGlowBnwScrollParams,
                         .tileCb = tile_scroll,
@@ -930,27 +931,27 @@ void cutscene_guardian_phase2_draw(SceneContext *ctx, T3DViewport *viewport)
 
             t3d_matrix_push_pos(1);
                 if (ctx->mapMatrix && ctx->mapDpl) {
-                    t3d_matrix_set(ctx->mapMatrix, true);
+                    t3d_matrix_set(gpu_mat(ctx->mapMatrix), true);
                     rspq_block_run(ctx->mapDpl);
                 }
 
                 if (ctx->roomFloorMatrix && ctx->roomFloorDpl) {
-                    t3d_matrix_set(ctx->roomFloorMatrix, true);
+                    t3d_matrix_set(gpu_mat(ctx->roomFloorMatrix), true);
                     rspq_block_run(ctx->roomFloorDpl);
                 }
 
                 if (ctx->roomLedgeMatrix && ctx->roomLedgeDpl) {
-                    t3d_matrix_set(ctx->roomLedgeMatrix, true);
+                    t3d_matrix_set(gpu_mat(ctx->roomLedgeMatrix), true);
                     rspq_block_run(ctx->roomLedgeDpl);
                 }
 
                 if (ctx->pillarsMatrix && ctx->pillarsDpl) {
-                    t3d_matrix_set(ctx->pillarsMatrix, true);
+                    t3d_matrix_set(gpu_mat(ctx->pillarsMatrix), true);
                     rspq_block_run(ctx->pillarsDpl);
                 }
 
                 if (ctx->bossChainsGlowMatrix && ctx->bossChainsGlowModel) {
-                    t3d_matrix_set(ctx->bossChainsGlowMatrix, true);
+                    t3d_matrix_set(gpu_mat(ctx->bossChainsGlowMatrix), true);
                     t3d_model_draw_custom(ctx->bossChainsGlowModel, (T3DModelDrawConf){
                         .userData = ctx->bossChainsGlowScrollParams,
                         .tileCb = tile_scroll,
@@ -976,7 +977,7 @@ void cutscene_guardian_phase2_draw(SceneContext *ctx, T3DViewport *viewport)
                 }
 
                 if (ctx->sunshaftsMatrix && ctx->sunshaftsDpl) {
-                    t3d_matrix_set(ctx->sunshaftsMatrix, true);
+                    t3d_matrix_set(gpu_mat(ctx->sunshaftsMatrix), true);
                     rspq_block_run(ctx->sunshaftsDpl);
                 }
             t3d_matrix_pop(1);

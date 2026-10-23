@@ -2,6 +2,7 @@
 #include "multi_sword_attacks.h"
 
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dmodel.h>
 #include <math.h>
@@ -532,13 +533,13 @@ static void msa_assets_init(void) {
     swordModel     = t3d_model_load("rom:/boss/boss_back_sword.t3dm");
     floorGlowModel = t3d_model_load("rom:/boss/boss_back_sword_glow.t3dm");
 
-    rspq_block_begin();
+    gpu_block_begin();
     t3d_model_draw(swordModel);
-    swordDpl = rspq_block_end();
+    swordDpl = gpu_block_end();
 
-    rspq_block_begin();
+    gpu_block_begin();
     t3d_model_draw(floorGlowModel);
-    floorGlowDpl = rspq_block_end();
+    floorGlowDpl = gpu_block_end();
 
     if (!swordMatrix) {
         void* aligned = alloc_uncached_aligned16(sizeof(T3DMat4FP) * MSA_MAX_SWORDS, &swordMatrixBase);
@@ -1326,7 +1327,7 @@ void msa_draw_visuals(T3DViewport *viewport) {
             msa_build_srt_scaled(&swordMatrix[i], MODEL_SCALE*2.0f, s->pos[0], s->pos[1], s->pos[2], yaw);
         }
 
-        t3d_matrix_set(&swordMatrix[i], true);
+        t3d_matrix_set(gpu_mat(&swordMatrix[i]), true);
         rspq_block_run(swordDpl);
     }
 
@@ -1350,7 +1351,7 @@ void msa_draw_visuals(T3DViewport *viewport) {
             glowYaw
         );
 
-        t3d_matrix_set(&floorGlowMatrix[i], true);
+        t3d_matrix_set(gpu_mat(&floorGlowMatrix[i]), true);
         t3d_model_draw_custom(floorGlowModel, (T3DModelDrawConf){
             .userData = &floorGlowScrollParams,
             .tileCb   = tile_scroll,

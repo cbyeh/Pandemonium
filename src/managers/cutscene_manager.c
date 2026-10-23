@@ -1,4 +1,5 @@
 #include "cutscene_manager.h"
+#include "gpu_frame.h"
 #include "cutscene_manager_internal.h"
 
 #include <libdragon.h>

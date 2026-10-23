@@ -1,5 +1,6 @@
 // fx/lightning_fx.c
 #include "fx/lightning_fx.h"
+#include "gpu_frame.h"
 
 #include <t3d/t3d.h>
 #include <t3d/t3dmodel.h>
@@ -277,7 +278,7 @@ static void lightning_fx_draw_internal(LightningFX* fx) {
     }
 
     t3d_matrix_push_pos(1);
-        t3d_matrix_set(fx->mat, true);
+        t3d_matrix_set(gpu_mat(fx->mat), true);
         t3d_model_draw(fx->model);
     t3d_matrix_pop(1);
 }

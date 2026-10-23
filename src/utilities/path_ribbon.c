@@ -1,5 +1,6 @@
 
 #include "path_ribbon.h"
+#include "gpu_frame.h"
 
 #include <t3d/t3d.h>
 #include <math.h>
@@ -19,7 +20,6 @@
 // ============================================================
 #define PR_MAX_POINTS_DRAW 64
 
-#define PR_DRAWBUF_RING 64
 
 #define PR_WALL_U_SCALE 1.0f
 
@@ -147,48 +147,6 @@ static void path_ribbon_ensure_id_mat(void) {
     if (s_pr_id_mat_fp) {
         t3d_mat4_to_fixed(s_pr_id_mat_fp, &id);
     }
-}
-
-// ============================================================
-// Draw buffers (ring)
-// ============================================================
-static void*          s_pr_v_base[PR_DRAWBUF_RING] = {0};
-static T3DVertPacked* s_pr_v_ring[PR_DRAWBUF_RING] = {0};
-
-static rspq_syncpoint_t s_pr_sp[PR_DRAWBUF_RING];
-static uint8_t          s_pr_sp_valid[PR_DRAWBUF_RING];
-
-static int     s_pr_ring_idx = 0;
-static uint8_t s_pr_drawbuf_inited = 0;
-
-static void path_ribbon_ensure_draw_buffers(void) {
-    if (s_pr_drawbuf_inited) return;
-    s_pr_drawbuf_inited = 1;
-
-    const size_t bytes = sizeof(T3DVertPacked) * PR_MAX_POINTS_DRAW;
-
-    for (int i = 0; i < PR_DRAWBUF_RING; i++) {
-        if (!s_pr_v_ring[i]) {
-            void* aligned = alloc_uncached_aligned16(bytes, &s_pr_v_base[i]);
-            s_pr_v_ring[i] = (T3DVertPacked*)aligned;
-            if (s_pr_v_ring[i]) memset(s_pr_v_ring[i], 0, bytes);
-        }
-        s_pr_sp_valid[i] = 0;
-    }
-}
-
-static inline void pr_slot_wait(int idx) {
-    if (s_pr_sp_valid[idx]) {
-        rspq_syncpoint_wait(s_pr_sp[idx]);
-        s_pr_sp_valid[idx] = 0;
-    }
-}
-
-static inline void pr_slot_fence(int idx) {
-    rspq_syncpoint_t sp = rspq_syncpoint_new();
-    rspq_flush();
-    s_pr_sp[idx] = sp;
-    s_pr_sp_valid[idx] = 1;
 }
 
 // ============================================================
@@ -403,15 +361,10 @@ void path_ribbon_draw_crack(const PathRibbon* pr) {
     int points = pr_effective_point_count(pr);
     if (points < 2) return;
 
-    path_ribbon_ensure_draw_buffers();
     path_ribbon_ensure_id_mat();
     if (!s_pr_id_mat_fp) return;
 
-    int idx = (s_pr_ring_idx++ % PR_DRAWBUF_RING);
-    pr_slot_wait(idx);
-
-    T3DVertPacked *vb = s_pr_v_ring[idx];
-    if (!vb) return;
+    T3DVertPacked *vb = gpu_alloc(sizeof(T3DVertPacked) * PR_MAX_POINTS_DRAW);   // this frame's (the RSP reads it later)
 
     const float a_mul = pr_clampf(pr->alpha_mul, 0.0f, 1.0f);
     if (a_mul <= 0.0f) return;
@@ -520,7 +473,6 @@ void path_ribbon_draw_crack(const PathRibbon* pr) {
 
     t3d_matrix_pop(1);
 
-    pr_slot_fence(idx);
 
     // HARD RESET
     t3d_state_set_depth_offset(0);
@@ -540,15 +492,10 @@ void path_ribbon_draw_wall(const PathRibbon* pr) {
     int points = pr_effective_point_count(pr);
     if (points < 2) return;
 
-    path_ribbon_ensure_draw_buffers();
     path_ribbon_ensure_id_mat();
     if (!s_pr_id_mat_fp) return;
 
-    int idx = (s_pr_ring_idx++ % PR_DRAWBUF_RING);
-    pr_slot_wait(idx);
-
-    T3DVertPacked *vb = s_pr_v_ring[idx];
-    if (!vb) return;
+    T3DVertPacked *vb = gpu_alloc(sizeof(T3DVertPacked) * PR_MAX_POINTS_DRAW);   // this frame's (the RSP reads it later)
 
     const float a_mul = pr_clampf(pr->alpha_mul, 0.0f, 1.0f);
     if (a_mul <= 0.0f) return;
@@ -664,7 +611,6 @@ void path_ribbon_draw_wall(const PathRibbon* pr) {
 
     t3d_matrix_pop(1);
 
-    pr_slot_fence(idx);
 
     // HARD RESET
     t3d_state_set_depth_offset(0);

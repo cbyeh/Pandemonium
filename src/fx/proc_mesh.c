@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dmath.h>
 #include <math.h>
@@ -7,7 +8,6 @@
 #include "proc_mesh.h"
 
 #define PM_MAX_TRIS   1500
-#define PM_BATCH_TRIS 22            // 66 vertices per load (< the 70-entry vertex cache)
 #define PM_UNIT       8.0f          // stored at 1/8 unit precision (int16 positions)
 
 typedef struct { int16_t p[3][3]; uint32_t c[3]; } PmTri;     // a colour per corner (smooth shading)
@@ -281,28 +281,58 @@ void proc_mesh_end(ProcMesh *out)
 {
     memset(out, 0, sizeof(*out));
     if (s_ntris == 0) return;
-    int batches = (s_ntris + PM_BATCH_TRIS - 1) / PM_BATCH_TRIS;
-    int perBatch = PM_BATCH_TRIS * 3;               // even
-    out->verts = malloc_uncached(sizeof(T3DVertPacked) * (perBatch / 2) * batches);
-    uint16_t norm = t3d_vert_pack_normal(&(T3DVec3){{ 0, 1, 0 }});
+    // Batches of up to a vertex cache's worth, the corners that match (position and colour)
+    // shared: the RSP's vertex work bounds the frame, and a smooth tube shares each corner 6 ways
+    int nc = s_ntris * 3;
+    uint16_t *ref = malloc(sizeof(uint16_t) * nc);      // each batch's vertices: a corner each (t * 3 + i)
+    uint8_t *idx = malloc(nc);                          // each corner's slot in its batch
+    int *batchTri = malloc(sizeof(int) * (s_ntris + 1)), *batchRef = malloc(sizeof(int) * (s_ntris + 1));
+    int batches = 0, nref = 0, nv = 0;
     for (int t = 0; t < s_ntris; t++) {
+        int slot[3], fresh = 0;
         for (int i = 0; i < 3; i++) {
-            int vi = (t / PM_BATCH_TRIS) * perBatch + (t % PM_BATCH_TRIS) * 3 + i;
-            T3DVertPacked *v = &out->verts[vi >> 1];
-            const int16_t *p = s_tris[t].p[i];
-            if (vi & 1) { memcpy(v->posB, p, 6); v->normB = norm; v->rgbaB = s_tris[t].c[i]; }
-            else        { memcpy(v->posA, p, 6); v->normA = norm; v->rgbaA = s_tris[t].c[i]; }
+            slot[i] = -1;
+            for (int k = 0; k < nv && slot[i] < 0; k++) {
+                int r = ref[nref - nv + k];
+                if (!memcmp(s_tris[r / 3].p[r % 3], s_tris[t].p[i], 6) && s_tris[r / 3].c[r % 3] == s_tris[t].c[i]) slot[i] = k;
+            }
+            if (slot[i] < 0) fresh++;
+        }
+        if (t == 0 || nv + fresh > T3D_VERTEX_CACHE_SIZE) {   // a new batch
+            batchTri[batches] = t; batchRef[batches++] = nref; nv = 0;
+            for (int i = 0; i < 3; i++) slot[i] = -1;
+        }
+        for (int i = 0; i < 3; i++) {
+            if (slot[i] < 0) { slot[i] = nv++; ref[nref++] = (uint16_t)(t * 3 + i); }
+            idx[t * 3 + i] = (uint8_t)slot[i];
         }
     }
-    rspq_block_begin();
-    for (int bi = 0; bi < batches; bi++) {
-        int n = s_ntris - bi * PM_BATCH_TRIS;
-        if (n > PM_BATCH_TRIS) n = PM_BATCH_TRIS;
-        t3d_vert_load(&out->verts[bi * perBatch / 2], 0, (uint32_t)((n * 3 + 1) & ~1));
-        for (int i = 0; i < n; i++) t3d_tri_draw(i * 3, i * 3 + 1, i * 3 + 2);
+    batchTri[batches] = s_ntris; batchRef[batches] = nref;
+    int packed = 0;     // each batch starts on a whole T3DVertPacked (two vertices)
+    for (int b = 0; b < batches; b++) packed += (batchRef[b + 1] - batchRef[b] + 1) / 2;
+    out->verts = malloc_uncached(sizeof(T3DVertPacked) * packed);
+    memset(out->verts, 0, sizeof(T3DVertPacked) * packed);
+    uint16_t norm = t3d_vert_pack_normal(&(T3DVec3){{ 0, 1, 0 }});
+    gpu_block_begin();
+    for (int b = 0, base = 0; b < batches; b++) {
+        int n = batchRef[b + 1] - batchRef[b];
+        for (int k = 0; k < n; k++) {
+            int r = ref[batchRef[b] + k];
+            T3DVertPacked *v = &out->verts[base + k / 2];
+            const int16_t *p = s_tris[r / 3].p[r % 3];
+            if (k & 1) { memcpy(v->posB, p, 6); v->normB = norm; v->rgbaB = s_tris[r / 3].c[r % 3]; }
+            else       { memcpy(v->posA, p, 6); v->normA = norm; v->rgbaA = s_tris[r / 3].c[r % 3]; }
+        }
+        t3d_vert_load(&out->verts[base], 0, (uint32_t)((n + 1) & ~1));
+        for (int t = batchTri[b]; t < batchTri[b + 1]; t++) t3d_tri_draw(idx[t * 3], idx[t * 3 + 1], idx[t * 3 + 2]);
         t3d_tri_sync();
+        base += (n + 1) / 2;
     }
-    out->block = rspq_block_end();
+#ifdef HLE_LOG_FPS
+    debugf("[procmesh] %d tris, %d vertices (was %d)\n", s_ntris, nref, nc);   // test aid
+#endif
+    out->block = gpu_block_end();
+    free(ref); free(idx); free(batchTri); free(batchRef);
     out->mat = malloc_uncached(sizeof(T3DMat4FP));
     proc_mesh_set_transform(out, 1.0f, (float[3]){ 0, 0, 0 }, (float[3]){ 0, 0, 0 });
 }
@@ -328,7 +358,7 @@ static void draw(const ProcMesh *m, bool glow, color_t tint)
     // corona tips speckled green on hardware; HLE renderers clamp, so it never showed there)
     if (glow) rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
     t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
-    t3d_matrix_set(m->mat, true);
+    t3d_matrix_set(gpu_mat(m->mat), true);     // proc_mesh_set_transform may change it next frame
     rspq_block_run(m->block);
     rdpq_mode_pop();
 }
@@ -339,7 +369,7 @@ void proc_mesh_draw_tinted(const ProcMesh *m, bool glow, color_t tint) { draw(m,
 
 void proc_mesh_free(ProcMesh *m)
 {
-    if (m->block) { rspq_wait(); rspq_block_free(m->block); }
+    if (m->block) { gpu_wait(); rspq_block_free(m->block); }
     if (m->verts) free_uncached(m->verts);
     if (m->mat) free_uncached(m->mat);
     memset(m, 0, sizeof(*m));

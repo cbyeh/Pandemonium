@@ -16,6 +16,9 @@
 #include "dev.h"
 #include "dev/crt_safe_area_overlay.h"
 #include "character/character.h"
+#include "gpu_frame.h"
+
+rspq_queue_t *g_drawQueue;
 
 int main(void)
 {
@@ -86,7 +89,7 @@ int main(void)
     (void)save_controller_load_settings();
 
     t3d_init((T3DInitParams){});
-    T3DViewport viewport = t3d_viewport_create();
+    T3DViewport viewport = t3d_viewport_create_buffered(GPU_FRAMES + 1);   // its matrices: the RSP may still be on the last frame
 
     if (DEV_MODE) {
         t3d_debug_print_init();
@@ -129,6 +132,14 @@ int main(void)
 #ifdef HLE_LOG_FPS
         uint32_t pt0 = TICKS_READ(), pt1 = pt0, pt2 = pt0;   // test aid: where a frame goes
 #endif
+        // The frame before last drawn: the RSP may still be on the last one (see the draw loop)
+        static rspq_queue_t *drawQueue[2];
+        static rspq_syncpoint_t drawDone[2];
+        static int dq;
+        dq ^= 1;
+        if (drawDone[dq]) rspq_syncpoint_wait(drawDone[dq]);
+        gpu_frame_begin(dq);
+
         // Update time + input first.
         game_time_update();
         joypad_update();
@@ -213,6 +224,15 @@ int main(void)
         pt2 = TICKS_READ();
 #endif
         // ===== DRAW LOOP =====
+        // Recorded, then run as a whole: submitting straight to the RSP stalled the CPU on its
+        // small command ring, and the RSP then idled through the next frame's update. Now the RSP
+        // draws this frame while the CPU updates the next (what it reads is buffered: kGpuFrames)
+        if (!drawQueue[0]) { drawQueue[0] = rspq_queue_create(); drawQueue[1] = rspq_queue_create(); }
+        rspq_queue_clear(drawQueue[dq]);
+#if !defined(HLE_PROF_SERIAL) && !defined(HLE_PROF_BOSS)    // test aids that time the RSP stage by stage
+        g_drawQueue = drawQueue[dq];
+        rspq_queue_switch(g_drawQueue);
+#endif
         if (!devMenuOpen || cameraNeedsUpdate || isOpeningCredits) {
             scene_controller_draw(&viewport);
         }
@@ -266,6 +286,11 @@ int main(void)
                 display_get_fps()
             );
         }
+
+        rspq_queue_switch(NULL);
+        g_drawQueue = NULL;
+        rspq_queue_run(drawQueue[dq]);
+        drawDone[dq] = rspq_syncpoint_new();
 
         if (DEV_MODE && debugDraw)
         {

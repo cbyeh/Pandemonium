@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dmath.h>
 #include <t3d/t3dmodel.h>
@@ -182,7 +183,7 @@ static void swing_pace(float from, float strike, float wind)
 void fallen_knight_free(void)
 {
     if (!s.ready) return;
-    rspq_wait();
+    gpu_wait();
     for (int i = 0; i < FKA_COUNT; i++) t3d_anim_destroy(&s.anims[i]);
     t3d_skeleton_destroy(&s.skel);
     t3d_skeleton_destroy(&s.skelBlend);
@@ -667,7 +668,9 @@ void fallen_knight_draw(Boss* b)
     warn *= 0.7f + 0.3f * sinf(s.t * 18.0f);
     uint8_t amb[4] = { (uint8_t)(120 + 135 * warn), (uint8_t)(45 - 30 * warn), (uint8_t)(70 - 55 * warn), 255 };
     t3d_light_set_ambient(flash ? (uint8_t[4]){ 255, 120, 120, 255 } : amb);
-    t3d_matrix_set(s.mat, true);
+    t3d_matrix_set(gpu_mat(s.mat), true);
+    T3DMat4FP *bones = gpu_skeleton_begin(&s.skel);
     t3d_model_draw_skinned(characterModel, &s.skel);
+    gpu_skeleton_end(&s.skel, bones);
     t3d_light_set_ambient((uint8_t[4]){ 255, 255, 255, 255 });
 }

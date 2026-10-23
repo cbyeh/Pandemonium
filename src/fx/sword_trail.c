@@ -6,6 +6,7 @@
 #include <rdpq.h>
 #include <math.h>
 #include <string.h>
+#include "gpu_frame.h"
 #include <assert.h>
 
 #include "../utilities/game_math.h"
@@ -219,7 +220,7 @@ static void* alloc_uncached_aligned16(size_t bytes, void** out_base) {
 }
 
 // ============================================================
-// 3D draw buffers (ring) - packed verts
+// 3D draw buffers - packed verts (gpu_alloc, a frame's each)
 // ============================================================
 
 // identity matrix (uncached, aligned)
@@ -230,15 +231,6 @@ static void*      s_trail_id_mat_base = NULL;
 #define POINTS_MAX_DRAW (TRAIL_MAX_POINTS_DRAW)
 #define VERTS_MAX_DRAW  (POINTS_MAX_DRAW * 2)
 #define PACKED_MAX_DRAW (POINTS_MAX_DRAW)
-
-// Make this comfortably larger than max trails you can draw in one frame.
-#ifndef TRAIL_DRAWBUF_RING
-#define TRAIL_DRAWBUF_RING 32
-#endif
-
-static T3DVertPacked* s_trail_buf_ring[TRAIL_DRAWBUF_RING] = {0};
-static void*          s_trail_buf_base[TRAIL_DRAWBUF_RING] = {0};
-static int            s_trail_buf_ring_idx = 0;
 
 static inline int clamp_i(int v, int lo, int hi) { return (v < lo) ? lo : (v > hi) ? hi : v; }
 
@@ -254,15 +246,6 @@ static void ensure_trail_draw_buffers(void) {
         t3d_mat4_to_fixed(s_trail_id_mat_fp, &id);
     }
 
-    for (int i = 0; i < TRAIL_DRAWBUF_RING; i++) {
-        if (!s_trail_buf_ring[i]) {
-            void* aligned = alloc_uncached_aligned16(sizeof(T3DVertPacked) * PACKED_MAX_DRAW, &s_trail_buf_base[i]);
-            s_trail_buf_ring[i] = (T3DVertPacked*)aligned;
-            assert(s_trail_buf_ring[i] && (((uintptr_t)s_trail_buf_ring[i] & 0xF) == 0));
-
-            memset(s_trail_buf_ring[i], 0, sizeof(T3DVertPacked) * PACKED_MAX_DRAW);
-        }
-    }
 }
 
 static inline uint32_t pack_rgba8(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
@@ -294,9 +277,8 @@ void sword_trail_instance_draw(SwordTrail *t, void *viewport) {
 
     ensure_trail_draw_buffers();
 
-    // Grab a unique big buffer for THIS draw-call
-    T3DVertPacked *vb = s_trail_buf_ring[s_trail_buf_ring_idx];
-    s_trail_buf_ring_idx = (s_trail_buf_ring_idx + 1) % TRAIL_DRAWBUF_RING;
+    // This frame's buffer for this draw call (the RSP reads it later)
+    T3DVertPacked *vb = gpu_alloc(sizeof(T3DVertPacked) * PACKED_MAX_DRAW);
 
     assert(vb && (((uintptr_t)vb & 0xF) == 0));
     assert(s_trail_id_mat_fp && (((uintptr_t)s_trail_id_mat_fp & 0xF) == 0));

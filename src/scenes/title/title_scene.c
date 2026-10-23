@@ -1,6 +1,7 @@
 #include "title_scene.h"
 
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3danim.h>
 #include <t3d/t3dmath.h>
@@ -136,9 +137,9 @@ static void title_scene_load_room_assets(void)
     if (!s_room_model) {
         s_room_model = t3d_model_load("rom:/boss_room/room.t3dm");
 
-        rspq_block_begin();
+        gpu_block_begin();
             t3d_model_draw(s_room_model);
-        s_room_dpl = rspq_block_end();
+        s_room_dpl = gpu_block_end();
 
         title_scene_make_matrix(&s_room_matrix);
     }
@@ -146,9 +147,9 @@ static void title_scene_load_room_assets(void)
     if (!s_fog_door_model) {
         s_fog_door_model = t3d_model_load("rom:/boss_room/fog.t3dm");
 
-        rspq_block_begin();
+        gpu_block_begin();
             t3d_model_draw(s_fog_door_model);
-        s_fog_door_dpl = rspq_block_end();
+        s_fog_door_dpl = gpu_block_end();
 
         title_scene_make_matrix(&s_fog_door_matrix);
     }
@@ -172,9 +173,9 @@ static void title_scene_load_dynamic_banner_assets(void)
     t3d_anim_set_playing(s_dynamic_banner_wind_anim, true);
     t3d_anim_attach(s_dynamic_banner_wind_anim, s_dynamic_banner_skeleton);
 
-    rspq_block_begin();
-        t3d_model_draw_skinned(s_dynamic_banner_model, s_dynamic_banner_skeleton);
-    s_dynamic_banner_dpl = rspq_block_end();
+    gpu_block_begin();
+        t3d_model_draw_custom(s_dynamic_banner_model, (T3DModelDrawConf){ .matrices = gpu_skeleton_matrices() });   // the bones: gpu_skeleton_begin
+    s_dynamic_banner_dpl = gpu_block_end();
 
     title_scene_make_matrix(&s_dynamic_banner_matrix);
 }
@@ -309,7 +310,7 @@ void title_scene_exit(void)
 
     camera_breath_active(false);
 
-    rspq_wait();
+    gpu_wait();
 
     title_scene_free_dynamic_banner_assets();
 
@@ -504,13 +505,13 @@ static void title_scene_draw_3d(void)
     t3d_matrix_push_pos(1);
 
     if (s_room_matrix && s_room_dpl) {
-        t3d_matrix_set(s_room_matrix, true);
+        t3d_matrix_set(gpu_mat(s_room_matrix), true);
         rspq_block_run(s_room_dpl);
     }
 
     if (s_dynamic_banner_matrix && s_dynamic_banner_dpl) {
-        t3d_matrix_set(s_dynamic_banner_matrix, true);
-        rspq_block_run(s_dynamic_banner_dpl);
+        t3d_matrix_set(gpu_mat(s_dynamic_banner_matrix), true);
+        { T3DMat4FP *bones = gpu_skeleton_begin(s_dynamic_banner_skeleton); rspq_block_run(s_dynamic_banner_dpl); gpu_skeleton_end(s_dynamic_banner_skeleton, bones); }
     }
 
     rdpq_mode_zbuf(true, true);
@@ -518,7 +519,7 @@ static void title_scene_draw_3d(void)
     character_draw();
 
     if (s_fog_door_matrix && s_fog_door_model) {
-        t3d_matrix_set(s_fog_door_matrix, true);
+        t3d_matrix_set(gpu_mat(s_fog_door_matrix), true);
 
         t3d_model_draw_custom(s_fog_door_model, (T3DModelDrawConf){
             .userData = &s_fog_scroll_params,

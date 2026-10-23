@@ -1,4 +1,5 @@
 #include "dust_particles_fx.h"
+#include "gpu_frame.h"
 
 #include <libdragon.h>
 
@@ -248,7 +249,7 @@ static void dust_particles_fx_draw_tpx_textured(uint32_t drawCount, uint8_t glob
 
     tpx_state_set_tex_params(0, 0);
 
-    tpx_particle_draw_tex_s16(s_tpxParticles, drawCount);
+    tpx_particle_draw_tex_s16(gpu_copy(s_tpxParticles, sizeof(TPXParticleS16) * ((drawCount + 1) / 2)), drawCount);   // rewritten next frame
 
     tpx_matrix_pop(1);
 }
@@ -268,7 +269,7 @@ static void dust_particles_fx_draw_tpx_untextured(uint32_t drawCount, uint8_t gl
 
     tpx_matrix_push(&s_particleMatrices[s_frameIdx]);
     tpx_state_set_scale(1.0f, 1.0f);
-    tpx_particle_draw_s16(s_tpxParticles, drawCount);
+    tpx_particle_draw_s16(gpu_copy(s_tpxParticles, sizeof(TPXParticleS16) * ((drawCount + 1) / 2)), drawCount);   // rewritten next frame
     tpx_matrix_pop(1);
 }
 

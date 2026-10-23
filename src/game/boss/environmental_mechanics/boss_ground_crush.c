@@ -1,4 +1,5 @@
 #include "boss_ground_crush.h"
+#include "gpu_frame.h"
 
 #include <stdbool.h>
 #include <string.h>
@@ -97,7 +98,7 @@ void boss_ground_crush_draw(void)
         (float[3]){ groundCrush.pos[0], groundCrush.pos[1], groundCrush.pos[2] }
     );
 
-    t3d_matrix_set(groundCrush.mat, true);
+    t3d_matrix_set(gpu_mat(groundCrush.mat), true);
 
     rdpq_set_prim_color(RGBA32(255, 255, 255, a));
 

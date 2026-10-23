@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dmath.h>
 #include <math.h>
@@ -413,7 +414,7 @@ static void build_glow(ProcMesh *out, uint32_t a, uint32_t b)
 void dragon_boss_free(void)
 {
     if (!s.ready) return;
-    rspq_wait();
+    gpu_wait();
     ProcMesh *all[] = { &s.seg, &s.segDark, &s.tseg, &s.tsegDark, &s.limb, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.wing, &s.wingDark, &s.tip, &s.tipDark, &s.flame, &s.mOrb };
     for (unsigned i = 0; i < sizeof(all) / sizeof(all[0]); i++) proc_mesh_free(all[i]);
     free_uncached(s.mats);
@@ -1248,8 +1249,17 @@ static void knee(const float a[3], const float c[3], const float bend[3], float 
     for (int i = 0; i < 3; i++) out[i] = a[i] + d[i] * lc * 0.5f + bp[i] * h;
 }
 
+#ifdef HLE_PROF_SERIAL   // test aid: RSP+RDP time of each part (body, legs, head, wings, glows)
+static uint32_t s_dp[5], s_dpT, s_dpN;
+#define DPROF(i) { gpu_wait(); uint32_t _t = TICKS_READ(); s_dp[i] += _t - s_dpT; s_dpT = _t; }
+#endif
 void dragon_boss_draw(Boss* b)
 {
+#ifdef HLE_PROF_SERIAL
+    gpu_wait(); s_dpT = TICKS_READ();
+    if (++s_dpN == 120) { debugf("[dragonprof] body %.2f legs %.2f head %.2f wings %.2f glows %.2f\n", TICKS_TO_US(s_dp[0] / 120) / 1000.0, TICKS_TO_US(s_dp[1] / 120) / 1000.0,
+        TICKS_TO_US(s_dp[2] / 120) / 1000.0, TICKS_TO_US(s_dp[3] / 120) / 1000.0, TICKS_TO_US(s_dp[4] / 120) / 1000.0); memset(s_dp, 0, sizeof s_dp); s_dpN = 0; }
+#endif
     if (!s.ready || !b->visible) return;
     s.matRing = (s.matRing + 1) % MAT_RING;
     s.mi = 0;
@@ -1277,6 +1287,9 @@ void dragon_boss_draw(Boss* b)
         put_link(s.dark ? &s.tipDark : &s.tip, s.tl[NTAIL], e, MESH, 1.0f);
     }
 
+#ifdef HLE_PROF_SERIAL
+    DPROF(0);
+#endif
     for (int k = 0; k < 4; k++) {
         float side = (k & 1) ? 1.0f : -1.0f, bend[3], kn[3];
         // elbows point back and out, knees forward and out
@@ -1298,6 +1311,9 @@ void dragon_boss_draw(Boss* b)
         if (hot) rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
     }
 
+#ifdef HLE_PROF_SERIAL
+    DPROF(1);
+#endif
     put(s.dark ? &s.mHeadDark : &s.mHead, s.head, s.hx, s.hy, s.hz, 1.0f, 1.0f, 1.0f);
     float hinge[3], jy[3], jz[3], ca = cosf(s.jaw * 0.7f), sa = sinf(s.jaw * 0.7f);
     mad3(hinge, s.head, s.hz, 6.0f);
@@ -1305,6 +1321,9 @@ void dragon_boss_draw(Boss* b)
     for (int m = 0; m < 3; m++) { jz[m] = s.hz[m] * ca - s.hy[m] * sa; jy[m] = s.hy[m] * ca + s.hz[m] * sa; }
     put(&s.mJaw, hinge, s.hx, jy, jz, 1.0f, 1.0f, 1.0f);
 
+#ifdef HLE_PROF_SERIAL
+    DPROF(2);
+#endif
     // Four wings: the great pair at the shoulders, a smaller pair behind
     const ProcMesh *wing = s.dark ? &s.wingDark : &s.wing;
     for (int pair = 0; pair < 2; pair++)
@@ -1318,6 +1337,9 @@ void dragon_boss_draw(Boss* b)
             put(wing, root, x, y, s.F, k * s.wingSpan, k, k);
         }
 
+#ifdef HLE_PROF_SERIAL
+    DPROF(3);
+#endif
     // Glows: fire, dark orbs, the beam, the light in its mouth. Alpha-blended, not
     // additive: the real RDP wraps an overflowing sum (overlapping flames turned rainbow)
     rdpq_sync_pipe();
@@ -1346,5 +1368,8 @@ void dragon_boss_draw(Boss* b)
         }
     }
     if (s.glow > 0.01f) put_glow(s.dark || s.state == DG_BEAM || s.state == DG_NOVA ? &s.mOrb : &s.flame, s.mouth, 2.0f + 5.0f * s.glow);
+#ifdef HLE_PROF_SERIAL
+    DPROF(4);
+#endif
     rdpq_mode_pop();
 }

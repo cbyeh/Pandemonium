@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dmath.h>
 #include <t3d/t3dmodel.h>
@@ -340,10 +341,10 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat
         }
     }
     if (cl->trisCols != cl->cols) {   // the grid's triangles never change: built once, not each frame
-        rspq_wait();
+        gpu_wait();
         for (int k = 0; k < RING; k++) {
             if (cl->tris[k]) rspq_block_free(cl->tris[k]);
-            rspq_block_begin();
+            gpu_block_begin();
             t3d_vert_load(cl->vb[k], 0, cl->cols * cl->rows);
             for (int r = 0; r < cl->rows - 1; r++)
                 for (int c = 0; c < cl->cols - 1; c++) {
@@ -352,7 +353,7 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat
                     t3d_tri_draw(i + 1, i + cl->cols, i + cl->cols + 1);
                 }
             t3d_tri_sync();
-            cl->tris[k] = rspq_block_end();
+            cl->tris[k] = gpu_block_end();
         }
         cl->trisCols = cl->cols;
     }
@@ -459,7 +460,7 @@ static void shell_tris(int nt, int np, float t0, float t1, float p0, float p1, f
 
 static void hood_build(void)
 {
-    if (s_hoodBlock) { rspq_wait(); rspq_block_free(s_hoodBlock); s_hoodBlock = NULL; }   // may still be queued
+    if (s_hoodBlock) { gpu_wait(); rspq_block_free(s_hoodBlock); s_hoodBlock = NULL; }   // may still be queued
     const SkinDef *s = &SKINS[s_skin];
     if (!s->hood) return;
     if (!s_hoodVerts) s_hoodVerts = malloc_uncached(sizeof(T3DVertPacked) * HOOD_MAX_VERTS / 2);
@@ -470,7 +471,7 @@ static void hood_build(void)
     const int nt = 11, np = 6;
     int n = shell(s_hoodVerts, (float[3]){ -0.34f, 1.07f, 0 }, (float[3]){ 1.1f, 1.1f, 0.86f },
                   t0, t1, nt, p0, p1, np, 0.45f, 0.14f, s->cl[0].color);
-    rspq_block_begin();
+    gpu_block_begin();
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
     rdpq_mode_blender(0);
     rdpq_mode_zbuf(true, true);
@@ -479,7 +480,7 @@ static void hood_build(void)
     t3d_vert_load(s_hoodVerts, 0, n);
     shell_tris(nt, np, t0, t1, p0, p1, open);
     t3d_tri_sync();
-    s_hoodBlock = rspq_block_end();
+    s_hoodBlock = gpu_block_end();
 }
 
 /* -----------------------------------------------------------------------------
@@ -741,14 +742,13 @@ rspq_block_t* character_skin_record(const T3DModel *model, const T3DSkeleton *sk
     color_t saved[NM];
     for (int i = 0; i < NM; i++) tint(MATS[i], cols[i], &saved[i]);
     uintptr_t hide = ((s->hidePlume || s->hood) ? 1 : 0) | (s->hideSword ? 2 : 0);
-    rspq_block_begin();
+    gpu_block_begin();
     t3d_model_draw_custom(model, (T3DModelDrawConf){
         .userData = (void*)hide,
         .filterCb = hide ? filter_parts : NULL,
-        .matrices = skel->bufferCount == 1 ? skel->boneMatricesFP
-                                           : (const T3DMat4FP*)t3d_segment_placeholder(T3D_SEGMENT_SKELETON),
+        .matrices = gpu_skeleton_matrices(),     // this frame's copy (character_draw)
     });
-    rspq_block_t *block = rspq_block_end();
+    rspq_block_t *block = gpu_block_end();
     for (int i = 0; i < NM; i++) {
         T3DMaterial *m = t3d_model_get_material(model, MATS[i]);
         if (m) m->primColor = saved[i];
@@ -764,7 +764,7 @@ void character_skin_bind_block(rspq_block_t **block) { s_block = block; }
 static void rerecord(void)
 {
     if (!s_block || !*s_block || !s_model) return;
-    rspq_wait();   // the old block may still be queued for this frame
+    gpu_wait();   // the old block may still be queued for this frame
     rspq_block_free(*s_block);
     *s_block = character_skin_record(s_model, s_skel);
 }

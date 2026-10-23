@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <math.h>
 
@@ -416,7 +417,7 @@ void collision_draw(T3DViewport *viewport)
     if (!debugDraw) return;
     if (!viewport) return;
 
-    rspq_wait();
+    gpu_wait();
 
     // Draw room OBBs, red if character capsule is currently overlapping.
     {

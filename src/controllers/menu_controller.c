@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -1519,7 +1520,7 @@ void menu_controller_draw(void)
 
 void menu_controller_free(void)
 {
-    rspq_wait();
+    gpu_wait();
 
     if (pauseMenuBg) {
         sprite_free(pauseMenuBg);

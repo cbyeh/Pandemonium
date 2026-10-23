@@ -9,6 +9,7 @@
 #include "game/tower/tower.h"
 
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3dmath.h>
 #include <t3d/t3dskeleton.h>
 #include <t3d/t3danim.h>
@@ -888,18 +889,18 @@ void boss_init(Boss* boss)
     boss->currentAnimState = BOSS_ANIM_KNEEL;
     t3d_anim_set_playing(animations[BOSS_ANIM_KNEEL], true);
 
-    rspq_block_begin();
+    gpu_block_begin();
     t3d_model_draw_skinned(bossModel, skeleton);
-    rspq_block_t* dpl = rspq_block_end();
+    rspq_block_t* dpl = gpu_block_end();
     boss->dpl = dpl;
 
     if (!s_bossShadowModel) {
         s_bossShadowModel = t3d_model_load("rom:/blob_shadow/shadow.t3dm");
     }
 
-    rspq_block_begin();
+    gpu_block_begin();
     t3d_model_draw(s_bossShadowModel);
-    rspq_block_t* dpl_shadow = rspq_block_end();
+    rspq_block_t* dpl_shadow = gpu_block_end();
     boss->dpl_shadow = dpl_shadow;
 
     boss->pos[0] = 0.0f;
@@ -948,9 +949,9 @@ void boss_init(Boss* boss)
     T3DModel* swordModel = t3d_model_load("rom:/boss/bossSword.t3dm");
     boss->swordModel = swordModel;
 
-    rspq_block_begin();
+    gpu_block_begin();
     t3d_model_draw(swordModel);
-    rspq_block_t* swordDpl = rspq_block_end();
+    rspq_block_t* swordDpl = gpu_block_end();
     boss->swordDpl = swordDpl;
 
     T3DMat4FP* swordMatFP = malloc_uncached(sizeof(T3DMat4FP));
@@ -1189,7 +1190,7 @@ void boss_free(Boss* boss)
 {
     if (!boss) return;
 
-    rspq_wait();
+    gpu_wait();
     boss_render_forget_model();     // its recorded blocks point into the model
 
     if (boss->model) {
@@ -1222,22 +1223,22 @@ void boss_free(Boss* boss)
     }
 
     if (boss->modelMat) {
-        rspq_wait();
+        gpu_wait();
         free_uncached(boss->modelMat);
     }
 
     if (boss->dpl) {
-        rspq_wait();
+        gpu_wait();
         rspq_block_free((rspq_block_t*)boss->dpl);
     }
 
     if (boss->dpl_shadow) {
-        rspq_wait();
+        gpu_wait();
         rspq_block_free((rspq_block_t*)boss->dpl_shadow);
     }
 
     if (boss->shadowMat) {
-        rspq_wait();
+        gpu_wait();
         free_uncached((T3DMat4FP*)boss->shadowMat);
     }
 
@@ -1246,12 +1247,12 @@ void boss_free(Boss* boss)
     }
 
     if (boss->swordDpl) {
-        rspq_wait();
+        gpu_wait();
         rspq_block_free((rspq_block_t*)boss->swordDpl);
     }
 
     if (boss->swordMatFP) {
-        rspq_wait();
+        gpu_wait();
         free_uncached(boss->swordMatFP);
     }
 

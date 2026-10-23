@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dmath.h>
 #include <t3d/t3dmodel.h>
@@ -412,9 +413,9 @@ void scene_load_environment(void)
 {
     // ===== LOAD MAP =====
     mapModel = t3d_model_load("rom:/boss_room/room.t3dm");
-    rspq_block_begin();
+    gpu_block_begin();
         t3d_model_draw(mapModel);
-    mapDpl = rspq_block_end();
+    mapDpl = gpu_block_end();
 
     mapMatrix = malloc_uncached(sizeof(T3DMat4FP));
     t3d_mat4fp_from_srt_euler(
@@ -426,9 +427,9 @@ void scene_load_environment(void)
 
     // ===== LOAD PILLARS =====
     pillarsModel = t3d_model_load("rom:/boss_room/pillars.t3dm");
-    rspq_block_begin();
+    gpu_block_begin();
         t3d_model_draw(pillarsModel);
-    pillarsDpl = rspq_block_end();
+    pillarsDpl = gpu_block_end();
 
     pillarsMatrix = malloc_uncached(sizeof(T3DMat4FP));
     t3d_mat4fp_from_srt_euler(
@@ -439,9 +440,9 @@ void scene_load_environment(void)
     );
 
     pillarsFrontModel = t3d_model_load("rom:/boss_room/pillars_front.t3dm");
-    rspq_block_begin();
+    gpu_block_begin();
         t3d_model_draw(pillarsFrontModel);
-    pillarsFrontDpl = rspq_block_end();
+    pillarsFrontDpl = gpu_block_end();
 
     pillarsFrontMatrix = malloc_uncached(sizeof(T3DMat4FP));
     t3d_mat4fp_from_srt_euler(
@@ -453,9 +454,9 @@ void scene_load_environment(void)
 
     // ===== LOAD LEDGE =====
     roomLedgeModel = t3d_model_load("rom:/boss_room/room_ledge_walls.t3dm");
-    rspq_block_begin();
+    gpu_block_begin();
         t3d_model_draw(roomLedgeModel);
-    roomLedgeDpl = rspq_block_end();
+    roomLedgeDpl = gpu_block_end();
 
     roomLedgeMatrix = malloc_uncached(sizeof(T3DMat4FP));
     t3d_mat4fp_from_srt_euler(
@@ -467,9 +468,9 @@ void scene_load_environment(void)
 
     // ===== LOAD WINDOWS =====
     windowsModel = t3d_model_load("rom:/boss_room/windows.t3dm");
-    rspq_block_begin();
+    gpu_block_begin();
         t3d_model_draw(windowsModel);
-    windowsDpl = rspq_block_end();
+    windowsDpl = gpu_block_end();
 
     windowsMatrix = malloc_uncached(sizeof(T3DMat4FP));
     t3d_mat4fp_from_srt_euler(
@@ -485,9 +486,9 @@ void scene_load_environment(void)
 #endif
     // ===== LOAD PERSISTENT CEILING CHAINS =====
     chainsModel = t3d_model_load("rom:/boss_room/ceiling_chains.t3dm");
-    rspq_block_begin();
+    gpu_block_begin();
         t3d_model_draw(chainsModel);
-    chainsDpl = rspq_block_end();
+    chainsDpl = gpu_block_end();
 
     chainsMatrix = malloc_uncached(sizeof(T3DMat4FP));
     t3d_mat4fp_from_srt_euler(
@@ -499,9 +500,9 @@ void scene_load_environment(void)
 
     // ===== LOAD SUN SHAFTS =====
     sunshaftsModel = t3d_model_load("rom:/boss_room/sunshafts.t3dm");
-    rspq_block_begin();
+    gpu_block_begin();
         t3d_model_draw(sunshaftsModel);
-    sunshaftsDpl = rspq_block_end();
+    sunshaftsDpl = gpu_block_end();
 
     sunshaftsMatrix = malloc_uncached(sizeof(T3DMat4FP));
     t3d_mat4fp_from_srt_euler(
@@ -513,9 +514,9 @@ void scene_load_environment(void)
 
     // ===== LOAD FOG DOOR =====
     fogDoorModel = t3d_model_load("rom:/boss_room/fog.t3dm");
-    rspq_block_begin();
+    gpu_block_begin();
         t3d_model_draw(fogDoorModel);
-    fogDoorDpl = rspq_block_end();
+    fogDoorDpl = gpu_block_end();
 
     fogDoorMatrix = malloc_uncached(sizeof(T3DMat4FP));
     t3d_mat4fp_from_srt_euler(
@@ -527,9 +528,9 @@ void scene_load_environment(void)
 
     // ===== LOAD FLOOR GLOW =====
     floorGlowModel = t3d_model_load("rom:/boss_room/floor_glow.t3dm");
-    rspq_block_begin();
+    gpu_block_begin();
         t3d_model_draw(floorGlowModel);
-    floorGlowDpl = rspq_block_end();
+    floorGlowDpl = gpu_block_end();
 
     floorGlowMatrix = malloc_uncached(sizeof(T3DMat4FP));
     t3d_mat4fp_from_srt_euler(
@@ -541,9 +542,9 @@ void scene_load_environment(void)
 
     // ===== LOAD FLOOR =====
     roomFloorModel = t3d_model_load("rom:/boss_room/floor.t3dm");
-    rspq_block_begin();
+    gpu_block_begin();
         t3d_model_draw(roomFloorModel);
-    roomFloorDpl = rspq_block_end();
+    roomFloorDpl = gpu_block_end();
 #ifdef HLE_LOG_FPS
     log_model("floor", roomFloorModel);
     { extern T3DModel* characterModel; log_model("knight", characterModel); }
@@ -561,9 +562,9 @@ void scene_load_environment(void)
     // Keep this here only if it is visible after the phase-2 cutscene / during gameplay.
     // If it is phase-2-cutscene-only, move it into cutscene_guardian_phase2.c instead.
     bossChainsGlowModel = t3d_model_load("rom:/boss/boss_chain_glow.t3dm");
-    rspq_block_begin();
+    gpu_block_begin();
         t3d_model_draw(bossChainsGlowModel);
-    bossChainsGlowDpl = rspq_block_end();
+    bossChainsGlowDpl = gpu_block_end();
 
     bossChainsGlowMatrix = malloc_uncached(sizeof(T3DMat4FP));
     t3d_mat4fp_from_srt_euler(
@@ -1305,7 +1306,7 @@ static void scene_tower_start_floor(void)
     debugf("[tower] floor %d: boss %d\n", tower_floor(), tb);
 #endif
     // A clean hall: nothing from the last floor's fight may linger
-    rspq_wait();
+    gpu_wait();
     skill_fx_reset();
     msa_clear_all();
     boss_ground_crush_reset();
@@ -2126,6 +2127,10 @@ static void scene_draw_video_trigger(T3DViewport *vp)
 #ifdef HLE_LOG_FPS
 static uint32_t s_prof[8];
 #endif
+#ifdef HLE_PROF_SERIAL   // test aid: each stage drained (CPU, then RSP+RDP), the drain timed apart
+static uint32_t s_gpu[7];
+#define PROF_SERIAL_WAIT(i) { uint32_t _t = TICKS_READ(); gpu_wait(); s_gpu[i] += TICKS_READ() - _t; }
+#endif
 // The hall, culled to the camera: each object's geometry recorded once (its userBlock), and
 // each frame only those in the view frustum drawn, their materials set as they go. The RSP's
 // vertex work bounds the frame (the CPU has time to spare), and much of the hall is behind
@@ -2136,7 +2141,7 @@ static void draw_culled(T3DModel *m, const T3DViewport *vp)
     T3DModelState state = t3d_model_state_create();
     while (t3d_model_iter_next(&it)) {
         T3DObject *o = it.object;
-        if (!o->userBlock) { rspq_block_begin(); t3d_model_draw_object(o, NULL); o->userBlock = rspq_block_end(); }
+        if (!o->userBlock) { gpu_block_begin(); t3d_model_draw_object(o, NULL); o->userBlock = gpu_block_end(); }
         T3DVec3 mn = {{ o->aabbMin[0] * MODEL_SCALE, o->aabbMin[1] * MODEL_SCALE + roomY, o->aabbMin[2] * MODEL_SCALE }};
         T3DVec3 mx = {{ o->aabbMax[0] * MODEL_SCALE, o->aabbMax[1] * MODEL_SCALE + roomY, o->aabbMax[2] * MODEL_SCALE }};
         if (!t3d_frustum_vs_aabb(&vp->viewFrustum, &mn, &mx)) continue;
@@ -2162,6 +2167,9 @@ void scene_draw(T3DViewport *viewport)
     }
 
     t3d_viewport_attach(viewport);
+#ifdef HLE_PROF_NORDP   // test aid: nothing rasterized, so the GPU time left is the RSP's
+    rdpq_set_scissor(0, 0, 1, 1);
+#endif
 
 #ifdef HLE_TEST_COVER
     {   // test aid: only the knight and the boss on magenta (cover art cutouts)
@@ -2225,7 +2233,7 @@ void scene_draw(T3DViewport *viewport)
     draw_culled(roomFloorModel, viewport);
 
 #ifdef HLE_PROF_SERIAL
-    rspq_wait();     // test aid: each stage's own RSP time
+    PROF_SERIAL_WAIT(0);
 #endif
 #ifdef HLE_LOG_FPS
     s_prof[1] = TICKS_READ();
@@ -2254,7 +2262,7 @@ void scene_draw(T3DViewport *viewport)
     draw_culled(pillarsFrontModel, viewport);
 
 #ifdef HLE_PROF_SERIAL
-    rspq_wait();     // test aid: each stage's own RSP time
+    PROF_SERIAL_WAIT(1);
 #endif
 #ifdef HLE_LOG_FPS
     s_prof[2] = TICKS_READ();
@@ -2280,11 +2288,11 @@ void scene_draw(T3DViewport *viewport)
     character_draw();
 
 #ifdef HLE_PROF_BOSS    // test aid: the RSP drained first, so the boss's draw time is the CPU's alone
-    { static uint32_t w, n; uint32_t t = TICKS_READ(); rspq_wait(); w += TICKS_READ() - t;
+    { static uint32_t w, n; uint32_t t = TICKS_READ(); gpu_wait(); w += TICKS_READ() - t;
       if (++n == 120) { debugf("[bossprof] RSP behind by %.2f ms before the boss\n", TICKS_TO_US(w / n) / 1000.0); w = n = 0; } }
 #endif
 #ifdef HLE_PROF_SERIAL
-    rspq_wait();     // test aid: each stage's own RSP time
+    PROF_SERIAL_WAIT(2);
 #endif
 #ifdef HLE_LOG_FPS
     s_prof[3] = TICKS_READ();
@@ -2296,7 +2304,7 @@ void scene_draw(T3DViewport *viewport)
     msa_draw_visuals(viewport); // multi sword attack (Guardian Unbound)
 
 #ifdef HLE_PROF_SERIAL
-    rspq_wait();     // test aid: each stage's own RSP time
+    PROF_SERIAL_WAIT(3);
 #endif
 #ifdef HLE_LOG_FPS
     s_prof[4] = TICKS_READ();
@@ -2322,7 +2330,7 @@ void scene_draw(T3DViewport *viewport)
     t3d_matrix_pop(1);
 
 #ifdef HLE_PROF_SERIAL
-    rspq_wait();     // test aid: each stage's own RSP time
+    PROF_SERIAL_WAIT(4);
 #endif
 #ifdef HLE_LOG_FPS
     s_prof[5] = TICKS_READ();
@@ -2343,7 +2351,7 @@ void scene_draw(T3DViewport *viewport)
     skill_fx_draw();
 
 #ifdef HLE_PROF_SERIAL
-    rspq_wait();     // test aid: each stage's own RSP time
+    PROF_SERIAL_WAIT(5);
 #endif
 #ifdef HLE_LOG_FPS
     s_prof[6] = TICKS_READ();
@@ -2583,12 +2591,20 @@ void scene_draw(T3DViewport *viewport)
     {   // test aid: CPU ms per draw stage (submission blocks when the RSP queue is full)
         static const char *N[7] = { "env", "shadow+room", "knight", "boss+msa", "door+chains", "fx", "2d" };
         static uint32_t acc[8], n;
+#ifdef HLE_PROF_SERIAL
+        PROF_SERIAL_WAIT(6);
+#endif
         s_prof[7] = TICKS_READ();
         for (int i = 0; i < 7; i++) acc[i] += s_prof[i + 1] - s_prof[i];
         if (++n == 120) {
             debugf("[draw]");
             for (int i = 0; i < 7; i++) debugf(" %s %.2f", N[i], TICKS_TO_US(acc[i] / n) / 1000.0);
             debugf("\n");
+#ifdef HLE_PROF_SERIAL
+            debugf("[gpu] ");
+            for (int i = 0; i < 7; i++) { debugf(" %s %.2f", N[i], TICKS_TO_US(s_gpu[i] / n) / 1000.0); s_gpu[i] = 0; }
+            debugf("\n");
+#endif
             memset(acc, 0, sizeof acc); n = 0;
         }
     }
@@ -2641,7 +2657,7 @@ void scene_test_start_ending(void)     // test aid: straight to the ending
 
 void scene_cleanup(void)
 {
-    rspq_wait();
+    gpu_wait();
     if (s_tower) { tower_end_run(); s_tower = false; s_towerDraft = false; }
     ending_free();
     sun_boss_free();
