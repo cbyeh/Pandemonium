@@ -37,8 +37,7 @@ Toggle in **Settings > Skills** (title screen). Bosses have double health with s
 - **Crimson Cloak:** beat the story (the Guardian, then Guardian Unbound).
 - **Teal Cloak:** reach floor 10 of the Tower (two full circles).
 - **Nightfarer:** buy him at **Tower > Shrine** for 80 Embers.
-
-The three cloaks wear their hoods up.
+ up.
 
 <img src="docs/media/skins.png" width="800">
 
@@ -53,7 +52,7 @@ The three cloaks wear their hoods up.
 - **Relics:** clearing a circle finds a relic with two random effects. You keep three; choose one to carry at **Tower > Shrine**.
 - **Embers:** cleared floors earn Embers, kept when you die. Spend them at **Tower > Shrine** on permanent upgrades, which only apply in the Tower, and on the Nightfarer skin.
 
-Each save slot keeps its best floor, Embers and relics. **Load Game** shows a slot's progress: story clear time, best Tower floor, Bonus bosses beaten and skins earned (of the three that unlock).
+Each save slot keeps its best floor, Embers, relics, skin and settings (a fresh cart uses Save 1). **Load Game** switches to a slot without starting a fight, and the game reopens on the slot used last. It shows a slot's progress: story clear time, best Tower floor, Bonus bosses beaten and skins earned (of the three that unlock).
 
 ### Combat
 - **Hit-stop:** blows land with a short freeze (longer for the charged attack and heavy hits you take).

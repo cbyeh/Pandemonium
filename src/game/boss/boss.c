@@ -596,7 +596,9 @@ float boss_recoil(const Boss* boss)
     // 0..1..0 over the flinch: a sharp jolt back, a slower recovery
     if (boss->recoilT <= 0.0f) return 0.0f;
     float u = 1.0f - boss->recoilT / RECOIL_S;
-    return u < 0.15f ? u / 0.15f : 1.0f - (u - 0.15f) / 0.85f;
+    if (u < 0.15f) return sinf(u / 0.15f * 1.5707963f);      // eased into the jolt and out of the recovery, no corners
+    float v = (u - 0.15f) / 0.85f;
+    return 1.0f - v * v * (3.0f - 2.0f * v);
 }
 
 bool boss_try_stagger(Boss* boss)
@@ -625,6 +627,11 @@ void boss_update(Boss* boss)
     boss_poise_update(boss, deltaTime);
 #ifdef HLE_TEST_FREEZE_BOSS
     if (boss->mode == BOSS_MODE_COMBAT) return;     // test aid: keep the boss out of the way
+#endif
+#ifdef HLE_TEST_CRUCIFIX
+    if (boss->mode == BOSS_MODE_COMBAT && boss->phaseIndex == 2) {     // test aid: held still, posed
+        boss->pos[1] = 60.0f; boss_anim_update(boss); boss_update_transforms(boss); return;
+    }
 #endif
     if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) {
         fallen_knight_update(boss, deltaTime);

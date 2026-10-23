@@ -1146,7 +1146,7 @@ void dragon_boss_update(Boss* b, float dt)
     case DG_FLINCH:
         // Rears back, head thrown up and shaking, then settles: an opening of about a second
         s.tNeckPitch = 0.75f; s.tNeckYaw = 0.35f * sinf(s.t * 22.0f) * (1.0f - clamp01(s.t / 0.7f)); s.tJaw = 0.7f;
-        s.tCrouch = -2.0f; s.tWingRaise = 0.7f; s.tWingSpan = 0.9f; s.tTail = 0.25f * sinf(s.t * 9.0f); s.poseRate = 14.0f;
+        s.tCrouch = -2.0f; s.tWingRaise = 0.7f; s.tWingSpan = 0.9f; s.tTail = 0.25f * sinf(s.t * 9.0f); s.poseRate = 10.0f;
         if (s.t >= 1.0f / sm) enter(DG_IDLE);
         break;
 
@@ -1154,14 +1154,14 @@ void dragon_boss_update(Boss* b, float dt)
         // A full stagger: a lurch, the legs buckle and it drops onto its belly, head lolling,
         // wings sprawled, tail limp; then it heaves itself up
         float t = s.t, up = clamp01((t - 2.0f) / 0.5f);
-        if (t < 0.25f) { s.tNeckPitch = 0.8f; s.tCrouch = -3.0f; s.tJaw = 0.9f; s.tWingRaise = 0.8f; s.poseRate = 16.0f; }
+        if (t < 0.25f) { s.tNeckPitch = 0.8f; s.tCrouch = -3.0f; s.tJaw = 0.9f; s.tWingRaise = 0.8f; s.poseRate = 9.0f; }
         else {
             if (t - dt < 0.25f) { screen_shake_set_shake_mag(10.0f); sfx_boom();
                 for (int i = 0; i < 2; i++) skill_fx_spawn_burst_hostile((float[3]){ s.chest[0] + s.R[0] * (i ? 14.0f : -14.0f), s.groundY, s.chest[2] + s.R[2] * (i ? 14.0f : -14.0f) }, i * 1.5f); }
             s.tCrouch = (BODY_H - 12.0f) * (1.0f - up); s.tNeckPitch = -0.95f + 0.6f * up; s.tNeckReach = 1.15f;
             s.tNeckYaw = 0.45f * sinf(t * 2.4f) * (1.0f - up); s.tJaw = 0.5f * (1.0f - up);
             s.tWingRaise = -0.35f + 0.5f * up; s.tWingSpan = 0.95f; s.tTail = 0.15f * sinf(t * 1.3f);
-            s.poseRate = t < 0.6f ? 9.0f : 3.0f;
+            s.poseRate = t < 0.6f ? 6.0f : 3.0f;
         }
         if (t >= 2.5f) enter(DG_IDLE);
         break;
@@ -1190,7 +1190,7 @@ void dragon_boss_update(Boss* b, float dt)
     s.jaw = ease(s.jaw, s.tJaw, 10.0f, dt);
     s.wingSpan = ease(s.wingSpan, s.tWingSpan, 3.0f, dt);
     s.tail = ease(s.tail, s.tTail, pr, dt);
-    s.crouch = ease(s.crouch, s.tCrouch, s.state == DG_DOWN ? 9.0f : 5.0f, dt);     // it drops when its legs give
+    s.crouch = ease(s.crouch, s.tCrouch, s.state == DG_DOWN ? 7.0f : 5.0f, dt);     // it drops when its legs give
     s.aimK = ease(s.aimK, s.tAimK, 8.0f, dt);
     for (int k = 0; k < 2; k++) s.claw[k] = ease(s.claw[k], s.tClaw[k], 9.0f, dt);
     if (s.flapRate > 0.0f) {

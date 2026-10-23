@@ -1190,12 +1190,18 @@ void msa_update(float dt) {
     // ========================================================
     // COLLISION
     // ========================================================
+#ifdef HLE_TEST_SWORD_STILL   // test aid: the player stands on a landed sword, and on it through the first second of its slide
+    if (gPhase == MSA_PHASE_POST_LAND || (gPhase == MSA_PHASE_SCURVE && gPhaseT < 1.0f)) {
+        character.pos[0] = gSwords[0].pos[0]; character.pos[2] = gSwords[0].pos[2] + 4.0f;
+        getCharacterCapsuleWorld(charA, charB, &charR);
+    }
+#endif
     bool hitBody = false;
 
 #if MSA_DO_BODY_COLLISION
     for (int i = 0; i < gCount; i++) {
         MsaSword *s = &gSwords[i];
-        if (s->state != SW_LANDED && s->state != SW_SCURVE) continue;
+        if (s->state != SW_SCURVE) continue;     // only a moving sword hurts, not one standing where it landed
 
         float swordMin[3], swordMax[3];
         swordBodyAabb(s, swordMin, swordMax);
@@ -1241,7 +1247,7 @@ void msa_update(float dt) {
     if (gHitCd <= 0.0f) {
         if (hitBody) {
 #ifdef HLE_TEST_UNBOUND
-            debugf("[msa] body hit\n");
+            debugf("[msa] body hit (phase %d)\n", gPhase);
 #endif
             character_apply_damage(DMG_BODY);
             gHitCd = BODY_HIT_GRACE;

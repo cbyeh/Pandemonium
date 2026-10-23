@@ -691,12 +691,11 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
     } else if (currentMenu == MENU_LOAD_GAME) {
         if (aJustPressed) {
             if (selectedOption >= MENU_LOAD_GAME_SLOT_1 && selectedOption <= MENU_LOAD_GAME_SLOT_3) {
+                // Only loads the file (its skin, settings and progress): back to the title
                 save_controller_set_active_slot(selectedOption);
                 save_controller_update_last_played_timestamp();
-
-                scene_set_bonus_fight(BONUS_NONE);
-                menu_controller_close();
-                pendingAction = MENU_ACTION_TITLE_START_GAME;
+                currentMenu = parentMenu;
+                selectedOption = parentSelectedOption;
             } else if (selectedOption == MENU_LOAD_GAME_BACK) {
                 currentMenu = parentMenu;
                 selectedOption = parentSelectedOption;
@@ -1052,7 +1051,8 @@ void menu_controller_draw(void)
                 .wrap = WRAP_WORD,
             }, FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 11, "%s", loadGameMenuOptions[slot]);
 
-            bool used = saveData && (saveData->run_count > 0 || saveData->best_boss_time_ms > 0 ||
+            // used once played or set up (a skin or a setting changed stamps it, even before a fight)
+            bool used = saveData && (saveData->last_played_timestamp > 0 || saveData->run_count > 0 || saveData->best_boss_time_ms > 0 ||
                                      save_progress_tower_best_floor(saveData) > 0 || save_progress_bonus_mask(saveData));
             if (used) {
                 // The slot's progress: the story, the Tower, the Bonus bosses, the skins

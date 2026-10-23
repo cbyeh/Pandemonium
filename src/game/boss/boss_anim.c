@@ -70,8 +70,27 @@ void boss_anim_init(Boss* boss) {
 static T3DSkeleton s_breathSkel;
 static bool s_breathReady;
 static float s_breathK = -1.0f;     // < 0: not breathing
-#ifndef CRUCIFIX_SWORD_DOWN
-#define CRUCIFIX_SWORD_DOWN 0.35f   // radians, about the sword hand's own z
+static float s_blendDur = 0.4f;     // the current crossfade (boss->blendDuration paces the AI, not this)
+#define CRUCIFIX_SWORD_HANG -1.40f  // radians, the sword hand about the arm's axis
+// The crucifix pose (boss_anim_update), radians about each bone's own axes
+#ifndef CX_SPINE1
+#define CX_SPINE1      0.10f
+#define CX_HIPS        0.08f
+#define CX_SPINE2      0.08f
+#define CX_NECK_BOW    0.30f
+#define CX_NECK_TILT   -0.25f
+#define CX_HEAD_BOW    0.35f
+#define CX_HEAD_TILT   -0.40f
+#define CX_ARM_RAISE_L -1.10f
+#define CX_ARM_RAISE_R 1.10f
+#define CX_ELBOW       0.30f
+#define CX_WRIST_L     0.30f
+#define CX_LEG_IN_L    0.06f
+#define CX_LEG_IN_R    -0.03f
+#define CX_THIGH       0.15f
+#define CX_KNEE_L      0.35f
+#define CX_KNEE_R      0.20f
+#define CX_FOOT        0.40f
 #endif
 
 void boss_anim_request(Boss* boss, BossAnimState target, float start_time, bool force_restart, BossAnimPriority priority) {
@@ -94,45 +113,19 @@ void boss_anim_request(Boss* boss, BossAnimState target, float start_time, bool 
         return;  // Already playing the requested animation
     }
     
-    // If we're already blending, complete the blend first
-    if (boss->isBlending) {
-        // Force complete the blend
-        boss->blendFactor = 1.0f;
-        boss->isBlending = false;
-        boss->blendTimer = 0.0f;
-        
-        // Stop previous animation
-        T3DAnim** anims = (T3DAnim**)boss->animations;
-        if (boss->previousAnimation >= 0 && boss->previousAnimation < boss->animationCount) {
-            t3d_anim_set_playing(anims[boss->previousAnimation], false);
-        }
-    }
-    
-    // Store previous animation for blending
+    // Crossfade from the pose on screen (frozen), so a clip that cuts in, even mid-blend
+    // (a stagger breaking a swing), eases over instead of snapping
+    T3DAnim** anims = (T3DAnim**)boss->animations;
+    if (boss->previousAnimation >= 0 && boss->previousAnimation < boss->animationCount)
+        t3d_anim_set_playing(anims[boss->previousAnimation], false);
     boss->previousAnimation = boss->currentAnimation;
-    
-    // Start blending if we have a valid previous animation
-    if (boss->previousAnimation >= 0 && boss->previousAnimation < boss->animationCount) {
-        T3DAnim** anims = (T3DAnim**)boss->animations;
-        T3DSkeleton* skeletonBlend = (T3DSkeleton*)boss->skeletonBlend;
-        
-        // Save the current animation time before switching
-        float savedTime = 0.0f;
-        if (boss->currentAnimation >= 0 && boss->currentAnimation < boss->animationCount && 
-            anims[boss->currentAnimation]) {
-            savedTime = anims[boss->currentAnimation]->time;
-        }
-        
-        // Set up blend skeleton to preserve current visual state
-        t3d_skeleton_reset(skeletonBlend);
-        t3d_anim_attach(anims[boss->previousAnimation], skeletonBlend);
-        t3d_anim_set_playing(anims[boss->previousAnimation], true);
-        t3d_anim_set_time(anims[boss->previousAnimation], savedTime);
-        
-        // Start blending
+    if (boss->previousAnimation >= 0 && boss->previousAnimation < boss->animationCount && boss->skeletonBlend) {
+        t3d_skeleton_blend((T3DSkeleton*)boss->skeletonBlend, (T3DSkeleton*)boss->skeleton, (T3DSkeleton*)boss->skeleton, 0.0f);
         boss->isBlending = true;
         boss->blendFactor = 0.0f;
         boss->blendTimer = 0.0f;
+        // swings short (the weapon collider rides the hand), a stagger or a fall a little longer
+        s_blendDur = priority == BOSS_ANIM_PRIORITY_CRITICAL ? 0.35f : priority >= BOSS_ANIM_PRIORITY_HIGH ? 0.2f : 0.4f;
     }
     
     // Start new animation on main skeleton
@@ -243,12 +236,11 @@ void boss_anim_update(Boss* boss) {
         // Safety check: ensure blendDuration is valid to prevent division by zero or denormal results
         // Use a minimum threshold (0.001f) to prevent denormal floating point values
         const float MIN_BLEND_DURATION = 0.001f;
-        if (boss->blendDuration < MIN_BLEND_DURATION) {
+        if (s_blendDur < MIN_BLEND_DURATION) {
             // Invalid blend duration - disable blending immediately
             boss->blendFactor = 1.0f;
             boss->isBlending = false;
             boss->blendTimer = 0.0f;
-            boss->blendDuration = 0.5f;  // Reset to default value
             
             // Stop previous animation
             if (boss->previousAnimation >= 0 && boss->previousAnimation < boss->animationCount) {
@@ -259,7 +251,7 @@ void boss_anim_update(Boss* boss) {
             if (boss->blendTimer < 0.0f) {
                 boss->blendTimer = 0.0f;
                 boss->blendFactor = 0.0f;
-            } else if (boss->blendTimer >= boss->blendDuration) {
+            } else if (boss->blendTimer >= s_blendDur) {
                 // Blend complete
                 boss->blendFactor = 1.0f;
                 boss->isBlending = false;
@@ -270,8 +262,8 @@ void boss_anim_update(Boss* boss) {
                     t3d_anim_set_playing(anims[boss->previousAnimation], false);
                 }
             } else {
-                // Interpolate blend factor (safe division - blendDuration is guaranteed >= MIN_BLEND_DURATION)
-                boss->blendFactor = boss->blendTimer / boss->blendDuration;
+                // Interpolate blend factor (s_blendDur >= MIN_BLEND_DURATION)
+                boss->blendFactor = boss->blendTimer / s_blendDur;
             }
         }
     }
@@ -282,7 +274,6 @@ void boss_anim_update(Boss* boss) {
         bool canBlend = (boss->previousAnimation >= 0 && 
                         boss->previousAnimation < boss->animationCount && 
                         anims[boss->previousAnimation] != NULL &&
-                        anims[boss->previousAnimation]->isPlaying &&
                         boss->blendFactor >= 0.0f && 
                         boss->blendFactor <= 1.0f &&
                         boss->blendTimer >= 0.0f);
@@ -291,8 +282,9 @@ void boss_anim_update(Boss* boss) {
             T3DSkeleton* skeleton = (T3DSkeleton*)boss->skeleton;
             T3DSkeleton* skeletonBlend = (T3DSkeleton*)boss->skeletonBlend;
             
-            // Blend skeletons: blend from skeletonBlend (old) to skeleton (new), store result in skeleton
-            t3d_skeleton_blend(skeletonBlend, skeleton, skeleton, boss->blendFactor);
+            // Blend from skeletonBlend (the old pose) to skeleton (the new clip), into skeleton
+            float k = boss->blendFactor;
+            t3d_skeleton_blend(skeleton, skeletonBlend, skeleton, k * k * (3.0f - 2.0f * k));   // eased in and out
         } else {
             // Not safe to blend - disable blending
             boss->isBlending = false;
@@ -312,31 +304,80 @@ void boss_anim_update(Boss* boss) {
         else s_breathK = -1.0f;
     }
     // Guardian Unbound, hanging in the air (the barrage, or up high outside its jumps, as when
-    // the fight opens): a crucifix, arms spread wide and legs together, the sword angled down.
-    // The bind pose is the model's T-pose, so the spine, arms and legs ease to it (bones 2-4,
-    // 6-21); the weight eases in and out (smoothstep), so it never snaps
+    // the fight opens): crucified, arms spread and raised a little as if hung by the hands,
+    // the elbows giving, the head fallen to one shoulder, the body slack and the knees bent,
+    // feet together and pointed, the sword angled down; it breathes slowly. Each bone is set
+    // from the bind pose (the model's T-pose) turned about its own axes; the weight eases in
+    // and out (smoothstep), so it never snaps
     {
-        static float crossT;
+        static float crossT, breathT;
         bool jump = boss->state == BOSS_STATE_POWER_JUMP || boss->state == BOSS_STATE_FLIP_ATTACK || boss->state == BOSS_STATE_TRACKING_SLAM;
         bool hang = boss->phaseIndex == 2 && boss->state != BOSS_STATE_DEAD &&
                     (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE || (boss->pos[1] > 30.0f && !jump));
+#ifdef HLE_TEST_CRUCIFIX
+        hang = boss->phaseIndex == 2;       // test aid: held for a look
+#endif
         crossT += (hang ? 1.0f : -1.0f) * deltaTime * 1.6f;
         crossT = fminf(1.0f, fmaxf(0.0f, crossT));
         float w = crossT * crossT * (3.0f - 2.0f * crossT);
         if (w > 0.0f) {
+            breathT += deltaTime;
+            float br = sinf(breathT * 1.7f);       // a slow breath, about every 3.7 s
+            static const struct { int8_t bone, axis; float a, breath; } CROSS[] = {
+                {  2, 2,  CX_SPINE1,   0.03f },  // the body slack, swaying with the breath
+                {  3, 0,  CX_HIPS,     0.00f },
+                {  3, 2,  CX_SPINE2,   0.03f },
+                {  4, 2,  CX_NECK_BOW, 0.02f },  // the head fallen forward and to its right
+                {  4, 0,  CX_NECK_TILT, 0.00f },
+                {  5, 2,  CX_HEAD_BOW, 0.00f },
+                {  5, 0,  CX_HEAD_TILT, 0.00f },
+                {  6, 0,  CX_ARM_RAISE_L, 0.03f },   // arms raised a little: hung by the hands
+                { 11, 0,  CX_ARM_RAISE_R, -0.03f },
+                {  7, 2,  CX_ELBOW,    0.00f },
+                { 12, 2,  CX_ELBOW,    0.00f },
+                {  8, 0,  CX_WRIST_L,  0.00f },
+                { 16, 0,  CX_LEG_IN_L, 0.00f },     // legs together, one knee bent more
+                { 19, 0,  CX_LEG_IN_R, 0.00f },
+                { 16, 2,  CX_THIGH,    0.00f },
+                { 19, 2,  CX_THIGH,    0.00f },
+                { 17, 2,  CX_KNEE_L,   0.00f },
+                { 20, 2,  CX_KNEE_R,   0.00f },
+                { 18, 2,  CX_FOOT,     0.00f },     // feet pointed down
+                { 21, 2,  CX_FOOT,     0.00f },
+            };
             T3DSkeleton *sk = (T3DSkeleton*)boss->skeleton;
             for (int i = 2; i <= 21; i++) {
-                if (i == 5) continue;       // the head keeps the clip's bow
                 t3d_quat_nlerp(&sk->bones[i].rotation, &sk->bones[i].rotation, &sk->skeletonRef->bones[i].rotation, w);
                 sk->bones[i].hasChanged = true;
             }
-            // the sword hand turned so the blade points a little down
+            for (unsigned i = 0; i < sizeof CROSS / sizeof CROSS[0]; i++) {
+                float axis[3] = { 0.0f, 0.0f, 0.0f };
+                axis[(int)CROSS[i].axis] = 1.0f;
+                T3DQuat q, r = sk->bones[CROSS[i].bone].rotation;
+                t3d_quat_from_rotation(&q, axis, (CROSS[i].a + CROSS[i].breath * br) * w);
+                t3d_quat_mul(&sk->bones[CROSS[i].bone].rotation, &r, &q);
+            }
+            // the sword hand turned about the arm so the blade hangs toward the floor
             T3DQuat down, h = sk->bones[13].rotation;
-            t3d_quat_from_rotation(&down, (float[3]){ 0.0f, 0.0f, 1.0f }, CRUCIFIX_SWORD_DOWN * w);
+            t3d_quat_from_rotation(&down, (float[3]){ 0.0f, 1.0f, 0.0f }, CRUCIFIX_SWORD_HANG * w);
             t3d_quat_mul(&sk->bones[13].rotation, &h, &down);
         }
     }
 
+#ifdef HLE_LOG_ANIMJUMP     // test aid: the largest turn of any bone in one frame, peaked over the 30 frames after a clip change
+    {
+        static T3DQuat prev[64]; static int since = 999, lastAnim = -1; static float peak;
+        T3DSkeleton *sk = (T3DSkeleton*)boss->skeleton;
+        if (boss->currentAnimation != lastAnim || (boss->blendTimer == 0.0f && boss->isBlending)) { if (since < 30) debugf("[ajump] clip %d peak %.3f (cut short)\n", lastAnim, (double)peak); since = 0; peak = 0.0f; lastAnim = boss->currentAnimation; }
+        float m = 0.0f;
+        for (int i = 0; i < sk->skeletonRef->boneCount && i < 64; i++) {
+            T3DQuat *q = &sk->bones[i].rotation;
+            float d = fabsf(q->v[0]*prev[i].v[0] + q->v[1]*prev[i].v[1] + q->v[2]*prev[i].v[2] + q->v[3]*prev[i].v[3]);
+            float a = 2.0f * acosf(fminf(1.0f, d)); if (a > m) m = a; prev[i] = *q;
+        }
+        if (since < 30) { if (m > peak) peak = m; if (++since == 30) debugf("[ajump] clip %d state %d peak %.3f rad/frame\n", lastAnim, boss->state, (double)peak); }
+    }
+#endif
     // Update main skeleton (ONLY the main skeleton, never the blend skeleton)
     // Only update if we have a valid current animation
     // We ensure the animation is attached in boss_anim_request, so we can safely update here
