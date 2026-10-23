@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS)
 #include "camera_controller.h"
 #include "joypad_utility.h"
 #include "character_skin.h"
@@ -15,8 +15,9 @@
 #include "controllers/menu_controller.h"
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #endif
-#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT)
+#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW)
 #include "utilities/save_controller.h"
+#include "controllers/scene_controller.h"
 #include "controllers/menu_controller.h"
 #include "controllers/audio_controller.h"
 #include "scenes/guardian/guardian_scene_sfx.h"
@@ -182,12 +183,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     return;
 #endif
 #ifdef HLE_TEST_SKIN_SLOT
-    // Run twice: the first run (booting on Save 1 with the Knight) loads Save 2, quits to the
-    // title (pause > Main Menu) and picks Wolf Knight; the second reports the slot and skin
+    // Run twice: the first run (booting on Save 1 with the Knight) loads Save 2 (back on the
+    // title) and picks Wolf Knight; the second reports the slot and skin
     {
         static int phase = 0, t0 = 0, step = 0;
         int t = frame - t0;
-        static const char *seqs[3] = { "DDDADA", "", "DDDDADDDDRR" };     // Load Game > Save 2 | Settings > Skin, Right x2
+        static const char *seqs[3] = { "DDDADA", "", "DADDDDRR" };     // Load Game > Save 2 | (from Load Game) Settings > Skin, Right x2
         if (phase == 0) {
             if (menu_controller_is_active()) {
                 debugf("[slot] booted on slot %d with skin %d (%s)\n", save_controller_get_active_slot(), character_skin_get(), character_skin_name(character_skin_get()));
@@ -202,21 +203,38 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
             if (!q[step] && t > 20 + step * 15 + 60) {
                 if (phase == 3) { debugf("[slot] set skin %d on slot %d\n", character_skin_get(), save_controller_get_active_slot()); phase = 9; }
-                else { phase = 2; t0 = frame; step = 0; }
-            }
-        } else if (phase == 2) {   // in the game: skip the intro, pause, Main Menu
-            Boss *boss = boss_get_instance();
-            static int pt = -1;
-            if (pt < 0 && t % 30 == 0 && !(boss && boss->mode == BOSS_MODE_COMBAT)) { pressed->a = 1; in->btn.a = 1; }   // skip the intro
-            if (pt < 0 && boss && boss->mode == BOSS_MODE_COMBAT) pt = t;
-            if (pt >= 0) {
-                int u = t - pt;
-                if (u == 30) { pressed->start = 1; in->btn.start = 1; }
-                if (u == 50 || u == 60 || u == 70 || u == 80) pressed->d_down = 1;
-                if (u == 100) { pressed->a = 1; in->btn.a = 1; }
-                if (u > 160 && menu_controller_is_active()) { phase = 3; t0 = frame; step = 0; }
+                else { phase = 3; t0 = frame; step = 0; }
             }
         }
+        return;
+    }
+#endif
+#ifdef HLE_TEST_SAVE_FLOW
+    // Run three times on one EEPROM, fresh first. Boot 1: Black Swordsman on Save 1, then Load Game >
+    // Save 2 (it must stay on the title) and the Umber cloak there. Boot 2 should open on Save 2
+    // in Umber, then loads Save 1. Boot 3 should open on Save 1 in Black Swordsman.
+    {
+        static int start = -1, step = 0;
+        static const char *q = "";
+        if (start < 0) {
+            if (menu_controller_is_active()) {
+                start = frame;
+                int sl = save_controller_get_active_slot(), k = character_skin_get();
+                debugf("[flow] booted on slot %d with skin %d (%s)\n", sl, k, character_skin_name(k));
+                if (sl == 0 && k == SKIN_KNIGHT) q = "DDDDADDDDRRRBUADADADDDDR";   // Settings > Skin x3, back, Load Game > Save 2, Settings > Skin x1
+                else if (sl == 1) q = "DDDAA";                                  // Load Game > Save 1
+            } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        int t = frame - start;
+        if (q[step] && t == 20 + step * 15) {
+            char c = q[step++];
+            if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1; else if (c == 'R') pressed->d_right = 1;
+            else if (c == 'B') { pressed->b = 1; in->btn.b = 1; } else { pressed->a = 1; in->btn.a = 1; }
+        }
+        if (!q[step] && t == 20 + step * 15 + 120)
+            debugf("[flow] done: slot %d, skin %d (%s), scene %d (1: title), menu %d\n", save_controller_get_active_slot(), character_skin_get(),
+                   character_skin_name(character_skin_get()), scene_controller_get_active_scene(), menu_controller_is_active());
         return;
     }
 #endif

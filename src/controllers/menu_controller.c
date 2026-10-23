@@ -690,12 +690,11 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
     } else if (currentMenu == MENU_LOAD_GAME) {
         if (aJustPressed) {
             if (selectedOption >= MENU_LOAD_GAME_SLOT_1 && selectedOption <= MENU_LOAD_GAME_SLOT_3) {
+                // Only loads the file (its skin, settings and progress): back to the title
                 save_controller_set_active_slot(selectedOption);
                 save_controller_update_last_played_timestamp();
-
-                scene_set_bonus_fight(BONUS_NONE);
-                menu_controller_close();
-                pendingAction = MENU_ACTION_TITLE_START_GAME;
+                currentMenu = parentMenu;
+                selectedOption = parentSelectedOption;
             } else if (selectedOption == MENU_LOAD_GAME_BACK) {
                 currentMenu = parentMenu;
                 selectedOption = parentSelectedOption;

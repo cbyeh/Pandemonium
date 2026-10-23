@@ -248,7 +248,7 @@ static bool blob_read_or_seed_defaults(void) {
     if (!s_initialized) return false;
 
     // Layout mismatch / brand new EEPROM / another game: wipe + seed defaults
-#ifdef HLE_TEST_SKIN_SAVE
+#if defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SAVE_FLOW)
     { uint8_t b0[8]; eeprom_read(0, b0); debugf("[save] eeprom type %d, block 0: %02x %02x %02x %02x %02x %02x %02x %02x\n", eeprom_present(),
                                                 b0[0], b0[1], b0[2], b0[3], b0[4], b0[5], b0[6], b0[7]); }
 #endif
@@ -305,6 +305,9 @@ void save_controller_init(void) {
     // Load blob or seed defaults, then select the last played slot (its skin and settings
     // are the ones that were chosen last; Save 1 if none has been played)
     (void)blob_read_or_seed_defaults();
+    // carry the play order on from the last boot, or a newly played slot would sort below older ones
+    for (int i = 0; i < SAVE_SLOT_COUNT; i++)
+        if (s_blob.slots[i].last_played_timestamp > s_play_session_counter) s_play_session_counter = s_blob.slots[i].last_played_timestamp;
     int last = save_controller_get_last_played_slot();
     (void)save_controller_set_active_slot(last >= 0 ? last : 0);
 }
@@ -409,6 +412,8 @@ bool save_controller_save_settings(void) {
     d->_pad[6] = 0;                                         // was the Hood setting: cleared for reuse
     d->_pad[20] = (uint8_t)joypad_get_layout();
     d->_pad[21] = (uint8_t)camera_get_speed();
+    // the slot just changed is the one reopened on boot (Save 1 on a fresh EEPROM)
+    if (d->last_played_timestamp != s_play_session_counter) d->last_played_timestamp = ++s_play_session_counter;
 
     d->checksum     = compute_slot_checksum(d);
 
