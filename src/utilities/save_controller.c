@@ -309,6 +309,10 @@ static bool blob_read_or_seed_defaults(void) {
     s_blob = b;
     s_stored = b;
     s_stored_known = true;
+    // _pad[6] held the old Hood setting: cleared in every slot, once, so the byte is free
+    bool hood = false;
+    for (int i = 0; i < SAVE_SLOT_COUNT; i++) { hood |= s_blob.slots[i]._pad[6] != 0; s_blob.slots[i]._pad[6] = 0; }
+    if (hood) (void)blob_write_now();
     return true;
 }
 
@@ -440,7 +444,6 @@ bool save_controller_save_settings(void) {
     save_set_hd_aspect(d, hdAspect);
     save_set_skills_enabled(d, character_skills_enabled());
     d->_pad[5] = (uint8_t)character_skin_get();
-    d->_pad[6] = 0;                                         // was the Hood setting: cleared for reuse
     d->_pad[20] = (uint8_t)joypad_get_layout();
     d->_pad[21] = (uint8_t)camera_get_speed();
     // the slot just changed is the one reopened on boot (Save 1 on a fresh EEPROM)
