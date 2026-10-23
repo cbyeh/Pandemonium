@@ -3137,8 +3137,12 @@ void character_update_camera(void)
         if (desiredCamPos.v[1] < camYFloor) desiredCamPos.v[1] = camYFloor;
     }
 
+    // The follow eases by the same amount per refresh whatever the frame rate: a factor of
+    // speed * dt trails further on short steps, and the knight jittered on screen when steps
+    // alternate (3 and 4 refreshes in an emulator). Same as speed * dt at 60 fps
+    float follow = 1.0f - powf(1.0f - cameraLerpSpeed / 60.0f, deltaTime * 60.0f);
     if (deltaTime > 0.0f) {
-        vec3_lerp(&characterCamPos, &characterCamPos, &desiredCamPos, cameraLerpSpeed * deltaTime);
+        vec3_lerp(&characterCamPos, &characterCamPos, &desiredCamPos, follow);
     } else {
         characterCamPos = desiredCamPos;
     }
@@ -3237,7 +3241,7 @@ void character_update_camera(void)
     }
 
     if (deltaTime > 0.0f) {
-        vec3_lerp(&characterCamTarget, &characterCamTarget, &desiredTarget, cameraLerpSpeed * deltaTime);
+        vec3_lerp(&characterCamTarget, &characterCamTarget, &desiredTarget, follow);
     } else {
         characterCamTarget = desiredTarget;
     }

@@ -17,6 +17,9 @@
 #include "dev.h"
 #include "dev/crt_safe_area_overlay.h"
 #include "character/character.h"
+#ifdef HLE_LOG_JITTER
+#include "jitter_probe.h"
+#endif
 #ifdef HLE_LOG_HITCH
 #include "hitch_probe.h"
 #endif
@@ -239,10 +242,6 @@ int main(void)
              * Opening credits are a real scene now, but they do not need camera,
              * menu, character, or fixed-update ownership.
              */
-            if (!isOpeningCredits) {
-                MPROF(1, camera_update(&viewport));
-            }
-
             /*
              * Title menu input is updated inside title_scene_update()
              * via menu_controller_update_title().
@@ -262,6 +261,13 @@ int main(void)
              */
             if (isGuardian) {
                 scene_fixed_update();
+            }
+
+            // After the update: the camera follows where the knight is this frame. Before
+            // it, the view lagged a step behind him, and by a different distance whenever
+            // steps differ in length, so he jittered on screen at uneven frame rates
+            if (!isOpeningCredits) {
+                MPROF(1, camera_update(&viewport));
             }
         }
         else
@@ -283,6 +289,9 @@ int main(void)
 
 #ifdef HLE_LOG_FPS
         pt2 = TICKS_READ();
+#endif
+#ifdef HLE_LOG_JITTER
+        if (isGuardian) jitter_frame();
 #endif
         if (!fbFirst) {
             attach_frame(&lastFbWait);
