@@ -37,8 +37,7 @@ Toggle in **Settings > Skills** (title screen). Bosses have double health with s
 - **Crimson Cloak:** beat the story (the Guardian, then Guardian Unbound).
 - **Teal Cloak:** reach floor 10 of the Tower (two full circles).
 - **Nightfarer:** buy him at **Tower > Shrine** for 80 Embers.
-
-The three cloaks wear their hoods up.
+ up.
 
 <img src="docs/media/skins.png" width="800">
 
