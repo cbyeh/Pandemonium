@@ -155,15 +155,10 @@ static void save_set_skills_enabled(SaveData *d, bool enabled)
     d->_pad[4] = enabled ? 0 : 1;
 }
 
-// Old saves hold 0 in both bytes: the stock Knight, hood up.
+// Old saves hold 0: the stock Knight.
 static int saved_skin(const SaveData *d)
 {
     return (d && d->_pad[5] < SKIN_COUNT) ? d->_pad[5] : SKIN_KNIGHT;
-}
-
-static bool saved_hood_up(const SaveData *d)
-{
-    return !d || d->_pad[6] == 0;
 }
 
 static void save_defaults_for_slot(SaveData *d, int slot) {
@@ -381,7 +376,6 @@ bool save_controller_load_settings(void) {
     joypad_set_rumble_enabled(saved_rumble_enabled(d));
     hdAspect = saved_hd_aspect(d);
     character_set_skills_enabled(saved_skills_enabled(d));
-    character_skin_set_hood_up(saved_hood_up(d));
     // a skin this slot hasn't unlocked (an older save, before the unlocks) falls back to the Knight
     character_skin_set(save_progress_skin_unlocked(d, saved_skin(d)) ? saved_skin(d) : SKIN_KNIGHT);
 #ifdef WIP_TEST_EMBERS   // testing aid for the WIP builds (the Makefile): every slot starts with at least this many Embers
@@ -412,7 +406,7 @@ bool save_controller_save_settings(void) {
     save_set_hd_aspect(d, hdAspect);
     save_set_skills_enabled(d, character_skills_enabled());
     d->_pad[5] = (uint8_t)character_skin_get();
-    d->_pad[6] = character_skin_hood_up() ? 0 : 1;
+    d->_pad[6] = 0;                                         // was the Hood setting: cleared for reuse
     d->_pad[20] = (uint8_t)joypad_get_layout();
     d->_pad[21] = (uint8_t)camera_get_speed();
 

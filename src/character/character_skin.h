@@ -23,9 +23,6 @@ typedef enum {
 const char* character_skin_name(int id);
 int  character_skin_get(void);
 void character_skin_set(int id);              // re-records the knight's draw block
-bool character_skin_hood_up(void);
-void character_skin_set_hood_up(bool up);
-bool character_skin_has_hood(int id);         // false: the Hood setting does nothing
 
 // Used by character.c
 rspq_block_t* character_skin_record(const T3DModel *model, const T3DSkeleton *skel);

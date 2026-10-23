@@ -102,14 +102,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     }
 #endif
 #ifdef HLE_TEST_SKIN
-    // Skin check: HLE_TEST_SKIN=<id> (HLE_SKIN_HOOD=0 for hood down). Title, then the knight
+    // Skin check: HLE_TEST_SKIN=<id>. Title, then the knight
     // runs a circle and stands while the camera orbits: back, side, front every 60 frames.
     {
         static int start = -1;
-#ifndef HLE_SKIN_HOOD
-#define HLE_SKIN_HOOD 1
-#endif
-        if (frame == 100 || start == -1) { character_skin_set_hood_up(HLE_SKIN_HOOD); character_skin_set(HLE_TEST_SKIN); }
+        if (frame == 100 || start == -1) character_skin_set(HLE_TEST_SKIN);
         Boss *boss = boss_get_instance();
         if (start < 0) {
             if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) { start = frame; debugf("[skin] start %d\n", frame); }
@@ -973,7 +970,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         Boss *boss = boss_get_instance();
         bool combat = boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL;
         int t = frame - t0;
-        // pause menu: Resume, Restart, Settings, Controls / settings: Audio, Video, Controls, Skills, Skin, Hood, Back
+        // pause menu: Resume, Restart, Settings, Controls / settings: Audio, Video, Controls, Skills, Skin, Back
         // O = open the pause menu, C = close it (both wait until it took effect)
         static const char seq[] = "ODDADDDABBC";
         switch (phase) {

@@ -38,7 +38,7 @@ Toggle in **Settings > Skills** (title screen). Bosses have double health with s
 - **Teal Cloak:** reach floor 10 of the Tower (two full circles).
 - **Nightfarer:** buy him at **Tower > Shrine** for 80 Embers.
 
-**Settings > Hood** puts a cloak's hood up or down.
+The three cloaks wear their hoods up.
 
 <img src="docs/media/skins.png" width="800">
 

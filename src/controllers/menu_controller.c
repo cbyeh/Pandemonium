@@ -87,7 +87,6 @@ static const char* settingsMenuOptions[MENU_SETTINGS_COUNT] = {
     "Controls",
     "Skills: %s",
     "Skin: %s",           // Left/Right (or A) steps through them; no arrows, so the longest name fits the box
-    "Hood: %s",
     "Back",
 };
 
@@ -489,9 +488,6 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             int k = character_skin_get();
             do k = (k + skinStep + SKIN_COUNT) % SKIN_COUNT; while (!save_controller_skin_unlocked(k));   // the Knight is always unlocked
             character_skin_set(k);
-            (void)save_controller_save_settings();
-        } else if ((skinStep || aJustPressed) && selectedOption == MENU_SETTINGS_HOOD && character_skin_has_hood(character_skin_get())) {
-            character_skin_set_hood_up(!character_skin_hood_up());
             (void)save_controller_save_settings();
         }
         if (aJustPressed) {
@@ -1212,12 +1208,10 @@ void menu_controller_draw(void)
 
         for (int i = 0; i < MENU_SETTINGS_COUNT; i++) {
             char optionText[64];
-            bool locked = (i == MENU_SETTINGS_SKILLS && settingsHubReturnMenu != MENU_TITLE)
-                       || (i == MENU_SETTINGS_HOOD && !character_skin_has_hood(character_skin_get()));
+            bool locked = i == MENU_SETTINGS_SKILLS && settingsHubReturnMenu != MENU_TITLE;
             const char *arg = locked ? (character_skills_enabled() ? "ON (title only)" : "OFF (title only)")
                                      : (character_skills_enabled() ? "ON" : "OFF");
             if (i == MENU_SETTINGS_SKIN) arg = character_skin_name(character_skin_get());
-            if (i == MENU_SETTINGS_HOOD) arg = !locked ? (character_skin_hood_up() ? "UP" : "DOWN") : "N/A";
             snprintf(optionText, sizeof(optionText), settingsMenuOptions[i] ? settingsMenuOptions[i] : "", arg);
 
             if (i == selectedOption) {
