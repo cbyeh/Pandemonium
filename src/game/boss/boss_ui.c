@@ -2,6 +2,7 @@
 
 #include <libdragon.h>
 #include "gpu_frame.h"
+#include <string.h>
 #include <math.h>
 
 #include "../../utilities/globals.h"
@@ -321,6 +322,13 @@ static void boss_ui_prepare_sprite_ui_pipe(bool alphaCompare)
     rdpq_mode_filter(FILTER_POINT);
 }
 
+static rspq_block_t *s_frameBlock;           // the frame and name, as last drawn
+static BossUiHealthLayout s_frameLayout;
+static void boss_ui_forget_frame(void)      // before the sprites it draws go
+{
+    if (s_frameBlock) { gpu_wait(); rspq_block_free(s_frameBlock); s_frameBlock = NULL; }
+}
+
 static void boss_ui_draw_health_frame(const BossUiHealthLayout *layout)
 {
     if (!layout) return;
@@ -486,6 +494,7 @@ static void boss_ui_draw_health_name(const BossUiHealthLayout *layout)
 
 void boss_ui_init(void)
 {
+    boss_ui_forget_frame();     // recorded again with the sprites loaded here
     s_form = 1;
     s_bossUiIntro = 1.0f;
     boss_ui_reset_bar_trail(&s_bossHealthBarState, 1.0f);
@@ -530,12 +539,14 @@ void boss_ui_set_form(int phase)
     if (phase < 1 || phase > 5 || phase == s_form) return;
     s_form = phase;
     gpu_wait();    // the old plate may still be referenced by queued draws
+    boss_ui_forget_frame();
     boss_ui_free_sprite(&s_bossHealthBarNameSprite, &s_bossHealthBarNameSurf);
     boss_ui_load_sprite(&s_bossHealthBarNameSprite, &s_bossHealthBarNameSurf, plates[phase - 1]);
 }
 
 void boss_ui_cleanup(void)
 {
+    boss_ui_forget_frame();
     boss_ui_free_sprite(&s_zTargetIconSprite, &s_zTargetIconSurf);
     boss_ui_free_sprite(&s_bossHealthBarEndSprite, &s_bossHealthBarEndSurf);
     boss_ui_free_sprite(&s_bossHealthBarMidSprite, &s_bossHealthBarMidSurf);
@@ -577,8 +588,17 @@ void boss_ui_draw_health_bar(const char *name, float ratio, float flash)
     // 2. Decorative frame overlay.
     // 3. Boss name above the frame.
     boss_ui_draw_health_fill(&layout, ratio, flash, s_bossUiIntro);
-    boss_ui_draw_health_frame(&layout);
-    boss_ui_draw_health_name(&layout);
+    // The frame and name change only with the layout or the plate: recorded (scaled sprite
+    // blits cost the RSP each frame)
+    if (!s_frameBlock || memcmp(&layout, &s_frameLayout, sizeof layout)) {
+        boss_ui_forget_frame();
+        gpu_block_begin();
+        boss_ui_draw_health_frame(&layout);
+        boss_ui_draw_health_name(&layout);
+        s_frameBlock = gpu_block_end();
+        s_frameLayout = layout;
+    }
+    rspq_block_run(s_frameBlock);
 }
 
 // The stagger meter: a thin gold line under the health fill, growing from the centre;

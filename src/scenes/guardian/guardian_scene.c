@@ -2506,11 +2506,24 @@ void scene_draw(T3DViewport *viewport)
     if (!cutsceneActive && !isDead) {
         // Boss UI/debug is owned by boss_render/boss_ui now.
         // Keep scene responsible only for draw order and visibility gating.
+#ifdef HLE_PROF_SERIAL   // test aid: the HUD's parts, each run alone
+        static uint32_t s_ui[3]; static int s_uiN;
+        s_gpu[6] += gpu_prof_end(); gpu_prof_begin();
+#endif
         if (!isVictory && boss_is_active(g_boss) && bossTitleFade <= 0.0f && g_boss->maxHealth > 0.0f) {
             boss_draw_ui(g_boss, viewport);
         }
-
+#ifdef HLE_PROF_SERIAL
+        s_ui[0] += gpu_prof_end(); gpu_prof_begin();
+        { extern void character_ui_draw_health_bar(const char *, float, float); extern void character_ui_draw_stamina_bar(float);
+          character_ui_draw_health_bar("Player", 1.0f, 0.0f); character_ui_draw_stamina_bar(1.0f); }
+        s_ui[1] += gpu_prof_end(); gpu_prof_begin();
+        character_ui_draw_c_buttons();
+        s_ui[2] += gpu_prof_end(); gpu_prof_begin();
+        if (++s_uiN == 120) { debugf("[uigpu] boss %.2f bars %.2f buttons %.2f\n", TICKS_TO_US(s_ui[0] / 120) / 1000.0, TICKS_TO_US(s_ui[1] / 120) / 1000.0, TICKS_TO_US(s_ui[2] / 120) / 1000.0); s_ui[0] = s_ui[1] = s_ui[2] = 0; s_uiN = 0; }
+#else
         character_ui_draw();
+#endif
         if (s_tower) tower_hud_draw();
     }
     if (s_towerDraft && !isDead) tower_draft_draw();

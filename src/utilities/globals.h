@@ -9,7 +9,7 @@
 #define SCREEN_HEIGHT 240
 #define FIXED_TIMESTEP_MS 33.3f
 #define ANIM_SPEED 1.0f
-#define FRAME_BUFFER_COUNT 4    // one on screen, one waiting for it, one the RSP draws, one the CPU records into
+#define FRAME_BUFFER_COUNT 3    // a fourth let the CPU run frames ahead unevenly (judder, latency): main.c takes one after the update
 
 #define DEV_MODE false
 #define SHOW_FPS false

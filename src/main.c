@@ -155,12 +155,6 @@ int main(void)
         bool isTitle = activeScene == SCENE_CONTROLLER_SCENE_TITLE;
         bool isGuardian = activeScene == SCENE_CONTROLLER_SCENE_GUARDIAN;
 
-        // Attach render target for the frame.
-        if (DEV_MODE && debugDraw) {
-            rdpq_attach(&offscreenBuffer, display_get_zbuf());
-        } else {
-            rdpq_attach(display_get(), display_get_zbuf());
-        }
 #ifdef HLE_LOG_FPS
         pt1 = TICKS_READ();
 #endif
@@ -225,6 +219,16 @@ int main(void)
 
 #ifdef HLE_LOG_FPS
         pt2 = TICKS_READ();
+#endif
+        // Attach render target for the frame: after the update, so the CPU updates while it waits
+        // for one to come free (the RSP draws the last frame meanwhile)
+        if (DEV_MODE && debugDraw) {
+            rdpq_attach(&offscreenBuffer, display_get_zbuf());
+        } else {
+            rdpq_attach(display_get(), display_get_zbuf());
+        }
+#ifdef HLE_LOG_FPS
+        uint32_t ptFb = TICKS_READ();
 #endif
         // ===== DRAW LOOP =====
         // Recorded, then run as a whole: submitting straight to the RSP stalled the CPU on its
@@ -335,10 +339,15 @@ int main(void)
         }
 #ifdef HLE_LOG_FPS
         {   // ms per frame: blocked for a free framebuffer (the GPU is behind), update, draw submission
-            static uint32_t gwait, wait, upd, drw, n;
+            static uint32_t gwait, wait, upd, drw, n, lastStart, worst, slow;
             uint32_t pt3 = TICKS_READ();
-            gwait += ptGpu - pt0; wait += pt1 - ptGpu; upd += pt2 - pt1; drw += pt3 - pt2;
-            if (++n == 120) { debugf("[frame] wait for the RSP %.1f, a framebuffer %.1f, update %.1f draw %.1f ms\n", TICKS_TO_US(gwait / n) / 1000.0, TICKS_TO_US(wait / n) / 1000.0, TICKS_TO_US(upd / n) / 1000.0, TICKS_TO_US(drw / n) / 1000.0); gwait = wait = upd = drw = n = 0; }
+            gwait += ptGpu - pt0; wait += ptFb - pt2; upd += pt2 - pt1; drw += pt3 - ptFb;
+            extern int deltaFrames;
+            if (lastStart) { uint32_t ft = pt0 - lastStart; if (ft > worst) worst = ft; }
+            slow += deltaFrames - 1;    // refreshes that showed a frame again
+            lastStart = pt0;
+            if (++n == 120) { debugf("[frame] wait for the RSP %.1f, a framebuffer %.1f, update %.1f draw %.1f ms; worst %.1f ms, %lu refreshes missed\n", TICKS_TO_US(gwait / n) / 1000.0, TICKS_TO_US(wait / n) / 1000.0, TICKS_TO_US(upd / n) / 1000.0, TICKS_TO_US(drw / n) / 1000.0,
+                                      TICKS_TO_US(worst) / 1000.0, (unsigned long)slow); gwait = wait = upd = drw = n = worst = slow = 0; }
         }
 #endif
 

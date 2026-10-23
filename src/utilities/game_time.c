@@ -13,6 +13,7 @@ double nowS = 0.0;
 float gameTime = 0.0f;
 float lastTime = 0.0f;
 float deltaTime = 0.0f;
+int deltaFrames;    // TV frames the last step covered (1 at full speed)
 
 static float get_time_s() 
 {
@@ -29,8 +30,19 @@ void game_time_update(void)
     // Get current time in seconds
     nowS = get_time_s();
 
-    // Calculate the time difference between this frame and the last frame
-    deltaTime = nowS - lastTime;
+    // Calculate the time difference between this frame and the last frame, in whole TV frames:
+    // a frame is shown for whole refreshes, so the scene moves on by exactly what it is shown for.
+    // Frames start unevenly (the CPU waits on the RSP or a framebuffer by turns) and the scene
+    // judders if it moves on by the raw time. The rest carries over, so it keeps to real time
+    static float carry;
+    float period = 1.0f / display_get_refresh_rate();
+    float raw = nowS - lastTime + carry;
+    int frames = (int)(raw / period + 0.5f);
+    if (frames < 1) frames = 1;
+    deltaTime = frames * period;
+    deltaFrames = frames;
+    carry = raw - deltaTime;
+    if (carry > period) carry = period; else if (carry < -period) carry = -period;   // after a hitch (a load)
 
     // Hit-stop, then slow motion: game time crawls for a moment of real time (never 0:
     // some systems treat a zero step as a bad frame)

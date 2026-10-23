@@ -1,4 +1,5 @@
 #include "character_ui.h"
+#include "gpu_frame.h"
 
 #include <libdragon.h>
 
@@ -136,6 +137,9 @@ static void character_ui_load_sprite(sprite_t **sprite, surface_t *surface, cons
     }
 }
 
+static rspq_block_t *s_keysBlock;     // the D-pad keys as last drawn (character_ui_draw_c_buttons)
+static unsigned s_keysLook = ~0u;
+
 static void character_ui_free_sprite(sprite_t **sprite, surface_t *surface)
 {
     if (!sprite || !surface) return;
@@ -156,6 +160,7 @@ void character_ui_init(void)
     character_ui_reset_bar_trail(&s_playerStaminaBarState, 1.0f);
 
     // D-pad keys (blank) with the skill icons and the potion drawn over them.
+    s_keysLook = ~0u;   // recorded again with these
     character_ui_load_sprite(&s_keySprite, &s_keySurf, "rom:/ui/skills/dpad_key.rgba16.sprite");
     character_ui_load_sprite(&s_skillMoonBladeSprite, &s_skillMoonBladeSurf, "rom:/ui/skills/skill_moonblade.rgba16.sprite");
     character_ui_load_sprite(&s_skillHalfmoonSprite, &s_skillHalfmoonSurf, "rom:/ui/skills/skill_halfmoon.rgba16.sprite");
@@ -167,6 +172,7 @@ void character_ui_init(void)
 
 void character_ui_cleanup(void)
 {
+    if (s_keysBlock) { gpu_wait(); rspq_block_free(s_keysBlock); s_keysBlock = NULL; }   // it draws the sprites below
     character_ui_free_sprite(&s_keySprite, &s_keySurf);
     character_ui_free_sprite(&s_skillMoonBladeSprite, &s_skillMoonBladeSurf);
     character_ui_free_sprite(&s_skillHalfmoonSprite, &s_skillHalfmoonSurf);
@@ -358,15 +364,9 @@ static void character_ui_draw_icon(sprite_t *sprite, const surface_t *surf, int 
 }
 
 /** Skill slot: icon, darkened from the top while on cooldown, plus seconds left. */
-static void character_ui_draw_skill(CharacterSkill skill, sprite_t *icon, const surface_t *iconSurf,
-                                    int x, int y, int keyPx)
+/** The cooldown over a skill's icon: darkened from the top, plus seconds left. */
+static void character_ui_draw_skill_cooldown(CharacterSkill skill, int x, int y, int keyPx)
 {
-    rdpq_set_mode_standard();
-    rdpq_mode_alphacompare(1);
-    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-    rdpq_mode_filter(FILTER_BILINEAR);
-    character_ui_draw_icon(icon, iconSurf, x, y, keyPx * 0.75f);
-
     float ratio = character_get_skill_cooldown_ratio(skill);
     bool affordable = character_can_afford_skill(skill);
     if (ratio <= 0.0f && affordable) return;
@@ -414,11 +414,6 @@ void character_ui_draw_c_buttons(void)
     int upX    = centerX,           upY    = centerY - spacing;
     int downX  = centerX,           downY  = centerY + spacing;
 
-    rdpq_set_mode_standard();
-    rdpq_mode_alphacompare(0);
-    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-    rdpq_mode_filter(FILTER_BILINEAR);
-    character_ui_draw_icon(s_keySprite, &s_keySurf, leftX, leftY, keyPx);
     // All four keys always show, so the potion reads as D-Left; a skill not usable (the Skills
     // setting, or not yet learned in a Tower run) is a dimmed blank key
     const struct { CharacterSkill s; sprite_t *spr; const surface_t *surf; int x, y; } keys[] = {
@@ -426,40 +421,56 @@ void character_ui_draw_c_buttons(void)
         { SKILL_HALFMOON_SLASH,   s_skillHalfmoonSprite,  &s_skillHalfmoonSurf,  rightX, rightY },
         { SKILL_CRESCENT_CLEAVE,  s_skillCleaveSprite,    &s_skillCleaveSurf,    downX, downY },
     };
-    for (int i = 0; i < 3; i++) {
+    int potionCount = character_get_health_potion_count();
+    unsigned look = potionCount > 0 ? 8 : 0;
+    for (int i = 0; i < 3; i++) if (character_skill_usable(keys[i].s)) look |= 1u << i;
+
+    // The keys, icons and bottle change only with that: recorded once for it (64 px sprites
+    // scaled down, each with its own mode, cost the RSP half a millisecond a frame). The
+    // cooldowns go on top each frame (nothing of one key overlaps another)
+    look |= (unsigned)marginX << 8 | (unsigned)marginY << 16;     // where it goes
+    if (look != s_keysLook || !s_keysBlock) {
+        if (s_keysBlock) { gpu_wait(); rspq_block_free(s_keysBlock); }
+        gpu_block_begin();
+        // the keys, then what goes on them, a mode each (no two keys overlap)
         rdpq_set_mode_standard();
         rdpq_mode_alphacompare(0);
         rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
         rdpq_mode_filter(FILTER_BILINEAR);
-        character_ui_draw_icon(s_keySprite, &s_keySurf, keys[i].x, keys[i].y, keyPx);
-        if (character_skill_usable(keys[i].s)) {
-            character_ui_draw_skill(keys[i].s, keys[i].spr, keys[i].surf, keys[i].x, keys[i].y, keyPx);
-        } else {
+        character_ui_draw_icon(s_keySprite, &s_keySurf, leftX, leftY, keyPx);
+        for (int i = 0; i < 3; i++) character_ui_draw_icon(s_keySprite, &s_keySurf, keys[i].x, keys[i].y, keyPx);
+        rdpq_mode_alphacompare(1);
+        for (int i = 0; i < 3; i++)
+            if (look & (1u << i)) character_ui_draw_icon(keys[i].spr, keys[i].surf, keys[i].x, keys[i].y, keyPx * 0.75f);
+        if ((look & 7) != 7) {
             int half = (int)(keyPx * 0.40f);
             rdpq_set_mode_standard();
             rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
             rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
             rdpq_set_prim_color(RGBA32(0, 0, 0, 140));
-            rdpq_fill_rectangle(keys[i].x - half, keys[i].y - half, keys[i].x + half, keys[i].y + half);
+            for (int i = 0; i < 3; i++)
+                if (!(look & (1u << i))) rdpq_fill_rectangle(keys[i].x - half, keys[i].y - half, keys[i].x + half, keys[i].y + half);
         }
+        // Only show the potion bottle + count while the player has potions.
+        if ((look & 8) && s_healthBottleSprite && s_healthBottleSurf.width > 0 && s_healthBottleSurf.height > 0) {
+            // Tint the IA8 bottle sprite red so it contrasts against the grey key.
+            rdpq_set_mode_standard();
+            rdpq_mode_alphacompare(1);
+            rdpq_mode_combiner(RDPQ_COMBINER_TEX_FLAT);
+            rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+            rdpq_mode_filter(FILTER_BILINEAR);
+            rdpq_set_prim_color(RGBA32(220, 50, 50, 255));
+            character_ui_draw_icon(s_healthBottleSprite, &s_healthBottleSurf, leftX, leftY, keyPx * 0.65f);
+        }
+        s_keysBlock = gpu_block_end();
+        s_keysLook = look;
     }
-
-    // Only show the potion bottle + count while the player has potions.
-    int potionCount = character_get_health_potion_count();
+    rspq_block_run(s_keysBlock);
+    for (int i = 0; i < 3; i++)
+        if (look & (1u << i)) character_ui_draw_skill_cooldown(keys[i].s, keys[i].x, keys[i].y, keyPx);
 
     if (potionCount <= 0) {
         return;
-    }
-
-    if (s_healthBottleSprite && s_healthBottleSurf.width > 0 && s_healthBottleSurf.height > 0) {
-        // Tint the IA8 bottle sprite red so it contrasts against the grey key.
-        rdpq_set_mode_standard();
-        rdpq_mode_alphacompare(1);
-        rdpq_mode_combiner(RDPQ_COMBINER_TEX_FLAT);
-        rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-        rdpq_mode_filter(FILTER_BILINEAR);
-        rdpq_set_prim_color(RGBA32(220, 50, 50, 255));
-        character_ui_draw_icon(s_healthBottleSprite, &s_healthBottleSurf, leftX, leftY, keyPx * 0.65f);
     }
 
     // Potion count, in the gap at the diamond's centre.

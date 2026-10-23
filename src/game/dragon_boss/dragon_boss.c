@@ -53,7 +53,7 @@ typedef struct { float p[2], t; bool on; } Blast;
 
 static struct {
     bool ready;
-    ProcMesh seg, segDark, tseg, tsegDark, limb, mFoot, mHead, mHeadDark, mJaw, wing, wingDark, tip, tipDark, flame, mOrb;
+    ProcMesh seg, segDark, tseg, tsegDark, limb, mFoot, mHead, mHeadDark, mJaw, wing, wingDark, wingMemb, tip, tipDark, flame, mOrb;
     T3DMat4FP *mats;
     int matRing, mi;
     DgState state;
@@ -358,7 +358,9 @@ static void build_jaw(void)
 
 // The right wing, spanning +x: arm, wrist claw and five fingers; the membrane scalloped
 // between the fingertips; crystals along the leading edge
-static void build_wing(ProcMesh *out, bool dark)
+// The bones and crystals (closed: drawn with their far sides culled) apart from the membrane
+// (seen from both sides): `memb` gets the membrane, if not NULL
+static void build_wing(ProcMesh *out, ProcMesh *memb, bool dark)
 {
     const float root[3] = { 0, 0, 0 }, elbow[3] = { 30, 6, 4 }, wrist[3] = { 58, 10, -6 }, back[3] = { 2, -2, -32 };
     const float tip[5][3] = { { 88, 5, -14 }, { 80, 2, -32 }, { 66, 0, -46 }, { 48, -2, -54 }, { 28, -3, -48 } };
@@ -367,25 +369,28 @@ static void build_wing(ProcMesh *out, bool dark)
     proc_mesh_spike(elbow, wrist, 2.1f, 4, COL_BONE);
     proc_mesh_spike(wrist, (float[3]){ wrist[0] + 6, wrist[1] + 3, wrist[2] + 6 }, 1.0f, 3, COL_IVORY);    // wrist claw
     for (int i = 0; i < 5; i++) proc_mesh_spike(wrist, tip[i], 1.2f, 3, COL_BONE);
-    const uint32_t memb = COL_MEMB, memb2 = proc_rgb(52, 36, 58);
-    for (int i = 0; i < 4; i++) {
-        // the edge between two fingertips sags in toward the wrist
-        float mid[3];
-        for (int k = 0; k < 3; k++) mid[k] = (tip[i][k] + tip[i + 1][k]) * 0.5f * 0.78f + wrist[k] * 0.22f;
-        proc_mesh_tri(wrist, tip[i], mid, (i & 1) ? memb : memb2, false);
-        proc_mesh_tri(wrist, mid, tip[i + 1], (i & 1) ? memb2 : memb, false);
-    }
-    float mid[3];
-    for (int k = 0; k < 3; k++) mid[k] = (tip[4][k] + back[k]) * 0.5f * 0.8f + elbow[k] * 0.2f;
-    proc_mesh_tri(wrist, tip[4], elbow, memb, false);
-    proc_mesh_tri(elbow, tip[4], mid, memb2, false);
-    proc_mesh_tri(elbow, mid, back, memb, false);
-    proc_mesh_tri(elbow, back, root, memb2, false);
     uint32_t cr = crystal_col(dark);
     crystal(elbow, (float[3]){ elbow[0] + 1, elbow[1] + 8, elbow[2] + 4 }, 2.0f, cr);
     crystal(wrist, (float[3]){ wrist[0] + 5, wrist[1] + 9, wrist[2] + 2 }, 2.2f, cr);
     crystal((float[3]){ 44, 8, -1 }, (float[3]){ 46, 13, 2 }, 1.4f, cr);
     proc_mesh_end(out);
+    if (!memb) return;
+    proc_mesh_begin();
+    const uint32_t membC = COL_MEMB, memb2 = proc_rgb(52, 36, 58);
+    for (int i = 0; i < 4; i++) {
+        // the edge between two fingertips sags in toward the wrist
+        float mid[3];
+        for (int k = 0; k < 3; k++) mid[k] = (tip[i][k] + tip[i + 1][k]) * 0.5f * 0.78f + wrist[k] * 0.22f;
+        proc_mesh_tri(wrist, tip[i], mid, (i & 1) ? membC : memb2, false);
+        proc_mesh_tri(wrist, mid, tip[i + 1], (i & 1) ? memb2 : membC, false);
+    }
+    float mid[3];
+    for (int k = 0; k < 3; k++) mid[k] = (tip[4][k] + back[k]) * 0.5f * 0.8f + elbow[k] * 0.2f;
+    proc_mesh_tri(wrist, tip[4], elbow, membC, false);
+    proc_mesh_tri(elbow, tip[4], mid, memb2, false);
+    proc_mesh_tri(elbow, mid, back, membC, false);
+    proc_mesh_tri(elbow, back, root, memb2, false);
+    proc_mesh_end(memb);
 }
 
 // The tail's tip: a crystal blade along +z
@@ -415,7 +420,7 @@ void dragon_boss_free(void)
 {
     if (!s.ready) return;
     gpu_wait();
-    ProcMesh *all[] = { &s.seg, &s.segDark, &s.tseg, &s.tsegDark, &s.limb, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.wing, &s.wingDark, &s.tip, &s.tipDark, &s.flame, &s.mOrb };
+    ProcMesh *all[] = { &s.seg, &s.segDark, &s.tseg, &s.tsegDark, &s.limb, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.wing, &s.wingDark, &s.wingMemb, &s.tip, &s.tipDark, &s.flame, &s.mOrb };
     for (unsigned i = 0; i < sizeof(all) / sizeof(all[0]); i++) proc_mesh_free(all[i]);
     free_uncached(s.mats);
     memset(&s, 0, sizeof(s));
@@ -440,7 +445,7 @@ void dragon_boss_begin(Boss* boss)
         build_foot();
         build_head(&s.mHead, false); build_head(&s.mHeadDark, true);
         build_jaw();
-        build_wing(&s.wing, false); build_wing(&s.wingDark, true);
+        build_wing(&s.wing, &s.wingMemb, false); build_wing(&s.wingDark, NULL, true);
         build_glow(&s.flame, proc_rgb(255, 120, 30), proc_rgb(255, 200, 70));
         build_glow(&s.mOrb, proc_rgb(150, 50, 255), proc_rgb(230, 170, 255));
         s.mats = malloc_uncached(sizeof(T3DMat4FP) * MAT_RING * MAT_MAX);
@@ -1336,7 +1341,6 @@ void dragon_boss_draw(Boss* b)
 #ifdef HLE_PROF_DRAGON
     DPROF(2);
 #endif
-    t3d_state_set_drawflags(DRAW_OPEN);     // the membranes are seen from both sides
     // Four wings: the great pair at the shoulders, a smaller pair behind
     const ProcMesh *wing = s.dark ? &s.wingDark : &s.wing;
     for (int pair = 0; pair < 2; pair++)
@@ -1347,7 +1351,13 @@ void dragon_boss_draw(Boss* b)
             mad3(root, root, s.R, sd * (pair ? 7.0f : 9.0f));
             mad3(root, root, s.F, pair ? -16.0f : 2.0f);
             float k = pair ? 0.6f : 1.0f;
+            // a left wing is the right one mirrored: its triangles turn the other way
+            float xy[3]; cross3(xy, x, y);
+            bool mirrored = xy[0] * s.F[0] + xy[1] * s.F[1] + xy[2] * s.F[2] < 0.0f;
+            t3d_state_set_drawflags(HLE_DRAGON_CULL ? DRAW_OPEN | (mirrored ? T3D_FLAG_CULL_FRONT : T3D_FLAG_CULL_BACK) : DRAW_OPEN);
             put(wing, root, x, y, s.F, k * s.wingSpan, k, k);
+            t3d_state_set_drawflags(DRAW_OPEN);
+            put(&s.wingMemb, root, x, y, s.F, k * s.wingSpan, k, k);
         }
 
 #ifdef HLE_PROF_DRAGON
