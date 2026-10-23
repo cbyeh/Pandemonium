@@ -597,10 +597,12 @@ void scene_init(void)
     // ==== Sounds ====
 
     audio_scene_load_paths(SCENE1_SFX_PATHS, SCENE1_SFX_COUNT);
-    // The sounds heard all through a fight, held in memory (about 160 KB): the bosses' step, the
-    // knight's swing, its hits and running steps
+    // The sounds heard all through a fight, held in memory (about 230 KB): the bosses' step, the
+    // knight's swing, its hits and running steps, and the smashes, swing and fire Shadowborne
+    // uses most (its fight was the one still short of 60 fps). The game runs in 4 MB
     static const int held[] = {
         SCENE1_SFX_BOSS_STEP1, SCENE1_SFX_CHAR_SWING1,
+        SCENE1_SFX_BOSS_SMASH1, SCENE1_SFX_BOSS_SMASH2, SCENE1_SFX_BOSS_SWING3, SCENE1_SFX_FIRE,
         SCENE1_SFX_CHAR_ATTACK_HIT1, SCENE1_SFX_CHAR_ATTACK_HIT2, SCENE1_SFX_CHAR_ATTACK_HIT3,
         SCENE1_SFX_CHAR_ATTACK_HIT4, SCENE1_SFX_CHAR_ATTACK_HIT5, SCENE1_SFX_CHAR_ATTACK_HIT6,
         SCENE1_SFX_CHAR_FOOTSTEP_RUN1, SCENE1_SFX_CHAR_FOOTSTEP_RUN2, SCENE1_SFX_CHAR_FOOTSTEP_RUN3, SCENE1_SFX_CHAR_FOOTSTEP_RUN4,
