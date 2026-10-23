@@ -75,6 +75,8 @@ static struct {
     float diveTarget[2];
     float raysSpin;
     float chainAcc;         // time gathered for the chains' next step (every other frame)
+    float downT;            // knocked down by a full stagger: time since it hit the floor (< 0: not)
+    float knock[2];         // a half stagger's shove, per second, easing off
     bool chainStepped;      // stepped this frame: drawn halfway from the last state
 } s;
 
@@ -172,7 +174,7 @@ void sun_boss_begin(Boss* boss)
     boss->health = boss->maxHealth;
     boss->mode = BOSS_MODE_CINEMATIC;       // not damageable until it has come down
     boss->state = BOSS_STATE_INTRO;
-    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
+    boss->poise = boss->poiseIdleT = boss->staggerT = boss->recoilT = 0.0f; boss->halfDone = false;
     boss->damageFlashTimer = 0.0f;
     boss->velX = boss->velZ = 0.0f;
     boss->handAttackColliderActive = false;
@@ -180,7 +182,8 @@ void sun_boss_begin(Boss* boss)
     boss->visible = true;
     // The ball and the base of its corona (centre at pos): a little past the eye drawn, as a
     // blade that grazed the eye (radius 14) missed a capsule of 12 most swings
-    boss->capsuleCollider.localCapA = (T3DVec3){{ 0.0f, -6.0f, 0.0f }};
+    // reaching down to the floor at full width: a low swing under the ball still counts
+    boss->capsuleCollider.localCapA = (T3DVec3){{ 0.0f, -20.0f, 0.0f }};
     boss->capsuleCollider.localCapB = (T3DVec3){{ 0.0f, 6.0f, 0.0f }};
     boss->capsuleCollider.radius = SUN_R + 4.0f;
 
@@ -192,6 +195,7 @@ void sun_boss_begin(Boss* boss)
     s.cdGlare = 2.0f; s.cdRain = 6.0f; s.cdCorona = 10.0f; s.cdDive = 14.0f; s.cdLash = 4.0f; s.cdSweep = 9.0f;
     s.chainsReady = false;
     s.weights = true;
+    s.downT = -1.0f; s.knock[0] = s.knock[1] = 0.0f;
     for (int i = 0; i < RAIN_MAX; i++) s.rainT[i] = -1.0f;
     enter(SB_INTRO);
 }
@@ -315,8 +319,25 @@ bool sun_boss_stagger(Boss* b)
     skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.0f);
     enter(SB_REST);
     s.t = 3.0f / speed_mult() - 2.5f;     // 2.5 s on the floor
+    s.downT = 0.0f;         // it falls from where it was: a bounce and a rocking on the floor
     b->staggerT = 2.5f;
     return true;
+}
+
+void sun_boss_half_stagger(Boss* b)
+{
+    // Flinches: shoved back through the air, the corona flaring; a windup is broken off
+    if (!s.ready || s.state == SB_INTRO || s.state == SB_DIVE || s.state == SB_REST || s.state == SB_BREAK || s.state == SB_DEAD) return;
+    float dx, dz, d = to_player(b, &dx, &dz);
+    if (d > 1e-3f) { s.knock[0] = -dx / d * 70.0f; s.knock[1] = -dz / d * 70.0f; }
+    s.raysSpin = 7.0f;
+    b->damageFlashTimer = 0.3f;
+    bool winding = (s.state == SB_GLARE && s.step == 0) || (s.state == SB_CORONA && s.step == 0) ||
+                   ((s.state == SB_LASH || s.state == SB_SWEEP) && s.step == 0);
+    if (winding) {
+        for (int k = 0; k < NCH; k++) s.ch[k].kin = s.ch[k].hot = false;
+        enter(SB_HOVER);
+    }
 }
 
 // ---- Shackles ----
@@ -572,6 +593,12 @@ void sun_boss_update(Boss* b, float dt)
     rain_tick(dt);
     if (!s.chainsReady) chains_reset(b);
 
+    if (s.knock[0] != 0.0f || s.knock[1] != 0.0f) {      // a half stagger's shove
+        move_toward(b, b->pos[0] + s.knock[0], b->pos[2] + s.knock[1], sqrtf(s.knock[0] * s.knock[0] + s.knock[1] * s.knock[1]), dt);
+        float k = fmaxf(0.0f, 1.0f - 5.0f * dt);
+        s.knock[0] *= k; s.knock[1] *= k;
+        if (fabsf(s.knock[0]) + fabsf(s.knock[1]) < 2.0f) s.knock[0] = s.knock[1] = 0.0f;
+    }
     float dx, dz, dist = to_player(b, &dx, &dz);
 
     if (b->state == BOSS_STATE_DEAD && s.state != SB_DEAD) {
@@ -622,7 +649,17 @@ void sun_boss_update(Boss* b, float dt)
 
     case SB_REST:
         // Dimmed on the floor: the opening (a stagger drops it there from the air)
+        if (s.downT >= 0.0f) {      // knocked down: it falls, bounces twice, rocks, then gets up
+            s.downT += dt;
+            float fall = clamp01(s.downT / 0.25f), bt = s.downT - 0.25f;
+            float bounce = bt > 0.0f ? fabsf(sinf(bt * 9.0f)) * 9.0f * expf(-bt * 4.0f) : 0.0f;
+            float h = s.groundY + REST_H + bounce;
+            b->pos[1] += (h - b->pos[1]) * (fall < 1.0f ? fminf(1.0f, dt * 14.0f) : 1.0f);
+            if (bt > 0.0f && bt - dt <= 0.0f) { screen_shake_set_shake_mag(9.0f); sfx_boom();
+                skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.0f); }
+        } else
         b->pos[1] += (s.groundY + REST_H - b->pos[1]) * fminf(1.0f, dt * 8.0f);
+        if (s.t > 3.0f / sm) s.downT = -1.0f;
         if (s.t > 3.0f / sm) enter(SB_HOVER);
         break;
 
@@ -773,7 +810,10 @@ void sun_boss_draw(Boss* b)
     if (s.state == SB_REST) scale *= 0.9f;
 
     float yaw = -b->rot[1];     // Tiny3D's yaw turns +z the other way round
-    proc_mesh_set_transform(s.unshackled ? &s.eyeHot : &s.eye, scale, (float[3]){ 0.0f, yaw, 0.0f }, b->pos);
+    // Knocked down: it rocks side to side on the floor, settling (and squashes as it lands)
+    float rock = s.state == SB_REST && s.downT > 0.25f ? 0.45f * sinf((s.downT - 0.25f) * 7.0f) * expf(-(s.downT - 0.25f) * 1.2f) : 0.0f;
+    scale *= 1.0f - 0.06f * boss_recoil(b);
+    proc_mesh_set_transform(s.unshackled ? &s.eyeHot : &s.eye, scale, (float[3]){ rock, yaw, 0.0f }, b->pos);
 
     // Corona: two rings of flame tongues behind the eye, turning opposite ways
     static float spinAngle;
@@ -781,7 +821,7 @@ void sun_boss_draw(Boss* b)
     float cs = scale * (1.0f + 0.05f * sinf(s.life * 7.0f)) * (1.0f - dying);
     ProcMesh *cor = s.unshackled ? s.coronaHot : s.corona;
     for (int i = 0; i < 2; i++)
-        proc_mesh_set_transform(&cor[i], cs, (float[3]){ 0.0f, yaw, i ? -spinAngle * 1.3f : spinAngle }, b->pos);
+        proc_mesh_set_transform(&cor[i], cs, (float[3]){ rock, yaw, i ? -spinAngle * 1.3f : spinAngle }, b->pos);
 
     // Glows blood red, pulsing, before it slams down (the dive) or bursts (the corona)
     float warn = s.state == SB_DIVE ? (s.step ? 1.0f : clamp01((s.t - 0.2f) / 0.6f))

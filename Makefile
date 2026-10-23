@@ -28,7 +28,12 @@ N64_MKDFS_ROOT = $(FILESYSTEMDIR)
 TARGET = $(basename $(ROM))
 
 # Keep in sync with N64_ROM_TITLE below (ROM display name / Advanced Homebrew header).
+# The HLE ROM shows as "The Pandemonium" in emulator libraries, the hardware one as "Pandemonium"
+ifeq ($(HLE),1)
+ROM_TITLE := The Pandemonium
+else
 ROM_TITLE := Pandemonium
+endif
 
 # Read version from VERSION file for versioned builds
 VERSION := $(strip $(shell cat VERSION))

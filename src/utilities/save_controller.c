@@ -384,6 +384,13 @@ bool save_controller_load_settings(void) {
     character_skin_set_hood_up(saved_hood_up(d));
     // a skin this slot hasn't unlocked (an older save, before the unlocks) falls back to the Knight
     character_skin_set(save_progress_skin_unlocked(d, saved_skin(d)) ? saved_skin(d) : SKIN_KNIGHT);
+#ifdef WIP_TEST_EMBERS   // testing aid for the WIP builds (the Makefile): every slot starts with at least this many Embers
+    { TowerSave t; save_controller_get_tower(&t); if (t.embers < WIP_TEST_EMBERS) { t.embers = WIP_TEST_EMBERS; save_controller_set_tower(&t); }
+#ifdef HLE_AUTOPLAY
+      { TowerSave u; save_controller_get_tower(&u); debugf("[save] Embers on boot: %d\n", u.embers); }
+#endif
+    }
+#endif
     joypad_set_layout(d->_pad[20]);                         // 0 (older saves): classic
     camera_set_speed(d->_pad[21] ? d->_pad[21] : 3);        // 0 (older saves): the original speed
     return true;
@@ -478,14 +485,14 @@ bool save_progress_skin_unlocked(const SaveData *d, int skin)
 {
     if (skin == SKIN_CRIMSON_CLOAK) return d && d->best_boss_time_ms > 0;
     if (skin == SKIN_TEAL_CLOAK) return save_progress_tower_best_floor(d) >= 10;
-    if (skin == SKIN_WYLDER) return d && (d->_pad[19] & TOWER_FLAG_WYLDER);   // bought at the Shrine
+    if (skin == SKIN_NIGHTFARER) return d && (d->_pad[19] & TOWER_FLAG_NIGHTFARER);   // bought at the Shrine
     return skin >= 0 && skin < SKIN_COUNT;
 }
 
 int save_progress_skins_unlocked(const SaveData *d)
 {
     return save_progress_skin_unlocked(d, SKIN_CRIMSON_CLOAK) + save_progress_skin_unlocked(d, SKIN_TEAL_CLOAK)
-         + save_progress_skin_unlocked(d, SKIN_WYLDER);
+         + save_progress_skin_unlocked(d, SKIN_NIGHTFARER);
 }
 
 bool save_controller_skin_unlocked(int skin)

@@ -16,7 +16,8 @@
 void sun_boss_begin(Boss* boss);
 // Ends its descent and starts the fight (the intro cutscene ends or is skipped).
 void sun_boss_skip_intro(Boss* boss);
-bool sun_boss_stagger(Boss* boss);   // the stagger meter broke: false if it can't stagger now
+bool sun_boss_stagger(Boss* boss);
+void sun_boss_half_stagger(Boss* boss);   // the meter half full: a flinch that breaks off a windup   // the stagger meter broke: false if it can't stagger now
 void sun_boss_update(Boss* boss, float dt);
 void sun_boss_draw(Boss* boss);
 void sun_boss_free(void);

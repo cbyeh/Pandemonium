@@ -68,10 +68,10 @@ const char* tower_relic_desc(int i);
 int  tower_relic_equipped(void);        // -1: none
 void tower_relic_cycle(int dir);        // none -> each relic -> none
 
-// ---- Wylder, a skin bought at the Shrine ----
-bool tower_wylder_owned(void);
-int  tower_wylder_cost(void);
-bool tower_wylder_buy(void);
+// ---- Nightfarer, a skin bought at the Shrine ----
+bool tower_nightfarer_owned(void);
+int  tower_nightfarer_cost(void);
+bool tower_nightfarer_buy(void);
 
 // ---- Shrine (persistent, per save slot) ----
 int  tower_embers(void);

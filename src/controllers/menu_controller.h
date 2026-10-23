@@ -94,7 +94,7 @@ typedef enum {
 // The Shrine: the five upgrades, Back
 #define MENU_SHRINE_UPGRADES 5
 #define MENU_SHRINE_RELIC    (MENU_SHRINE_UPGRADES)       // left/right or A: the relic for the climb
-#define MENU_SHRINE_WYLDER   (MENU_SHRINE_UPGRADES + 1)   // A: buy the Wylder skin
+#define MENU_SHRINE_NIGHTFARER   (MENU_SHRINE_UPGRADES + 1)   // A: buy the Nightfarer skin
 #define MENU_SHRINE_COUNT    (MENU_SHRINE_UPGRADES + 3)
 
 typedef enum {

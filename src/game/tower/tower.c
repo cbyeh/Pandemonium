@@ -19,7 +19,9 @@
 #define BOSS_DMG_PER_CIRCLE 0.20f
 #define DRAFT_CHOICES       3
 #define START_POTIONS       3         // as in the original game
-#define BONUS_HP_IN_TOWER   0.5f      // their health was sized for 7 potions and the skills
+// A floor is one fight: the Guardian's two phases (200 together in the story) are two floors of
+// 100, so a Bonus boss has half its story health and the story's ratios hold (75, 100, 125)
+#define BONUS_HP_IN_TOWER   0.5f
 #define HP_PER_SKILL        (1.0f / 3.0f)   // all three unlocked: double, like the Skills setting
 
 enum { TIER_COMMON, TIER_RARE, TIER_LEGENDARY };
@@ -28,8 +30,8 @@ typedef struct { const char *name, *desc; uint8_t maxStacks, tier; } BoonDef;
 static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_EMBER_EDGE]    = { "Ember Edge",    "+15% damage",                  3, TIER_COMMON },
     [BOON_IRON_SKIN]     = { "Iron Skin",     "-15% damage taken",            2, TIER_COMMON },
-    [BOON_DEEP_FLASK]    = { "Deep Flask",    "+1 potion",                    3, TIER_COMMON },
-    [BOON_KINDLED_FLASK] = { "Kindled Flask", "Potions heal 15% more",        2, TIER_COMMON },
+    [BOON_DEEP_FLASK]    = { "Deep Flask",    "+3 potions",                   2, TIER_COMMON },
+    [BOON_KINDLED_FLASK] = { "Kindled Flask", "Potions heal 25% more",        2, TIER_COMMON },
     [BOON_FLEETFOOT]     = { "Fleetfoot",     "Rolls cost 40% less stamina",  1, TIER_RARE },
     [BOON_SECOND_WIND]   = { "Second Wind",   "+40% stamina regen",           2, TIER_COMMON },
     [BOON_MOON_MASTERY]  = { "Moon Mastery",  "Skill cooldowns -20%",         2, TIER_RARE },
@@ -65,13 +67,13 @@ enum { RELIC_NONE, RELIC_DAMAGE, RELIC_WARD, RELIC_FLASK, RELIC_HEALTH, RELIC_ST
 static const struct { const char *adj, *desc; } RELIC_FX[RELIC_FX_COUNT] = {
     [RELIC_DAMAGE]  = { "Keen",    "+6% damage" },
     [RELIC_WARD]    = { "Warding", "-6% damage taken" },
-    [RELIC_FLASK]   = { "Brimming","+1 potion" },
+    [RELIC_FLASK]   = { "Brimming","+2 potions" },
     [RELIC_HEALTH]  = { "Hale",    "+15 max health" },
     [RELIC_STAMINA] = { "Swift",   "+20% stamina regen" },
     [RELIC_EMBERS]  = { "Gilded",  "+20% Embers" },
     [RELIC_SKILL]   = { "Sage",    "Start knowing a skill" },
 };
-#define WYLDER_COST 80
+#define NIGHTFARER_COST 300
 
 typedef struct { const char *name, *desc; } UpgradeDef;
 
@@ -204,16 +206,16 @@ static void relic_award(void)
 #endif
 }
 
-// ---- Wylder ----
+// ---- Nightfarer ----
 
-bool tower_wylder_owned(void) { TowerSave t; save_controller_get_tower(&t); return t.flags & TOWER_FLAG_WYLDER; }
-int  tower_wylder_cost(void) { return tower_wylder_owned() ? -1 : WYLDER_COST; }
-bool tower_wylder_buy(void)
+bool tower_nightfarer_owned(void) { TowerSave t; save_controller_get_tower(&t); return t.flags & TOWER_FLAG_NIGHTFARER; }
+int  tower_nightfarer_cost(void) { return tower_nightfarer_owned() ? -1 : NIGHTFARER_COST; }
+bool tower_nightfarer_buy(void)
 {
     TowerSave t; save_controller_get_tower(&t);
-    if ((t.flags & TOWER_FLAG_WYLDER) || t.embers < WYLDER_COST) return false;
-    t.embers -= WYLDER_COST;
-    t.flags |= TOWER_FLAG_WYLDER;
+    if ((t.flags & TOWER_FLAG_NIGHTFARER) || t.embers < NIGHTFARER_COST) return false;
+    t.embers -= NIGHTFARER_COST;
+    t.flags |= TOWER_FLAG_NIGHTFARER;
     return save_controller_set_tower(&t);
 }
 
@@ -348,7 +350,7 @@ void tower_draft_pick(int index)
     if (index >= 0 && index < s.nChoices) {
         BoonId b = s.choices[index];
         s.stacks[b]++;
-        if (b == BOON_DEEP_FLASK) character.healthPotions++;
+        if (b == BOON_DEEP_FLASK) character.healthPotions = character.healthPotions + 3 > 9 ? 9 : character.healthPotions + 3;
         if (b == BOON_LEARN_MOONBLADE) s.skills |= 1 << SKILL_MOON_BLADE_DANCE;
         if (b == BOON_LEARN_HALFMOON)  s.skills |= 1 << SKILL_HALFMOON_SLASH;
         if (b == BOON_LEARN_CLEAVE)    s.skills |= 1 << SKILL_CRESCENT_CLEAVE;
@@ -550,7 +552,7 @@ float tower_on_sword_hit(void)
     return storm ? 12.0f : 0.0f;
 }
 
-int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + tower_boon_stacks(BOON_DEEP_FLASK) + has_relic(RELIC_FLASK) : 7; }
+int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + 3 * tower_boon_stacks(BOON_DEEP_FLASK) + 2 * has_relic(RELIC_FLASK) : 3; }   // Story and Bonus: 3
 bool  tower_mod_skill_allowed(int skill) { return character_skills_enabled() && (!s.active || knows(skill)); }
 float tower_mod_skill_damage(int skill)
 {
@@ -560,7 +562,7 @@ float tower_mod_skill_damage(int skill)
 }
 float tower_mod_potion_heal(void)
 {
-    return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.15f * tower_boon_stacks(BOON_KINDLED_FLASK))
+    return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.25f * tower_boon_stacks(BOON_KINDLED_FLASK))
            * (tower_boon_stacks(BOON_BLOOD_PACT) ? 0.75f : 1.0f);
 }
 float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH); }
@@ -595,5 +597,5 @@ void tower_floor_restore(void)
 {
     // A third of the health and one potion back, up to the run's maximum
     character.health = fminf(character.maxHealth, character.health + character.maxHealth / 3.0f);
-    if (character.healthPotions < tower_mod_max_potions()) character.healthPotions++;
+    if (character.healthPotions < 9) character.healthPotions++;    // a potion every fallen boss, even past the run's maximum (9: the HUD's one digit)
 }

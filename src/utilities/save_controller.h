@@ -60,7 +60,7 @@ typedef struct {
     uint8_t  flags;          // TOWER_FLAG_*; bits 1-2: the equipped relic (1-3, 0 none)
     uint8_t  relics[3];      // two effects a relic (high, low nibble); 0: an empty slot
 } TowerSave;
-#define TOWER_FLAG_WYLDER 0x01   // the Wylder skin, bought at the Shrine
+#define TOWER_FLAG_NIGHTFARER 0x01   // the Nightfarer skin, bought at the Shrine
 void save_controller_get_tower(TowerSave *out);
 bool save_controller_set_tower(const TowerSave *in);
 
@@ -68,7 +68,7 @@ bool save_controller_set_tower(const TowerSave *in);
 int  save_progress_tower_best_floor(const SaveData *d);
 int  save_progress_tower_embers(const SaveData *d);
 int  save_progress_bonus_mask(const SaveData *d);      // bit per Bonus boss beaten: Fallen Warrior, Shackled Sun, Shadowborne
-// The skins earned (of SAVE_SKINS_TO_EARN: the Crimson and Teal cloaks, Wylder; the rest are open from the start)
+// The skins earned (of SAVE_SKINS_TO_EARN: the Crimson and Teal cloaks, Nightfarer; the rest are open from the start)
 #define SAVE_SKINS_TO_EARN 3
 int  save_progress_skins_unlocked(const SaveData *d);
 bool save_progress_skin_unlocked(const SaveData *d, int skin);

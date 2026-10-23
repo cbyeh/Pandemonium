@@ -275,6 +275,8 @@ typedef struct Boss {
 
     // Stagger meter: hits fill it (0..1), it drains when left alone; full, the boss staggers
     float poise, poiseIdleT, staggerT;     // staggerT > 0: staggered, hits land harder
+    float recoilT;                         // a half stagger (the meter half full): the flinch, counting down
+    bool halfDone;                         // this fill's half stagger has played
 } Boss;
 
 // Intent/command struct - what AI wants to happen this frame
@@ -313,6 +315,8 @@ void boss_update(Boss* boss);
 void boss_draw(Boss* boss);
 // A broken stagger meter: each boss's own stagger (false if it can't right now: airborne, mid-cast)
 bool boss_try_stagger(Boss* boss);
+void boss_try_half_stagger(Boss* boss);
+float boss_recoil(const Boss* boss);     // 0..1: a half stagger's flinch, for drawing
 void boss_draw_ui(Boss* boss, void* viewport); // T3DViewport* but avoiding header dependency
 
 void boss_turn_towards_yaw(Boss *boss, float targetYaw, float maxTurn);

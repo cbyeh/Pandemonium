@@ -36,7 +36,7 @@ Toggle in **Settings > Skills** (title screen). Bosses have double health with s
 **Settings > Skin**: the Knight, the Umber Cloak, Wolf Knight, Black Swordsman and Scarlet Valkyrie from the start. Three more unlock:
 - **Crimson Cloak:** beat the story (the Guardian, then Guardian Unbound).
 - **Teal Cloak:** reach floor 10 of the Tower (two full circles).
-- **Wylder:** buy him at **Tower > Shrine** for 80 Embers.
+- **Nightfarer:** buy him at **Tower > Shrine** for 80 Embers.
 
 **Settings > Hood** puts a cloak's hood up or down.
 
@@ -51,7 +51,7 @@ Toggle in **Settings > Skills** (title screen). Bosses have double health with s
 - **Boons** come in Common, Rare and Legendary (bronze, blue and gold cards). Legendaries get likelier every circle. Some change how you play: Phantom Step and Riposte reward perfect dodges, Crushing Blows and Executioner reward staggers, Storm Blade calls lightning on every fourth hit, Blood Pact trades potion strength for damage.
 - **Nights:** from the second circle, each circle draws a night: Blood Moon, Iron Night or Starfall. Each is a trade-off that pays more Embers, announced before the circle starts.
 - **Relics:** clearing a circle finds a relic with two random effects. You keep three; choose one to carry at **Tower > Shrine**.
-- **Embers:** cleared floors earn Embers, kept when you die. Spend them at **Tower > Shrine** on permanent upgrades, which only apply in the Tower, and on the Wylder skin.
+- **Embers:** cleared floors earn Embers, kept when you die. Spend them at **Tower > Shrine** on permanent upgrades, which only apply in the Tower, and on the Nightfarer skin.
 
 Each save slot keeps its best floor, Embers and relics. **Load Game** shows a slot's progress: story clear time, best Tower floor, Bonus bosses beaten and skins earned (of the three that unlock).
 
@@ -170,6 +170,7 @@ Third-party audio added in this fork. Everything here is CC0 (public domain), so
 | Asset | Used for | Author | Source |
 |---|---|---|---|
 | CC0 Deep Monster Roar | Shadowborne's roar | trazzz123 | [OpenGameArt](https://opengameart.org/content/cc0-deep-monster-roar) |
+| Erase / Escape | The roll | Fupi | [OpenGameArt](https://opengameart.org/content/erase-escape) |
 | 80 CC0 RPG SFX | Skill casts, potion, fire breath, the dark beam and nova, explosions, chains, the armour clank | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-rpg-sfx) |
 | Determined Pursuit (epic orchestra loop) | Shadowborne's theme | Emma_MA | [OpenGameArt](https://opengameart.org/content/determined-pursuit-epic-orchestra-loop) |
 | Boss Battle #2 [Symphonic Metal] | The Shackled Sun's theme | nene | [OpenGameArt](https://opengameart.org/content/boss-battle-2-symphonic-metal) |

@@ -602,26 +602,31 @@ void skill_fx_draw(void)
 
 void skill_fx_draw_vortex(const float top[3], float depth, float radius, float time)
 {
-    enum { STRANDS = 12, SEG = 9 };
+    // The ending's tunnel, as the video's: a solid funnel of near-straight streaks, red and
+    // orange, slightly twisted, with narrow violet streaks spinning faster through it
+    enum { BASE = 16, STREAKS = 12, SEG = 8 };
     draw_begin();
-    for (int k = 0; k < STRANDS; k++) {
-        float outer[SEG][3], inner[SEG][3];
-        uint32_t co[SEG], ci[SEG];
-        bool hot = (k & 1) == 0;
-        float spin = time * (hot ? 1.6f : 1.1f);
-        for (int i = 0; i < SEG; i++) {
-            float u = (float)i / (SEG - 1);
-            float r = radius * powf(1.0f - u, 1.4f) + 3.0f;
-            float a = 2.0f * T3D_PI * k / STRANDS + spin + u * 2.8f;
-            float w = 0.2f + 0.12f * (1.0f - u);
-            float y = top[1] - depth * u;
-            outer[i][0] = top[0] + r * cosf(a - w); outer[i][1] = y; outer[i][2] = top[2] + r * sinf(a - w);
-            inner[i][0] = top[0] + r * cosf(a + w); inner[i][1] = y; inner[i][2] = top[2] + r * sinf(a + w);
-            float al = 0.9f - 0.5f * u;
-            co[i] = hot ? rgba(255, 150, 40, al) : rgba(170, 60, 240, al);
-            ci[i] = hot ? rgba(255, 210, 120, al * 0.5f) : rgba(230, 120, 255, al * 0.5f);
+    for (int pass = 0; pass < 2; pass++) {
+        int n = pass ? STREAKS : BASE;
+        for (int k = 0; k < n; k++) {
+            float outer[SEG][3], inner[SEG][3];
+            uint32_t co[SEG], ci[SEG];
+            float spin = time * (pass ? 1.9f : 0.7f) + (pass ? k * 0.37f : 0.0f);
+            for (int i = 0; i < SEG; i++) {
+                float u = (float)i / (SEG - 1);
+                float r = radius * powf(1.0f - u, 1.25f) + 3.0f;
+                float a = 2.0f * T3D_PI * k / n + spin + u * (pass ? 1.0f : 0.6f);
+                float w = pass ? 0.07f + 0.05f * (1.0f - u) : T3D_PI / n + 0.02f;   // the base strands touch: no gaps
+                float y = top[1] - depth * u;
+                outer[i][0] = top[0] + r * cosf(a - w); outer[i][1] = y; outer[i][2] = top[2] + r * sinf(a - w);
+                inner[i][0] = top[0] + r * cosf(a + w); inner[i][1] = y; inner[i][2] = top[2] + r * sinf(a + w);
+                float al = pass ? 0.85f - 0.4f * u : 0.95f;
+                if (pass) { co[i] = rgba(150, 50, 235, al); ci[i] = rgba(215, 110, 255, al); }
+                else if (k & 1) { co[i] = rgba(235, 70, 30, al); ci[i] = rgba(255, 140, 40, al); }
+                else { co[i] = rgba(255, 120, 30, al); ci[i] = rgba(250, 70, 40, al); }
+            }
+            build_ribbon(outer, inner, co, ci, SEG);
         }
-        build_ribbon(outer, inner, co, ci, SEG);
     }
     draw_end();
 }

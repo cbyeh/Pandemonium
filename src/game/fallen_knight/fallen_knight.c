@@ -212,7 +212,7 @@ void fallen_knight_begin(Boss* boss)
     boss->health = boss->maxHealth;
     boss->mode = BOSS_MODE_CINEMATIC;       // not damageable until it lands
     boss->state = BOSS_STATE_INTRO;
-    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
+    boss->poise = boss->poiseIdleT = boss->staggerT = boss->recoilT = 0.0f; boss->halfDone = false;
     boss->damageFlashTimer = 0.0f;
     boss->velX = boss->velZ = 0.0f;
     boss->handAttackColliderActive = false;
@@ -253,6 +253,15 @@ bool fallen_knight_stagger(Boss* b)
     play(FKA_KNOCKDOWN, true);
     b->staggerT = 2.2f;
     return true;
+}
+
+void fallen_knight_half_stagger(Boss* b)
+{
+    (void)b;
+    // Flinches: a windup (a swing's, a skill's charge or crouch) is broken off, and it recovers
+    if (!s.ready || s.state == FK_INTRO || s.state == FK_MOONBLADE || s.state == FK_STAGGER || s.state == FK_DEAD) return;
+    bool winding = s.windK > 0.0f || (s.state == FK_HALFMOON && s.step == 0) || (s.state == FK_CLEAVE && s.t < 0.8f);
+    if (winding) { enter(FK_RECOVER); s.t = 0.4f; }    // a 1 s opening
 }
 
 // ---- Skills (hostile versions of the player's) ----
@@ -624,9 +633,11 @@ void fallen_knight_update(Boss* b, float dt)
     }
     t3d_skeleton_update(&s.skel);
 
-    const float sc[3] = { FK_SCALE, FK_SCALE, FK_SCALE };
+    // A half stagger: jolted back and down a little, squashed
+    float k = boss_recoil(b), p[3] = { b->pos[0] + dx / (dist + 1e-3f) * -6.0f * k, b->pos[1] - 2.0f * k, b->pos[2] + dz / (dist + 1e-3f) * -6.0f * k };
+    const float sc[3] = { FK_SCALE * (1.0f + 0.05f * k), FK_SCALE * (1.0f - 0.07f * k), FK_SCALE * (1.0f + 0.05f * k) };
     const float rot[3] = { 0.0f, b->rot[1] + FK_YAW_OFFSET, 0.0f };
-    t3d_mat4fp_from_srt_euler(s.mat, sc, rot, b->pos);
+    t3d_mat4fp_from_srt_euler(s.mat, sc, rot, p);
 #ifdef HLE_FK_TRACE     // test aid: the blade tip through each swing, to find its strike
     {
         static float last[3]; float base[3], tip[3];

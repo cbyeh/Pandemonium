@@ -32,7 +32,7 @@ typedef struct {
 
 // Accessories: procedural meshes riding a bone (see acc_build)
 enum { ACC_WINGED_HELM = 1, ACC_FUR_COLLAR = 2, ACC_BERSERK_HELM = 4, ACC_DRAGONSLAYER = 8,
-       ACC_WYLDER_HELM = 16, ACC_SCARF = 32, ACC_CLAW_SHOT = 64 };
+       ACC_NIGHTFARER_HELM = 16, ACC_SCARF = 32, ACC_CLAW_SHOT = 64 };
 
 typedef struct {
     const char *name;
@@ -63,12 +63,12 @@ static const SkinDef SKINS[SKIN_COUNT] = {
                                 .chain = C(72, 60, 40), .hidePlume = true,
                                 .cl = { { CLOTH_HAIR, C(196, 64, 30), true, 3.4f, 0.3f }, { CLOTH_CLOAK, C(86, 12, 16), false, 4.8f, 0.55f, 0.8f } },
                                 .acc = ACC_WINGED_HELM | ACC_FUR_COLLAR },
-    // Wylder (Nightreign): a winged silver helm, a dark scarf, a royal-blue tabard and long coat,
+    // Nightfarer (Nightreign): a winged silver helm, a dark scarf, a royal-blue tabard and long coat,
     // the claw shot on his left forearm
-    [SKIN_WYLDER]           = { "Wylder", .armor = C(92, 96, 112), .helm = C(176, 180, 194), .cloth = C(30, 56, 150),
+    [SKIN_NIGHTFARER]           = { "Nightfarer", .armor = C(92, 96, 112), .helm = C(176, 180, 194), .cloth = C(30, 56, 150),
                                 .chain = C(58, 60, 72), .hidePlume = true,
                                 .cl = { { CLOTH_CLOAK, C(38, 66, 170), false, 6.0f, 0.45f } },
-                                .acc = ACC_WYLDER_HELM | ACC_SCARF | ACC_CLAW_SHOT },
+                                .acc = ACC_NIGHTFARER_HELM | ACC_SCARF | ACC_CLAW_SHOT },
 };
 
 static int  s_skin = SKIN_KNIGHT;
@@ -125,10 +125,12 @@ typedef struct {
     bool valid;
     float time;
     T3DVertPacked *vb[RING];
-    T3DMat4FP *mat[RING];
     rspq_block_t *tris[RING];   // loads its buffer and draws the grid: recorded once (per width)
     int trisCols;
+    T3DVertPacked *hv[RING];    // a lowered hood: a pouch on the cloak's top rows, moving with it
+    rspq_block_t *htris[RING];
     float acc;                  // time gathered for the next step (it steps every other frame)
+    int built;                  // the ring slot holding the vertices last built (-1: none)
     bool stepped;               // stepped this frame: drawn halfway from the last state (q) to p
     int ring;
 } Cloth;
@@ -332,16 +334,31 @@ static uint32_t shade(SkinColor c, const float n[3], float bias)
     return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xFF;
 }
 
-// k blends the free particles from their last state (q) to the current (p): the cloth steps
-// every other frame and is drawn in between, so it moves every frame at half the cost
-static void cloth_draw(Cloth *cl, const ClothSpec *sp, const float origin[3], float k)
+// The vertices are in the knight's model space, drawn with its matrix: built only when the cloth
+// stepped (every other frame), between steps the same vertices follow the body as it moves and
+// turns. o is the model's origin in the world, ax its unit axes there (scaled), s2 their |ax|^2
+#define HOOD_C 5
+#define HOOD_R 5
+#define HOOD_V 26       // HOOD_C * HOOD_R, rounded up to even (packed in pairs)
+static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat, const float o[3], const float ax[3][3], float s2, bool rebuild, bool hood)
 {
     if (!cl->vb[0]) {
         for (int i = 0; i < RING; i++) {
             cl->vb[i] = malloc_uncached(sizeof(T3DVertPacked) * CLOTH_N / 2);
-            cl->mat[i] = malloc_uncached(sizeof(T3DMat4FP));
+            cl->hv[i] = malloc_uncached(sizeof(T3DVertPacked) * HOOD_V / 2);
+            rspq_block_begin();
+            t3d_vert_load(cl->hv[i], 0, HOOD_C * HOOD_R);
+            for (int r = 0; r < HOOD_R - 1; r++)
+                for (int c = 0; c < HOOD_C - 1; c++) {
+                    int k = r * HOOD_C + c;
+                    t3d_tri_draw(k, k + HOOD_C, k + 1);
+                    t3d_tri_draw(k + 1, k + HOOD_C, k + HOOD_C + 1);
+                }
+            t3d_tri_sync();
+            cl->htris[i] = rspq_block_end();
         }
     }
+    hood = hood && cl->cols == CLOTH_COLS;
     if (cl->trisCols != cl->cols) {   // the grid's triangles never change: built once, not each frame
         rspq_wait();
         for (int k = 0; k < RING; k++) {
@@ -359,27 +376,18 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const float origin[3], fl
         }
         cl->trisCols = cl->cols;
     }
+    if (cl->built < 0) rebuild = true;
+    if (rebuild) {
+    cl->ring = (cl->ring + 1) % RING;
+    cl->built = cl->ring;
     // Written through the cache, then flushed for the RSP's DMA: uncached stores cost the
     // vertices 0.8 ms a frame
     T3DVertPacked *vb = CachedAddr(cl->vb[cl->ring]);
-    T3DMat4FP *mat = cl->mat[cl->ring];
-    rspq_block_t *tris = cl->tris[cl->ring];
-    cl->ring = (cl->ring + 1) % RING;
 
 #ifdef HLE_LOG_CLOTH
     uint32_t tb = TICKS_READ();
 #endif
-    // Positions relative to the character in 1/8 world units, for sub-unit precision
-    const float SUB = 8.0f;
-    t3d_mat4fp_from_srt_euler(mat, (float[3]){ 1 / SUB, 1 / SUB, 1 / SUB }, (float[3]){ 0, 0, 0 }, origin);
-#ifdef HLE_LOG_CLOTH
-    s_matT += TICKS_READ() - tb;
-#endif
-    float D[CLOTH_N][3];
-    int pinned = (sp->kind == CLOTH_PLUME ? 2 : 1) * cl->cols;     // the pinned rows sit on their pins now
-    for (int i = 0; i < cl->cols * cl->rows; i++)
-        for (int m = 0; m < 3; m++) D[i][m] = i < pinned ? cl->p[i][m] : cl->q[i][m] + (cl->p[i][m] - cl->q[i][m]) * k;
-    #define DC(c, r) D[(r) * cl->cols + (c)]
+    #define DC(c, r) PC(cl, c, r)
     for (int r = 0; r < cl->rows; r++)
         for (int c = 0; c < cl->cols; c++) {
             const float *l = DC(c > 0 ? c - 1 : c, r), *rr = DC(c < cl->cols - 1 ? c + 1 : c, r);
@@ -389,11 +397,50 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const float origin[3], fl
             float nl = 1.0f / (sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]) + 1e-6f);
             n[0] *= nl; n[1] *= nl; n[2] *= nl;
             const float *p = DC(c, r);
-            int16_t pos[3] = { (int16_t)((p[0] - origin[0]) * SUB), (int16_t)((p[1] - origin[1]) * SUB), (int16_t)((p[2] - origin[2]) * SUB) };
+            float w[3] = { p[0] - o[0], p[1] - o[1], p[2] - o[2] };     // world -> model units
+            int16_t pos[3];
+            for (int m = 0; m < 3; m++) pos[m] = (int16_t)((w[0] * ax[m][0] + w[1] * ax[m][1] + w[2] * ax[m][2]) / s2);
             // strands get a sheen down the middle, cloth darkens toward the hem
             float bias = strands(sp) ? 0.85f + 0.3f * (c == cl->cols / 2) : 1.0f - 0.25f * r / cl->rows;
             put_vert(vb, r * cl->cols + c, pos, shade(sp->color, n, bias));
         }
+    // A lowered hood lies on the cape (the reference: a pouch wide at the shoulders, rounded
+    // below, its dark inside open at the top): a grid over the cape's top rows, pushed out
+    // along the cape's own normals, so it swings with it. Rows: the inside (on the cape), the
+    // lip standing off it, then three rows down; columns 1-5 of the cape's seven
+    if (hood) {
+        T3DVertPacked *hv = CachedAddr(cl->hv[cl->ring]);
+        static const float FR[HOOD_R] = { 0.0f, 0.85f, 0.95f, 0.65f, 0.0f };   // how far each row stands off
+        const float H = 1.0f * GU;
+        float cx[3]; const float *cc = DC(3, 3);
+        for (int hr = 0; hr < HOOD_R; hr++)
+            for (int u = 0; u < HOOD_C; u++) {
+                int c = u + 1, r = hr < 2 ? 0 : hr - 1;
+                const float *p = DC(c, r);
+                const float *l = DC(c - 1, r), *rr = DC(c + 1, r), *dn = DC(c, r + 1), *up = DC(c, r > 0 ? r - 1 : r);
+                float a[3] = { rr[0] - l[0], rr[1] - l[1], rr[2] - l[2] }, b[3] = { dn[0] - up[0], dn[1] - up[1], dn[2] - up[2] };
+                float n[3] = { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] };
+                float nl = 1.0f / (sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]) + 1e-6f);
+                if (n[0] * ax[0][0] + n[1] * ax[0][1] + n[2] * ax[0][2] < 0.0f) nl = -nl;    // outward: toward the model's back
+                float fa = sinf(3.14159f * u / (HOOD_C - 1)), k = H * FR[hr] * fa;
+                float q[3];
+                for (int m = 0; m < 3; m++) q[m] = p[m] + n[m] * nl * k;
+                if (hr == 1) q[1] += 0.45f * H;                 // the lip rises off the shoulders
+                if (hr == 0) q[1] -= 0.15f * H;                 // the inside sits a little down in it
+                if (hr >= 3 && (u == 0 || u == HOOD_C - 1)) {   // rounded below: the sides drawn in
+                    float t = hr == 3 ? 0.25f : 0.55f;
+                    for (int m = 0; m < 3; m++) q[m] += (cc[m] - q[m]) * t * (m == 1 ? 0.0f : 1.0f);
+                }
+                (void)cx;
+                float w[3] = { q[0] - o[0], q[1] - o[1], q[2] - o[2] };
+                int16_t pos[3];
+                for (int m = 0; m < 3; m++) pos[m] = (int16_t)((w[0] * ax[m][0] + w[1] * ax[m][1] + w[2] * ax[m][2]) / s2);
+                float nn[3] = { n[0] * nl, n[1] * nl, n[2] * nl };
+                uint32_t col = shade(sp->color, nn, hr == 0 ? 0.28f : hr == 1 ? 0.8f : hr == HOOD_R - 1 ? 0.6f : 0.74f);   // dark inside, the lip lighter, a shadowed rim below: a layer, not a hump
+                put_vert(hv, hr * HOOD_C + u, pos, col);
+            }
+        data_cache_hit_writeback(hv, sizeof(T3DVertPacked) * HOOD_V / 2);
+    }
     #undef DC
 #ifdef HLE_LOG_CLOTH
     uint32_t tw = TICKS_READ();
@@ -401,11 +448,12 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const float origin[3], fl
     data_cache_hit_writeback(vb, sizeof(T3DVertPacked) * CLOTH_N / 2);
 #ifdef HLE_LOG_CLOTH
     s_wbT += TICKS_READ() - tw;
+    s_vtxT += TICKS_READ() - tb;
 #endif
+    }
 
 #ifdef HLE_LOG_CLOTH
     uint32_t tv = TICKS_READ();
-    s_vtxT += tv - tb;
 #endif
     rdpq_sync_pipe();
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
@@ -413,8 +461,9 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const float origin[3], fl
     rdpq_mode_zbuf(true, true);
     rdpq_mode_alphacompare(0);
     t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
-    t3d_matrix_set(mat, true);
-    rspq_block_run(tris);
+    t3d_matrix_set(modelMat, true);
+    rspq_block_run(cl->tris[cl->built]);
+    if (hood) rspq_block_run(cl->htris[cl->built]);
 #ifdef HLE_LOG_CLOTH
     s_subT += TICKS_READ() - tv;
 #endif
@@ -489,12 +538,7 @@ static void hood_build(void)
         t0 = -135 * R; t1 = 135 * R; p0 = -80 * R; p1 = 80 * R; nt = 9; np = 7;
         n0 = shell(s_hoodVerts[0], (float[3]){ -0.1f, 2.25f, 0 }, (float[3]){ 1.12f, 0.36f, 1.1f },
                    t0, t1, nt, p0, p1, np, 0, 0, s->cl[0].color);
-        // outside the cloak (it hangs from x 1.25 at the shoulders; at 0.9 the fold was buried in it),
-        // a little darker so it reads against the cloak
-        SkinColor c = s->cl[0].color;
-        c.r = c.r * 4 / 5; c.g = c.g * 4 / 5; c.b = c.b * 4 / 5;
-        n1 = shell(s_hoodVerts[1], (float[3]){ 1.4f, 2.2f, 0 }, (float[3]){ 0.38f, 0.58f, 1.0f },
-                   -90 * R, 90 * R, nt1, -88 * R, 88 * R, np1, 0, 0, c);
+        // the hood itself lies on the cape, part of its cloth (cloth_draw): it swings with it
     }
     rspq_block_begin();
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
@@ -551,7 +595,7 @@ static void acc_winged_helm(SkinColor gold)
         }
 }
 
-static void acc_wylder_helm(SkinColor silver)
+static void acc_nightfarer_helm(SkinColor silver)
 {
     // Wings on both temples, swept up and back like a Norse helm's: five feathers a side,
     // flaring out from the helm a little
@@ -709,7 +753,7 @@ static void acc_build(void)
     ACC(ACC_FUR_COLLAR, B_SPINE, ring(-0.1f, 2.62f, 1.32f, 0.38f, 1.42f, -2.5f, 2.5f, 16, 3, proc_rgb(156, 132, 100), 0.08f));
     ACC(ACC_BERSERK_HELM, B_HEAD, acc_berserk_helm(s->helm));
     ACC(ACC_DRAGONSLAYER, B_HAND_R, acc_dragonslayer((SkinColor)C(70, 68, 70)));
-    ACC(ACC_WYLDER_HELM, B_HEAD, acc_wylder_helm(s->helm));
+    ACC(ACC_NIGHTFARER_HELM, B_HEAD, acc_nightfarer_helm(s->helm));
     ACC(ACC_SCARF, B_SPINE, ring(-0.1f, 2.66f, 1.2f, 0.36f, 1.28f, -2.6f, 2.6f, 16, 3, proc_rgb(48, 50, 60), 0.03f));
     ACC(ACC_CLAW_SHOT, B_FORE_L, acc_claw_shot());
     #undef ACC
@@ -844,6 +888,12 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
     mat4fp_mul_point_f32_row3_colbasis(modelMat, (float[3]){ 0, 0, 0 }, o);
     mat4fp_mul_point_f32_row3_colbasis(modelMat, (float[3]){ GLTF, 0, 0 }, x1);
     for (int i = 0; i < 3; i++) back[i] = (x1[i] - o[i]) / GU;
+    float ax[3][3];     // the model's unit axes in the world, for world -> model units (uniform scale)
+    for (int a = 0; a < 3; a++) {
+        mat4fp_mul_point_f32_row3_colbasis(modelMat, (float[3]){ a == 0, a == 1, a == 2 }, ax[a]);
+        for (int m = 0; m < 3; m++) ax[a][m] -= o[m];
+    }
+    float s2 = ax[0][0] * ax[0][0] + ax[0][1] * ax[0][1] + ax[0][2] * ax[0][2];
     if (dt > 0.05f) dt = 0.05f;
 
     bool cape = s->cl[0].kind == CLOTH_CLOAK || s->cl[1].kind == CLOTH_CLOAK;
@@ -860,7 +910,7 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
         float *prev0 = prev[0];
         cloth_anchors(cl, sp, modelMat);
         float dx = cl->anchor[0][0] - prev0[0], dy = cl->anchor[0][1] - prev0[1], dz = cl->anchor[0][2] - prev0[2];
-        if (!cl->valid || dx * dx + dy * dy + dz * dz > 40.0f * 40.0f) { cloth_reset(cl, sp); cl->acc = 0.0f; }   // first frame or teleport
+        if (!cl->valid || dx * dx + dy * dy + dz * dz > 40.0f * 40.0f) { cloth_reset(cl, sp); cl->acc = 0.0f; cl->built = -1; }   // first frame or teleport
         else {      // carried partly with its pins (the run and the turns): it streams back at a slant, not flat out
             const float follow = sp->kind == CLOTH_CLOAK ? 0.55f : 0.35f;
             for (int c = 0; c < cl->cols; c++) {
@@ -897,7 +947,7 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
         s_stepT += TICKS_READ() - ts;
 #endif
         if (pl) t3d_state_set_depth_offset(-0x40);   // where it lies on the cape, it wins
-        cloth_draw(cl, sp, pos, cl->stepped ? 0.5f : 1.0f);
+        cloth_draw(cl, sp, modelMat, o, ax, s2, cl->stepped, s->hood && !s_hoodUp && sp->kind == CLOTH_CLOAK);
         if (pl) t3d_state_set_depth_offset(0);
     }
 #ifdef HLE_LOG_CLOTH

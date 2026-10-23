@@ -8,8 +8,10 @@
 #include "../../utilities/video_layout.h"
 #include "../../utilities/button_prompt_utility.h"
 
-#define BOSS_UI_TRAIL_HOLD_TIME 0.35f
-#define BOSS_UI_TRAIL_DECAY_RATE 0.6f
+// The yellow 'recent damage' chunk: held only briefly, so a hit reads at once (at 0.35 s a
+// small hit seemed to land late: the red drops a pixel, the chunk went a third of a second after)
+#define BOSS_UI_TRAIL_HOLD_TIME 0.1f
+#define BOSS_UI_TRAIL_DECAY_RATE 1.2f
 
 // Overall decorative frame layout.
 // Safe-area anchoring still comes from video_layout/ui_safe_margin_y().

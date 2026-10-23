@@ -360,15 +360,15 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     }
 #endif
 #ifdef HLE_TEST_SHRINE
-    // The Shrine's relic and Wylder rows: 200 Embers and two relics; Tower > Shrine, down to
-    // Relic, right twice (the second relic), down, A (buy Wylder); then the checks
+    // The Shrine's relic and Nightfarer rows: 200 Embers and two relics; Tower > Shrine, down to
+    // Relic, right twice (the second relic), down, A (buy Nightfarer); then the checks
     {
-        extern int tower_relic_equipped(void), tower_embers(void); extern bool tower_wylder_owned(void);
+        extern int tower_relic_equipped(void), tower_embers(void); extern bool tower_nightfarer_owned(void);
         static int phase = 0, t0 = 0, step = 0;
         int t = frame - t0;
         if (phase == 0) {
             if (menu_controller_is_active()) {
-                TowerSave ts; save_controller_get_tower(&ts); ts.embers = 200; ts.relics[0] = 0x12; ts.relics[1] = 0x67; save_controller_set_tower(&ts);
+                TowerSave ts; save_controller_get_tower(&ts); debugf("[shrine] Embers at the menu %d\n", ts.embers); ts.embers = 400; ts.relics[0] = 0x12; ts.relics[1] = 0x67; save_controller_set_tower(&ts);
                 phase = 1; t0 = frame;
             } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
@@ -379,8 +379,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 step++; t0 = frame;
             }
             if (!seq[step] && t == 40) {
-                debugf("[shrine] relic equipped %d, Wylder owned %d, skin unlocked %d, Embers %d\n", tower_relic_equipped(),
-                       tower_wylder_owned(), save_controller_skin_unlocked(SKIN_WYLDER), tower_embers());
+                debugf("[shrine] relic equipped %d, Nightfarer owned %d, skin unlocked %d, Embers %d\n", tower_relic_equipped(),
+                       tower_nightfarer_owned(), save_controller_skin_unlocked(SKIN_NIGHTFARER), tower_embers());
                 pressed->d_up = 1; phase = 2;
             }
         }
@@ -687,6 +687,20 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
             else if (frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 4) {
+#ifdef HLE_DUMMY_CAM      // the camera on the boss, from its front a little below (a pose check)
+            if (boss) {
+                cameraLockOnActive = false;
+                float a = boss->rot[1];
+                customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * 120.0f, boss->pos[1] + 30.0f, boss->pos[2] + cosf(a) * 120.0f }};
+                customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + 35.0f, boss->pos[2] }};
+                camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+                if (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE && frame % 20 == 0) debugf("[cam] f%d aerial, y %.0f\n", frame, (double)boss->pos[1]);
+            }
+#endif
+#ifdef HLE_TEST_STAGGER   // the stagger meter filled in steps every 5 s: a half stagger, then a full one, and again
+            if (boss && (frame % 60) == 0 && boss->staggerT <= 0.0f && boss->recoilT <= 0.0f) { boss->poise = fminf(1.0f, boss->poise + 0.55f); boss->poiseIdleT = 0.0f;
+                debugf("[stagtest] f%d poise %.2f\n", frame, (double)boss->poise); }
+#endif
 #ifdef HLE_DUMMY_MOVE   // keep running in a wide circle (the cloth in motion)
             in->stick_x = (int)(70 * cosf(tm * 0.8f)); in->stick_y = (int)(70 * sinf(tm * 0.8f));
 #endif

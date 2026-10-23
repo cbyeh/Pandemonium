@@ -16,7 +16,8 @@
 void fallen_knight_begin(Boss* boss);
 // Lands it at once and starts the fight (cutscene skip).
 void fallen_knight_skip_intro(Boss* boss);
-bool fallen_knight_stagger(Boss* boss);   // the stagger meter broke: false if it can't stagger now
+bool fallen_knight_stagger(Boss* boss);
+void fallen_knight_half_stagger(Boss* boss);   // the meter half full: a flinch that breaks off a windup   // the stagger meter broke: false if it can't stagger now
 void fallen_knight_update(Boss* boss, float dt);
 void fallen_knight_draw(Boss* boss);
 // Frees the knight instance (skeleton/animations); safe to call any time.

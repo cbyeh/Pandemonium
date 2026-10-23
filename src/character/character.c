@@ -761,7 +761,7 @@ void character_reset(void)
 
     character.maxHealth = tower_mod_max_health();     // 150, more in a Tower run with Vigor
     character.health = character.maxHealth;
-    character.healthPotions = tower_mod_max_potions(); // 7 (two phases: Guardian, then Unbound); 3 in a Tower run
+    character.healthPotions = tower_mod_max_potions(); // 3, and the Tower's own count in a run
     character.stamina = character.maxStamina;
     character.staminaRegenDelay = 0.0f;
     character.damageFlashTimer = 0.0f;
@@ -960,7 +960,7 @@ static inline void try_start_roll(const joypad_buttons_t* buttons, const StickIn
     characterState = CHAR_STATE_ROLLING;
     actionTimer = 0.0f;
     s_perfectThisRoll = false;
-    audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.45f, 0.0f);
+    audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.5f, 0.0f);     // "Erase / Escape" by Fupi (CC0), kept quiet
 
     // Shorten roll when moving so we return to locomotion sooner (prevents long slide)
     float mag = stick ? stick->magnitude : 0.0f;
@@ -2012,7 +2012,7 @@ static inline void start_knockdown_breakaway_roll(void)
     characterState = CHAR_STATE_ROLLING;
     actionTimer = 0.0f;
     s_perfectThisRoll = false;
-    audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.45f, 0.0f);
+    audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.5f, 0.0f);     // "Erase / Escape" by Fupi (CC0), kept quiet
 
     // Breakaway roll duration: pick whichever feels right.
     // If you want it snappier, use ROLL_DURATION_MOVING.

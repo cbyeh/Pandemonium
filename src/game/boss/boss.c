@@ -180,7 +180,15 @@ static void boss_update_transforms(Boss* boss)
     if (!boss || !boss->modelMat) return;
 
     T3DMat4FP* mat = (T3DMat4FP*)boss->modelMat;
-    t3d_mat4fp_from_srt_euler(mat, boss->scale, boss->rot, boss->pos);
+    // A half stagger: jolted back and down a little, squashed
+    float k = boss_recoil(boss), p[3] = { boss->pos[0], boss->pos[1] - 2.5f * k, boss->pos[2] };
+    float sc[3] = { boss->scale[0] * (1.0f + 0.05f * k), boss->scale[1] * (1.0f - 0.07f * k), boss->scale[2] * (1.0f + 0.05f * k) };
+    if (k > 0.0f) {
+        extern Character character;
+        float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz) + 1e-3f;
+        p[0] += dx / d * 6.0f * k; p[2] += dz / d * 6.0f * k;
+    }
+    t3d_mat4fp_from_srt_euler(mat, sc, boss->rot, p);
 
     boss_update_shadow_mat(boss);
 }
@@ -509,14 +517,15 @@ static inline void boss_update_shadow_mat(Boss* boss)
 // Health per fight, skills or not (the D-pad skills are tuned under the sword). The bonus bosses are
 // sized to the same difficulty as the Guardian's two phases together (measured damage
 // against a dummy + a binomial dodge model): they hit softer but more often.
-#define POISE_DAMAGE        40.0f    // stagger meter: this much damage fills it
+#define POISE_DAMAGE        28.0f    // stagger meter: this much damage fills it (7 sword hits; the half stagger on the 4th)
 #define STAGGER_DAMAGE_MULT 1.3f
 #define GUARDIAN_STAGGER_S  2.0f
+#define RECOIL_S            0.6f     // a half stagger's flinch
 
 static inline float boss_target_max_health(int phase)
 {
-    float base = (phase == FALLEN_KNIGHT_PHASE) ? 300.0f : (phase == SUN_BOSS_PHASE) ? 325.0f :
-                 (phase == DRAGON_BOSS_PHASE) ? 375.0f : 100.0f;
+    float base = (phase == FALLEN_KNIGHT_PHASE) ? 150.0f : (phase == SUN_BOSS_PHASE) ? 200.0f :
+                 (phase == DRAGON_BOSS_PHASE) ? 250.0f : 100.0f;
     if (tower_active()) return base * tower_boss_health_scale(phase);   // the climb and its unlocked skills
     return base;
 }
@@ -541,9 +550,10 @@ static void boss_sync_max_health(Boss* boss)
 // The stagger meter drains once the player lets up; full, the boss staggers as soon as it can
 static void boss_poise_update(Boss* boss, float dt)
 {
+    if (boss->recoilT > 0.0f) boss->recoilT = fmaxf(0.0f, boss->recoilT - dt);
     if (boss->staggerT > 0.0f) {
         boss->staggerT -= dt;
-        if (boss->staggerT <= 0.0f) { boss->staggerT = 0.0f; boss->poise = 0.0f; }
+        if (boss->staggerT <= 0.0f) { boss->staggerT = 0.0f; boss->poise = 0.0f; boss->halfDone = false; }
         return;
     }
     if (boss->mode != BOSS_MODE_COMBAT || boss->health <= 0.0f) { boss->poise = 0.0f; return; }
@@ -558,7 +568,34 @@ static void boss_poise_update(Boss* boss, float dt)
         }
         return;
     }
-    if (boss->poiseIdleT > 3.0f) boss->poise = fmaxf(0.0f, boss->poise - 0.15f * dt);
+    // Half full: a half stagger, once a fill (a flinch; the Bonus bosses lose the move they were winding up)
+    if (!boss->halfDone && boss->poise >= 0.5f) {
+        boss->halfDone = true;
+        boss->recoilT = RECOIL_S;
+        boss_try_half_stagger(boss);
+        audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH1, 0.6f, 0.0f);
+#ifdef HLE_AUTOPLAY
+        debugf("[stagger] boss %d half stagger\n", boss->phaseIndex);
+#endif
+    }
+    if (boss->poiseIdleT > 4.0f) boss->poise = fmaxf(0.0f, boss->poise - 0.10f * dt);    // 4 s let alone: it drains, 10% a second
+    if (boss->poise < 0.25f) boss->halfDone = false;     // drained well down: the next fill flinches again
+}
+
+void boss_try_half_stagger(Boss* boss)
+{
+    // The Guardian's is the recoil alone (its patterns stay as they were)
+    if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) fallen_knight_half_stagger(boss);
+    else if (boss->phaseIndex == SUN_BOSS_PHASE) sun_boss_half_stagger(boss);
+    else if (boss->phaseIndex == DRAGON_BOSS_PHASE) dragon_boss_half_stagger(boss);
+}
+
+float boss_recoil(const Boss* boss)
+{
+    // 0..1..0 over the flinch: a sharp jolt back, a slower recovery
+    if (boss->recoilT <= 0.0f) return 0.0f;
+    float u = 1.0f - boss->recoilT / RECOIL_S;
+    return u < 0.15f ? u / 0.15f : 1.0f - (u - 0.15f) / 0.85f;
 }
 
 bool boss_try_stagger(Boss* boss)
@@ -734,7 +771,7 @@ void boss_apply_damage(Boss* boss, float amount)
     if (boss->staggerT > 0.0f) amount *= STAGGER_DAMAGE_MULT * tower_mod_stagger_damage();     // staggered: hits land harder
     boss->health -= amount;
     if (boss->health < 0.0f) boss->health = 0.0f;
-    if (boss->staggerT <= 0.0f) {      // the stagger meter: about ten sword hits, or three charged ones, without letting up
+    if (boss->staggerT <= 0.0f) {      // the stagger meter: seven sword hits, or two charged ones, without letting up
         boss->poise = fminf(1.0f, boss->poise + amount * tower_mod_poise() / POISE_DAMAGE);
         boss->poiseIdleT = 0.0f;
     }
@@ -770,6 +807,16 @@ void boss_init(Boss* boss)
 
     T3DSkeleton* skeleton = malloc(sizeof(T3DSkeleton));
     *skeleton = t3d_skeleton_create(bossModel);
+#ifdef HLE_LOG_FPS       // test aid: what the Guardian costs to draw
+    { T3DModelIter it = t3d_model_iter_create(bossModel, T3D_CHUNK_TYPE_OBJECT); int objs = 0, tris = 0, verts = 0;
+      while (t3d_model_iter_next(&it)) { objs++; tris += it.object->triCount; int v = 0; for (int p = 0; p < it.object->numParts; p++) v += it.object->parts[p].vertLoadCount; verts += v;
+        debugf("[model] guardian part %s (%s): %d triangles, %d vertex loads, %d parts\n", it.object->name, it.object->material && it.object->material->name ? it.object->material->name : "?", it.object->triCount, v, it.object->numParts); }
+      debugf("[model] guardian: %d objects, %d triangles, %d vertex loads, %d bones\n", objs, tris, verts, t3d_model_get_skeleton(bossModel)->boneCount); }
+#endif
+#ifdef HLE_LOG_BONES     // test aid: the Guardian's bones
+    { const T3DChunkSkeleton *sk = t3d_model_get_skeleton(bossModel);
+      for (int i = 0; i < sk->boneCount; i++) debugf("[bone] %d %s parent %d\n", i, sk->bones[i].name, sk->bones[i].parentIdx); }
+#endif
     boss->skeleton = skeleton;
 
     T3DSkeleton* skeletonBlend = malloc(sizeof(T3DSkeleton));
@@ -1014,7 +1061,7 @@ void boss_init(Boss* boss)
     boss->visible = true;
     boss->mode = BOSS_MODE_INACTIVE;
     boss->pendingRequests = 0;
-    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
+    boss->poise = boss->poiseIdleT = boss->staggerT = boss->recoilT = 0.0f; boss->halfDone = false;
 
     boss_anim_init(boss);
     boss_ai_init(boss);
@@ -1125,7 +1172,7 @@ void boss_reset(Boss* boss)
     boss->visible = true;
     boss->mode = BOSS_MODE_INACTIVE;
     boss->pendingRequests = 0;
-    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
+    boss->poise = boss->poiseIdleT = boss->staggerT = boss->recoilT = 0.0f; boss->halfDone = false;
 
     boss_ai_init(boss);
     boss_anim_init(boss);
@@ -1143,6 +1190,7 @@ void boss_free(Boss* boss)
     if (!boss) return;
 
     rspq_wait();
+    boss_render_forget_model();     // its recorded blocks point into the model
 
     if (boss->model) {
         t3d_model_free((T3DModel*)boss->model);

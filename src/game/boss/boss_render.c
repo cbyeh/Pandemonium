@@ -161,34 +161,6 @@ typedef struct {
     Boss* boss;
 } BossDrawUserData;
 
-// Hide any sword-related objects once the boss is dead.
-// This is name-based and depends on object names embedded in the .t3dm.
-static bool boss_filter_hide_swords_when_dead(void* userData, const T3DObject* obj)
-{
-    BossDrawUserData* ud = (BossDrawUserData*)userData;
-    Boss* boss = ud ? ud->boss : NULL;
-
-    if (!boss) return true;
-    if (boss->state != BOSS_STATE_DEAD) return true;
-    if (!obj || !obj->name) return true;
-
-    // Filter either by object name OR by material name.
-    // In Tiny3D, each draw "object" has exactly one material, so this cleanly hides sub-materials
-    // even if the source asset was a single mesh with multiple material slots.
-    const char* matName = (obj->material && obj->material->name) ? obj->material->name : NULL;
-
-    // Specific Fast64 material names you showed. Keep this list tight to avoid accidental hiding.
-    if (matName) {
-        // Intentionally do NOT hide "z_sword1" (main sword).
-        if (strcmp(matName, "z_temp_swords") == 0 ||
-            strcmp(matName, "z_temp_swords_decal") == 0) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 static void boss_scroll_dyn_cb_wrapper(
     void* userData,
     const T3DMaterial* material,
@@ -210,6 +182,61 @@ void boss_draw_init(void)
     }
 }
 
+// The model is recorded into blocks once (re-emitting it cost the CPU 4.6 ms a frame, the
+// Guardian fight's largest stage): the main body at four flash tints, the temporary swords
+// apart (hidden once it is dead). Only the parts with a scrolling (dynamic) texture are drawn
+// live each frame. The bones are read from memory when a block runs, so it still animates.
+#define FLASH_LEVELS 4
+static const T3DModel *s_recModel;
+static rspq_block_t *s_recMain[FLASH_LEVELS], *s_recSwords;
+
+static bool is_temp_sword(const T3DObject *obj)
+{
+    const char *m = (obj && obj->material && obj->material->name) ? obj->material->name : NULL;
+    return m && (strcmp(m, "z_temp_swords") == 0 || strcmp(m, "z_temp_swords_decal") == 0);
+}
+static bool is_dynamic(const T3DObject *obj)
+{
+    return obj && obj->material && (obj->material->textureA.texReference || obj->material->textureB.texReference);
+}
+static bool filter_main(void *u, const T3DObject *obj) { (void)u; return !is_dynamic(obj) && !is_temp_sword(obj); }
+static bool filter_swords(void *u, const T3DObject *obj) { (void)u; return !is_dynamic(obj) && is_temp_sword(obj); }
+
+static void boss_record_blocks(Boss *boss)
+{
+    T3DSkeleton* skel = (T3DSkeleton*)boss->skeleton;
+    const T3DMat4FP *mats = (skel && skel->bufferCount == 1) ? skel->boneMatricesFP
+                          : (const T3DMat4FP*)t3d_segment_placeholder(T3D_SEGMENT_SKELETON);
+    if (s_recModel) {
+        rspq_wait();
+        for (int k = 0; k < FLASH_LEVELS; k++) rspq_block_free(s_recMain[k]);
+        rspq_block_free(s_recSwords);
+    }
+    for (int k = 0; k < FLASH_LEVELS; k++) {
+        if (k) boss_flash_apply_tint(0.35f * k / (FLASH_LEVELS - 1)); else boss_flash_restore();
+        rspq_block_begin();
+        t3d_model_draw_custom(boss->model, (T3DModelDrawConf){ .filterCb = filter_main, .matrices = mats });
+        s_recMain[k] = rspq_block_end();
+    }
+    boss_flash_restore();
+    rspq_block_begin();
+    t3d_model_draw_custom(boss->model, (T3DModelDrawConf){ .filterCb = filter_swords, .matrices = mats });
+    s_recSwords = rspq_block_end();
+    s_recModel = boss->model;
+}
+
+static bool filter_dynamic(void *u, const T3DObject *obj) { (void)u; return is_dynamic(obj); }
+
+/** Frees the recorded blocks (the model is about to go: a later one may reuse its address). */
+void boss_render_forget_model(void)
+{
+    if (!s_recModel) return;
+    rspq_wait();
+    for (int k = 0; k < FLASH_LEVELS; k++) rspq_block_free(s_recMain[k]);
+    rspq_block_free(s_recSwords);
+    s_recModel = NULL;
+}
+
 static void boss_draw_scrolling(Boss* boss)
 {
     BossDrawUserData ud = {
@@ -227,7 +254,7 @@ static void boss_draw_scrolling(Boss* boss)
         t3d_model_draw_custom(boss->model, (T3DModelDrawConf){
             .userData = &ud,
             .tileCb = NULL,
-            .filterCb = boss_filter_hide_swords_when_dead,
+            .filterCb = filter_dynamic,
             .dynTextureCb = NULL,
             .matrices = (skel && skel->bufferCount == 1)
                 ? skel->boneMatricesFP
@@ -242,7 +269,7 @@ static void boss_draw_scrolling(Boss* boss)
     t3d_model_draw_custom(boss->model, (T3DModelDrawConf){
         .userData = &ud,
         .tileCb = NULL,
-        .filterCb = boss_filter_hide_swords_when_dead,
+        .filterCb = filter_dynamic,
         .dynTextureCb = boss_scroll_dyn_cb_wrapper,
         .matrices = (skel && skel->bufferCount == 1)
             ? skel->boneMatricesFP
@@ -286,7 +313,9 @@ void boss_render_draw(Boss* boss)
     // This avoids expensive mode changes per boss.
 
     boss_flash_cache_init((const T3DModel*)boss->model);
+    if (s_recModel != boss->model) boss_record_blocks(boss);
 
+    float tint = 0.0f;
     if (boss->damageFlashTimer > 0.0f) {
         // 0.25s window: hold peak tint for the first half, then fade out.
         // Peak is intentionally well below 1.0 so the boss reads as "hurt"
@@ -298,7 +327,7 @@ void boss_render_draw(Boss* boss)
         if (f < 0.0f) f = 0.0f;
         if (f > 1.0f) f = 1.0f;
 
-        float tint = (f >= 0.5f)
+        tint = (f >= 0.5f)
             ? kMaxTint
             : (f * 2.0f * kMaxTint);
 
@@ -307,6 +336,12 @@ void boss_render_draw(Boss* boss)
         boss_flash_restore();
     }
 
+    // The recorded body at the nearest flash tint, the swords while it lives, the scrolling parts live
+    int level = (int)(tint / 0.35f * (FLASH_LEVELS - 1) + 0.5f);
+    if (level < 0) level = 0; else if (level > FLASH_LEVELS - 1) level = FLASH_LEVELS - 1;
+    t3d_matrix_set(boss->modelMat, true);
+    rspq_block_run(s_recMain[level]);
+    if (boss->state != BOSS_STATE_DEAD) rspq_block_run(s_recSwords);
     boss_draw_scrolling(boss);
 
     // Draw sword attached to Hand-Right bone.

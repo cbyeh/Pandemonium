@@ -398,6 +398,16 @@ static void scene_update_video_preroll(void)
     }
 }
 
+#ifdef HLE_LOG_FPS
+static void log_model(const char *name, const T3DModel *m)   // test aid: what a model costs to draw
+{
+    T3DModelIter it = t3d_model_iter_create(m, T3D_CHUNK_TYPE_OBJECT);
+    int objs = 0, tris = 0;
+    int verts = 0;
+    while (t3d_model_iter_next(&it)) { objs++; tris += it.object->triCount; for (int p = 0; p < it.object->numParts; p++) verts += it.object->parts[p].vertLoadCount; }
+    debugf("[model] %s: %d objects, %d triangles, %d vertex loads, BVH %s\n", name, objs, tris, verts, t3d_model_bvh_get(m) ? "yes" : "no");
+}
+#endif
 void scene_load_environment(void)
 {
     // ===== LOAD MAP =====
@@ -469,6 +479,10 @@ void scene_load_environment(void)
         (float[3]){0.0f, roomY, 0.0f}
     );
 
+#ifdef HLE_LOG_FPS
+    log_model("room", mapModel); log_model("pillars", pillarsModel); log_model("pillars_front", pillarsFrontModel);
+    log_model("ledge", roomLedgeModel); log_model("windows", windowsModel);
+#endif
     // ===== LOAD PERSISTENT CEILING CHAINS =====
     chainsModel = t3d_model_load("rom:/boss_room/ceiling_chains.t3dm");
     rspq_block_begin();
@@ -530,6 +544,10 @@ void scene_load_environment(void)
     rspq_block_begin();
         t3d_model_draw(roomFloorModel);
     roomFloorDpl = rspq_block_end();
+#ifdef HLE_LOG_FPS
+    log_model("floor", roomFloorModel);
+    { extern T3DModel* characterModel; log_model("knight", characterModel); }
+#endif
 
     roomFloorMatrix = malloc_uncached(sizeof(T3DMat4FP));
     t3d_mat4fp_from_srt_euler(
@@ -2108,6 +2126,25 @@ static void scene_draw_video_trigger(T3DViewport *vp)
 #ifdef HLE_LOG_FPS
 static uint32_t s_prof[8];
 #endif
+// The hall, culled to the camera: each object's geometry recorded once (its userBlock), and
+// each frame only those in the view frustum drawn, their materials set as they go. The RSP's
+// vertex work bounds the frame (the CPU has time to spare), and much of the hall is behind
+// the camera. The hall models are all drawn at MODEL_SCALE, raised by roomY
+static void draw_culled(T3DModel *m, const T3DViewport *vp)
+{
+    T3DModelIter it = t3d_model_iter_create(m, T3D_CHUNK_TYPE_OBJECT);
+    T3DModelState state = t3d_model_state_create();
+    while (t3d_model_iter_next(&it)) {
+        T3DObject *o = it.object;
+        if (!o->userBlock) { rspq_block_begin(); t3d_model_draw_object(o, NULL); o->userBlock = rspq_block_end(); }
+        T3DVec3 mn = {{ o->aabbMin[0] * MODEL_SCALE, o->aabbMin[1] * MODEL_SCALE + roomY, o->aabbMin[2] * MODEL_SCALE }};
+        T3DVec3 mx = {{ o->aabbMax[0] * MODEL_SCALE, o->aabbMax[1] * MODEL_SCALE + roomY, o->aabbMax[2] * MODEL_SCALE }};
+        if (!t3d_frustum_vs_aabb(&vp->viewFrustum, &mn, &mx)) continue;
+        t3d_model_draw_material(o->material, &state);
+        rspq_block_run(o->userBlock);
+    }
+}
+
 void scene_draw(T3DViewport *viewport)
 {
 #ifdef HLE_LOG_FPS
@@ -2176,17 +2213,20 @@ void scene_draw(T3DViewport *viewport)
     t3d_matrix_push_pos(1);
 
     t3d_matrix_set(windowsMatrix, true);
-    rspq_block_run(windowsDpl);
+    draw_culled(windowsModel, viewport);
 
     t3d_matrix_set(mapMatrix, true);
-    rspq_block_run(mapDpl);
+    draw_culled(mapModel, viewport);
 
     //Draw depth environment
     rdpq_mode_zbuf(true, true);
 
     t3d_matrix_set(roomFloorMatrix, true);
-    rspq_block_run(roomFloorDpl);
+    draw_culled(roomFloorModel, viewport);
 
+#ifdef HLE_PROF_SERIAL
+    rspq_wait();     // test aid: each stage's own RSP time
+#endif
 #ifdef HLE_LOG_FPS
     s_prof[1] = TICKS_READ();
 #endif
@@ -2205,14 +2245,17 @@ void scene_draw(T3DViewport *viewport)
 
 
     t3d_matrix_set(roomLedgeMatrix, true);
-    rspq_block_run(roomLedgeDpl);
+    draw_culled(roomLedgeModel, viewport);
 
     t3d_matrix_set(pillarsMatrix, true);
-    rspq_block_run(pillarsDpl);
+    draw_culled(pillarsModel, viewport);
 
     t3d_matrix_set(pillarsFrontMatrix, true);
-    rspq_block_run(pillarsFrontDpl);
+    draw_culled(pillarsFrontModel, viewport);
 
+#ifdef HLE_PROF_SERIAL
+    rspq_wait();     // test aid: each stage's own RSP time
+#endif
 #ifdef HLE_LOG_FPS
     s_prof[2] = TICKS_READ();
 #endif
@@ -2236,6 +2279,13 @@ void scene_draw(T3DViewport *viewport)
     // Draw characters
     character_draw();
 
+#ifdef HLE_PROF_BOSS    // test aid: the RSP drained first, so the boss's draw time is the CPU's alone
+    { static uint32_t w, n; uint32_t t = TICKS_READ(); rspq_wait(); w += TICKS_READ() - t;
+      if (++n == 120) { debugf("[bossprof] RSP behind by %.2f ms before the boss\n", TICKS_TO_US(w / n) / 1000.0); w = n = 0; } }
+#endif
+#ifdef HLE_PROF_SERIAL
+    rspq_wait();     // test aid: each stage's own RSP time
+#endif
 #ifdef HLE_LOG_FPS
     s_prof[3] = TICKS_READ();
 #endif
@@ -2245,6 +2295,9 @@ void scene_draw(T3DViewport *viewport)
 
     msa_draw_visuals(viewport); // multi sword attack (Guardian Unbound)
 
+#ifdef HLE_PROF_SERIAL
+    rspq_wait();     // test aid: each stage's own RSP time
+#endif
 #ifdef HLE_LOG_FPS
     s_prof[4] = TICKS_READ();
 #endif
@@ -2268,6 +2321,9 @@ void scene_draw(T3DViewport *viewport)
 
     t3d_matrix_pop(1);
 
+#ifdef HLE_PROF_SERIAL
+    rspq_wait();     // test aid: each stage's own RSP time
+#endif
 #ifdef HLE_LOG_FPS
     s_prof[5] = TICKS_READ();
 #endif
@@ -2286,6 +2342,9 @@ void scene_draw(T3DViewport *viewport)
     // Player skill waves, arches, pillars and bursts
     skill_fx_draw();
 
+#ifdef HLE_PROF_SERIAL
+    rspq_wait();     // test aid: each stage's own RSP time
+#endif
 #ifdef HLE_LOG_FPS
     s_prof[6] = TICKS_READ();
 #endif

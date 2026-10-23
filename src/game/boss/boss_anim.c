@@ -70,6 +70,9 @@ void boss_anim_init(Boss* boss) {
 static T3DSkeleton s_breathSkel;
 static bool s_breathReady;
 static float s_breathK = -1.0f;     // < 0: not breathing
+#ifndef CRUCIFIX_SWORD_DOWN
+#define CRUCIFIX_SWORD_DOWN 0.35f   // radians, about the sword hand's own z
+#endif
 
 void boss_anim_request(Boss* boss, BossAnimState target, float start_time, bool force_restart, BossAnimPriority priority) {
     if (!boss || !boss->animations) return;
@@ -307,6 +310,31 @@ void boss_anim_update(Boss* boss) {
         if (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE && boss->currentAnimation == BOSS_ANIM_PHASE2_REVEAL)
             t3d_skeleton_blend((T3DSkeleton*)boss->skeleton, (T3DSkeleton*)boss->skeleton, &s_breathSkel, s_breathK);
         else s_breathK = -1.0f;
+    }
+    // Guardian Unbound, hanging in the air (the barrage, or up high outside its jumps, as when
+    // the fight opens): a crucifix, arms spread wide and legs together, the sword angled down.
+    // The bind pose is the model's T-pose, so the spine, arms and legs ease to it (bones 2-4,
+    // 6-21); the weight eases in and out (smoothstep), so it never snaps
+    {
+        static float crossT;
+        bool jump = boss->state == BOSS_STATE_POWER_JUMP || boss->state == BOSS_STATE_FLIP_ATTACK || boss->state == BOSS_STATE_TRACKING_SLAM;
+        bool hang = boss->phaseIndex == 2 && boss->state != BOSS_STATE_DEAD &&
+                    (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE || (boss->pos[1] > 30.0f && !jump));
+        crossT += (hang ? 1.0f : -1.0f) * deltaTime * 1.6f;
+        crossT = fminf(1.0f, fmaxf(0.0f, crossT));
+        float w = crossT * crossT * (3.0f - 2.0f * crossT);
+        if (w > 0.0f) {
+            T3DSkeleton *sk = (T3DSkeleton*)boss->skeleton;
+            for (int i = 2; i <= 21; i++) {
+                if (i == 5) continue;       // the head keeps the clip's bow
+                t3d_quat_nlerp(&sk->bones[i].rotation, &sk->bones[i].rotation, &sk->skeletonRef->bones[i].rotation, w);
+                sk->bones[i].hasChanged = true;
+            }
+            // the sword hand turned so the blade points a little down
+            T3DQuat down, h = sk->bones[13].rotation;
+            t3d_quat_from_rotation(&down, (float[3]){ 0.0f, 0.0f, 1.0f }, CRUCIFIX_SWORD_DOWN * w);
+            t3d_quat_mul(&sk->bones[13].rotation, &h, &down);
+        }
     }
 
     // Update main skeleton (ONLY the main skeleton, never the blend skeleton)
