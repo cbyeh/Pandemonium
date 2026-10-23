@@ -2285,7 +2285,9 @@ void scene_draw(T3DViewport *viewport)
     rdpq_mode_zbuf(true, true);
 
     // Draw characters
+#ifndef HLE_SKIP_KNIGHT
     character_draw();
+#endif
 
 #ifdef HLE_PROF_BOSS    // test aid: the RSP drained first, so the boss's draw time is the CPU's alone
     { static uint32_t w, n; uint32_t t = TICKS_READ(); gpu_wait(); w += TICKS_READ() - t;
@@ -2297,9 +2299,11 @@ void scene_draw(T3DViewport *viewport)
 #ifdef HLE_LOG_FPS
     s_prof[3] = TICKS_READ();
 #endif
+#ifndef HLE_SKIP_BOSS    // test aid: a stage's real cost, measured by its absence
     if (g_boss) {
         boss_draw(g_boss);
     }
+#endif
 
     msa_draw_visuals(viewport); // multi sword attack (Guardian Unbound)
 

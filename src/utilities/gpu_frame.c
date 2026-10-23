@@ -11,7 +11,7 @@ void gpu_frame_begin(int half)
 #ifdef HLE_LOG_FPS   // test aid: the most a frame used
     static int peak, n;
     if (s_used > peak) peak = s_used;
-    if (++n == 120) { debugf("[arena] peak %d bytes\n", peak); peak = 0; n = 0; }
+    if (++n == 120) { heap_stats_t h; sys_get_heap_stats(&h); debugf("[arena] peak %d bytes, heap %d KB free of %d\n", peak, (h.total - h.used) / 1024, h.total / 1024); peak = 0; n = 0; }
 #endif
     s_half = half;
     s_used = 0;

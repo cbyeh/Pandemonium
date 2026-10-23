@@ -280,6 +280,15 @@ void proc_mesh_corona(float radius, int tongues, float reach, int seed, bool hot
 void proc_mesh_end(ProcMesh *out)
 {
     memset(out, 0, sizeof(*out));
+    // Drop the triangles with two corners in one place (a tube's dome closes on a point): they
+    // draw nothing, and the RSP would set each one up
+    int kept = 0;
+    for (int t = 0; t < s_ntris; t++) {
+        const int16_t (*p)[3] = s_tris[t].p;
+        if (!memcmp(p[0], p[1], 6) || !memcmp(p[1], p[2], 6) || !memcmp(p[0], p[2], 6)) continue;
+        s_tris[kept++] = s_tris[t];
+    }
+    s_ntris = kept;
     if (s_ntris == 0) return;
     // Batches of up to a vertex cache's worth, the corners that match (position and colour)
     // shared: the RSP's vertex work bounds the frame, and a smooth tube shares each corner 6 ways

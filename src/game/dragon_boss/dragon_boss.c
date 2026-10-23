@@ -1249,6 +1249,11 @@ static void knee(const float a[3], const float c[3], const float bend[3], float 
     for (int i = 0; i < 3; i++) out[i] = a[i] + d[i] * lc * 0.5f + bp[i] * h;
 }
 
+#ifndef HLE_DRAGON_CULL      // test aid: the face culled on the closed parts (0: none)
+#define HLE_DRAGON_CULL T3D_FLAG_CULL_BACK
+#endif
+#define DRAW_OPEN   (T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT)
+#define DRAW_CLOSED (DRAW_OPEN | HLE_DRAGON_CULL)
 #ifdef HLE_PROF_SERIAL   // test aid: RSP+RDP time of each part (body, legs, head, wings, glows)
 static uint32_t s_dp[5], s_dpT, s_dpN;
 #define DPROF(i) { gpu_wait(); uint32_t _t = TICKS_READ(); s_dp[i] += _t - s_dpT; s_dpT = _t; }
@@ -1268,7 +1273,9 @@ void dragon_boss_draw(Boss* b)
     rdpq_set_mode_standard();
     rdpq_mode_zbuf(true, true);
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
-    t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
+    // The tubes and their crystals are closed and wound outward: their far sides culled (the RSP's
+    // triangle setup is most of this boss's cost). The head, feet and wings stay two-sided
+    t3d_state_set_drawflags(DRAW_CLOSED);
 
     const ProcMesh *seg = s.dark ? &s.segDark : &s.seg;
     float m1[3], m2[3];
@@ -1307,13 +1314,16 @@ void dragon_boss_draw(Boss* b)
         put_link(&s.limb, kn, s.foot[k], 5.5f, 1.0f);
         static const float Y[3] = { 0, 1, 0 };
         float fx[3]; cross3(fx, Y, s.F);
+        t3d_state_set_drawflags(DRAW_OPEN);
         put(&s.mFoot, s.foot[k], fx, Y, s.F, 1.0f, 1.0f, 1.0f);     // the foot, flat, facing forward
+        t3d_state_set_drawflags(DRAW_CLOSED);
         if (hot) rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
     }
 
 #ifdef HLE_PROF_SERIAL
     DPROF(1);
 #endif
+    t3d_state_set_drawflags(DRAW_OPEN);
     put(s.dark ? &s.mHeadDark : &s.mHead, s.head, s.hx, s.hy, s.hz, 1.0f, 1.0f, 1.0f);
     float hinge[3], jy[3], jz[3], ca = cosf(s.jaw * 0.7f), sa = sinf(s.jaw * 0.7f);
     mad3(hinge, s.head, s.hz, 6.0f);

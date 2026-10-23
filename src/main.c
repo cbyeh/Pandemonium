@@ -139,6 +139,9 @@ int main(void)
         dq ^= 1;
         if (drawDone[dq]) rspq_syncpoint_wait(drawDone[dq]);
         gpu_frame_begin(dq);
+#ifdef HLE_LOG_FPS
+        uint32_t ptGpu = TICKS_READ();
+#endif
 
         // Update time + input first.
         game_time_update();
@@ -321,10 +324,10 @@ int main(void)
         }
 #ifdef HLE_LOG_FPS
         {   // ms per frame: blocked for a free framebuffer (the GPU is behind), update, draw submission
-            static uint32_t wait, upd, drw, n;
+            static uint32_t gwait, wait, upd, drw, n;
             uint32_t pt3 = TICKS_READ();
-            wait += pt1 - pt0; upd += pt2 - pt1; drw += pt3 - pt2;
-            if (++n == 120) { debugf("[frame] wait %.1f update %.1f draw %.1f ms\n", TICKS_TO_US(wait / n) / 1000.0, TICKS_TO_US(upd / n) / 1000.0, TICKS_TO_US(drw / n) / 1000.0); wait = upd = drw = n = 0; }
+            gwait += ptGpu - pt0; wait += pt1 - ptGpu; upd += pt2 - pt1; drw += pt3 - pt2;
+            if (++n == 120) { debugf("[frame] wait for the RSP %.1f, a framebuffer %.1f, update %.1f draw %.1f ms\n", TICKS_TO_US(gwait / n) / 1000.0, TICKS_TO_US(wait / n) / 1000.0, TICKS_TO_US(upd / n) / 1000.0, TICKS_TO_US(drw / n) / 1000.0); gwait = wait = upd = drw = n = 0; }
         }
 #endif
 
