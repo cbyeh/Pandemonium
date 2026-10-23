@@ -29,8 +29,11 @@
 // Default to 3 slots (Save 1..3). Increase later once a UI exists.
 #define SAVE_SLOT_COUNT 3
 
-// Debounce auto-saving (audio sliders) to avoid hitches + EEPROM wear.
-#define SAVE_DEBOUNCE_S 0.50
+// Debounce auto-saving (audio sliders) to save EEPROM wear; short, so a change is on the cart
+// well before a quick reset (only the changed blocks are written, in the background)
+#define SAVE_DEBOUNCE_S 0.20
+// EEPROMFS puts its signature in block 0 and our one file right after it
+#define SAVE_EEP_OFFSET 8
 
 typedef struct SaveBlob {
     uint32_t magic;
@@ -47,6 +50,8 @@ static bool s_eeprom_available = false;
 static int  s_active_slot = 0;
 
 static SaveBlob s_blob;
+static SaveBlob s_stored;           // what the EEPROM holds (valid if s_stored_known)
+static bool s_stored_known = false;
 static bool s_dirty = false;
 static double s_last_dirty_time_s = 0.0;
 static uint32_t s_play_session_counter = 0;
@@ -220,6 +225,23 @@ static bool blob_is_valid(const SaveBlob *b) {
     return true;
 }
 
+// libdragon reads an EEPROM block asking for 9 bytes back (the data and a status byte).
+// Hardware and Ares answer, but Mupen (and so Delta) only takes the standard 8 and answers
+// nothing: the save read back blank and was wiped on every boot. Read the way games do.
+static void eep_read(size_t start, void *dest, size_t len)
+{
+    eeprom_wait_idle();     // libdragon's background writes finished
+    uint8_t *d = dest;
+    for (size_t b = start / 8; b * 8 < start + len; b++) {
+        uint8_t send[2] = { 0x04, (uint8_t)b }, recv[8];     // EEPROM read block
+        joybus_exec_cmd(4, sizeof send, sizeof recv, send, recv);
+        for (size_t i = 0; i < 8; i++) {
+            size_t a = b * 8 + i;
+            if (a >= start && a < start + len) d[a - start] = recv[i];
+        }
+    }
+}
+
 static bool blob_write_now(void) {
     if (!s_initialized) return false;
 
@@ -235,47 +257,58 @@ static bool blob_write_now(void) {
     s_blob.version = (uint16_t)SAVE_VERSION;
     s_blob.crc32 = calculate_crc32(s_blob.slots, sizeof(s_blob.slots));
 
-    int r = eepfs_write(SAVE_FILE_NAME, &s_blob, sizeof(s_blob));
-    if (r == EEPFS_ESUCCESS) {
-        s_dirty = false;
-        return true;
+    // Only the blocks that changed (a skin is one or two of the 24), else the whole file
+    if (s_stored_known) {
+        const uint8_t *now = (const uint8_t*)&s_blob, *was = (const uint8_t*)&s_stored;
+        for (size_t i = 0; i < sizeof(s_blob); i += 8)
+            if (memcmp(now + i, was + i, 8)) eeprom_write_bytes(now + i, SAVE_EEP_OFFSET + i, 8);
+    } else {
+        int r = eepfs_write(SAVE_FILE_NAME, &s_blob, sizeof(s_blob));
+        if (r != EEPFS_ESUCCESS) {
+            debugf("EEPROMFS write failed (%d)\n", r);
+            return false;
+        }
     }
-    debugf("EEPROMFS write failed (%d)\n", r);
-    return false;
+    s_stored = s_blob;
+    s_stored_known = true;
+    s_dirty = false;
+    return true;
 }
 
 static bool blob_read_or_seed_defaults(void) {
     if (!s_initialized) return false;
 
     // Layout mismatch / brand new EEPROM / another game: wipe + seed defaults
-#if defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SAVE_FLOW)
-    { uint8_t b0[8]; eeprom_read(0, b0); debugf("[save] eeprom type %d, block 0: %02x %02x %02x %02x %02x %02x %02x %02x\n", eeprom_present(),
+    // EEPROMFS's signature (its first six bytes: "eep", one file, its size), read here, not
+    // with eepfs_verify_signature (libdragon's reads come back blank in Mupen, see eep_read)
+    uint8_t b0[8];
+    eep_read(0, b0, sizeof b0);
+#if defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH)
+    { debugf("[save] eeprom type %d, block 0: %02x %02x %02x %02x %02x %02x %02x %02x\n", eeprom_present(),
                                                 b0[0], b0[1], b0[2], b0[3], b0[4], b0[5], b0[6], b0[7]); }
 #endif
-    if (!eepfs_verify_signature()) {
+    if (b0[0] != 'e' || b0[1] != 'e' || b0[2] != 'p' || b0[3] != 1 || ((b0[4] << 8) | b0[5]) != sizeof(SaveBlob)) {
         debugf("EEPROMFS signature mismatch: wiping + seeding defaults\n");
         eepfs_wipe();
+        s_stored_known = false;
         blob_seed_defaults();
         return blob_write_now();
     }
 
     SaveBlob b;
-    memset(&b, 0, sizeof(b));
-    int r = eepfs_read(SAVE_FILE_NAME, &b, sizeof(b));
-    if (r != EEPFS_ESUCCESS) {
-        debugf("EEPROMFS read failed (%d): seeding defaults\n", r);
-        blob_seed_defaults();
-        return blob_write_now();
-    }
+    eep_read(SAVE_EEP_OFFSET, &b, sizeof(b));
 
     if (!blob_is_valid(&b)) {
         debugf("Save blob invalid: wiping + seeding defaults\n");
         eepfs_wipe();
+        s_stored_known = false;
         blob_seed_defaults();
         return blob_write_now();
     }
 
     s_blob = b;
+    s_stored = b;
+    s_stored_known = true;
     return true;
 }
 
@@ -342,11 +375,9 @@ bool save_controller_set_active_slot(int slot) {
         return false;
     }
 
-    // Persist pending (debounced) setting changes first: the re-read below would drop them
+    // Persist pending (debounced) setting changes first. The blob in memory is the save
+    // (read once, at boot), so there's nothing to read back
     if (s_dirty) (void)blob_write_now();
-
-    // Ensure we have a valid blob loaded
-    (void)blob_read_or_seed_defaults();
 
     // If just this slot is invalid, reset it and persist.
     if (!validate_slot(&s_blob.slots[s_active_slot], s_active_slot)) {
