@@ -80,6 +80,13 @@ void gpu_prof_begin(void)
     g_drawQueue = s_profQ;
     rspq_queue_switch(s_profQ);
 }
+uint32_t gpu_prof_split(void)
+{
+    if (g_drawQueue != s_profQ || !s_profQ) return 0;    // no stage being timed (a cutscene)
+    uint32_t t = gpu_prof_end();
+    gpu_prof_begin();
+    return t;
+}
 uint32_t gpu_prof_end(void)
 {
     rspq_queue_switch(NULL);
@@ -91,3 +98,4 @@ uint32_t gpu_prof_end(void)
     return TICKS_READ() - t;
 }
 #endif
+

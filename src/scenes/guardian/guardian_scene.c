@@ -2409,7 +2409,14 @@ void scene_draw(T3DViewport *viewport)
     }
 #endif
 
+#ifdef HLE_PROF_SERIAL   // test aid: the summoned swords alone (their worst frame too)
+    { static uint32_t acc, worst, n; s_gpu[3] += gpu_prof_end(); gpu_prof_begin();
+      msa_draw_visuals(viewport);
+      uint32_t t = gpu_prof_end(); gpu_prof_begin(); acc += t; if (t > worst) worst = t;
+      if (++n == 120) { debugf("[msagpu] %.2f ms, worst %.2f\n", TICKS_TO_US(acc / n) / 1000.0, TICKS_TO_US(worst) / 1000.0); acc = worst = n = 0; } }
+#else
     msa_draw_visuals(viewport); // multi sword attack (Guardian Unbound)
+#endif
 
 #ifdef HLE_PROF_SERIAL
     PROF_SERIAL_WAIT(3);

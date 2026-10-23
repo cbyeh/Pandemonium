@@ -354,35 +354,18 @@ static inline float pr_end_taper(float t01, float taper_portion) {
 // ============================================================
 // DRAW: Crack
 // ============================================================
-void path_ribbon_draw_crack(const PathRibbon* pr) {
+// One ribbon's crack: its vertices and triangles (the modes are set by path_ribbon_draw_cracks)
+static void crack_body(const PathRibbon* pr) {
     if (!pr) return;
     if (pr->dead) return;
 
     int points = pr_effective_point_count(pr);
     if (points < 2) return;
 
-    path_ribbon_ensure_id_mat();
-    if (!s_pr_id_mat_fp) return;
-
-    T3DVertPacked *vb = gpu_alloc(sizeof(T3DVertPacked) * PR_MAX_POINTS_DRAW);   // this frame's (the RSP reads it later)
-
     const float a_mul = pr_clampf(pr->alpha_mul, 0.0f, 1.0f);
     if (a_mul <= 0.0f) return;
 
-    t3d_fog_set_enabled(false);
-
-    rdpq_sync_pipe();
-    rdpq_set_mode_standard();
-    rdpq_mode_zbuf(true, false);
-    rdpq_mode_alphacompare(0);
-    rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
-    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-    rdpq_mode_dithering(DITHER_NONE_BAYER);
-
-    t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
-    t3d_state_set_depth_offset(-0x20);
-
-    t3d_matrix_push(s_pr_id_mat_fp);
+    T3DVertPacked *vb = gpu_alloc(sizeof(T3DVertPacked) * PR_MAX_POINTS_DRAW);   // this frame's (the RSP reads it later)
 
     const T3DVec3 nUp = {{0.0f, 1.0f, 0.0f}};
     const uint16_t norm = t3d_vert_pack_normal(&nUp);
@@ -469,6 +452,34 @@ void path_ribbon_draw_crack(const PathRibbon* pr) {
     }
 
     t3d_tri_sync();
+}
+
+// The cracks of `n` ribbons under one set of modes: each ribbon setting its own switched the
+// RSP between rdpq and tiny3d some six times (the Unbound's 16 swords, 2 ms)
+void path_ribbon_draw_cracks(const PathRibbon *const *prs, int n) {
+    path_ribbon_ensure_id_mat();
+    if (!s_pr_id_mat_fp) return;
+    bool any = false;
+    for (int k = 0; k < n && !any; k++) any = prs[k] && !prs[k]->dead && pr_effective_point_count(prs[k]) >= 2 && prs[k]->alpha_mul > 0.0f;
+    if (!any) return;
+
+    t3d_fog_set_enabled(false);
+
+    rdpq_sync_pipe();
+    rdpq_set_mode_standard();
+    rdpq_mode_zbuf(true, false);
+    rdpq_mode_alphacompare(0);
+    rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+    rdpq_mode_dithering(DITHER_NONE_BAYER);
+
+    t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
+    t3d_state_set_depth_offset(-0x20);
+
+    t3d_matrix_push(s_pr_id_mat_fp);
+
+    for (int k = 0; k < n; k++) crack_body(prs[k]);
+
     rdpq_sync_pipe();
 
     t3d_matrix_pop(1);
@@ -482,60 +493,23 @@ void path_ribbon_draw_crack(const PathRibbon* pr) {
     t3d_fog_set_enabled(true);
 }
 
+void path_ribbon_draw_crack(const PathRibbon* pr) { path_ribbon_draw_cracks(&pr, 1); }
+
 // ============================================================
 // DRAW: wall
 // ============================================================
-void path_ribbon_draw_wall(const PathRibbon* pr) {
+// One ribbon's wall: its vertices and triangles (the modes and texture set by path_ribbon_draw_walls)
+static void wall_body(const PathRibbon* pr, float texW, float texH) {
     if (!pr) return;
     if (pr->dead) return;
 
     int points = pr_effective_point_count(pr);
     if (points < 2) return;
 
-    path_ribbon_ensure_id_mat();
-    if (!s_pr_id_mat_fp) return;
-
-    T3DVertPacked *vb = gpu_alloc(sizeof(T3DVertPacked) * PR_MAX_POINTS_DRAW);   // this frame's (the RSP reads it later)
-
     const float a_mul = pr_clampf(pr->alpha_mul, 0.0f, 1.0f);
     if (a_mul <= 0.0f) return;
 
-    t3d_fog_set_enabled(false);
-
-    rdpq_sync_pipe();
-    rdpq_set_mode_standard();
-    rdpq_mode_zbuf(true, false);
-    rdpq_mode_alphacompare(0);
-
-    rdpq_mode_persp(true);
-
-    float texW = 64.0f;
-    float texH = 64.0f;
-
-    static sprite_t *s_pr_last_uploaded = NULL;
-
-    if (s_pr_wall_tex) {
-        texW = (float)s_pr_wall_tex->width;  if (texW < 1.0f) texW = 64.0f;
-        texH = (float)s_pr_wall_tex->height; if (texH < 1.0f) texH = 64.0f;
-
-        if (s_pr_last_uploaded != s_pr_wall_tex) {
-            rdpq_sprite_upload(TILE0, s_pr_wall_tex, NULL);
-            s_pr_last_uploaded = s_pr_wall_tex;
-        }
-
-        rdpq_mode_combiner(RDPQ_COMBINER_TEX_SHADE);
-        t3d_state_set_drawflags(T3D_FLAG_TEXTURED | T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
-    } else {
-        rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
-        t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
-    }
-
-    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-    rdpq_mode_dithering(DITHER_NONE_BAYER);
-
-    t3d_state_set_depth_offset(-0x10);
-
-    t3d_matrix_push(s_pr_id_mat_fp);
+    T3DVertPacked *vb = gpu_alloc(sizeof(T3DVertPacked) * PR_MAX_POINTS_DRAW);   // this frame's (the RSP reads it later)
 
     const T3DVec3 nAny = {{0.0f, 0.0f, 1.0f}};
     const uint16_t norm = t3d_vert_pack_normal(&nAny);
@@ -607,6 +581,55 @@ void path_ribbon_draw_wall(const PathRibbon* pr) {
     }
 
     t3d_tri_sync();
+}
+
+// The walls of `n` ribbons under one set of modes (as path_ribbon_draw_cracks)
+void path_ribbon_draw_walls(const PathRibbon *const *prs, int n) {
+    path_ribbon_ensure_id_mat();
+    if (!s_pr_id_mat_fp) return;
+    bool any = false;
+    for (int k = 0; k < n && !any; k++) any = prs[k] && !prs[k]->dead && pr_effective_point_count(prs[k]) >= 2 && prs[k]->alpha_mul > 0.0f;
+    if (!any) return;
+
+    t3d_fog_set_enabled(false);
+
+    rdpq_sync_pipe();
+    rdpq_set_mode_standard();
+    rdpq_mode_zbuf(true, false);
+    rdpq_mode_alphacompare(0);
+
+    rdpq_mode_persp(true);
+
+    float texW = 64.0f;
+    float texH = 64.0f;
+
+    static sprite_t *s_pr_last_uploaded = NULL;
+
+    if (s_pr_wall_tex) {
+        texW = (float)s_pr_wall_tex->width;  if (texW < 1.0f) texW = 64.0f;
+        texH = (float)s_pr_wall_tex->height; if (texH < 1.0f) texH = 64.0f;
+
+        if (s_pr_last_uploaded != s_pr_wall_tex) {
+            rdpq_sprite_upload(TILE0, s_pr_wall_tex, NULL);
+            s_pr_last_uploaded = s_pr_wall_tex;
+        }
+
+        rdpq_mode_combiner(RDPQ_COMBINER_TEX_SHADE);
+        t3d_state_set_drawflags(T3D_FLAG_TEXTURED | T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
+    } else {
+        rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
+        t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
+    }
+
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+    rdpq_mode_dithering(DITHER_NONE_BAYER);
+
+    t3d_state_set_depth_offset(-0x10);
+
+    t3d_matrix_push(s_pr_id_mat_fp);
+
+    for (int k = 0; k < n; k++) wall_body(prs[k], texW, texH);
+
     rdpq_sync_pipe();
 
     t3d_matrix_pop(1);
@@ -622,3 +645,5 @@ void path_ribbon_draw_wall(const PathRibbon* pr) {
 
     t3d_fog_set_enabled(true);
 }
+
+void path_ribbon_draw_wall(const PathRibbon* pr) { path_ribbon_draw_walls(&pr, 1); }

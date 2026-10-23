@@ -343,10 +343,24 @@ void boss_render_draw(Boss* boss)
     const T3DMat4FP *modelMat = gpu_mat(boss->modelMat);
     T3DSkeleton *skel = (T3DSkeleton*)boss->skeleton;
     T3DMat4FP *bones = skel ? gpu_skeleton_begin(skel) : NULL;
+#ifdef HLE_PROF_SERIAL   // test aid: its parts, each run alone (the scene's stage queue is recording)
+    static uint32_t s_bp[3], s_bpN;
+    gpu_prof_split();
+#endif
     t3d_matrix_set(modelMat, true);
     rspq_block_run(s_recMain[level]);
+#ifdef HLE_PROF_SERIAL
+    s_bp[0] += gpu_prof_split();
+#endif
     if (boss->state != BOSS_STATE_DEAD) rspq_block_run(s_recSwords);
+#ifdef HLE_PROF_SERIAL
+    s_bp[1] += gpu_prof_split();
+#endif
     boss_draw_scrolling(boss, modelMat);
+#ifdef HLE_PROF_SERIAL
+    s_bp[2] += gpu_prof_split();
+    if (++s_bpN == 120) { debugf("[bossgpu] body %.2f swords %.2f scrolling %.2f\n", TICKS_TO_US(s_bp[0] / 120) / 1000.0, TICKS_TO_US(s_bp[1] / 120) / 1000.0, TICKS_TO_US(s_bp[2] / 120) / 1000.0); s_bp[0] = s_bp[1] = s_bp[2] = 0; s_bpN = 0; }
+#endif
     if (skel) gpu_skeleton_end(skel, bones);
 
     // Draw sword attached to Hand-Right bone.

@@ -61,3 +61,6 @@ void path_ribbon_update(PathRibbon* pr, float dt);
 
 void path_ribbon_draw_crack(const PathRibbon* pr);
 void path_ribbon_draw_wall (const PathRibbon* pr);
+// Many at once, under one set of modes (much cheaper for the RSP than one by one)
+void path_ribbon_draw_cracks(const PathRibbon *const *prs, int n);
+void path_ribbon_draw_walls(const PathRibbon *const *prs, int n);

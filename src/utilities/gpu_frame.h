@@ -40,6 +40,7 @@ void *gpu_alloc(int bytes);
 // Test aid: what is drawn between the two recorded, then run alone: its RSP+RDP time (ticks)
 void gpu_prof_begin(void);
 uint32_t gpu_prof_end(void);
+uint32_t gpu_prof_split(void);     // the time so far, and a new stage started (0 if none is being timed)
 #endif
 // A copy for this frame's draw of what the CPU rewrites each frame
 void *gpu_copy(const void *src, int bytes);

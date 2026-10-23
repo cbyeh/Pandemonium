@@ -1334,7 +1334,10 @@ void msa_draw_visuals(T3DViewport *viewport) {
     // Lightning FX (system-owned)
     lightning_fx_system_draw();
 
-    // Glows
+    // Glows: one model state across them, so the material is set once (it was set per glow)
+    T3DModelState glowState = t3d_model_state_create();
+    T3DModelDrawConf glowConf = { .userData = &floorGlowScrollParams, .tileCb = tile_scroll };
+    glowState.drawConf = &glowConf;
     for (int i = 0; i < gCount; i++) {
         const MsaSword *s = &gSwords[i];
         if (s->state == SW_INACTIVE) continue;
@@ -1352,21 +1355,25 @@ void msa_draw_visuals(T3DViewport *viewport) {
         );
 
         t3d_matrix_set(gpu_mat(&floorGlowMatrix[i]), true);
-        t3d_model_draw_custom(floorGlowModel, (T3DModelDrawConf){
-            .userData = &floorGlowScrollParams,
-            .tileCb   = tile_scroll,
-        });
+        T3DModelIter it = t3d_model_iter_create(floorGlowModel, T3D_CHUNK_TYPE_OBJECT);
+        while (t3d_model_iter_next(&it)) {
+            if (it.object->material) t3d_model_draw_material(it.object->material, &glowState);
+            t3d_model_draw_object(it.object, NULL);
+        }
     }
+    if (glowState.lastVertFXFunc != T3D_VERTEX_FX_NONE) t3d_state_set_vertex_fx(T3D_VERTEX_FX_NONE, 0, 0);
 
-    // Crack + Wall
+    // Cracks, then walls: each set drawn under one set of modes
+    const PathRibbon *ribbons[MSA_MAX_SWORDS];
+    int nr = 0;
     for (int i = 0; i < MSA_MAX_SWORDS; i++) {
         const MsaSword *s = &gSwords[i];
         if (s->ribbon.count < 2) continue;
         if (s->ribbon.dead) continue;
-
-        path_ribbon_draw_crack(&s->ribbon);
-        path_ribbon_draw_wall(&s->ribbon);
+        ribbons[nr++] = &s->ribbon;
     }
+    path_ribbon_draw_cracks(ribbons, nr);
+    path_ribbon_draw_walls(ribbons, nr);
 }
 
 // ============================================================
