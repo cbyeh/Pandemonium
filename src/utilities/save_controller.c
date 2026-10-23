@@ -413,7 +413,7 @@ bool save_controller_save_settings(void) {
     d->_pad[20] = (uint8_t)joypad_get_layout();
     d->_pad[21] = (uint8_t)camera_get_speed();
     // the slot just changed is the one reopened on boot (Save 1 on a fresh EEPROM)
-    if (d->last_played_timestamp != s_play_session_counter) d->last_played_timestamp = ++s_play_session_counter;
+    if (d->last_played_timestamp == 0 || d->last_played_timestamp != s_play_session_counter) d->last_played_timestamp = ++s_play_session_counter;
 
     d->checksum     = compute_slot_checksum(d);
 

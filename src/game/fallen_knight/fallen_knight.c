@@ -60,7 +60,7 @@ static struct {
     T3DSkeleton skel, skelBlend;
     T3DAnim anims[FKA_COUNT];
     int anim;
-    float blendT;           // crossfade timer (0 = done)
+    float blendT, blendDur; // crossfade timer (0 = done), and its length
     T3DMat4FP *mat;
     int swordBone;          // "Hand-Right": the blade runs along its -X
 
@@ -82,7 +82,10 @@ static void play(int a, bool restart)
 {
     if (a == s.anim && !restart) return;
     t3d_skeleton_blend(&s.skelBlend, &s.skel, &s.skel, 0.0f);    // snapshot the current pose
-    s.blendT = 0.15f;
+    // swings cut in fast (the blade's hits are read from the pose); going down, dying and
+    // moving about ease over longer
+    s.blendDur = (a == FKA_KNOCKDOWN || a == FKA_DEATH) ? 0.35f : (a == FKA_IDLE || a == FKA_WALK || a == FKA_RUN) ? 0.3f : 0.15f;
+    s.blendT = s.blendDur;
     if (s.anim >= 0) t3d_anim_set_playing(&s.anims[s.anim], false);
     s.anim = a;
     t3d_anim_attach(&s.anims[a], &s.skel);
@@ -629,7 +632,8 @@ void fallen_knight_update(Boss* b, float dt)
     t3d_anim_update(&s.anims[s.anim], dt);
     if (s.blendT > 0.0f) {
         s.blendT -= dt;
-        t3d_skeleton_blend(&s.skel, &s.skelBlend, &s.skel, 1.0f - fmaxf(0.0f, s.blendT) / 0.15f);
+        float k = 1.0f - fmaxf(0.0f, s.blendT) / s.blendDur;
+        t3d_skeleton_blend(&s.skel, &s.skelBlend, &s.skel, k * k * (3.0f - 2.0f * k));     // eased in and out
     }
     t3d_skeleton_update(&s.skel);
 

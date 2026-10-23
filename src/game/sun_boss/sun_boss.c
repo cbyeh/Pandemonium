@@ -807,7 +807,9 @@ void sun_boss_draw(Boss* b)
     float dying = (s.state == SB_DEAD) ? clamp01(s.t / 3.0f) : 0.0f;
     float pulse = 1.0f + 0.04f * sinf(s.life * 5.0f) + (b->damageFlashTimer > 0.0f ? 0.08f : 0.0f);
     float scale = (SUN_R / MESH_R) * pulse * (1.0f - 0.5f * dying);
-    if (s.state == SB_REST) scale *= 0.9f;
+    static float restK;     // shrinks a little on the floor, easing (a stagger drops it there)
+    restK += ((s.state == SB_REST ? 1.0f : 0.0f) - restK) * fminf(1.0f, deltaTime * 6.0f);
+    scale *= 1.0f - 0.1f * restK;
 
     float yaw = -b->rot[1];     // Tiny3D's yaw turns +z the other way round
     // Knocked down: it rocks side to side on the floor, settling (and squashes as it lands)

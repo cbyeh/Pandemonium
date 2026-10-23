@@ -1050,7 +1050,8 @@ void menu_controller_draw(void)
                 .wrap = WRAP_WORD,
             }, FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 11, "%s", loadGameMenuOptions[slot]);
 
-            bool used = saveData && (saveData->run_count > 0 || saveData->best_boss_time_ms > 0 ||
+            // used once played or set up (a skin or a setting changed stamps it, even before a fight)
+            bool used = saveData && (saveData->last_played_timestamp > 0 || saveData->run_count > 0 || saveData->best_boss_time_ms > 0 ||
                                      save_progress_tower_best_floor(saveData) > 0 || save_progress_bonus_mask(saveData));
             if (used) {
                 // The slot's progress: the story, the Tower, the Bonus bosses, the skins
