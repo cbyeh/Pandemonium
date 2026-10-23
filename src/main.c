@@ -17,15 +17,41 @@
 #include "dev.h"
 #include "dev/crt_safe_area_overlay.h"
 #include "character/character.h"
+#ifdef HLE_LOG_HITCH
+#include "hitch_probe.h"
+#endif
+#ifdef HLE_LOG_LATENCY
+#include "lat_probe.h"
+static surface_t *s_latFb;
+#endif
 #include "gpu_frame.h"
 
 rspq_queue_t *g_drawQueue;
+#ifdef HLE_LOG_FPS
+int hle_floor_mark;     // test aid (autoplay): a Tower floor's fight began
+#endif
 #ifdef HLE_LOG_FPS   // test aid: CPU ms of the main loop's update parts
 static uint32_t s_mp[4];
 #define MPROF(i, x) do { uint32_t _t = TICKS_READ(); x; s_mp[i] += TICKS_READ() - _t; } while (0)
 #else
 #define MPROF(i, x) x
 #endif
+
+// Takes this frame's framebuffer (and how long the wait for one took)
+static void attach_frame(uint32_t *waited)
+{
+    uint32_t t = TICKS_READ();
+    if (DEV_MODE && debugDraw) {
+        rdpq_attach(&offscreenBuffer, display_get_zbuf());
+    } else {
+        surface_t *fb = display_get();
+#ifdef HLE_LOG_LATENCY
+        s_latFb = fb;
+#endif
+        rdpq_attach(fb, display_get_zbuf());
+    }
+    *waited = TICKS_READ() - t;
+}
 
 int main(void)
 {
@@ -65,8 +91,12 @@ int main(void)
     }
 
     rdpq_init();
+#ifdef HLE_LOG_LATENCY
+    register_VI_handler(lat_vblank);
+#endif
 
     audio_initialize();
+    scene_preload_sounds();
 
     /*
      * Fonts registered once after final rdpq_init.
@@ -150,12 +180,40 @@ int main(void)
         uint32_t ptGpu = TICKS_READ();
 #endif
 
+        // What doesn't need the pad goes before the wait for a framebuffer: audio, the debounced
+        // EEPROM save flush
+#ifndef HLE_NO_MIXER   // test aid: the audio mixer's cost (silent)
+        MPROF(0, mixer_try_play());
+#endif
+        save_controller_update();
+
+        // The framebuffer, then the pad: when a frame waits for one to come free, taking it first
+        // makes the input as fresh as it can be (3 refreshes to the screen, it was 4). When the
+        // wait was short the frame is tight: then the update goes first and overlaps the RSP
+        // drawing the last frame (taken first then, Shadowborne's heavy moments missed refreshes)
+        static uint32_t lastFbWait = 0xFFFFFFFF;
+        bool fbFirst = lastFbWait > TICKS_FROM_MS(3);
+#ifdef HLE_ATTACH_LATE   // test aid: always the update first
+        fbFirst = false;
+#endif
+        if (fbFirst) attach_frame(&lastFbWait);
+#ifdef HLE_LOG_FPS
+        uint32_t ptFb = TICKS_READ();
+#endif
         // Update time + input first.
         game_time_update();
+#ifdef HLE_LOG_LATENCY
+        lat_pad_read();
+        if (fbFirst && s_latFb) lat_submit(s_latFb);
+#endif
         joypad_update();
+#ifdef HLE_LOG_HITCH
+        { static int fn; hitch_frame(++fn); }
+#endif
+#ifdef HLE_LOG_LATENCY
+        pacing_frame();
+#endif
 
-        // Debounced EEPROM save flush.
-        save_controller_update();
 
         SceneControllerSceneId activeScene = scene_controller_get_active_scene();
         bool isOpeningCredits = activeScene == SCENE_CONTROLLER_SCENE_OPENING_CREDITS;
@@ -167,9 +225,6 @@ int main(void)
 #endif
 
         // ===== UPDATE LOOP =====
-#ifndef HLE_NO_MIXER   // test aid: the audio mixer's cost (silent)
-        MPROF(0, mixer_try_play());
-#endif
 
         if (DEV_MODE) {
             dev_controller_update();
@@ -229,16 +284,15 @@ int main(void)
 #ifdef HLE_LOG_FPS
         pt2 = TICKS_READ();
 #endif
-        // Attach render target for the frame: after the update, so the CPU updates while it waits
-        // for one to come free (the RSP draws the last frame meanwhile)
-        if (DEV_MODE && debugDraw) {
-            rdpq_attach(&offscreenBuffer, display_get_zbuf());
-        } else {
-            rdpq_attach(display_get(), display_get_zbuf());
-        }
-#ifdef HLE_LOG_FPS
-        uint32_t ptFb = TICKS_READ();
+        if (!fbFirst) {
+            attach_frame(&lastFbWait);
+#ifdef HLE_LOG_LATENCY
+            if (s_latFb) lat_submit(s_latFb);
 #endif
+#ifdef HLE_LOG_FPS
+            ptFb = TICKS_READ();
+#endif
+        }
         // ===== DRAW LOOP =====
         // Recorded, then run as a whole: submitting straight to the RSP stalled the CPU on its
         // small command ring, and the RSP then idled through the next frame's update. Now the RSP
@@ -359,9 +413,15 @@ int main(void)
         {   // ms per frame: blocked for a free framebuffer (the GPU is behind), update, draw submission
             static uint32_t gwait, wait, upd, drw, n, lastStart, worst, slow;
             uint32_t pt3 = TICKS_READ();
-            gwait += ptGpu - pt0; wait += ptFb - pt2; upd += pt2 - pt1; drw += pt3 - ptFb;
+            gwait += ptGpu - pt0; wait += lastFbWait; upd += pt2 - pt1; drw += pt3 - (fbFirst ? pt2 : ptFb);
             extern int deltaFrames;
             if (lastStart) { uint32_t ft = pt0 - lastStart; if (ft > worst) worst = ft; }
+            {   // a Tower floor's fight: refreshes missed from its start (after the load) to the next floor's
+                static uint32_t fm, ff; static bool on;
+                if (hle_floor_mark == 1) { fm = ff = 0; on = true; }
+                if (hle_floor_mark == 2 && on) { debugf("[floorfps] the fight missed %lu refreshes in %lu frames\n", (unsigned long)fm, (unsigned long)ff); on = false; }
+                hle_floor_mark = 0;
+                if (on && ff++) fm += deltaFrames - 1; }
             slow += deltaFrames - 1;    // refreshes that showed a frame again
             lastStart = pt0;
             if (n == 119) { int pl = 0; for (int ch = 0; ch < 16; ch++) pl += mixer_ch_playing(ch); debugf("[mixer] %d channels playing\n", pl); }

@@ -223,7 +223,7 @@ void audio_scene_unload_sfx(void)
     for (int i = 0; i < sceneCount; i++) {
         if (sceneLoaded[i]) {
             wav64_close(&sceneWavs[i]);
-            if (sceneHeld[i]) { wav64_close(sceneHeld[i]); sceneHeld[i] = NULL; }
+            sceneHeld[i] = NULL;     // the held copy stays (audio_hold_paths)
             sceneLoaded[i] = false;
         }
     }
@@ -255,16 +255,36 @@ void audio_scene_load_paths(const char *const *paths, int count)
     }
 }
 
+// Sounds held in memory (still compressed): the ones played all through a fight aren't streamed
+// from the cartridge as they play (the mixer's reads and bookkeeping for a streamed sound cost
+// the CPU about 0.3 ms a frame each, and slowed the RSP). Loaded once, at boot (audio_hold_paths):
+// loading them took 220 ms, a stall every time a fight started. Only a few: 4 MB of RAM
+static struct { const char *path; wav64_t *w; } s_held[24];
+static int s_nHeld;
+
+static wav64_t *held_find(const char *path)
+{
+    for (int k = 0; k < s_nHeld; k++) if (!strcmp(s_held[k].path, path)) return s_held[k].w;
+    return NULL;
+}
+
+void audio_hold_paths(const char *const *paths, int count)
+{
+    for (int k = 0; k < count && s_nHeld < (int)(sizeof s_held / sizeof s_held[0]); k++) {
+        if (!paths[k] || held_find(paths[k])) continue;
+        wav64_t *w = wav64_load(paths[k], &(wav64_loadparms_t){ .streaming_mode = WAV64_STREAMING_NONE });
+        wav64_set_loop(w, false);
+        s_held[s_nHeld].path = paths[k]; s_held[s_nHeld].w = w; s_nHeld++;
+    }
+}
+
 void audio_scene_hold_sfx(const int *indices, int count)
 {
-    // Held in memory (still compressed), the sounds played all through a fight aren't streamed
-    // from the cartridge as they play: the mixer's reads and bookkeeping for a streamed sound
-    // cost the CPU about 0.3 ms a frame each, and slowed the RSP. Only a few: 4 MB of RAM
     for (int k = 0; k < count; k++) {
         int i = indices[k];
-        if (i < 0 || i >= sceneCount || !sceneLoaded[i] || sceneHeld[i]) continue;
-        sceneHeld[i] = wav64_load(scenePaths[i], &(wav64_loadparms_t){ .streaming_mode = WAV64_STREAMING_NONE });
-        wav64_set_loop(sceneHeld[i], false);
+        if (i < 0 || i >= sceneCount || !sceneLoaded[i]) continue;
+        if (!held_find(scenePaths[i])) audio_hold_paths(&scenePaths[i], 1);    // not preloaded: now, then kept
+        sceneHeld[i] = held_find(scenePaths[i]);
     }
 }
 

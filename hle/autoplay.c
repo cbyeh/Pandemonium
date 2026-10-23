@@ -509,6 +509,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (!boss) return;
             if (tower_floor() != lastFloor && boss->mode == BOSS_MODE_COMBAT && !tower_draft_is_open()) {
                 lastFloor = tower_floor(); t0 = frame;
+#ifdef HLE_LOG_FPS
+                { extern int hle_floor_mark; hle_floor_mark = 1; }   // test aid: count this floor's fight apart from its load
+#endif
                 debugf("[run] floor %d boss %d phase %d hp %.0f/%.0f | player hp %.0f/%.0f potions %d\n", lastFloor, tower_floor_boss(),
                        boss->phaseIndex, (double)boss->health, (double)boss->maxHealth, (double)character.health, (double)character.maxHealth,
                        character.healthPotions);
@@ -524,7 +527,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (t % 24 == 0) { pressed->b = 1; in->btn.b = 1; }
                 if (t % 300 == 299) debugf("[run] boss hp %.0f/%.0f\n", (double)boss->health, (double)boss->maxHealth);
             }
-            if (t == 1200) boss_apply_damage(boss, boss->maxHealth * 2.0f);
+            if (t == 1200) {
+#ifdef HLE_LOG_FPS
+                { extern int hle_floor_mark; hle_floor_mark = 2; }   // the fight's end (before the next load)
+#endif
+                boss_apply_damage(boss, boss->maxHealth * 2.0f);
+            }
 #else
             if (t == 90) boss_apply_damage(boss, boss->maxHealth * 2.0f);
 #endif

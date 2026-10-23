@@ -346,6 +346,25 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_WAR_CRY] = "rom:/audio/sfx/boss/war_cry_22k.wav64",
 };
 
+// The sounds heard all through a fight, held in memory (about 230 KB): the bosses' step, the
+// knight's swing, its hits and running steps, and the smashes, swing and fire Shadowborne
+// uses most (its fight was the one still short of 60 fps). The game runs in 4 MB
+static const int s_heldSfx[] = {
+    SCENE1_SFX_BOSS_STEP1, SCENE1_SFX_CHAR_SWING1,
+    SCENE1_SFX_BOSS_SMASH1, SCENE1_SFX_BOSS_SMASH2, SCENE1_SFX_BOSS_SWING3, SCENE1_SFX_FIRE,
+    SCENE1_SFX_CHAR_ATTACK_HIT1, SCENE1_SFX_CHAR_ATTACK_HIT2, SCENE1_SFX_CHAR_ATTACK_HIT3,
+    SCENE1_SFX_CHAR_ATTACK_HIT4, SCENE1_SFX_CHAR_ATTACK_HIT5, SCENE1_SFX_CHAR_ATTACK_HIT6,
+    SCENE1_SFX_CHAR_FOOTSTEP_RUN1, SCENE1_SFX_CHAR_FOOTSTEP_RUN2, SCENE1_SFX_CHAR_FOOTSTEP_RUN3, SCENE1_SFX_CHAR_FOOTSTEP_RUN4,
+};
+
+// Loads the held sounds once, at boot (main): loading them as a fight started stalled it 220 ms
+void scene_preload_sounds(void)
+{
+    const char *p[sizeof s_heldSfx / sizeof s_heldSfx[0]];
+    for (unsigned k = 0; k < sizeof s_heldSfx / sizeof s_heldSfx[0]; k++) p[k] = SCENE1_SFX_PATHS[s_heldSfx[k]];
+    audio_hold_paths(p, sizeof p / sizeof p[0]);
+}
+
 static void scene_begin_video_preroll(void)
 {
     if (videoTrigFired) return;
@@ -597,17 +616,7 @@ void scene_init(void)
     // ==== Sounds ====
 
     audio_scene_load_paths(SCENE1_SFX_PATHS, SCENE1_SFX_COUNT);
-    // The sounds heard all through a fight, held in memory (about 230 KB): the bosses' step, the
-    // knight's swing, its hits and running steps, and the smashes, swing and fire Shadowborne
-    // uses most (its fight was the one still short of 60 fps). The game runs in 4 MB
-    static const int held[] = {
-        SCENE1_SFX_BOSS_STEP1, SCENE1_SFX_CHAR_SWING1,
-        SCENE1_SFX_BOSS_SMASH1, SCENE1_SFX_BOSS_SMASH2, SCENE1_SFX_BOSS_SWING3, SCENE1_SFX_FIRE,
-        SCENE1_SFX_CHAR_ATTACK_HIT1, SCENE1_SFX_CHAR_ATTACK_HIT2, SCENE1_SFX_CHAR_ATTACK_HIT3,
-        SCENE1_SFX_CHAR_ATTACK_HIT4, SCENE1_SFX_CHAR_ATTACK_HIT5, SCENE1_SFX_CHAR_ATTACK_HIT6,
-        SCENE1_SFX_CHAR_FOOTSTEP_RUN1, SCENE1_SFX_CHAR_FOOTSTEP_RUN2, SCENE1_SFX_CHAR_FOOTSTEP_RUN3, SCENE1_SFX_CHAR_FOOTSTEP_RUN4,
-    };
-    audio_scene_hold_sfx(held, sizeof held / sizeof held[0]);
+    audio_scene_hold_sfx(s_heldSfx, sizeof s_heldSfx / sizeof s_heldSfx[0]);
 
     // ==== Camera ====
 

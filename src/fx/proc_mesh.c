@@ -280,6 +280,9 @@ void proc_mesh_corona(float radius, int tongues, float reach, int seed, bool hot
 
 void proc_mesh_end(ProcMesh *out)
 {
+#ifdef HLE_LOG_HITCH
+    uint32_t t0 = TICKS_READ();
+#endif
     memset(out, 0, sizeof(*out));
     // Drop the triangles with two corners in one place (a tube's dome closes on a point): they
     // draw nothing, and the RSP would set each one up
@@ -371,6 +374,9 @@ void proc_mesh_end(ProcMesh *out)
     free(ref); free(idx); free(batchTri); free(batchRef);
     out->mat = malloc_uncached(sizeof(T3DMat4FP));
     proc_mesh_set_transform(out, 1.0f, (float[3]){ 0, 0, 0 }, (float[3]){ 0, 0, 0 });
+#ifdef HLE_LOG_HITCH
+    { static uint32_t sum; sum += TICKS_READ() - t0; debugf("[load] proc mesh %d tris: %lu us (%lu ms so far)\n", s_ntris, (unsigned long)TICKS_TO_US(TICKS_READ() - t0), (unsigned long)TICKS_TO_MS(sum)); }
+#endif
 }
 
 void proc_mesh_set_transform(ProcMesh *m, const float scale, const float rot[3], const float pos[3])

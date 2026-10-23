@@ -317,6 +317,16 @@ static inline void put_vert(T3DVertPacked *vb, int i, const int16_t pos[3], uint
     else       { memcpy(v->posA, pos, 6); v->normA = 0; v->rgbaA = rgba; }
 }
 
+// shade() with the colour times the ambient light already worked out (tint, 0..255)
+static inline uint32_t shade_tinted(const float tint[3], const float n[3], float bias)
+{
+    static const float L[3] = { 0.33f, 0.85f, 0.41f };
+    float s = (0.3f + 0.7f * fabsf(n[0] * L[0] + n[1] * L[1] + n[2] * L[2])) * bias;
+    int r = tint[0] * s, g = tint[1] * s, b = tint[2] * s;
+    r = r > 255 ? 255 : r; g = g > 255 ? 255 : g; b = b > 255 ? 255 : b;
+    return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xFF;
+}
+
 static uint32_t shade(SkinColor c, const float n[3], float bias)
 {
     static const float L[3] = { 0.33f, 0.85f, 0.41f };
@@ -330,9 +340,8 @@ static uint32_t shade(SkinColor c, const float n[3], float bias)
     return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xFF;
 }
 
-// The vertices are in the knight's model space, drawn with its matrix: built only when the cloth
-// stepped (every other frame), between steps the same vertices follow the body as it moves and
-// turns. o is the model's origin in the world, ax its unit axes there (scaled), s2 their |ax|^2
+// The vertices are in the knight's model space, drawn with its matrix, built every frame (the
+// cloth steps every other frame: see halfway below). o is the model's origin in the world, ax its unit axes there (scaled), s2 their |ax|^2
 static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat, const float o[3], const float ax[3][3], float s2, bool rebuild)
 {
     if (!cl->vb[0]) {
@@ -357,7 +366,12 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat
         }
         cl->trisCols = cl->cols;
     }
-    if (cl->built < 0) rebuild = true;
+    // Built every frame, the cloth stepping every other one (a step costs 1.5 ms): a step frame
+    // shows halfway from the last step (Verlet keeps it in q), the next frame the step itself.
+    // The cape moves on evenly at 60, a frame behind its pins (they follow the body every frame).
+    // Shown as stepped it moved at 30 against the body's 60: it juddered
+    bool halfway = rebuild && cl->built >= 0;
+    rebuild = true;
     if (rebuild) {
     cl->ring = (cl->ring + 1) % RING;
     cl->built = cl->ring;
@@ -368,7 +382,17 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat
 #ifdef HLE_LOG_CLOTH
     uint32_t tb = TICKS_READ();
 #endif
-    #define DC(c, r) PC(cl, c, r)
+    float shown[CLOTH_N][3];
+    for (int r = 0; r < cl->rows; r++)
+        for (int c = 0; c < cl->cols; c++) {
+            const float *p = PC(cl, c, r), *q = cl->q[r * cl->cols + c];
+            bool pin = r == 0 || (r == 1 && sp->kind == CLOTH_PLUME);
+            for (int m = 0; m < 3; m++) shown[r * cl->cols + c][m] = (halfway && !pin) ? 0.5f * (p[m] + q[m]) : p[m];
+        }
+    // Per vertex: no divides but the normal's (a divide is 29 cycles), the colour's tint once
+    const float inv = 1.0f / s2, K = 1.0f / 255.0f;
+    const float tint[3] = { sp->color.r * colorAmbient[0] * K, sp->color.g * colorAmbient[1] * K, sp->color.b * colorAmbient[2] * K };
+    #define DC(c, r) shown[(r) * cl->cols + (c)]
     for (int r = 0; r < cl->rows; r++)
         for (int c = 0; c < cl->cols; c++) {
             const float *l = DC(c > 0 ? c - 1 : c, r), *rr = DC(c < cl->cols - 1 ? c + 1 : c, r);
@@ -380,10 +404,10 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat
             const float *p = DC(c, r);
             float w[3] = { p[0] - o[0], p[1] - o[1], p[2] - o[2] };     // world -> model units
             int16_t pos[3];
-            for (int m = 0; m < 3; m++) pos[m] = (int16_t)((w[0] * ax[m][0] + w[1] * ax[m][1] + w[2] * ax[m][2]) / s2);
+            for (int m = 0; m < 3; m++) pos[m] = (int16_t)((w[0] * ax[m][0] + w[1] * ax[m][1] + w[2] * ax[m][2]) * inv);
             // strands get a sheen down the middle, cloth darkens toward the hem
             float bias = strands(sp) ? 0.85f + 0.3f * (c == cl->cols / 2) : 1.0f - 0.25f * r / cl->rows;
-            put_vert(vb, r * cl->cols + c, pos, shade(sp->color, n, bias));
+            put_vert(vb, r * cl->cols + c, pos, shade_tinted(tint, n, bias));
         }
     #undef DC
 #ifdef HLE_LOG_CLOTH
