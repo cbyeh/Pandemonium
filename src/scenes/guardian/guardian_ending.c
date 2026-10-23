@@ -428,8 +428,9 @@ void ending_draw_world(void)
         if (t > 33.0f && t < 43.0f) draw_sun((float[3]){ THRONE_X - 40.0f, sun_y(t), 0.0f }, 6.0f, false);
     } else if (t >= 44.0f) {
         // The void: the Sun's eye at the bottom of a swirling funnel, the knight falling in
-        draw_sun((float[3]){ 0.0f, VOID_Y - 230.0f, 0.0f }, 7.0f, true);
+        // The funnel is solid: the Sun goes on top of it, or only its dark pupil shows through
         skill_fx_draw_vortex((float[3]){ 0.0f, VOID_Y, 0.0f }, 220.0f, 110.0f, t);
+        draw_sun((float[3]){ 0.0f, VOID_Y - 230.0f, 0.0f }, 7.0f, true);
         if (t >= 47.5f) {
             rdpq_sync_pipe();
             rdpq_set_mode_standard();
