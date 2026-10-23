@@ -2484,6 +2484,7 @@ void character_init(void)
     sword_trail_init();
 
     characterModel = t3d_model_load("rom:/knight/knight.t3dm");
+    gpu_log_model("knight", characterModel);
     characterShadowModel = t3d_model_load("rom:/blob_shadow/shadow.t3dm");
 
     T3DSkeleton* skeleton = malloc(sizeof(T3DSkeleton));

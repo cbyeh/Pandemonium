@@ -232,12 +232,15 @@ int main(void)
         // draws this frame while the CPU updates the next (what it reads is buffered: kGpuFrames)
         if (!drawQueue[0]) { drawQueue[0] = rspq_queue_create(); drawQueue[1] = rspq_queue_create(); }
         rspq_queue_clear(drawQueue[dq]);
-#if !defined(HLE_PROF_SERIAL) && !defined(HLE_PROF_BOSS)    // test aids that time the RSP stage by stage
+#if !defined(HLE_PROF_SERIAL) && !defined(HLE_PROF_BOSS) && !defined(HLE_PROF_DRAGON)    // test aids that time the RSP stage by stage
         g_drawQueue = drawQueue[dq];
         rspq_queue_switch(g_drawQueue);
 #endif
         if (!devMenuOpen || cameraNeedsUpdate || isOpeningCredits) {
             scene_controller_draw(&viewport);
+#ifdef HLE_PROF_SERIAL
+            if (g_drawQueue) gpu_prof_end();    // a stage left open (an early return)
+#endif
         }
 
         /*
@@ -294,6 +297,11 @@ int main(void)
         g_drawQueue = NULL;
         rspq_queue_run(drawQueue[dq]);
         drawDone[dq] = rspq_syncpoint_new();
+#ifdef HLE_PROF_WAITEND   // test aid: the frame's GPU time with the CPU idle
+        { static uint32_t acc, n; uint32_t t = TICKS_READ();
+          rspq_wait(); acc += TICKS_READ() - t;
+          if (++n == 120) { debugf("[gpuframe] %.2f ms\n", TICKS_TO_US(acc / n) / 1000.0); acc = n = 0; } }
+#endif
 
         if (DEV_MODE && debugDraw)
         {
@@ -317,6 +325,9 @@ int main(void)
 
             rdpq_detach_show();
         }
+        // The RSP halts when it runs out of commands and wakes only on a flush: without one it
+        // could sleep through this frame's draw until the next frame waited on it
+        rspq_flush();
 
         if (DEV_MODE)
         {

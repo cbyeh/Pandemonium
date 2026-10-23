@@ -13,7 +13,9 @@
 typedef struct {
     rspq_block_t *block;
     T3DVertPacked *verts;
+    int16_t *idx;
     T3DMat4FP *mat;
+    float bc[3], br;    // bounding sphere, in the stored 1/8 units (for culling to the view)
 } ProcMesh;
 
 void proc_mesh_begin(void);

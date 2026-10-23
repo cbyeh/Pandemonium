@@ -115,7 +115,8 @@ void proc_mesh_box(const float o[3], const float h[3], uint32_t rgba)
         v[i][1] = o[1] + ((i & 2) ? h[1] : -h[1]);
         v[i][2] = o[2] + ((i & 4) ? h[2] : -h[2]);
     }
-    static const int f[6][4] = { {0,1,3,2}, {4,6,7,5}, {0,4,5,1}, {2,3,7,6}, {0,2,6,4}, {1,5,7,3} };
+    // wound outward, as the tubes and spikes (a closed mesh can be drawn with its far side culled)
+    static const int f[6][4] = { {2,3,1,0}, {5,7,6,4}, {1,5,4,0}, {6,7,3,2}, {4,6,2,0}, {3,7,5,1} };
     for (int i = 0; i < 6; i++) proc_mesh_quad(v[f[i][0]], v[f[i][1]], v[f[i][2]], v[f[i][3]], rgba, false);
 }
 
@@ -290,6 +291,16 @@ void proc_mesh_end(ProcMesh *out)
     }
     s_ntris = kept;
     if (s_ntris == 0) return;
+    float mn[3] = { 1e9f, 1e9f, 1e9f }, mx[3] = { -1e9f, -1e9f, -1e9f };
+    for (int t = 0; t < s_ntris; t++)
+        for (int i = 0; i < 3; i++)
+            for (int k = 0; k < 3; k++) { float v = s_tris[t].p[i][k]; mn[k] = fminf(mn[k], v); mx[k] = fmaxf(mx[k], v); }
+    for (int k = 0; k < 3; k++) out->bc[k] = 0.5f * (mn[k] + mx[k]);
+    for (int t = 0; t < s_ntris; t++)
+        for (int i = 0; i < 3; i++) {
+            float d[3] = { s_tris[t].p[i][0] - out->bc[0], s_tris[t].p[i][1] - out->bc[1], s_tris[t].p[i][2] - out->bc[2] };
+            out->br = fmaxf(out->br, sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]));
+        }
     // Batches of up to a vertex cache's worth, the corners that match (position and colour)
     // shared: the RSP's vertex work bounds the frame, and a smooth tube shares each corner 6 ways
     int nc = s_ntris * 3;
@@ -307,7 +318,9 @@ void proc_mesh_end(ProcMesh *out)
             }
             if (slot[i] < 0) fresh++;
         }
-        if (t == 0 || nv + fresh > T3D_VERTEX_CACHE_SIZE) {   // a new batch
+        // the batch's index buffer is loaded into the free end of the vertex cache (36 bytes a slot)
+        int nIdx = (t - (batches ? batchTri[batches - 1] : 0) + 1) * 3;
+        if (t == 0 || nv + fresh + (nIdx * 2 + 8 + 35) / 36 > T3D_VERTEX_CACHE_SIZE) {   // a new batch
             batchTri[batches] = t; batchRef[batches++] = nref; nv = 0;
             for (int i = 0; i < 3; i++) slot[i] = -1;
         }
@@ -322,8 +335,13 @@ void proc_mesh_end(ProcMesh *out)
     out->verts = malloc_uncached(sizeof(T3DVertPacked) * packed);
     memset(out->verts, 0, sizeof(T3DVertPacked) * packed);
     uint16_t norm = t3d_vert_pack_normal(&(T3DVec3){{ 0, 1, 0 }});
+    // Each batch's triangles in one strip command (a restart on each: a list), not one command a
+    // triangle: the RSP's command overhead per triangle was most of a mesh's cost
+    int nidx = 0;
+    for (int b = 0; b < batches; b++) nidx += ((batchTri[b + 1] - batchTri[b]) * 3 + 3) & ~3;   // 8-byte aligned each
+    out->idx = malloc_uncached(sizeof(int16_t) * nidx);
     gpu_block_begin();
-    for (int b = 0, base = 0; b < batches; b++) {
+    for (int b = 0, base = 0, ib = 0; b < batches; b++) {
         int n = batchRef[b + 1] - batchRef[b];
         for (int k = 0; k < n; k++) {
             int r = ref[batchRef[b] + k];
@@ -333,9 +351,18 @@ void proc_mesh_end(ProcMesh *out)
             else       { memcpy(v->posA, p, 6); v->normA = norm; v->rgbaA = s_tris[r / 3].c[r % 3]; }
         }
         t3d_vert_load(&out->verts[base], 0, (uint32_t)((n + 1) & ~1));
-        for (int t = batchTri[b]; t < batchTri[b + 1]; t++) t3d_tri_draw(idx[t * 3], idx[t * 3 + 1], idx[t * 3 + 2]);
-        t3d_tri_sync();
+        int16_t *ix = &out->idx[ib];
+        int ni = 0;
+        for (int t = batchTri[b]; t < batchTri[b + 1]; t++) {
+            ix[ni] = (int16_t)(idx[t * 3] | (ni ? 0x8000 : 0));
+            ix[ni + 1] = idx[t * 3 + 1];
+            ix[ni + 2] = idx[t * 3 + 2];
+            ni += 3;
+        }
+        t3d_indexbuffer_convert(ix, ni);
+        t3d_tri_draw_strip_and_sync(ix, ni);
         base += (n + 1) / 2;
+        ib += (ni + 3) & ~3;
     }
 #ifdef HLE_LOG_FPS
     debugf("[procmesh] %d tris, %d vertices (was %d)\n", s_ntris, nref, nc);   // test aid
@@ -380,6 +407,7 @@ void proc_mesh_free(ProcMesh *m)
 {
     if (m->block) { gpu_wait(); rspq_block_free(m->block); }
     if (m->verts) free_uncached(m->verts);
+    if (m->idx) free_uncached(m->idx);
     if (m->mat) free_uncached(m->mat);
     memset(m, 0, sizeof(*m));
 }

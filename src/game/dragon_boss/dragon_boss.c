@@ -1205,8 +1205,13 @@ static void put(const ProcMesh *m, const float p[3], const float x[3], const flo
                 float sx, float sy, float sz)
 {
     if (!m->block || s.mi >= MAT_MAX) return;
-    T3DMat4FP *o = &s.mats[s.matRing * MAT_MAX + s.mi++];
     sx /= 8.0f; sy /= 8.0f; sz /= 8.0f;     // proc_mesh stores 1/8 units
+    if (g_viewFrustum) {    // out of view: not drawn (the RSP would transform it all to clip it away)
+        T3DVec3 c;
+        for (int k = 0; k < 3; k++) c.v[k] = p[k] + x[k] * sx * m->bc[0] + y[k] * sy * m->bc[1] + z[k] * sz * m->bc[2];
+        if (!t3d_frustum_vs_sphere(g_viewFrustum, &c, m->br * fmaxf(fabsf(sx), fmaxf(fabsf(sy), fabsf(sz))))) return;
+    }
+    T3DMat4FP *o = &s.mats[s.matRing * MAT_MAX + s.mi++];
     T3DMat4 M = {{
         { x[0] * sx, x[1] * sx, x[2] * sx, 0 }, { y[0] * sy, y[1] * sy, y[2] * sy, 0 },
         { z[0] * sz, z[1] * sz, z[2] * sz, 0 }, { p[0], p[1], p[2], 1 },
@@ -1254,14 +1259,14 @@ static void knee(const float a[3], const float c[3], const float bend[3], float 
 #endif
 #define DRAW_OPEN   (T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT)
 #define DRAW_CLOSED (DRAW_OPEN | HLE_DRAGON_CULL)
-#ifdef HLE_PROF_SERIAL   // test aid: RSP+RDP time of each part (body, legs, head, wings, glows)
-static uint32_t s_dp[5], s_dpT, s_dpN;
-#define DPROF(i) { gpu_wait(); uint32_t _t = TICKS_READ(); s_dp[i] += _t - s_dpT; s_dpT = _t; }
+#ifdef HLE_PROF_DRAGON   // test aid: RSP+RDP time of each part (body, legs, head, wings, glows), each run alone
+static uint32_t s_dp[5], s_dpN;
+#define DPROF(i) { s_dp[i] += gpu_prof_end(); if (i < 4) gpu_prof_begin(); }
 #endif
 void dragon_boss_draw(Boss* b)
 {
-#ifdef HLE_PROF_SERIAL
-    gpu_wait(); s_dpT = TICKS_READ();
+#ifdef HLE_PROF_DRAGON
+    gpu_prof_begin();
     if (++s_dpN == 120) { debugf("[dragonprof] body %.2f legs %.2f head %.2f wings %.2f glows %.2f\n", TICKS_TO_US(s_dp[0] / 120) / 1000.0, TICKS_TO_US(s_dp[1] / 120) / 1000.0,
         TICKS_TO_US(s_dp[2] / 120) / 1000.0, TICKS_TO_US(s_dp[3] / 120) / 1000.0, TICKS_TO_US(s_dp[4] / 120) / 1000.0); memset(s_dp, 0, sizeof s_dp); s_dpN = 0; }
 #endif
@@ -1273,8 +1278,8 @@ void dragon_boss_draw(Boss* b)
     rdpq_set_mode_standard();
     rdpq_mode_zbuf(true, true);
     rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
-    // The tubes and their crystals are closed and wound outward: their far sides culled (the RSP's
-    // triangle setup is most of this boss's cost). The head, feet and wings stay two-sided
+    // Its body is closed meshes wound outward: their far sides culled (the RSP's triangle setup is
+    // most of this boss's cost). The wings stay two-sided
     t3d_state_set_drawflags(DRAW_CLOSED);
 
     const ProcMesh *seg = s.dark ? &s.segDark : &s.seg;
@@ -1294,7 +1299,7 @@ void dragon_boss_draw(Boss* b)
         put_link(s.dark ? &s.tipDark : &s.tip, s.tl[NTAIL], e, MESH, 1.0f);
     }
 
-#ifdef HLE_PROF_SERIAL
+#ifdef HLE_PROF_DRAGON
     DPROF(0);
 #endif
     for (int k = 0; k < 4; k++) {
@@ -1314,16 +1319,13 @@ void dragon_boss_draw(Boss* b)
         put_link(&s.limb, kn, s.foot[k], 5.5f, 1.0f);
         static const float Y[3] = { 0, 1, 0 };
         float fx[3]; cross3(fx, Y, s.F);
-        t3d_state_set_drawflags(DRAW_OPEN);
         put(&s.mFoot, s.foot[k], fx, Y, s.F, 1.0f, 1.0f, 1.0f);     // the foot, flat, facing forward
-        t3d_state_set_drawflags(DRAW_CLOSED);
         if (hot) rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
     }
 
-#ifdef HLE_PROF_SERIAL
+#ifdef HLE_PROF_DRAGON
     DPROF(1);
 #endif
-    t3d_state_set_drawflags(DRAW_OPEN);
     put(s.dark ? &s.mHeadDark : &s.mHead, s.head, s.hx, s.hy, s.hz, 1.0f, 1.0f, 1.0f);
     float hinge[3], jy[3], jz[3], ca = cosf(s.jaw * 0.7f), sa = sinf(s.jaw * 0.7f);
     mad3(hinge, s.head, s.hz, 6.0f);
@@ -1331,9 +1333,10 @@ void dragon_boss_draw(Boss* b)
     for (int m = 0; m < 3; m++) { jz[m] = s.hz[m] * ca - s.hy[m] * sa; jy[m] = s.hy[m] * ca + s.hz[m] * sa; }
     put(&s.mJaw, hinge, s.hx, jy, jz, 1.0f, 1.0f, 1.0f);
 
-#ifdef HLE_PROF_SERIAL
+#ifdef HLE_PROF_DRAGON
     DPROF(2);
 #endif
+    t3d_state_set_drawflags(DRAW_OPEN);     // the membranes are seen from both sides
     // Four wings: the great pair at the shoulders, a smaller pair behind
     const ProcMesh *wing = s.dark ? &s.wingDark : &s.wing;
     for (int pair = 0; pair < 2; pair++)
@@ -1347,7 +1350,7 @@ void dragon_boss_draw(Boss* b)
             put(wing, root, x, y, s.F, k * s.wingSpan, k, k);
         }
 
-#ifdef HLE_PROF_SERIAL
+#ifdef HLE_PROF_DRAGON
     DPROF(3);
 #endif
     // Glows: fire, dark orbs, the beam, the light in its mouth. Alpha-blended, not
@@ -1378,7 +1381,7 @@ void dragon_boss_draw(Boss* b)
         }
     }
     if (s.glow > 0.01f) put_glow(s.dark || s.state == DG_BEAM || s.state == DG_NOVA ? &s.mOrb : &s.flame, s.mouth, 2.0f + 5.0f * s.glow);
-#ifdef HLE_PROF_SERIAL
+#ifdef HLE_PROF_DRAGON
     DPROF(4);
 #endif
     rdpq_mode_pop();

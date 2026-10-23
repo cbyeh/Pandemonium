@@ -804,6 +804,7 @@ void boss_init(Boss* boss)
     sword_trail_instance_init(sword_trail_get_boss());
 
     T3DModel* bossModel = t3d_model_load("rom:/boss/boss_anim.t3dm");
+    gpu_log_model("guardian", bossModel);
     boss->model = bossModel;
 
     T3DSkeleton* skeleton = malloc(sizeof(T3DSkeleton));
