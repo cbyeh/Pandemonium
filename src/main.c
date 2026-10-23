@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include <string.h>
 #include <t3d/t3d.h>
 #include <t3d/t3ddebug.h>
 
@@ -19,6 +20,12 @@
 #include "gpu_frame.h"
 
 rspq_queue_t *g_drawQueue;
+#ifdef HLE_LOG_FPS   // test aid: CPU ms of the main loop's update parts
+static uint32_t s_mp[4];
+#define MPROF(i, x) do { uint32_t _t = TICKS_READ(); x; s_mp[i] += TICKS_READ() - _t; } while (0)
+#else
+#define MPROF(i, x) x
+#endif
 
 int main(void)
 {
@@ -160,7 +167,9 @@ int main(void)
 #endif
 
         // ===== UPDATE LOOP =====
-        mixer_try_play();
+#ifndef HLE_NO_MIXER   // test aid: the audio mixer's cost (silent)
+        MPROF(0, mixer_try_play());
+#endif
 
         if (DEV_MODE) {
             dev_controller_update();
@@ -176,7 +185,7 @@ int main(void)
              * menu, character, or fixed-update ownership.
              */
             if (!isOpeningCredits) {
-                camera_update(&viewport);
+                MPROF(1, camera_update(&viewport));
             }
 
             /*
@@ -187,10 +196,10 @@ int main(void)
              * so only call it while Guardian is active.
              */
             if (isGuardian) {
-                menu_controller_update();
+                MPROF(2, menu_controller_update());
             }
 
-            scene_controller_update();
+            MPROF(3, scene_controller_update());
 
             /*
              * Fixed update currently belongs to Guardian only.
@@ -302,7 +311,16 @@ int main(void)
         rspq_queue_run(drawQueue[dq]);
         drawDone[dq] = rspq_syncpoint_new();
 #ifdef HLE_PROF_WAITEND   // test aid: the frame's GPU time with the CPU idle
-        { static uint32_t acc, n; uint32_t t = TICKS_READ();
+        { static uint32_t acc, n; rspq_flush(); uint32_t t = TICKS_READ();
+#if HLE_PROF_WAITEND == 2       // the CPU busy 12 ms on arithmetic alone
+          { volatile uint32_t x = 1; while (TICKS_READ() - t < TICKS_FROM_MS(12)) for (int i = 0; i < 200; i++) x = x * 1664525u + 1013904223u; }
+#elif HLE_PROF_WAITEND == 3     // writing uncached memory
+          { static uint32_t *u; if (!u) u = malloc_uncached(16384); while (TICKS_READ() - t < TICKS_FROM_MS(12)) for (int i = 0; i < 4096; i++) u[i] = i; }
+#elif HLE_PROF_WAITEND == 5     // reading uncached memory
+          { static uint32_t *u; if (!u) u = malloc_uncached(16384); volatile uint32_t x = 0; while (TICKS_READ() - t < TICKS_FROM_MS(12)) for (int i = 0; i < 4096; i++) x += u[i]; }
+#elif HLE_PROF_WAITEND == 4     // missing the cache (reading 256 KB round and round)
+          { static uint32_t *c; if (!c) c = malloc(65536 * 4); volatile uint32_t x = 0; while (TICKS_READ() - t < TICKS_FROM_MS(12)) for (int i = 0; i < 65536; i += 4) x += c[i]; }
+#endif
           rspq_wait(); acc += TICKS_READ() - t;
           if (++n == 120) { debugf("[gpuframe] %.2f ms\n", TICKS_TO_US(acc / n) / 1000.0); acc = n = 0; } }
 #endif
@@ -346,6 +364,8 @@ int main(void)
             if (lastStart) { uint32_t ft = pt0 - lastStart; if (ft > worst) worst = ft; }
             slow += deltaFrames - 1;    // refreshes that showed a frame again
             lastStart = pt0;
+            if (n == 119) { int pl = 0; for (int ch = 0; ch < 16; ch++) pl += mixer_ch_playing(ch); debugf("[mixer] %d channels playing\n", pl); }
+            if (n == 119) { debugf("[mainupd] mixer %.2f camera %.2f menu %.2f scene %.2f ms\n", TICKS_TO_US(s_mp[0] / 120) / 1000.0, TICKS_TO_US(s_mp[1] / 120) / 1000.0, TICKS_TO_US(s_mp[2] / 120) / 1000.0, TICKS_TO_US(s_mp[3] / 120) / 1000.0); memset(s_mp, 0, sizeof s_mp); }
             if (++n == 120) { debugf("[frame] wait for the RSP %.1f, a framebuffer %.1f, update %.1f draw %.1f ms; worst %.1f ms, %lu refreshes missed\n", TICKS_TO_US(gwait / n) / 1000.0, TICKS_TO_US(wait / n) / 1000.0, TICKS_TO_US(upd / n) / 1000.0, TICKS_TO_US(drw / n) / 1000.0,
                                       TICKS_TO_US(worst) / 1000.0, (unsigned long)slow); gwait = wait = upd = drw = n = worst = slow = 0; }
         }

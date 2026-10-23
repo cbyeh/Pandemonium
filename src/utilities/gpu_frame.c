@@ -1,7 +1,7 @@
 #include <string.h>
 #include "gpu_frame.h"
 
-#define GPU_ARENA_BYTES (48 * 1024)     // a fight peaks near 5 KB; the Unbound's 16 swords can draw 2 KB ribbons each
+#define GPU_ARENA_BYTES (32 * 1024)     // a fight peaks near 5 KB, the Unbound's swords near 26 (4 MB of RAM)
 
 const T3DFrustum *g_viewFrustum;
 static uint8_t *s_arena[GPU_FRAMES];
@@ -9,10 +9,12 @@ static int s_half, s_used;
 
 void gpu_frame_begin(int half)
 {
-#ifdef HLE_LOG_FPS   // test aid: the most a frame used
-    static int peak, n;
+#ifdef HLE_LOG_FPS   // test aid: the most a frame used, and the least heap left (ever)
+    static int peak, n, leastFree = 1 << 30;
     if (s_used > peak) peak = s_used;
-    if (++n == 120) { heap_stats_t h; sys_get_heap_stats(&h); debugf("[arena] peak %d bytes, heap %d KB free of %d\n", peak, (h.total - h.used) / 1024, h.total / 1024); peak = 0; n = 0; }
+    heap_stats_t h; sys_get_heap_stats(&h);
+    if (h.total - h.used < leastFree) leastFree = h.total - h.used;
+    if (++n == 120) { debugf("[arena] peak %d bytes, heap %d KB free of %d, least %d\n", peak, (h.total - h.used) / 1024, h.total / 1024, leastFree / 1024); peak = 0; n = 0; }
 #endif
     s_half = half;
     s_used = 0;

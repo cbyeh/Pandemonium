@@ -597,6 +597,15 @@ void scene_init(void)
     // ==== Sounds ====
 
     audio_scene_load_paths(SCENE1_SFX_PATHS, SCENE1_SFX_COUNT);
+    // The sounds heard all through a fight, held in memory (about 160 KB): the bosses' step, the
+    // knight's swing, its hits and running steps
+    static const int held[] = {
+        SCENE1_SFX_BOSS_STEP1, SCENE1_SFX_CHAR_SWING1,
+        SCENE1_SFX_CHAR_ATTACK_HIT1, SCENE1_SFX_CHAR_ATTACK_HIT2, SCENE1_SFX_CHAR_ATTACK_HIT3,
+        SCENE1_SFX_CHAR_ATTACK_HIT4, SCENE1_SFX_CHAR_ATTACK_HIT5, SCENE1_SFX_CHAR_ATTACK_HIT6,
+        SCENE1_SFX_CHAR_FOOTSTEP_RUN1, SCENE1_SFX_CHAR_FOOTSTEP_RUN2, SCENE1_SFX_CHAR_FOOTSTEP_RUN3, SCENE1_SFX_CHAR_FOOTSTEP_RUN4,
+    };
+    audio_scene_hold_sfx(held, sizeof held / sizeof held[0]);
 
     // ==== Camera ====
 
@@ -1661,9 +1670,17 @@ void scene_cutscene_update(void)
     scene_update_post_boss_cutscene_input();
 }
 
-static void draw_culled_record(void);
+#ifdef HLE_LOG_FPS   // test aid: CPU ms of the update's parts
+static uint32_t s_up[6], s_upN;
+#define UPROF(i, x) do { uint32_t _t = TICKS_READ(); x; s_up[i] += TICKS_READ() - _t; } while (0)
+#else
+#define UPROF(i, x) x
+#endif
 void scene_update(void) {
-    draw_culled_record();
+#ifdef HLE_LOG_FPS
+    if (++s_upN == 120) { debugf("[update] character %.2f position %.2f skills %.2f boss %.2f collision %.2f ms\n", TICKS_TO_US(s_up[0] / 120) / 1000.0, TICKS_TO_US(s_up[1] / 120) / 1000.0,
+        TICKS_TO_US(s_up[2] / 120) / 1000.0, TICKS_TO_US(s_up[3] / 120) / 1000.0, TICKS_TO_US(s_up[4] / 120) / 1000.0); memset(s_up, 0, sizeof s_up); s_upN = 0; }
+#endif
     // The button layout applies while the player is in control (not in menus, cutscenes,
     // the Tower's draft or the death screen, which read A and B as they are)
     joypad_set_gameplay(gameState == GAME_STATE_PLAYING && !menu_controller_is_active() && cutsceneState == CUTSCENE_NONE
@@ -1777,15 +1794,15 @@ void scene_update(void) {
             lastInteractAHeld = joypad.btn.a;
         }
 
-        character_update();
+        UPROF(0, character_update());
         // Update character transform after constraint
-        character_update_position();
-        skill_fx_update(deltaTime);
+        UPROF(1, character_update_position());
+        UPROF(2, skill_fx_update(deltaTime));
 
         boss_ground_crush_update(deltaTime);
 
         if (boss_is_active(g_boss)) {
-            boss_update(g_boss);
+            UPROF(3, boss_update(g_boss));
             // Boss death no longer forces GAME_STATE_VICTORY.
             // The boss will play its collapse and remain still; the player can keep moving.
 
@@ -1828,7 +1845,7 @@ void scene_update(void) {
 #endif
         }
 
-        collision_update();
+        UPROF(4, collision_update());
 
 
         //dialog_controller_update();
@@ -2144,19 +2161,11 @@ static uint32_t s_prof[8];
 static uint32_t s_gpu[7];
 #define PROF_SERIAL_WAIT(i) { s_gpu[i] += gpu_prof_end(); if (i < 6) gpu_prof_begin(); }
 #endif
-// The hall, culled to the camera: each object's geometry recorded once (its userBlock), and
-// each frame only those in the view frustum drawn. The RSP's vertex work bounds the frame,
-// and much of the hall is behind the camera. The hall models are all drawn at MODEL_SCALE,
-// raised by roomY. The objects in view, with their materials, are recorded too, one block per
-// set seen recently: setting the materials each frame cost the CPU 2 ms (and its commands
-// slowed the RSP)
-#define CULL_CACHE 24     // more sets than a hall model is seen in
-typedef struct { const T3DModel *m; uint32_t mask; rspq_block_t *block; } CulledSet;
-static CulledSet s_culled[8 * CULL_CACHE];
-static int s_culledNext[8];
-typedef struct { const T3DModel *m; uint32_t mask; int slot; } CulledWant;
-static CulledWant s_culledWant[8];
-static int s_nCulledWant;
+// The hall, culled to the camera: each object recorded once with its material (its userBlock),
+// and each frame only those in the view frustum run. The RSP's vertex work bounds the frame, and
+// much of the hall is behind the camera; setting the materials live cost the CPU 2 ms (and its
+// commands slowed the RSP). Their own material each: the hall's objects hardly share one. The
+// hall models are all drawn at MODEL_SCALE, raised by roomY
 #ifdef HLE_PROF_SERIAL   // test aid: each hall model's own GPU time
 static uint32_t s_envGpu[8]; static const T3DModel *s_envModel[8];
 static void draw_culled_impl(T3DModel *m, const T3DViewport *vp);
@@ -2176,78 +2185,19 @@ static void draw_culled_impl(T3DModel *m, const T3DViewport *vp);
 static void draw_culled_impl(T3DModel *m, const T3DViewport *vp)
 {
     T3DModelIter it = t3d_model_iter_create(m, T3D_CHUNK_TYPE_OBJECT);
-    uint32_t mask = 0;
-    for (int i = 0; t3d_model_iter_next(&it) && i < 32; i++) {
+    while (t3d_model_iter_next(&it)) {
         T3DObject *o = it.object;
-        if (!o->userBlock) { gpu_block_begin(); t3d_model_draw_object(o, NULL); o->userBlock = gpu_block_end(); }
         T3DVec3 mn = {{ o->aabbMin[0] * MODEL_SCALE, o->aabbMin[1] * MODEL_SCALE + roomY, o->aabbMin[2] * MODEL_SCALE }};
         T3DVec3 mx = {{ o->aabbMax[0] * MODEL_SCALE, o->aabbMax[1] * MODEL_SCALE + roomY, o->aabbMax[2] * MODEL_SCALE }};
-        if (t3d_frustum_vs_aabb(&vp->viewFrustum, &mn, &mx)) mask |= 1u << i;
-    }
-    if (!mask) return;
-#ifdef HLE_NO_CULL_CACHE   // test aid: the materials set each frame (as before)
-    { T3DModelState st = t3d_model_state_create(); it = t3d_model_iter_create(m, T3D_CHUNK_TYPE_OBJECT);
-      for (int i = 0; t3d_model_iter_next(&it) && i < 32; i++) if (mask & (1u << i)) { t3d_model_draw_material(it.object->material, &st); rspq_block_run(it.object->userBlock); }
-      return; }
-#endif
-    // this model's sets: its slot found by model (a few hall models, at most 8)
-    int slot = -1;
-    for (int k = 0; k < 8 && slot < 0; k++) if (s_culled[k * CULL_CACHE].m == m || !s_culled[k * CULL_CACHE].m) slot = k;
-    if (slot < 0) slot = 0;
-    CulledSet *set = &s_culled[slot * CULL_CACHE];
-    if (!set[0].m) set[0].m = m;
-    for (int k = 0; k < CULL_CACHE; k++)
-        if (set[k].block && set[k].mask == mask) { rspq_block_run(set[k].block); return; }
-    // A new set: drawn as it is this frame, recorded before the next (draw_culled_record: a
-    // block recorded in the middle of the frame's queue corrupted the RDP's commands)
-    T3DModelState state = t3d_model_state_create();
-    it = t3d_model_iter_create(m, T3D_CHUNK_TYPE_OBJECT);
-    for (int i = 0; t3d_model_iter_next(&it) && i < 32; i++)
-        if (mask & (1u << i)) { t3d_model_draw_material(it.object->material, &state); rspq_block_run(it.object->userBlock); }
-    if (s_nCulledWant < 8) s_culledWant[s_nCulledWant++] = (CulledWant){ m, mask, slot };
-}
-
-/** Records the sets the last frame wanted (between frames: no queue being recorded). */
-static void draw_culled_record(void)
-{
-    for (int w = 0; w < s_nCulledWant; w++) {
-        const CulledWant *cw = &s_culledWant[w];
-        CulledSet *set = &s_culled[cw->slot * CULL_CACHE];
-        if (set[0].m != cw->m) continue;     // the hall went since
-        bool have = false;
-        for (int k = 0; k < CULL_CACHE; k++) have |= set[k].block && set[k].mask == cw->mask;
-        if (have) continue;
-        if (s_culledNext[cw->slot] == CULL_CACHE) {
-            // Full: all dropped, after a wait (the RSP may still run them, and writes later RDP
-            // commands into the space left in the last block it ran until rspq_wait)
-#ifdef HLE_LOG_FPS
-            debugf("[culled] model %d: %d sets, dropped\n", cw->slot, CULL_CACHE);     // test aid
-#endif
-            gpu_wait();
-            for (int k = 0; k < CULL_CACHE; k++) if (set[k].block) { rspq_block_free(set[k].block); set[k].block = NULL; }
-            s_culledNext[cw->slot] = 0;
+        if (!t3d_frustum_vs_aabb(&vp->viewFrustum, &mn, &mx)) continue;
+        if (!o->userBlock) {
+            gpu_block_begin();
+            t3d_model_draw_material(o->material, NULL);     // from scratch: the block runs after anything
+            t3d_model_draw_object(o, NULL);
+            o->userBlock = gpu_block_end();
         }
-        CulledSet *e = &set[s_culledNext[cw->slot]++];
-        rspq_block_begin();
-        T3DModelState state = t3d_model_state_create();
-        T3DModelIter it = t3d_model_iter_create(cw->m, T3D_CHUNK_TYPE_OBJECT);
-        for (int i = 0; t3d_model_iter_next(&it) && i < 32; i++)
-            // the geometry recorded here too, not its block called: called from a block with RDP
-            // commands of its own, its triangles were written over the next material's
-            if (cw->mask & (1u << i)) { t3d_model_draw_material(it.object->material, &state); t3d_model_draw_object(it.object, NULL); }
-        e->block = rspq_block_end();
-        e->mask = cw->mask;
+        rspq_block_run(o->userBlock);
     }
-    s_nCulledWant = 0;
-}
-
-/** The recorded sets go with the hall (scene_delete_environment). */
-static void draw_culled_forget(void)
-{
-    for (int k = 0; k < 8 * CULL_CACHE; k++) if (s_culled[k].block) rspq_block_free(s_culled[k].block);
-    memset(s_culled, 0, sizeof s_culled);
-    memset(s_culledNext, 0, sizeof s_culledNext);
-    s_nCulledWant = 0;
 }
 
 void scene_draw(T3DViewport *viewport)
@@ -2741,8 +2691,6 @@ void scene_draw(T3DViewport *viewport)
 
 void scene_delete_environment(void)
 {
-    gpu_wait();
-    draw_culled_forget();
     // --- DPLs ---
     if (mapDpl)        { rspq_block_free(mapDpl);        mapDpl = NULL; }
     if (pillarsDpl)    { rspq_block_free(pillarsDpl);    pillarsDpl = NULL; }

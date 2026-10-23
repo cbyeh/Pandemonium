@@ -36,6 +36,8 @@ void audio_update_fade(float dt);
 
 void audio_scene_load_paths(const char *const *paths, int count);
 void audio_scene_unload_sfx(void);
+// Holds these scene sounds in memory (played from there, not streamed): the frequent ones
+void audio_scene_hold_sfx(const int *indices, int count);
 
 // Play a scene-local SFX index
 void audio_play_scene_sfx_dist(

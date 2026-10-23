@@ -76,6 +76,8 @@ static void apply_stereo_volume(int ch, float volume) {
  */
 
 static wav64_t sceneWavs[AUDIO_SCENE_MAX_SFX];
+static wav64_t *sceneHeld[AUDIO_SCENE_MAX_SFX];    // a copy held in memory (audio_scene_hold_sfx), or NULL
+static const char *scenePaths[AUDIO_SCENE_MAX_SFX];
 static bool    sceneLoaded[AUDIO_SCENE_MAX_SFX];
 static int     sceneCount = 0;
 
@@ -221,6 +223,7 @@ void audio_scene_unload_sfx(void)
     for (int i = 0; i < sceneCount; i++) {
         if (sceneLoaded[i]) {
             wav64_close(&sceneWavs[i]);
+            if (sceneHeld[i]) { wav64_close(sceneHeld[i]); sceneHeld[i] = NULL; }
             sceneLoaded[i] = false;
         }
     }
@@ -246,8 +249,22 @@ void audio_scene_load_paths(const char *const *paths, int count)
         if (!p) continue;
 
         wav64_open(&sceneWavs[i], p);
+        scenePaths[i] = p;
         wav64_set_loop(&sceneWavs[i], false);
         sceneLoaded[i] = true;
+    }
+}
+
+void audio_scene_hold_sfx(const int *indices, int count)
+{
+    // Held in memory (still compressed), the sounds played all through a fight aren't streamed
+    // from the cartridge as they play: the mixer's reads and bookkeeping for a streamed sound
+    // cost the CPU about 0.3 ms a frame each, and slowed the RSP. Only a few: 4 MB of RAM
+    for (int k = 0; k < count; k++) {
+        int i = indices[k];
+        if (i < 0 || i >= sceneCount || !sceneLoaded[i] || sceneHeld[i]) continue;
+        sceneHeld[i] = wav64_load(scenePaths[i], &(wav64_loadparms_t){ .streaming_mode = WAV64_STREAMING_NONE });
+        wav64_set_loop(sceneHeld[i], false);
     }
 }
 
@@ -298,6 +315,9 @@ void audio_stop_music(void)
 
 void audio_play_music(const char *path, bool loop)
 {
+#ifdef HLE_NO_MUSIC   // test aid: the music's cost (silent)
+    return;
+#endif
     if (musicFadingOut)
         audio_reset_fade();
 
@@ -428,7 +448,7 @@ void audio_play_scene_sfx_dist(int sceneSfxIndex, float baseVolume, float distan
     finalVol = cap_sfx(finalVol);
     apply_stereo_volume(slot->ch, finalVol);
 
-    wav64_play(&sceneWavs[sceneSfxIndex], slot->ch);
+    wav64_play(sceneHeld[sceneSfxIndex] ? sceneHeld[sceneSfxIndex] : &sceneWavs[sceneSfxIndex], slot->ch);
 }
 
 void audio_stop_all_sfx(void)

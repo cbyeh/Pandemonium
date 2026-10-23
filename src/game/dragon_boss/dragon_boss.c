@@ -1276,6 +1276,10 @@ void dragon_boss_draw(Boss* b)
         TICKS_TO_US(s_dp[2] / 120) / 1000.0, TICKS_TO_US(s_dp[3] / 120) / 1000.0, TICKS_TO_US(s_dp[4] / 120) / 1000.0); memset(s_dp, 0, sizeof s_dp); s_dpN = 0; }
 #endif
     if (!s.ready || !b->visible) return;
+#ifdef HLE_LOG_FPS   // test aid: what it was doing when a refresh was missed
+    { extern int deltaFrames; if (deltaFrames > 1) { int nf = 0, no = 0; for (int i = 0; i < FL_MAX; i++) nf += s.fl[i].age < s.fl[i].life; for (int i = 0; i < ORB_MAX; i++) no += s.orb[i].on;
+      debugf("[dragonmiss] state %d alt %.0f flames %d orbs %d beam %d\n", s.state, (double)s.alt, nf, no, s.beamOn); } }
+#endif
     s.matRing = (s.matRing + 1) % MAT_RING;
     s.mi = 0;
     rdpq_sync_pipe();
