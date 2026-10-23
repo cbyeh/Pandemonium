@@ -782,13 +782,24 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
     const SkinDef *s = &SKINS[s_skin];
     if (!s_model || skel != s_skel) return;
 
+#ifdef HLE_PROF_SERIAL   // test aid: the model, hood, accessories and cloth, each run alone
+    static uint32_t s_kp[4], s_kpN;
+    s_kp[0] += gpu_prof_split();
+    if (++s_kpN == 120) { debugf("[knightgpu] model %.2f hood %.2f accessories %.2f cloth %.2f\n", TICKS_TO_US(s_kp[0] / 120) / 1000.0, TICKS_TO_US(s_kp[1] / 120) / 1000.0, TICKS_TO_US(s_kp[2] / 120) / 1000.0, TICKS_TO_US(s_kp[3] / 120) / 1000.0); memset(s_kp, 0, sizeof s_kp); s_kpN = 0; }
+#endif
     if (s_hoodBlock) {
         t3d_matrix_set(modelMat, true);
         t3d_matrix_push(&skel->boneMatricesFP[s_bone[B_HEAD]]);
         rspq_block_run(s_hoodBlock);
         t3d_matrix_pop(1);
     }
+#ifdef HLE_PROF_SERIAL
+    s_kp[1] += gpu_prof_split();
+#endif
     acc_draw(skel, modelMat);
+#ifdef HLE_PROF_SERIAL
+    s_kp[2] += gpu_prof_split();
+#endif
     if (s->cl[0].kind == CLOTH_NONE) return;
 
 #ifdef HLE_LOG_CLOTH   // test aid: the cloth's CPU time a frame (CPU cycles: on an interpreter, its cost too)
@@ -868,6 +879,9 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
         cloth_draw(cl, sp, modelMat, o, ax, s2, cl->stepped);
         if (pl) t3d_state_set_depth_offset(0);
     }
+#ifdef HLE_PROF_SERIAL
+    s_kp[3] += gpu_prof_split();
+#endif
 #ifdef HLE_LOG_CLOTH
     { static uint32_t sum; static int n; sum += TICKS_READ() - t0;
       if (++n == 120) { debugf("[cloth] %lu us a frame: bodies %lu, simulation %lu, draw submit %lu (collision %lu) anchors %lu vertices %lu (matrix %lu, flush %lu)\n", (unsigned long)(TICKS_TO_US(sum) / n),
