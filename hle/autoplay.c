@@ -222,7 +222,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 const SaveData *d = save_controller_get_slot_data(0);
                 debugf("[fresh] booted on slot %d, skin %d (%s), master %d, slot 1 stamp %lu\n", save_controller_get_active_slot(), character_skin_get(),
                        character_skin_name(character_skin_get()), audio_get_master_volume(), (unsigned long)(d ? d->last_played_timestamp : 0));
-                q = (character_skin_get() == SKIN_KNIGHT) ? "DDDDADDDDRRRUUUUALLLBBUA" : "DDDA";
+                q = (character_skin_get() == SKIN_KNIGHT) ? "DDDDADDDDRRRUUUUALLLBBUA" : "DDDDADDDD";    // boot 2: Settings, on the Skin row
             } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
             return;
         }
