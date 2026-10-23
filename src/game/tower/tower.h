@@ -21,6 +21,7 @@ typedef enum {
     BOON_UNBROKEN, BOON_CRESCENT_ECHO,
     // Rare and legendary: change how a run plays
     BOON_PHANTOM_STEP, BOON_RIPOSTE, BOON_CRUSHING_BLOWS, BOON_EXECUTIONER, BOON_STORM_BLADE, BOON_BLOOD_PACT,
+    BOON_RALLY,
     // Skill cards: learn a skill for the run, then upgrade it
     BOON_LEARN_MOONBLADE, BOON_LEARN_HALFMOON, BOON_LEARN_CLEAVE, BOON_HALFMOON_PLUS, BOON_CLEAVE_PLUS,
     BOON_COUNT
@@ -95,6 +96,12 @@ float tower_mod_roll_cost(void);
 float tower_mod_stamina_regen(void);
 float tower_mod_skill_cooldown(void);
 float tower_mod_lifesteal(void);
+// Rally (Bloodborne's regain): health lost to a blow can be won back by hitting the boss soon
+// after. tower_on_player_hurt adds to it, tower_on_boss_hurt wins it back, tower_tick drains it
+void  tower_on_player_hurt(float lost);
+void  tower_on_boss_hurt(float dealt);
+void  tower_tick(float dt);
+float tower_rally_pool(void);           // health still to be won back (0 without the boon)
 int   tower_mod_extra_mbd_waves(void);
 bool  tower_mod_try_unbroken(void);     // spends it: survive a lethal hit at 1 HP
 float tower_mod_poise(void);            // how fast the bosses' stagger meters fill

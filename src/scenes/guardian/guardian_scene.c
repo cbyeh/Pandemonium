@@ -1795,6 +1795,7 @@ void scene_update(void) {
         }
 
         UPROF(0, character_update());
+        if (s_tower) tower_tick(deltaTime);
         // Update character transform after constraint
         UPROF(1, character_update_position());
         UPROF(2, skill_fx_update(deltaTime));

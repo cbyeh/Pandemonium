@@ -775,6 +775,7 @@ void boss_apply_damage(Boss* boss, float amount)
     if (tower_active()) {     // Tower run: damage boons and upgrades, and Bloodthirst's lifesteal
         amount *= tower_mod_damage_dealt();
         character.health = fminf(character.maxHealth, character.health + amount * tower_mod_lifesteal());
+        tower_on_boss_hurt(amount);
     }
     if (boss->staggerT > 0.0f) amount *= STAGGER_DAMAGE_MULT * tower_mod_stagger_damage();     // staggered: hits land harder
     boss->health -= amount;

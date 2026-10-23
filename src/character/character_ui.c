@@ -1,4 +1,5 @@
 #include "character_ui.h"
+#include "game/tower/tower.h"
 #include "gpu_frame.h"
 
 #include <libdragon.h>
@@ -254,6 +255,17 @@ void character_ui_draw_health_bar(const char *name, float ratio, float flash)
     if (lossRight > fillRight) {
         rdpq_set_prim_color(RGBA32(230, 200, 60, 220));
         rdpq_fill_rectangle(fillRight, top + 2, lossRight, bottom - 2);
+    }
+
+    // Rally: the health a hit back can still win, orange as in Bloodborne
+    float rally = tower_rally_pool();
+    if (rally > 0.0f && character_get_max_health() > 0.0f) {
+        int rallyRight = fillRight + (int)((float)(barWidth - 4) * rally / character_get_max_health() + 0.5f);
+        if (rallyRight > right - 2) rallyRight = right - 2;
+        if (rallyRight > fillRight) {
+            rdpq_set_prim_color(RGBA32(235, 120, 40, 220));
+            rdpq_fill_rectangle(fillRight, top + 2, rallyRight, bottom - 2);
+        }
     }
 
     // Health fill.

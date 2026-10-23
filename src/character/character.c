@@ -3327,9 +3327,11 @@ void character_apply_damage(float amount)
     }
 
     amount *= tower_mod_damage_taken();     // 1 outside a Tower run
+    float before = character.health;
     character.health -= amount;
     if (character.health <= 0.0f && tower_mod_try_unbroken()) character.health = 1.0f;   // the Unbroken boon
     if (character.health < 0.0f) character.health = 0.0f;
+    if (character.health > 0.0f) tower_on_player_hurt(before - character.health);     // the Rally boon
 #if defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_STRIKE) || defined(HLE_TEST_CRUCIFIX)   // test aid: log every hit, never die
     debugf("[dmg] %.0f -> hp %.0f (state %d)\n", (double)amount, (double)character.health, characterState);
     if (character.health < 60.0f) character.health = character.maxHealth;

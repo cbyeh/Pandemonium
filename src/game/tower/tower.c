@@ -46,6 +46,7 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_EXECUTIONER]   = { "Executioner",   "Staggered bosses take +60%",   1, TIER_LEGENDARY },
     [BOON_STORM_BLADE]   = { "Storm Blade",   "Every 4th hit calls lightning", 1, TIER_LEGENDARY },
     [BOON_BLOOD_PACT]    = { "Blood Pact",    "+35% damage, potions -25%", 1, TIER_LEGENDARY },
+    [BOON_RALLY]         = { "Rally",         "Hit back to win lost health", 1, TIER_RARE },
     [BOON_LEARN_MOONBLADE] = { "Moon Blade Dance", "Learn it: D-up", 1, TIER_COMMON },
     [BOON_LEARN_HALFMOON]  = { "Halfmoon Slash",   "Learn it: D-right", 1, TIER_COMMON },
     [BOON_LEARN_CLEAVE]    = { "Crescent Cleave",  "Learn it: D-down", 1, TIER_COMMON },
@@ -99,6 +100,7 @@ static struct {
     uint8_t relicFx[2];             // the equipped relic's effects, for this run
     bool relicFound;
     int hitCount;                   // sword hits landed (Storm Blade)
+    float rally, rallyHold, rallyRate;  // Rally: health to win back, its hold, then its drain a second
     double riposteUntil;
     // draft
     bool draftOpen;
@@ -277,6 +279,7 @@ void tower_floor_cleared(void)
 void tower_next_floor(void)
 {
     s.floor++;
+    s.rally = 0.0f;
     s.unbrokenUsed = false;
     if ((s.floor - 1) % FLOORS_PER_CIRCLE == 0) shuffle_circle();
 }
@@ -574,6 +577,45 @@ float tower_mod_skill_cooldown(void)
            * ((s.active && s.night == NIGHT_STARFALL) ? 0.7f : 1.0f);
 }
 float tower_mod_lifesteal(void) { return 0.06f * tower_boon_stacks(BOON_BLOODTHIRST); }
+
+// Rally, at Bloodborne's pace in our numbers: lost health stays winnable 1 s, then drains away
+// over 4 s; each hit wins back what it dealt (a sword hit 4: about four hits for a typical blow,
+// one Halfmoon Slash for most of a heavy one). A new blow adds to it and holds it again
+#define RALLY_HOLD  1.0f
+#define RALLY_DRAIN 4.0f
+#define RALLY_RATIO 1.0f
+void tower_on_player_hurt(float lost)
+{
+    if (!tower_boon_stacks(BOON_RALLY) || lost <= 0.0f) return;
+    s.rally += lost;
+    s.rallyHold = RALLY_HOLD;
+#ifdef HLE_AUTOPLAY
+    debugf("[rally] hurt %.1f, %.1f to win back\n", (double)lost, (double)s.rally);
+#endif
+}
+void tower_on_boss_hurt(float dealt)
+{
+    float missing = character.maxHealth - character.health;
+    if (s.rally > missing) s.rally = missing;           // a potion or the floor's restore took some
+    if (s.rally <= 0.0f || dealt <= 0.0f) return;
+    float r = fminf(s.rally, dealt * RALLY_RATIO);
+    s.rally -= r;
+    character.health += r;
+#ifdef HLE_AUTOPLAY
+    debugf("[rally] won back %.1f, %.1f left\n", (double)r, (double)s.rally);
+#endif
+}
+void tower_tick(float dt)
+{
+    if (s.rally <= 0.0f) return;
+    if (s.rallyHold > 0.0f) {
+        s.rallyHold -= dt;
+        if (s.rallyHold <= 0.0f) s.rallyRate = s.rally / RALLY_DRAIN;
+        return;
+    }
+    s.rally = fmaxf(0.0f, s.rally - s.rallyRate * dt);
+}
+float tower_rally_pool(void) { return s.active ? fminf(s.rally, character.maxHealth - character.health) : 0.0f; }
 int   tower_mod_extra_mbd_waves(void) { return tower_boon_stacks(BOON_CRESCENT_ECHO) ? 2 : 0; }
 
 bool tower_mod_try_unbroken(void)
