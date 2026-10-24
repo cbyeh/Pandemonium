@@ -38,7 +38,7 @@ static float s_floorSpinBnwYaw = 0.0f;
 // ------------------------------------------------------------
 
 static const char *s_phase2Dialogs[] = {
-    "^Valiant effort...~ ^Knight.",
+    "^Valiant effort...~ ^knight.",
     "^Now leave these sundered\nhalls.",
     "^Before the endless night",
     "^Through shackled sun\ndeliverance...~ ^Forces my\nhand once more.",

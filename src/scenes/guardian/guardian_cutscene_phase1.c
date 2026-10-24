@@ -38,7 +38,7 @@ static bool s_loaded = false;
 
 static const char *s_phase1Dialogs[] = {
     "^Those who approach the\nthrone of gold~ ^fall at my\nblade.",
-    "^A Knight?~ >Where is your\n^loyalty...",
+    "^A knight?~ >Where is your\n^loyalty...",
     "^Where is your...~ <Fear.",
 };
 
