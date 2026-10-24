@@ -567,7 +567,7 @@ void fallen_knight_update(Boss* b, float dt)
         if (speed > 0.0f && dist > 1e-3f) move(b, dx / dist * speed, dz / dist * speed, dt);
         // Dodge the player's swings sometimes
         CharacterState ps = character_get_state();
-        if ((ps == CHAR_STATE_ATTACKING || ps == CHAR_STATE_ATTACKING_STRONG) && dist < 28.0f && s.cdRoll <= 0.0f) {
+        if (ps == CHAR_STATE_ATTACKING && dist < 28.0f && s.cdRoll <= 0.0f) {
             s.cdRoll = 2.5f;
             if ((rand_custom_u32() % 100) < 40) {
                 float side = (rand_custom_u32() & 1) ? 1.0f : -1.0f;

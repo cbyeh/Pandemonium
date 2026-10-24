@@ -55,7 +55,7 @@ Toggle in **Settings > Skills** (title screen). Bosses have double health with s
 Each save slot keeps its best floor, Embers, relics, skin and settings (a fresh cart uses Save 1). **Load Game** switches to a slot without starting a fight, and the game reopens on the slot used last. It shows a slot's progress: story clear time, best Tower floor, Bonus bosses beaten and skins earned (of the three that unlock).
 
 ### Combat
-- **Hit-stop:** blows land with a short freeze (longer for heavy hits you take).
+- **Hit-stop:** sword hits land with a short freeze.
 - **Perfect dodge:** roll just as a blow lands for a moment of slow motion and stamina back.
 - **Stagger:** keep up the pressure (about ten hits without letting up) to break a boss's stance: the thin gold line under its health. A staggered boss takes 30% more damage.
 

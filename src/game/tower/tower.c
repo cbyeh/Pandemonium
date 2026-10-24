@@ -690,8 +690,14 @@ static int shrine(UpgradeId u) { return s.active ? tower_upgrade_level(u) : 0; }
 
 static float powf_int(float b, int e) { float r = 1.0f; while (e-- > 0) r *= b; return r; }
 
-// The climb's baseline: each circle cleared, +10% damage and 6% less taken (the bosses grow faster)
-static int circles_cleared(void) { return s.active ? tower_circle() - 1 : 0; }
+// The climb's baseline: each circle cleared, +10% damage and 6% less taken, through circle 5 (it
+// helps a run catch up; past it, only boons and pacts grow, so even a full set runs out of floors)
+#define BASELINE_CIRCLES 4
+static int circles_cleared(void)
+{
+    int c = s.active ? tower_circle() - 1 : 0;
+    return c < BASELINE_CIRCLES ? c : BASELINE_CIRCLES;
+}
 
 float tower_mod_damage_dealt(void)
 {

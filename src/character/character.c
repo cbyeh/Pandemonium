@@ -94,15 +94,11 @@ static bool s_perfectThisRoll;
 
 static const float ROLL_ANIM_SPEED = 1.0f;
 static const float ATTACK_DURATION = 0.9f; // (legacy, not used directly)
-static const float STRONG_ATTACK_DAMAGE = 15.0f;
-static const float STRONG_ATTACK_HIT_START = 0.35f;
-static const float STRONG_ATTACK_HIT_END = 0.9f;
 static const float JUMP_DURATION = 0.75f; // unused (jump removed)
 static const float JUMP_HEIGHT = 40.0f;   // retained for shadow math
 static const float ROLL_SPEED = MAX_MOVEMENT_SPEED;
 static const float ROLL_STEER_ACCELERATION = 14.0f;
 static const float ROLL_FRICTION_SCALE = 0.6f;
-static const float STRONG_ATTACK_FRICTION_SCALE = 0.25f; // (currently unused)
 
 // Combo attack tuning - Souls-like windows
 static float ATTACK1_DURATION = 0.9f;
@@ -355,7 +351,6 @@ static bool          strafePoseBlending = false;
 static const float SWING_DELAY_ATTACK1 = 0.25f;
 static const float SWING_DELAY_ATTACK2 = 0.35f;
 static const float SWING_DELAY_ATTACK3 = 0.8f;
-static const float SWING_DELAY_STRONG  = 0.22f;
 
 // Player delayed swing scheduling (boss-style)
 static bool  charSwingSfxPlayed = false;
@@ -569,7 +564,6 @@ static inline void character_play_swing_timed(float triggerTime)
 
 static inline float character_get_swing_time(void)
 {
-    if (characterState == CHAR_STATE_ATTACKING_STRONG) return SWING_DELAY_STRONG;
 
     // only swing during the actual attack, not the end anim
     if (characterState != CHAR_STATE_ATTACKING || attackEnding) return -1.0f;
@@ -1503,13 +1497,12 @@ static inline int get_target_animation(CharacterState state, float speedRatio)
         }
     }
 
-    if (state == CHAR_STATE_ATTACKING || state == CHAR_STATE_ATTACKING_STRONG) {
+    if (state == CHAR_STATE_ATTACKING) {
         if (attackEnding) {
             if (attackComboIndex == 1) return ANIM_ATTACK1_END;
             if (attackComboIndex == 2) return ANIM_ATTACK2_END;
             if (attackComboIndex == 3) return ANIM_ATTACK3_END;
         } else {
-            if (state == CHAR_STATE_ATTACKING_STRONG) return ANIM_ATTACK_CHARGED;
             switch (attackComboIndex) {
                 case 1: return ANIM_ATTACK1;
                 case 2: return ANIM_ATTACK2;
@@ -1654,7 +1647,6 @@ static inline bool is_action_state(CharacterState state)
 {
     return (state == CHAR_STATE_ROLLING) ||
            (state == CHAR_STATE_ATTACKING) ||
-           (state == CHAR_STATE_ATTACKING_STRONG) ||
            (state == CHAR_STATE_KNOCKDOWN) ||
            (state == CHAR_STATE_DEAD) ||
            (state == CHAR_STATE_SKILL);
@@ -2114,14 +2106,6 @@ static inline void progress_action_timers(float dt, KnockdownBreakawayReq breaka
         return;
     }
 
-    if (characterState == CHAR_STATE_ATTACKING_STRONG) {
-        if (actionTimer >= 1.0f) {
-            characterState = CHAR_STATE_NORMAL;
-            actionTimer = 0.0f;
-        }
-        return;
-    }
-
     if (characterState == CHAR_STATE_SKILL) {
         update_skill(dt);
         return;
@@ -2239,7 +2223,7 @@ static void switch_to_locomotion_animation(int targetAnim)
         int prevClip = -1;
         if (prevState == CHAR_STATE_ROLLING) prevClip = ANIM_ROLL;
         else if (prevState == CHAR_STATE_KNOCKDOWN) prevClip = ANIM_KNOCKDOWN;
-        else if (prevState == CHAR_STATE_ATTACKING || prevState == CHAR_STATE_ATTACKING_STRONG)
+        else if (prevState == CHAR_STATE_ATTACKING)
             prevClip = character.previousAnimation;
 
         if (prevClip >= 0 && prevClip < character.animationCount &&
@@ -2452,8 +2436,6 @@ static inline void update_animations(float speedRatio, CharacterState state, flo
             } else {
                 animSpeed = 1.0f;
             }
-        } else if (state == CHAR_STATE_ATTACKING_STRONG) {
-            animSpeed = 0.8f;
         } else if (state == CHAR_STATE_SKILL && activeSkill == SKILL_MOON_BLADE_DANCE && skillStep > 0) {
             animSpeed = 1.6f;      // swings fit the gap between waves
         } else if (state == CHAR_STATE_ROLLING) {
@@ -2519,7 +2501,6 @@ void character_init(void)
         "Attack3End",
         "Attack4",
         "FogOfWar",
-        "AttackCharged",
         "WalkBackwards",
         "RunBackwards",
         "Death",
@@ -2548,7 +2529,6 @@ void character_init(void)
         false,  // Attack3End
         false,  // Attack4
         false,  // FogOfWar
-        false,  // AttackCharged
         true,   // WalkBackwards
         true,   // RunBackwards
         false,  // Death
@@ -2724,7 +2704,6 @@ void character_update(void)
     const bool wantsStrafeIntent = (cameraLockOnActive && fabsf(axisX) > 0.0f);
 
     if (characterState != CHAR_STATE_ATTACKING &&
-        characterState != CHAR_STATE_ATTACKING_STRONG &&
         characterState != CHAR_STATE_KNOCKDOWN &&
         characterState != CHAR_STATE_SKILL &&
         (wantsMove || wantsStrafeIntent))
@@ -2809,19 +2788,11 @@ void character_update(void)
             animStrafeBlendRatio = 0.0f;
         }
     }
-    else if (characterState == CHAR_STATE_ATTACKING || characterState == CHAR_STATE_ATTACKING_STRONG)
+    else if (characterState == CHAR_STATE_ATTACKING)
     {
-        float frictionScale = (characterState == CHAR_STATE_ATTACKING_STRONG) ? 1.0f : ATTACK_FRICTION_SCALE;
-        apply_friction(deltaTime, frictionScale);
+        apply_friction(deltaTime, ATTACK_FRICTION_SCALE);
 
-        if (characterState == CHAR_STATE_ATTACKING_STRONG) {
-            movementVelocityX = 0.0f;
-            movementVelocityZ = 0.0f;
-        }
-
-        float hitStart = (characterState == CHAR_STATE_ATTACKING_STRONG) ? STRONG_ATTACK_HIT_START : 0.25f;
-        float hitEnd   = (characterState == CHAR_STATE_ATTACKING_STRONG) ? STRONG_ATTACK_HIT_END   : 1.0f;
-        float damage = (characterState == CHAR_STATE_ATTACKING_STRONG) ? STRONG_ATTACK_DAMAGE : 4.0f;
+        float hitStart = 0.25f, hitEnd = 1.0f, damage = 4.0f;
 
 #ifdef HLE_TEST_STRIKE     // test aid: blade contact inside and outside the hit window
         if (charWeaponCollision && !character.currentAttackHasHit)
@@ -2833,10 +2804,7 @@ void character_update(void)
                 Boss* boss = boss_get_instance();
                 if (boss) {
                     boss_apply_damage(boss, damage);
-                    // Hit-stop: the blow lands with weight (heavier for the charged attack)
-                    bool strong = characterState == CHAR_STATE_ATTACKING_STRONG;
-                    game_time_hitstop(strong ? 0.085f : 0.045f);
-                    if (strong) screen_shake_set_shake_mag(5.0f);
+                    game_time_hitstop(0.045f);     // hit-stop: the blow lands with weight
                     float storm = tower_on_sword_hit();     // Storm Blade: lightning on every 4th hit
                     if (storm > 0.0f) {
                         boss_apply_hit(boss, storm, 0.0f);     // a boon's damage: no stagger of its own
@@ -2900,8 +2868,7 @@ void character_update(void)
                             impact[2] = pBoss[2];
                         }
 
-                        float strength = (characterState == CHAR_STATE_ATTACKING_STRONG) ? 1.8f : 1.0f;
-                        blood_particles_fx_spawn_burst(impact[0], impact[1], impact[2], strength);
+                        blood_particles_fx_spawn_burst(impact[0], impact[1], impact[2], 1.0f);
                     }
                 }
                 character.currentAttackHasHit = true;
@@ -2965,8 +2932,6 @@ void character_update(void)
     bool emitting = false;
     if (characterState == CHAR_STATE_ATTACKING && !attackEnding) {
         emitting = (actionTimer >= 0.15f && actionTimer <= 0.75f);
-    } else if (characterState == CHAR_STATE_ATTACKING_STRONG) {
-        emitting = (actionTimer >= 0.20f && actionTimer <= 0.90f);
     } else {
         emitting = skill_trail_emitting();
     }
@@ -3351,7 +3316,6 @@ void character_apply_damage(float amount)
 
     joypad_rumble_pulse_seconds(1.0f);
     audio_play_scene_sfx_dist(SCENE1_SFX_ARMOR_CLANK, amount >= 20.0f ? 0.8f : 0.5f, 0.0f);   // the armour takes it
-    if (amount >= 20.0f) game_time_hitstop(0.07f);     // a heavy blow taken
 
     if (character.health <= 0.0f) {
         character_set_state(CHAR_STATE_DEAD);
