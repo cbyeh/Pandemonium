@@ -537,8 +537,9 @@ void fallen_knight_update(Boss* b, float dt)
         screen_shake_set_shake_mag(6.0f);
     }
 
+    b->open = (s.state == FK_CHASE || s.state == FK_RECOVER);     // the player can hit back: the stagger meter's keep timer runs
 #ifdef HLE_TEST_DUMMY
-    { extern void hle_open_tick(bool, float); hle_open_tick((s.state == FK_CHASE || s.state == FK_RECOVER), dt); }   // test aid: measure the openings
+    { extern void hle_open_tick(bool, float); hle_open_tick(b->open, dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {
     case FK_INTRO:

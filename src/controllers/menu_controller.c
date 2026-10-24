@@ -67,6 +67,8 @@ static bool lastAPressed = false;
 static bool lastBPressed = false;
 static bool lastStickUp = false;
 static bool lastStickDown = false;
+static bool lastStickLeft = false;
+static bool lastStickRight = false;
 
 // Overscan calibration overlay (inside Video settings)
 static bool overscanCalibrating = false;
@@ -261,6 +263,8 @@ void menu_controller_init(void)
     lastBPressed = false;
     lastStickUp = false;
     lastStickDown = false;
+    lastStickLeft = false;
+    lastStickRight = false;
 
     pauseMenuBg = sprite_load("rom:/dialog_vertical.ia8.sprite");
     if (pauseMenuBg) {
@@ -339,10 +343,15 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
     bool aPressed = btn.a;
     bool bPressed = btn.b;
 
-    bool upJustPressed = upPressed && !lastUpPressed;
-    bool downJustPressed = downPressed && !lastDownPressed;
-    bool leftJustPressed = leftPressed && !lastLeftPressed;
-    bool rightJustPressed = rightPressed && !lastRightPressed;
+    // The stick steers every menu as the D-pad does (one step a push)
+    const int stickThreshold = 40;
+    bool stickUp = joypad.stick_y > stickThreshold, stickDown = joypad.stick_y < -stickThreshold;
+    bool stickLeft = joypad.stick_x < -stickThreshold, stickRight = joypad.stick_x > stickThreshold;
+    bool upJustPressed = (upPressed && !lastUpPressed) || (stickUp && !lastStickUp);
+    bool downJustPressed = (downPressed && !lastDownPressed) || (stickDown && !lastStickDown);
+    bool leftJustPressed = (leftPressed && !lastLeftPressed) || (stickLeft && !lastStickLeft);
+    bool rightJustPressed = (rightPressed && !lastRightPressed) || (stickRight && !lastStickRight);
+    lastStickUp = stickUp; lastStickDown = stickDown; lastStickLeft = stickLeft; lastStickRight = stickRight;
     bool aJustPressed = aPressed && !lastAPressed;
     bool bJustPressed = bPressed && !lastBPressed;
 
@@ -353,14 +362,6 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
     lastAPressed = aPressed;
     lastBPressed = bPressed;
 
-    const int stickThreshold = 40;
-    bool stickUp = joypad.stick_y > stickThreshold;
-    bool stickDown = joypad.stick_y < -stickThreshold;
-    bool stickUpJustPressed = stickUp && !lastStickUp;
-    bool stickDownJustPressed = stickDown && !lastStickDown;
-    lastStickUp = stickUp;
-    lastStickDown = stickDown;
-
     if (state == GAME_STATE_TITLE && startJustPressed) {
         aJustPressed = true;
     }
@@ -368,7 +369,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
     if (!(currentMenu == MENU_VIDEO && overscanCalibrating)) {
         int maxOptions = get_menu_option_count(currentMenu);
 
-        if (upJustPressed || stickUpJustPressed) {
+        if (upJustPressed) {
             selectedOption--;
             if (selectedOption < 0) {
                 selectedOption = maxOptions - 1;
@@ -376,7 +377,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             if (currentMenu == MENU_MAIN && selectedOption == MENU_MAIN_RUN && !tower_active()) selectedOption--;   // Tower only
         }
 
-        if (downJustPressed || stickDownJustPressed) {
+        if (downJustPressed) {
             selectedOption++;
             if (selectedOption >= maxOptions) {
                 selectedOption = 0;
@@ -506,6 +507,10 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             int k = character_skin_get();
             do k = (k + skinStep + SKIN_COUNT) % SKIN_COUNT; while (!save_controller_skin_unlocked(k));   // the Knight is always unlocked
             character_skin_set(k);
+            (void)save_controller_save_settings();
+        }
+        if ((leftJustPressed || rightJustPressed) && selectedOption == MENU_SETTINGS_SKILLS && settingsHubReturnMenu == MENU_TITLE) {
+            character_set_skills_enabled(!character_skills_enabled());     // as A does, like every other toggle
             (void)save_controller_save_settings();
         }
         if (aJustPressed) {
@@ -1325,10 +1330,11 @@ void menu_controller_draw(void)
                 if (c < 0) snprintf(right, sizeof right, "max"); else snprintf(right, sizeof right, "%d", c);
             } else if (i == MENU_SHRINE_RELIC) {
                 int r = shrine_relic_browse();
-                snprintf(name, sizeof name, "Relic: %s", tower_relic_name(r));
+                snprintf(name, sizeof name, "< %s >", tower_relic_name(r));      // Left/Right: browse
+                // What A does: buy (the price), equip, or nothing (already on)
                 if (tower_relic_equipped() == r) snprintf(right, sizeof right, r < 0 ? "chosen" : "equipped");
-                else if (r < 0 || tower_relic_owned(r)) snprintf(right, sizeof right, r < 0 ? "" : "owned");
-                else snprintf(right, sizeof right, "%d", tower_relic_cost(r));
+                else if (r < 0 || tower_relic_owned(r)) snprintf(right, sizeof right, "A: equip");
+                else snprintf(right, sizeof right, "A: buy %d", tower_relic_cost(r));
             } else if (i == MENU_SHRINE_NIGHTFARER) {
                 snprintf(name, sizeof name, "Nightfarer (skin)");
                 if (tower_nightfarer_cost() < 0) snprintf(right, sizeof right, "owned"); else snprintf(right, sizeof right, "%d", tower_nightfarer_cost());

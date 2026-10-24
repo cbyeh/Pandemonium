@@ -593,8 +593,9 @@ void sun_boss_update(Boss* b, float dt)
     }
 
 
+    b->open = (s.state == SB_HOVER || s.state == SB_REST);     // the player can hit back: the stagger meter's keep timer runs
 #ifdef HLE_TEST_DUMMY
-    { extern void hle_open_tick(bool, float); hle_open_tick((s.state == SB_HOVER || s.state == SB_REST), dt); }   // test aid: measure the openings
+    { extern void hle_open_tick(bool, float); hle_open_tick(b->open, dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {
     case SB_INTRO:

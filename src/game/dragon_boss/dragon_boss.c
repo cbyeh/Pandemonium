@@ -1083,8 +1083,9 @@ void dragon_boss_update(Boss* b, float dt)
     }
 
 
+    b->open = (s.state == DG_IDLE || s.state == DG_TIRED || s.state == DG_DOWN);     // the player can hit back: the stagger meter's keep timer runs
 #ifdef HLE_TEST_DUMMY
-    { extern void hle_open_tick(bool, float); hle_open_tick((s.state == DG_IDLE || s.state == DG_TIRED || s.state == DG_DOWN), dt); }   // test aid: measure the openings
+    { extern void hle_open_tick(bool, float); hle_open_tick(b->open, dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {
     case DG_INTRO:

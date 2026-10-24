@@ -441,8 +441,13 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
             if (t >= 25 && seq[step]) {
                 char c = seq[step];
+#ifdef HLE_SHRINE_STICK     // the same, steered with the control stick
+                if (c == 'D') in->stick_y = -80; else if (c == 'R') in->stick_x = 80;
+                else if (c == 'U') in->stick_y = 80; else if (c == 'L') in->stick_x = -80; else { pressed->a = 1; in->btn.a = 1; }
+#else
                 if (c == 'D') pressed->d_down = 1; else if (c == 'R') pressed->d_right = 1;
                 else if (c == 'U') pressed->d_up = 1; else if (c == 'L') pressed->d_left = 1; else { pressed->a = 1; in->btn.a = 1; }
+#endif
                 step++; t0 = frame;
             }
             if (!seq[step] && t == 40) {

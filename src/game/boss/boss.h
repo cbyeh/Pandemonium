@@ -274,7 +274,8 @@ typedef struct Boss {
     unsigned int pendingRequests;
 
     // Stagger meter: hits fill it (0..1), it drains when left alone; full, the boss staggers
-    float poise, poiseIdleT, staggerT;     // staggerT > 0: staggered, hits land harder
+    float poise, poiseIdleT, staggerT;     // staggerT > 0: staggered
+    bool open;                             // an opening (not attacking, in reach): the stagger meter drains slower out of one
 } Boss;
 
 // Intent/command struct - what AI wants to happen this frame
