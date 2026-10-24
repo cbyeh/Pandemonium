@@ -8,6 +8,8 @@
 void boss_draw_init(void);
 void boss_draw_shadow(Boss* boss);
 void boss_render_draw(Boss* boss);
+/** The crucifix pose's weight (Guardian Unbound): 0 the sword in hand, 1 floating over the head. */
+void boss_render_set_sword_float(float w);
 void boss_render_forget_model(void);   // before the model is freed
 void boss_render_debug(Boss* boss, void* viewport);  // T3DViewport* but avoiding header dependency
 

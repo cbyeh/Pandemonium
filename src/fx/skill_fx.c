@@ -26,6 +26,7 @@ typedef struct {
     float age, life;
     float radius;           // arc: final radius
     float damage;
+    float poise;            // share of the boss's stagger meter a hit fills (< 0: the damage's)
     int   hitsLeft;
     float hitInterval, hitTimer;
     bool  pillarOnEnd;
@@ -34,6 +35,9 @@ typedef struct {
 
 static bool s_spawnHostile;     // palette/target for effects spawned now
 static float s_spawnRoll;       // a crescent's tilt, for waves spawned now
+static float s_spawnPoise = -1.0f;   // for the next spawn only (skill_fx_next_poise)
+
+void skill_fx_next_poise(float poise) { s_spawnPoise = poise; }
 
 static SkillFx s_fx[SKILL_FX_MAX];
 
@@ -64,6 +68,7 @@ void skill_fx_spawn_arc(const float pos[3], float yaw, float radius, float damag
     f->yaw = yaw;
     f->radius = radius;
     f->damage = damage;
+    f->poise = s_spawnPoise; s_spawnPoise = -1.0f;
     f->hitsLeft = 1;
     f->life = 0.55f;
 }
@@ -77,6 +82,7 @@ void skill_fx_spawn_wave(SkillWaveShape shape, const float pos[3], const float v
     memcpy(f->pos, pos, sizeof(f->pos));
     memcpy(f->vel, vel, sizeof(f->vel));
     f->damage = damage;
+    f->poise = s_spawnPoise; s_spawnPoise = -1.0f;
     f->hitsLeft = hits;
     f->hitInterval = hitInterval;
     f->life = life;
@@ -173,9 +179,10 @@ static bool sphere_hits_boss(Boss *b, const float p[3], float r, float contact[3
     return true;
 }
 
-static void damage_boss(Boss *b, float damage, const float contact[3], float strength)
+static void damage_boss(Boss *b, float damage, float poise, const float contact[3], float strength)
 {
-    boss_apply_damage(b, damage);
+    if (poise >= 0.0f) boss_apply_hit(b, damage, poise);
+    else boss_apply_damage(b, damage);
     blood_particles_fx_spawn_burst(contact[0], contact[1], contact[2], strength);
     audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_ATTACK_HIT1 + (int)(rand_custom_u32() % 6), 1.0f, 0.0f);
 }
@@ -226,7 +233,7 @@ static void update_arc_hit(SkillFx *f, Boss *b)
     f->hitsLeft = 0;
     float contact[3] = { b->pos[0] - dx / (dist + 1e-3f) * b->capsuleCollider.radius,
                          f->pos[1], b->pos[2] - dz / (dist + 1e-3f) * b->capsuleCollider.radius };
-    damage_boss(b, f->damage, contact, 2.5f);
+    damage_boss(b, f->damage, f->poise, contact, 2.5f);
     screen_shake_set_shake_mag(14.0f);
 }
 
@@ -250,7 +257,7 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
         character_apply_damage(f->damage);
     } else {
         if (!sphere_hits_boss(b, c, r, contact)) return;
-        damage_boss(b, f->damage, contact, 1.0f);
+        damage_boss(b, f->damage, f->poise, contact, 1.0f);
     }
     f->hitsLeft--;
     f->hitTimer = f->hitInterval;

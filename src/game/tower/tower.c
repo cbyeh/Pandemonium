@@ -59,7 +59,7 @@ typedef enum { NIGHT_NONE, NIGHT_BLOOD_MOON, NIGHT_IRON, NIGHT_STARFALL, NIGHT_C
 static const struct { const char *name, *desc; float embers; } NIGHTS[NIGHT_COUNT] = {
     [NIGHT_NONE]       = { "", "", 1.0f },
     [NIGHT_BLOOD_MOON] = { "Blood Moon", "Bosses hit 20% harder", 1.5f },
-    [NIGHT_IRON]       = { "Iron Night", "Bosses +25% health; they stagger sooner", 1.3f },
+    [NIGHT_IRON]       = { "Iron Night", "Bosses +25% health", 1.3f },
     [NIGHT_STARFALL]   = { "Starfall",   "Skills recharge 30% faster; bosses hit 10% harder", 1.2f },
 };
 
@@ -531,7 +531,6 @@ float tower_mod_poise(void)
 {
     float m = 1.0f;
     if (tower_boon_stacks(BOON_CRUSHING_BLOWS)) m *= 1.4f;
-    if (s.active && s.night == NIGHT_IRON) m *= 1.5f;
     return m;
 }
 float tower_mod_stagger_damage(void) { return tower_boon_stacks(BOON_EXECUTIONER) ? 1.6f / 1.3f : 1.0f; }
@@ -637,7 +636,6 @@ float tower_boss_health_scale(int phase)
 
 void tower_floor_restore(void)
 {
-    // A third of the health and one potion back, up to the run's maximum
-    character.health = fminf(character.maxHealth, character.health + character.maxHealth / 3.0f);
+    // One potion a fallen boss, no health: the potions are the run's healing
     if (character.healthPotions < 9) character.healthPotions++;    // a potion every fallen boss, even past the run's maximum (9: the HUD's one digit)
 }

@@ -11,6 +11,7 @@
 
 #include "boss_anim.h"
 #include "boss.h"
+#include "boss_render.h"
 
 #include <libdragon.h>
 #include <t3d/t3dskeleton.h>
@@ -71,15 +72,14 @@ static T3DSkeleton s_breathSkel;
 static bool s_breathReady;
 static float s_breathK = -1.0f;     // < 0: not breathing
 static float s_blendDur = 0.4f;     // the current crossfade (boss->blendDuration paces the AI, not this)
-#define CRUCIFIX_SWORD_HANG -1.40f  // radians, the sword hand about the arm's axis
 // The crucifix pose (boss_anim_update), radians about each bone's own axes
 #ifndef CX_SPINE1
 #define CX_SPINE1      0.10f
 #define CX_HIPS        0.08f
 #define CX_SPINE2      0.08f
-#define CX_NECK_BOW    0.30f
+#define CX_NECK_BOW    0.40f
 #define CX_NECK_TILT   -0.25f
-#define CX_HEAD_BOW    0.35f
+#define CX_HEAD_BOW    0.50f
 #define CX_HEAD_TILT   -0.40f
 #define CX_ARM_RAISE_L -1.10f
 #define CX_ARM_RAISE_R 1.10f
@@ -87,9 +87,9 @@ static float s_blendDur = 0.4f;     // the current crossfade (boss->blendDuratio
 #define CX_WRIST_L     0.30f
 #define CX_LEG_IN_L    0.06f
 #define CX_LEG_IN_R    -0.03f
-#define CX_THIGH       0.15f
-#define CX_KNEE_L      0.35f
-#define CX_KNEE_R      0.20f
+#define CX_THIGH       0.04f
+#define CX_KNEE_L      0.08f
+#define CX_KNEE_R      0.05f
 #define CX_FOOT        0.40f
 #endif
 
@@ -305,8 +305,9 @@ void boss_anim_update(Boss* boss) {
     }
     // Guardian Unbound, hanging in the air (the barrage, or up high outside its jumps, as when
     // the fight opens): crucified, arms spread and raised a little as if hung by the hands,
-    // the elbows giving, the head fallen to one shoulder, the body slack and the knees bent,
-    // feet together and pointed, the sword angled down; it breathes slowly. Each bone is set
+    // the elbows giving, the head bowed and fallen to one shoulder, the body slack, the legs
+    // near straight, feet together and pointed, the sword floating level over the head
+    // (boss_render); it breathes slowly. Each bone is set
     // from the bind pose (the model's T-pose) turned about its own axes; the weight eases in
     // and out (smoothstep), so it never snaps
     {
@@ -320,6 +321,7 @@ void boss_anim_update(Boss* boss) {
         crossT += (hang ? 1.0f : -1.0f) * deltaTime * 1.6f;
         crossT = fminf(1.0f, fmaxf(0.0f, crossT));
         float w = crossT * crossT * (3.0f - 2.0f * crossT);
+        boss_render_set_sword_float(w);     // the sword leaves the hand for over the head
         if (w > 0.0f) {
             breathT += deltaTime;
             float br = sinf(breathT * 1.7f);       // a slow breath, about every 3.7 s
@@ -357,10 +359,6 @@ void boss_anim_update(Boss* boss) {
                 t3d_quat_from_rotation(&q, axis, (CROSS[i].a + CROSS[i].breath * br) * w);
                 t3d_quat_mul(&sk->bones[CROSS[i].bone].rotation, &r, &q);
             }
-            // the sword hand turned about the arm so the blade hangs toward the floor
-            T3DQuat down, h = sk->bones[13].rotation;
-            t3d_quat_from_rotation(&down, (float[3]){ 0.0f, 1.0f, 0.0f }, CRUCIFIX_SWORD_HANG * w);
-            t3d_quat_mul(&sk->bones[13].rotation, &h, &down);
         }
     }
 

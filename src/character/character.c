@@ -940,8 +940,7 @@ static void end_skill(void);
 static inline bool can_roll_now(const joypad_buttons_t* buttons, const StickInput* stick)
 {
     (void)stick;
-    const float rollCost = STAMINA_COST_ROLL * tower_mod_roll_cost();
-    if (!buttons->a || character.stamina < rollCost) return false;
+    if (!buttons->a || character.stamina <= 0.0f) return false;     // any stamina left: the action goes, it empties the bar
     // Attacks and skills can be cancelled into a roll, except Moon Blade Dance in the air
     if (characterState == CHAR_STATE_SKILL) return !(activeSkill == SKILL_MOON_BLADE_DANCE && airborne);
     return characterState == CHAR_STATE_NORMAL || characterState == CHAR_STATE_ATTACKING;
@@ -1127,7 +1126,7 @@ static inline void try_start_attack(bool leftJustPressed)
     if (!leftJustPressed) return;
 
     if (characterState == CHAR_STATE_NORMAL) {
-        if (character.stamina < STAMINA_COST_ATTACK) return;
+        if (character.stamina <= 0.0f) return;
 
         character_consume_stamina(STAMINA_COST_ATTACK);
 
@@ -1166,7 +1165,7 @@ typedef struct {
 
 static const SkillDef SKILL_DEFS[SKILL_COUNT] = {
     [SKILL_MOON_BLADE_DANCE] = { 15.0f, 30.0f },
-    [SKILL_HALFMOON_SLASH]   = { 30.0f, 60.0f },
+    [SKILL_HALFMOON_SLASH]   = { 45.0f, 60.0f },
     [SKILL_CRESCENT_CLEAVE]  = { 18.0f, 30.0f },
 };
 
@@ -1188,6 +1187,7 @@ static const float HALFMOON_RADIUS = 85.0f;
 // medium reward (10, 2.5 hits in 1.3 s), the Halfmoon a high risk (a 2 s root a hit breaks) for
 // a high reward (28, 7 hits in 2.8 s)
 static const float HALFMOON_DAMAGE = 28.0f;
+static const float HALFMOON_POISE = 0.35f;         // of the stagger meter (its damage alone would fill it)
 static const float CLEAVE_RELEASE = 0.85f;         // interruptible wind-up (the SkillCleave upswing)
 static const float CLEAVE_END = 1.7f;
 static const int   CLEAVE_BLADES = 5;
@@ -1211,7 +1211,7 @@ void character_set_skills_enabled(bool enabled) { skillsEnabled = enabled; }
 
 bool character_can_afford_skill(CharacterSkill skill)
 {
-    return skill < SKILL_COUNT && character.stamina >= SKILL_DEFS[skill].stamina;
+    return skill < SKILL_COUNT && character.stamina > 0.0f;
 }
 
 static void end_skill(void)
@@ -1337,6 +1337,7 @@ static void update_skill(float dt)
             }
         }
         if (skillStep == 0 && skillTime >= HALFMOON_CHARGE) {
+            skill_fx_next_poise(HALFMOON_POISE);
             skill_fx_spawn_arc((float[3]){ character.pos[0], character.pos[1] + 10.0f, character.pos[2] },
                                yaw, HALFMOON_RADIUS, HALFMOON_DAMAGE * tower_mod_skill_damage(SKILL_HALFMOON_SLASH));
             screen_shake_set_shake_mag(14.0f);
@@ -1367,6 +1368,7 @@ static void update_skill(float dt)
             float dx = -fm_sinf(a), dz = fm_cosf(a);
             float origin[3] = { character.pos[0] + dx * dist, groundY, character.pos[2] + dz * dist };
             // 56/s for 1.6 s: ~100 out, the outer blades ~65 to each side
+            skill_fx_next_poise(1.25f / 28.0f);   // the base tick's (not Cleave+'s)
             skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 56.0f, 0.0f, dz * 56.0f },
                                 1.25f * tower_mod_skill_damage(SKILL_CRESCENT_CLEAVE), 4, 0.3f, 1.6f, false);    // ~8 ticks a cast in reach: 10
             skill_fx_spawn_burst(origin, a);
@@ -2064,7 +2066,7 @@ static inline void progress_action_timers(float dt, KnockdownBreakawayReq breaka
         if (!attackEnding && attackQueued &&
             actionTimer >= ATTACK_TRANSITION_TIME &&
             attackComboIndex < 3 &&
-            character.stamina >= STAMINA_COST_ATTACK)
+            character.stamina > 0.0f)
         {
             attackComboIndex++;
             attackQueued = false;
@@ -2836,7 +2838,7 @@ void character_update(void)
                     if (strong) screen_shake_set_shake_mag(5.0f);
                     float storm = tower_on_sword_hit();     // Storm Blade: lightning on every 4th hit
                     if (storm > 0.0f) {
-                        boss_apply_damage(boss, storm);
+                        boss_apply_hit(boss, storm, 0.0f);     // a boon's damage: no stagger of its own
                         skill_fx_spawn_pillar(boss->pos);
                         audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_WAVE, 0.8f, 0.0f);
                     }

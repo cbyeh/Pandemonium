@@ -59,10 +59,10 @@ static const SkinDef SKINS[SKIN_COUNT] = {
     [SKIN_BLACK_SWORDSMAN]  = { "Black Swordsman", .armor = C(58, 57, 63), .helm = C(52, 51, 58), .cloth = C(24, 22, 22),
                                 .chain = C(22, 22, 24), .hidePlume = true, .hideSword = true,
                                 .cl = { { CLOTH_CLOAK, C(26, 24, 27), true, 6.2f, 0.55f } }, .acc = ACC_BERSERK_HELM | ACC_DRAGONSLAYER },
-    // Malenia: brass plate, an olive pleated dress, a winged helm, a fur collar, red hair over a crimson cape
+    // Malenia: brass plate, an olive pleated dress, a winged helm, a fur collar, a red ponytail over a crimson cape (it tapers)
     [SKIN_SCARLET_VALKYRIE] = { "Scarlet Valkyrie", .armor = C(196, 156, 82), .helm = C(208, 168, 92), .cloth = C(98, 80, 50),
                                 .chain = C(72, 60, 40), .hidePlume = true,
-                                .cl = { { CLOTH_HAIR, C(196, 64, 30), true, 3.4f, 0.3f }, { CLOTH_CLOAK, C(86, 12, 16), false, 4.8f, 0.55f, 0.8f } },
+                                .cl = { { CLOTH_HAIR, C(196, 64, 30), true, 3.4f, -0.45f }, { CLOTH_CLOAK, C(86, 12, 16), false, 4.8f, 0.55f, 0.8f } },
                                 .acc = ACC_WINGED_HELM | ACC_FUR_COLLAR },
     // Nightfarer (Nightreign): a winged silver helm, a dark scarf, a royal-blue tabard and long coat,
     // the claw shot on his left forearm
@@ -150,8 +150,8 @@ static void cloth_anchors(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *M)
             bone_world(M, B_SPINE, 1.25f - 0.7f * u * u + ((c & 1) ? 0.06f : 0.0f), 2.62f - sp->drop, 1.2f * u, cl->anchor[c]);
         else if (sp->kind == CLOTH_CLOAK)   // over the pauldrons, wrapping forward at the sides, pleated
             bone_world(M, B_SPINE, 0.95f - 0.95f * u * u + ((c & 1) ? 0.08f : 0.0f), 2.62f, 1.45f * u, cl->anchor[c]);
-        else if (sp->kind == CLOTH_HAIR)    // from the back of the helm
-            bone_world(M, B_HEAD, 0.6f - 0.15f * u * u, 1.3f, 0.62f * u, cl->anchor[c]);
+        else if (sp->kind == CLOTH_HAIR)    // a ponytail from the back of the helm
+            bone_world(M, B_HEAD, 0.62f, 1.4f, 0.13f * u, cl->anchor[c]);
         else {                              // a crest on top of the helm that arches up and back
             bone_world(M, B_HEAD, -0.15f + 0.25f * (u + 1.0f), 2.0f, 0.1f * u, cl->anchor[c]);
             bone_world(M, B_HEAD, 0.35f + 0.25f * (u + 1.0f), 2.55f, 0.12f * u, cl->anchor2[c]);
@@ -482,8 +482,11 @@ static void shell_tris(int nt, int np, float t0, float t1, float p0, float p1, f
         }
 }
 
+static uint8_t s_hoodAmb[3];    // the ambient the hood's colours were baked with
+
 static void hood_build(void)
 {
+    memcpy(s_hoodAmb, colorAmbient, sizeof s_hoodAmb);
     if (s_hoodBlock) { gpu_wait(); rspq_block_free(s_hoodBlock); s_hoodBlock = NULL; }   // may still be queued
     const SkinDef *s = &SKINS[s_skin];
     if (!s->hood) return;
@@ -811,6 +814,8 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
     s_kp[0] += gpu_prof_split();
     if (++s_kpN == 120) { debugf("[knightgpu] model %.2f hood %.2f accessories %.2f cloth %.2f\n", TICKS_TO_US(s_kp[0] / 120) / 1000.0, TICKS_TO_US(s_kp[1] / 120) / 1000.0, TICKS_TO_US(s_kp[2] / 120) / 1000.0, TICKS_TO_US(s_kp[3] / 120) / 1000.0); memset(s_kp, 0, sizeof s_kp); s_kpN = 0; }
 #endif
+    // Baked under another light (the boot records the skin before any scene sets one: a black hood)
+    if (s_hoodBlock && memcmp(s_hoodAmb, colorAmbient, sizeof s_hoodAmb)) hood_build();
     if (s_hoodBlock) {
         t3d_matrix_set(modelMat, true);
         t3d_matrix_push(&skel->boneMatricesFP[s_bone[B_HEAD]]);
@@ -854,7 +859,7 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
         const ClothSpec *sp = &s->cl[k];
         Cloth *cl = &s_cloth[k];
         if (sp->kind == CLOTH_NONE) continue;
-        cl->cols = sp->kind == CLOTH_CLOAK ? CLOTH_COLS : sp->kind == CLOTH_HAIR ? 3 : 2;
+        cl->cols = sp->kind == CLOTH_CLOAK ? CLOTH_COLS : 2;     // hair (a ponytail) and plumes: two strands
         cl->rows = CLOTH_ROWS;
 #ifdef HLE_LOG_CLOTH
         uint32_t ta = TICKS_READ();

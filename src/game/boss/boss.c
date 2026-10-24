@@ -579,7 +579,7 @@ static void boss_poise_update(Boss* boss, float dt)
         debugf("[stagger] boss %d half stagger\n", boss->phaseIndex);
 #endif
     }
-    if (boss->poiseIdleT > 4.0f) boss->poise = fmaxf(0.0f, boss->poise - 0.10f * dt);    // 4 s let alone: it drains, 10% a second
+    if (boss->poiseIdleT > 4.0f) boss->poise = fmaxf(0.0f, boss->poise - 0.08f * dt);    // 4 s let alone: it drains, 8% a second
     if (boss->poise < 0.25f) boss->halfDone = false;     // drained well down: the next fill flinches again
 }
 
@@ -732,13 +732,18 @@ void boss_draw(Boss* boss)
         return;
     }
     if (boss->phaseIndex == 2) {
-        // Guardian Unbound: corrupted violet cast
-        t3d_light_set_ambient((uint8_t[4]){ 200, 110, 230, 255 });
-        boss_render_draw(boss);
-        t3d_light_set_ambient((uint8_t[4]){ 255, 255, 255, 255 });
+        boss_draw_as_unbound(boss);
         return;
     }
     boss_render_draw(boss);
+}
+
+void boss_draw_as_unbound(Boss* boss)
+{
+    // Guardian Unbound: a gold cast (also its reveal, right after the white flash)
+    t3d_light_set_ambient((uint8_t[4]){ 255, 200, 100, 255 });
+    boss_render_draw(boss);
+    t3d_light_set_ambient((uint8_t[4]){ 255, 255, 255, 255 });
 }
 
 void boss_draw_ui(Boss* boss, void* viewport)
@@ -769,6 +774,11 @@ BossState boss_get_state(const Boss* boss)
 
 void boss_apply_damage(Boss* boss, float amount)
 {
+    boss_apply_hit(boss, amount, amount / POISE_DAMAGE);
+}
+
+void boss_apply_hit(Boss* boss, float amount, float poise)
+{
     if (!boss || amount <= 0.0f) return;
     if (boss->mode != BOSS_MODE_COMBAT) return;
 
@@ -781,7 +791,9 @@ void boss_apply_damage(Boss* boss, float amount)
     boss->health -= amount;
     if (boss->health < 0.0f) boss->health = 0.0f;
     if (boss->staggerT <= 0.0f) {      // the stagger meter: seven sword hits, or two charged ones, without letting up
-        boss->poise = fminf(1.0f, boss->poise + amount * tower_mod_poise() / POISE_DAMAGE);
+        // from the blow itself, not the damage: the same hits fill the same share on every floor,
+        // whatever the damage boons (Crushing Blows, a stagger boon, is the one that adds)
+        boss->poise = fminf(1.0f, boss->poise + poise * tower_mod_poise());
         boss->poiseIdleT = 0.0f;
     }
 

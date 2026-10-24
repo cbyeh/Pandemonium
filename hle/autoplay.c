@@ -282,7 +282,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             return;
         }
         if (character_skin_get() != 0 && step == 0) return;    // second run: nothing to do
-        static const char seq[] = "DDDDADDDDRRR";               // Settings, Skin, Right x3: Knight > Umber > Wolf (locked ones skipped)
+#ifdef HLE_SKIN_SAVE_UMBER
+#define HLE_SKIN_SAVE_SEQ "DDDDADDDDR"                          // the Umber Cloak (a hood)
+#else
+#define HLE_SKIN_SAVE_SEQ "DDDDADDDDRRR"                        // Settings, Skin, Right x3: Knight > Umber > Wolf (locked ones skipped)
+#endif
+        static const char seq[] = HLE_SKIN_SAVE_SEQ;
         int t = frame - start;
         if (seq[step] && t >= 20 + step * 15 && t < 21 + step * 15) {
             char c = seq[step];
@@ -1138,6 +1143,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             float a = atan2f(character.pos[0] - boss->pos[0], character.pos[2] - boss->pos[2]);
             character.pos[0] = boss->pos[0] + sinf(a) * 30.0f; character.pos[2] = boss->pos[2] + cosf(a) * 30.0f;
             character.stamina = character.maxStamina;
+#ifdef HLE_TEST_LOW_STAMINA     // a sliver of stamina: the first action still goes
+            character.stamina = 1.0f;
+#endif
+            boss->poise = 0.0f; boss->staggerT = 0.0f;
         }
         if (t == 2 && cyc == 0) pressed->z = 1;
         in->btn.z = 1;
@@ -1154,8 +1163,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         static int busyEnd;
         if (t == 11) busyEnd = 0;
         if (t > 11 && !busyEnd && character_get_state() == CHAR_STATE_NORMAL) busyEnd = frame;
-        if (t == 195) debugf("[sdmg] skill %d: %.1f damage, busy %.2f s\n", HLE_TEST_SKILL_DMG, (double)(hp0 - boss->health),
-                             (double)((busyEnd - t0) * deltaTime));
+        if (t == 195) debugf("[sdmg] skill %d: %.1f damage, busy %.2f s, stagger meter %.2f%s\n", HLE_TEST_SKILL_DMG, (double)(hp0 - boss->health),
+                             (double)((busyEnd - t0) * deltaTime), (double)boss->poise, boss->staggerT > 0.0f ? " (staggered)" : "");
         return;
     }
 #endif

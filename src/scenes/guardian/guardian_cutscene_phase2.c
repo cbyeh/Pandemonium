@@ -964,7 +964,7 @@ void cutscene_guardian_phase2_draw(SceneContext *ctx, T3DViewport *viewport)
 
             t3d_matrix_push_pos(1);
                 if (ctx->boss) {
-                    boss_draw(ctx->boss);
+                    boss_draw_as_unbound(ctx->boss);     // transformed: its new colour from the first frame
                 }
             t3d_matrix_pop(1);
 

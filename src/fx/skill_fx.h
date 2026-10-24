@@ -21,6 +21,8 @@ void skill_fx_draw(void);
 // Halfmoon Slash: a 180-degree crescent that grows out to `radius` in front of
 // `pos` (facing `yaw`) and hits the boss once if it is inside the half-disc.
 void skill_fx_spawn_arc(const float pos[3], float yaw, float radius, float damage);
+/** The stagger the next spawned effect's hits deal (a share of the meter; by default the damage's). */
+void skill_fx_next_poise(float poise);
 
 // Moving wave. It damages the boss every `hitInterval` seconds while touching
 // it, at most `hits` times; with `pillarOnEnd` it ends in a light pillar.

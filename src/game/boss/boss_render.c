@@ -4,6 +4,7 @@
 
 #include <libdragon.h>
 #include "gpu_frame.h"
+#include "game_time.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dskeleton.h>
 #include <t3d/t3dmodel.h>
@@ -189,7 +190,7 @@ void boss_draw_init(void)
 // live each frame. The bones are read from memory when a block runs, so it still animates.
 #define FLASH_LEVELS 4
 static const T3DModel *s_recModel;
-static rspq_block_t *s_recMain[FLASH_LEVELS], *s_recSwords;
+static rspq_block_t *s_recMain[FLASH_LEVELS], *s_recSword[FLASH_LEVELS], *s_recSwords;
 
 static bool is_temp_sword(const T3DObject *obj)
 {
@@ -200,7 +201,12 @@ static bool is_dynamic(const T3DObject *obj)
 {
     return obj && obj->material && (obj->material->textureA.texReference || obj->material->textureB.texReference);
 }
-static bool filter_main(void *u, const T3DObject *obj) { (void)u; return !is_dynamic(obj) && !is_temp_sword(obj); }
+static bool is_hand_sword(const T3DObject *obj)
+{
+    return obj && obj->material && obj->material->name && strcmp(obj->material->name, "z_sword1") == 0;
+}
+static bool filter_main(void *u, const T3DObject *obj) { (void)u; return !is_dynamic(obj) && !is_temp_sword(obj) && !is_hand_sword(obj); }
+static bool filter_hand_sword(void *u, const T3DObject *obj) { (void)u; return !is_dynamic(obj) && is_hand_sword(obj); }
 static bool filter_swords(void *u, const T3DObject *obj) { (void)u; return !is_dynamic(obj) && is_temp_sword(obj); }
 
 static void boss_record_blocks(Boss *boss)
@@ -210,7 +216,7 @@ static void boss_record_blocks(Boss *boss)
     const T3DMat4FP *mats = gpu_skeleton_matrices();     // this frame's copy (boss_render_draw)
     if (s_recModel) {
         gpu_wait();
-        for (int k = 0; k < FLASH_LEVELS; k++) rspq_block_free(s_recMain[k]);
+        for (int k = 0; k < FLASH_LEVELS; k++) { rspq_block_free(s_recMain[k]); rspq_block_free(s_recSword[k]); }
         rspq_block_free(s_recSwords);
     }
     for (int k = 0; k < FLASH_LEVELS; k++) {
@@ -218,6 +224,9 @@ static void boss_record_blocks(Boss *boss)
         gpu_block_begin();
         t3d_model_draw_custom(boss->model, (T3DModelDrawConf){ .filterCb = filter_main, .matrices = mats });
         s_recMain[k] = gpu_block_end();
+        gpu_block_begin();
+        t3d_model_draw_custom(boss->model, (T3DModelDrawConf){ .filterCb = filter_hand_sword, .matrices = mats });
+        s_recSword[k] = gpu_block_end();
     }
     boss_flash_restore();
     gpu_block_begin();
@@ -233,7 +242,7 @@ void boss_render_forget_model(void)
 {
     if (!s_recModel) return;
     gpu_wait();
-    for (int k = 0; k < FLASH_LEVELS; k++) rspq_block_free(s_recMain[k]);
+    for (int k = 0; k < FLASH_LEVELS; k++) { rspq_block_free(s_recMain[k]); rspq_block_free(s_recSword[k]); }
     rspq_block_free(s_recSwords);
     s_recModel = NULL;
 }
@@ -303,6 +312,97 @@ void boss_draw_shadow(Boss* boss)
     }
 }
 
+// Guardian Unbound's crucifix: the sword leaves the hand and hangs level over the head, like
+// the plaque over a cross. The sword is skinned to the right hand alone, so it is drawn on its
+// own with that bone's matrix swapped for one carrying it there; s_swordFloat (the pose's
+// weight, from boss_anim) blends from the hand to the hover
+#define SWORD_BONE 13
+#define HEAD_BONE  5
+static float s_swordFloat;
+void boss_render_set_sword_float(float w) { s_swordFloat = w; }
+
+typedef struct { float x[3], y[3], z[3], p[3]; } Frame;     // axes and origin, model space
+
+static void frame_from_bone(Frame *f, const T3DMat4x3 *m)
+{
+    for (int i = 0; i < 3; i++) { f->x[i] = m->m[0][i]; f->y[i] = m->m[1][i]; f->z[i] = m->m[2][i]; f->p[i] = m->m[3][i]; }
+}
+static void frame_apply(float o[3], const Frame *f, const float v[3])     // f * v (a point)
+{
+    for (int i = 0; i < 3; i++) o[i] = f->x[i] * v[0] + f->y[i] * v[1] + f->z[i] * v[2] + f->p[i];
+}
+static void frame_mul(Frame *o, const Frame *a, const Frame *b)          // a * b
+{
+    Frame r;
+    for (int i = 0; i < 3; i++) {
+        r.x[i] = a->x[i] * b->x[0] + a->y[i] * b->x[1] + a->z[i] * b->x[2];
+        r.y[i] = a->x[i] * b->y[0] + a->y[i] * b->y[1] + a->z[i] * b->y[2];
+        r.z[i] = a->x[i] * b->z[0] + a->y[i] * b->z[1] + a->z[i] * b->z[2];
+    }
+    frame_apply(r.p, a, b->p);
+    *o = r;
+}
+static void frame_inverse(Frame *o, const Frame *f)      // rigid (the bones have unit scale)
+{
+    Frame r;
+    for (int i = 0; i < 3; i++) { r.x[i] = (&f->x)[i][0]; r.y[i] = (&f->x)[i][1]; r.z[i] = (&f->x)[i][2]; }
+    for (int i = 0; i < 3; i++) r.p[i] = -(r.x[i] * f->p[0] + r.y[i] * f->p[1] + r.z[i] * f->p[2]);
+    *o = r;
+}
+static void norm3(float v[3]) { float l = sqrtf(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]); if (l > 1e-6f) { v[0] /= l; v[1] /= l; v[2] /= l; } }
+static void cross3(float o[3], const float a[3], const float b[3])
+{
+    o[0] = a[1]*b[2] - a[2]*b[1]; o[1] = a[2]*b[0] - a[0]*b[2]; o[2] = a[0]*b[1] - a[1]*b[0];
+}
+
+/** The hand bone's matrix that puts the sword at the pose's weight w between hand and hover. */
+static void sword_float_matrix(const T3DSkeleton *skel, float w, T3DMat4FP *out)
+{
+    static Frame L, Linv;       // the sword's own frame (blade, flat, width; centre) in the hand's space
+    static float unit;          // model units a glTF unit (the head's rest height over the glTF's)
+    static bool ready;
+    if (!ready) {
+        T3DSkeleton rest = t3d_skeleton_clone(skel, true);      // update() writes its matrices
+        rest.bufferCount = skel->bufferCount;                   // (the clone leaves it 0: update divides by it)
+        t3d_skeleton_reset(&rest);
+        t3d_skeleton_update(&rest);
+        Frame hb, sb;
+        frame_from_bone(&hb, &rest.bones[SWORD_BONE].matrix);
+        unit = rest.bones[HEAD_BONE].matrix.m[3][1] / 13.33f;
+        // From the glTF (rest pose): the blade points at -x (tip), its flat faces this way, centre
+        static const float tip[3] = { -0.997f, -0.014f, 0.072f }, flat[3] = { 0.052f, -0.821f, 0.568f };
+        static const float ctr[3] = { -2.42f, 8.73f, -5.44f };
+        for (int i = 0; i < 3; i++) { sb.x[i] = tip[i]; sb.y[i] = flat[i]; sb.p[i] = ctr[i] * unit; }
+        cross3(sb.z, sb.x, sb.y);
+        Frame hinv; frame_inverse(&hinv, &hb);
+        frame_mul(&L, &hinv, &sb);
+        frame_inverse(&Linv, &L);
+        t3d_skeleton_destroy(&rest);
+        ready = true;
+    }
+    Frame h, cur, tgt, f;
+    frame_from_bone(&h, &skel->bones[SWORD_BONE].matrix);
+    frame_mul(&cur, &h, &L);
+    // Level over the head, across the arms (tip to its right), the flat to the front, breathing a little
+    static float t; t += deltaTime;
+    const float *head = skel->bones[HEAD_BONE].matrix.m[3];
+    float x[3] = { 0, 0, -1 }, y[3] = { -1, 0, 0 };
+    for (int i = 0; i < 3; i++) { tgt.x[i] = x[i]; tgt.y[i] = y[i]; }
+    cross3(tgt.z, tgt.x, tgt.y);
+    tgt.p[0] = head[0]; tgt.p[1] = head[1] + (4.6f + 0.15f * sinf(t * 1.7f)) * unit; tgt.p[2] = head[2];
+    // blend (the axes re-squared)
+    for (int i = 0; i < 3; i++) {
+        f.x[i] = cur.x[i] + (tgt.x[i] - cur.x[i]) * w;
+        f.y[i] = cur.y[i] + (tgt.y[i] - cur.y[i]) * w;
+        f.p[i] = cur.p[i] + (tgt.p[i] - cur.p[i]) * w;
+    }
+    norm3(f.x); cross3(f.z, f.x, f.y); norm3(f.z); cross3(f.y, f.z, f.x);
+    frame_mul(&f, &f, &Linv);
+    T3DMat4 m = {{ { f.x[0], f.x[1], f.x[2], 0 }, { f.y[0], f.y[1], f.y[2], 0 },
+                   { f.z[0], f.z[1], f.z[2], 0 }, { f.p[0], f.p[1], f.p[2], 1 } }};
+    t3d_mat4_to_fixed_3x4(out, &m);
+}
+
 void boss_render_draw(Boss* boss)
 {
     if (!boss || !boss->visible) return;
@@ -349,6 +449,17 @@ void boss_render_draw(Boss* boss)
 #endif
     t3d_matrix_set(modelMat, true);
     rspq_block_run(s_recMain[level]);
+    // The hand's sword (and what hangs on the hand: the swords' glow), floating in the crucifix
+    T3DMat4FP *floatBones = NULL;
+    if (skel && boss->phaseIndex == 2 && s_swordFloat > 0.0f) {
+        int n = skel->skeletonRef->boneCount;
+        floatBones = gpu_copy(skel->boneMatricesFP, sizeof(T3DMat4FP) * n);
+        sword_float_matrix(skel, s_swordFloat, &floatBones[SWORD_BONE]);
+        t3d_segment_set(T3D_SEGMENT_SKELETON, floatBones);
+    }
+    T3DMat4FP *frameBones = skel ? skel->boneMatricesFP : NULL;
+    if (floatBones) skel->boneMatricesFP = floatBones;      // the scrolling parts read it directly
+    rspq_block_run(s_recSword[level]);
 #ifdef HLE_PROF_SERIAL
     s_bp[0] += gpu_prof_split();
 #endif
@@ -357,6 +468,7 @@ void boss_render_draw(Boss* boss)
     s_bp[1] += gpu_prof_split();
 #endif
     boss_draw_scrolling(boss, modelMat);
+    if (floatBones) { skel->boneMatricesFP = frameBones; t3d_segment_set(T3D_SEGMENT_SKELETON, frameBones); }
 #ifdef HLE_PROF_SERIAL
     s_bp[2] += gpu_prof_split();
     if (++s_bpN == 120) { debugf("[bossgpu] body %.2f swords %.2f scrolling %.2f\n", TICKS_TO_US(s_bp[0] / 120) / 1000.0, TICKS_TO_US(s_bp[1] / 120) / 1000.0, TICKS_TO_US(s_bp[2] / 120) / 1000.0); s_bp[0] = s_bp[1] = s_bp[2] = 0; s_bpN = 0; }

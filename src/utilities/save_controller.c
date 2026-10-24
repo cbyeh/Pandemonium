@@ -512,11 +512,12 @@ int save_progress_tower_embers(const SaveData *d) { return d ? (d->_pad[7] | (d-
 int save_progress_bonus_mask(const SaveData *d) { return d ? (d->_pad[15] & 7) : 0; }
 
 // The Knight, the Umber cloak and the three cameo skins from the start; the Crimson
-// cloak for beating the story (Guardian, then Unbound: a clear time is recorded); the
+// cloak for beating the story (Guardian, then Unbound: a clear time is recorded) and all
+// three Bonus bosses; the
 // Teal cloak for two circles of the Tower (every boss twice: floor 10)
 bool save_progress_skin_unlocked(const SaveData *d, int skin)
 {
-    if (skin == SKIN_CRIMSON_CLOAK) return d && d->best_boss_time_ms > 0;
+    if (skin == SKIN_CRIMSON_CLOAK) return d && d->best_boss_time_ms > 0 && save_progress_bonus_mask(d) == 7;
     if (skin == SKIN_TEAL_CLOAK) return save_progress_tower_best_floor(d) >= 10;
     if (skin == SKIN_NIGHTFARER) return d && (d->_pad[19] & TOWER_FLAG_NIGHTFARER);   // bought at the Shrine
     return skin >= 0 && skin < SKIN_COUNT;
