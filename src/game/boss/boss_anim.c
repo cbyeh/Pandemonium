@@ -126,6 +126,7 @@ void boss_anim_request(Boss* boss, BossAnimState target, float start_time, bool 
         boss->blendTimer = 0.0f;
         // swings short (the weapon collider rides the hand), a stagger or a fall a little longer
         s_blendDur = priority == BOSS_ANIM_PRIORITY_CRITICAL ? 0.35f : priority >= BOSS_ANIM_PRIORITY_HIGH ? 0.2f : 0.4f;
+        if (boss->currentAnimState == BOSS_ANIM_KNEEL && boss->state == BOSS_STATE_RECOVER) s_blendDur = 0.8f;   // up off the knee, unhurried
     }
     
     // Start new animation on main skeleton

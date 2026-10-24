@@ -158,7 +158,7 @@ bool dragon_boss_stagger(Boss* b)
     if (!s.ready || s.state == DG_INTRO || s.state == DG_FLY || s.state == DG_TIRED || s.state == DG_DEAD || s.alt > 1.0f) return false;
     s.beamOn = false; s.glow = 0.0f;
     enter(DG_DOWN);     // its legs give: a lurch, then down on its belly, head lolling (dg_down)
-    b->staggerT = 2.5f;
+    b->staggerT = BOSS_STAGGER_S;
     return true;
 }
 
@@ -1134,7 +1134,7 @@ void dragon_boss_update(Boss* b, float dt)
     case DG_DOWN: {
         // A full stagger: a lurch, the legs buckle and it drops onto its belly, head lolling,
         // wings sprawled, tail limp; then it heaves itself up
-        float t = s.t, up = clamp01((t - 2.0f) / 0.5f);
+        float t = s.t, up = clamp01((t - (BOSS_STAGGER_S - 0.8f)) / 0.8f);     // it heaves itself up over the last 0.8 s
         if (t < 0.25f) { s.tNeckPitch = 0.8f; s.tCrouch = -3.0f; s.tJaw = 0.9f; s.tWingRaise = 0.8f; s.poseRate = 9.0f; }
         else {
             if (t - dt < 0.25f) { screen_shake_set_shake_mag(10.0f); sfx_boom();
@@ -1144,7 +1144,7 @@ void dragon_boss_update(Boss* b, float dt)
             s.tWingRaise = -0.35f + 0.5f * up; s.tWingSpan = 0.95f; s.tTail = 0.15f * sinf(t * 1.3f);
             s.poseRate = t < 0.6f ? 6.0f : 3.0f;
         }
-        if (t >= 2.5f) enter(DG_IDLE);
+        if (t >= BOSS_STAGGER_S) enter(DG_IDLE);
         break;
     }
 

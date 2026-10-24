@@ -515,8 +515,6 @@ static inline void boss_update_shadow_mat(Boss* boss)
 // The stagger meter keeps through a dodge or two, then drains (POISE_DAMAGE: boss.h)
 #define POISE_KEEP_S        5.0f     // no hits this long: it drains
 #define POISE_DRAIN         0.10f    // a second, of the full meter
-#define STAGGER_DAMAGE_MULT 1.3f
-#define GUARDIAN_STAGGER_S  2.0f
 
 static inline float boss_target_max_health(int phase)
 {
@@ -586,7 +584,7 @@ bool boss_try_stagger(Boss* boss)
             return false;
     }
     boss->pendingRequests |= 0x01;      // BOSS_REQ_STAGGER: boss_ai plays it
-    boss->staggerT = GUARDIAN_STAGGER_S;
+    boss->staggerT = BOSS_STAGGER_S;
     return true;
 }
 
@@ -769,7 +767,7 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
         character.health = fminf(character.maxHealth, character.health + amount * tower_mod_lifesteal());
         tower_on_boss_hurt(amount);
     }
-    if (boss->staggerT > 0.0f) amount *= STAGGER_DAMAGE_MULT * tower_mod_stagger_damage();     // staggered: hits land harder
+    if (boss->staggerT > 0.0f) amount *= tower_mod_stagger_damage();     // staggered: only boons make hits land harder
     boss->health -= amount;
     if (boss->health < 0.0f) boss->health = 0.0f;
     if (boss->staggerT <= 0.0f) {      // the stagger meter

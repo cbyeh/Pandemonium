@@ -318,9 +318,9 @@ bool sun_boss_stagger(Boss* b)
     for (int k = 0; k < NCH; k++) s.ch[k].kin = s.ch[k].hot = false;
     skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.0f);
     enter(SB_REST);
-    s.t = 3.0f / speed_mult() - 2.5f;     // 2.5 s on the floor
+    s.t = 3.0f / speed_mult() - BOSS_STAGGER_S;     // on the floor for the stagger
     s.downT = 0.0f;         // it falls from where it was: a bounce and a rocking on the floor
-    b->staggerT = 2.5f;
+    b->staggerT = BOSS_STAGGER_S;
     return true;
 }
 

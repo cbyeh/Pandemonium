@@ -755,7 +755,7 @@ float tower_mod_poise(void)
     if (tower_boon_stacks(BOON_CRUSHING_BLOWS)) m *= 1.4f;
     return m;
 }
-float tower_mod_stagger_damage(void) { return tower_boon_stacks(BOON_EXECUTIONER) ? 1.6f / 1.3f : 1.0f; }
+float tower_mod_stagger_damage(void) { return tower_boon_stacks(BOON_EXECUTIONER) ? 1.6f : 1.0f; }
 float tower_mod_perfect_window(void) { return tower_boon_stacks(BOON_PHANTOM_STEP) ? 0.35f : 0.2f; }
 
 void tower_on_perfect_dodge(void)

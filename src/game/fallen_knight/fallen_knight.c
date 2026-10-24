@@ -255,7 +255,8 @@ bool fallen_knight_stagger(Boss* b)
     b->pos[1] = s.groundY;
     enter(FK_STAGGER);
     play(FKA_KNOCKDOWN, true);
-    b->staggerT = 2.2f;
+    t3d_anim_set_speed(&s.anims[FKA_KNOCKDOWN], t3d_anim_get_length(&s.anims[FKA_KNOCKDOWN]) / BOSS_STAGGER_S);   // down and up again in the stagger
+    b->staggerT = BOSS_STAGGER_S;
     return true;
 }
 

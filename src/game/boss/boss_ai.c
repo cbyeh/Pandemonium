@@ -990,9 +990,9 @@ void boss_ai_update(Boss* boss, BossIntent* out_intent) {
         case BOSS_STATE_STAGGER:
             boss->handAttackColliderActive = false;
             boss->sphereAttackColliderActive = false;
-            if (boss->staggerT <= 0.0f || boss->stateTimer > 2.5f) {
+            if (boss->staggerT <= 0.0f || boss->stateTimer > BOSS_STAGGER_S + 0.5f) {
                 boss->state = BOSS_STATE_RECOVER;
-                boss->stateTimer = 0.0f;
+                boss->stateTimer = -0.8f;       // it rises off the knee (boss_anim's slow blend) before it acts
             }
             break;
             
