@@ -64,6 +64,7 @@ static struct {
     float blendT, blendDur; // crossfade timer (0 = done), and its length
     T3DMat4FP *mat;
     int swordBone;          // "Hand-Right": the blade runs along its -X
+    int headBone;           // "Head": the body capsule's top while it lies staggered
 
     FkState state;
     float t;                // time in state
@@ -206,6 +207,7 @@ void fallen_knight_begin(Boss* boss)
         }
         s.mat = malloc_uncached(sizeof(T3DMat4FP));
         s.swordBone = t3d_skeleton_find_bone(&s.skel, "Hand-Right");
+        s.headBone = t3d_skeleton_find_bone(&s.skel, "Head");
         s.ready = true;
     }
     s.anim = -1;
@@ -634,6 +636,16 @@ void fallen_knight_update(Boss* b, float dt)
     const float sc[3] = { FK_SCALE, FK_SCALE, FK_SCALE };
     const float rot[3] = { 0.0f, b->rot[1] + FK_YAW_OFFSET, 0.0f };
     t3d_mat4fp_from_srt_euler(s.mat, sc, rot, p);
+    {   // The body capsule follows it down: feet to head while it lies staggered, so it's hit where it lies
+        T3DVec3 top = {{ 0.0f, 26.0f, 0.0f }};
+        if (s.state == FK_STAGGER && s.headBone >= 0) {
+            float h[3], w[3];
+            mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.headBone], (float[3]){ 0.0f, 0.0f, 0.0f }, h);
+            mat4fp_mul_point_f32_row3_colbasis(s.mat, h, w);
+            top = (T3DVec3){{ w[0] - b->pos[0], fmaxf(6.0f, w[1] - b->pos[1]), w[2] - b->pos[2] }};
+        }
+        b->capsuleCollider.localCapB = top;
+    }
 #ifdef HLE_FK_TRACE     // test aid: the blade tip through each swing, to find its strike
     {
         static float last[3]; float base[3], tip[3];

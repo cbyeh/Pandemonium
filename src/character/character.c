@@ -2809,7 +2809,7 @@ void character_update(void)
                     game_time_hitstop(finisher ? 0.08f : 0.045f);     // hit-stop: the blow lands with weight
                     if (finisher) screen_shake_set_shake_mag(3.0f);
 #ifdef HLE_AUTOPLAY
-                    debugf("[hit] combo %d%s\n", attackComboIndex, finisher ? " (finisher)" : "");
+                    debugf("[hit] combo %d%s%s\n", attackComboIndex, finisher ? " (finisher)" : "", boss->staggerT > 0.0f ? " on a staggered boss" : "");
 #endif
                     float storm = tower_on_sword_hit();     // Storm Blade: lightning on every 4th hit
                     if (storm > 0.0f) {
