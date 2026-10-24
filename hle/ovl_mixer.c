@@ -6,6 +6,8 @@
  */
 #include <libdragon.h>
 #include <string.h>
+#include <stdlib.h>
+#include <math.h>
 #include "hle.h"
 
 #define MAX_SAMPLES   512
@@ -348,12 +350,290 @@ static void mix_channel(const uint32_t *a)
     }
 }
 
+// ---- Native audio: a round as a standard N64 audio task ----
+//
+// HLE emulators (rsp-hle in Mupen64Plus and Delta) run libultra's audio microcode
+// natively, so a round's VADPCM channels go out as one ABI1 audio list (decode,
+// resample, mix, interleave) instead of being mixed above on the emulated CPU, which
+// took ~20% of a fight's frame. A channel the list can't express (PCM, 2/3-bit VADPCM,
+// a loop wrapping inside the round, 2x pitch or more) is mixed in C as before, and that
+// mix is the list's starting point. The list also copies a marker: if the emulator didn't
+// run it (LLE audio), the round is redone in C and the C mixer is used from then on.
+//
+// The task's DMEM holds 128 samples of L and R at a time, so the round goes in chunks;
+// each chunk saves, for the next one, the decoder state it needs (the 8 samples before
+// its first frame) next to RDRAM where that chunk's ADPCM command loads it.
+
+enum { A_ADPCM = 1, A_CLEARBUFF = 2, A_LOADBUFF = 4, A_RESAMPLE = 5, A_SAVEBUFF = 6,
+       A_SETBUFF = 8, A_LOADADPCM = 11, A_MIXER = 12, A_INTERLEAVE = 13 };
+#define ABI_DMEM    2624        // DMEM the list can use (0x5C0..0xFFF)
+#define NAT_CHUNK   128
+#define NAT_CHUNKS  (MAX_SAMPLES / NAT_CHUNK)
+#define NAT_L       ((NAT_CHUNK + 16) * 2)      // L and R (+ the mixer's overrun)
+#define NAT_W       (2 * NAT_L)                 // work area, and the interleaved output
+#define NAT_PRO     (NAT_CHUNKS * 8)            // words: per chunk, load or clear L and R
+#define FRAC_MASK   ((1u << FRAC_BITS) - 1)
+#define UC(p)       ((__typeof__(&(p)[0]))hle_rdram(PhysicalAddr(p)))
+
+static int nat_state;           // 0 untested, 1 runs natively, -1 C only
+static uint32_t alist[4096] __attribute__((aligned(16)));
+static uint32_t *al;
+// ADPCM state per channel and chunk: 16 samples loaded from st + ofs, the last 8 of which
+// a chunk (or the CPU, for the first) saves at st + 16
+static int16_t nat_st[MAX_CHANNELS][NAT_CHUNKS][24] __attribute__((aligned(16)));
+static int16_t nat_shadow[MAX_CHANNELS][16] __attribute__((aligned(16)));  // round-end states
+static uint16_t nat_rs[MAX_CHANNELS][8] __attribute__((aligned(16)));      // resample states
+static int16_t nat_stage[2][MAX_SAMPLES + 8] __attribute__((aligned(16))); // the C part (L, R)
+static uint32_t nat_magic[2] __attribute__((aligned(16))) = { 0x50414E44, 0x41554449 };
+static uint32_t nat_mark[2] __attribute__((aligned(16)));
+static uint32_t nat_text[64] __attribute__((aligned(16)));                 // break: an LLE RSP halts
+// rsp-hle tells the ABI from these words of the ucode data (libultra's "audio" ucode)
+static uint32_t nat_data[16] __attribute__((aligned(16))) = { [0] = 1, [10] = 0x1e24138c, [12] = 0xf0000f00 };
+static struct {
+    uint32_t args[9], state, cb, pos, step, ptr, nframes, ef;
+    int ch, nv, ofs; bool direct; int16_t vol[2], d[2], t[2];
+} nat_ch[MAX_CHANNELS];
+static int nat_n, nat_ns;
+static bool nat_round, c_used;
+
+static inline void acmd(uint32_t w1, uint32_t w2) { al[0] = w1; al[1] = w2; al += 2; }
+#define SETBUFF(in, out, cnt) acmd((uint32_t)A_SETBUFF << 24 | (in), (uint32_t)(out) << 16 | (cnt))
+
+static void nat_begin(int ns)
+{
+#ifdef HLE_NO_NATIVE_AUDIO  // test aid: always the C mixer
+    nat_state = -1;
+#endif
+    nat_n = 0; nat_ns = ns; c_used = false;
+    nat_round = nat_state >= 0 && ns > 0 && ns <= MAX_SAMPLES;
+}
+
+/** Takes a VADPCM channel for the round's audio list; false = mix it in C. */
+static bool nat_channel(const uint32_t *a, uint32_t flags, int ns)
+{
+    if (!nat_round || ns != nat_ns || !(flags & CH_VADPCM) || nat_n == MAX_CHANNELS) return false;
+    int ch = (a[0] >> 19) & 0x1F;
+    uint32_t cbp = ch_codebook[ch];
+    uint32_t pos = a[2], step = a[3], len = a[4], loop_len = a[5];
+    if ((cbp & 3) != 2 || !step || step >= 2u << FRAC_BITS) return false;     // 4-bit, pitch < 2x
+    uint32_t nframes = ((len >> FRAC_BITS) + 15) >> 4;
+    if (!nframes || pos >= len) return false;
+    int nv = ns;                                    // samples before the waveform ends
+    if (pos + (uint64_t)(ns - 1) * step >= len) {
+        if (loop_len) return false;                 // wraps inside the round
+        nv = (len - pos + step - 1) / step;
+    }
+    typeof(nat_ch[0]) *c = &nat_ch[nat_n++];
+    memcpy(c->args, a, sizeof(c->args));
+    c->args[0] &= ~((uint32_t)CH_CLEAR << 11);      // a redo in C must not clear the mix
+    c->state = ch_state[ch]; c->cb = cbp; c->ch = ch;
+    c->pos = pos; c->step = step; c->ptr = a[6]; c->nframes = nframes; c->nv = nv;
+    c->ef = (pos + (uint32_t)nv * step) >> (FRAC_BITS + 4);
+    c->direct = step == 1u << FRAC_BITS && !(pos & FRAC_MASK);
+    c->vol[0] = a[1] >> 16; c->vol[1] = a[1]; c->d[0] = a[7] >> 16; c->d[1] = a[7];
+    c->t[0] = a[8] >> 16; c->t[1] = a[8];
+    memcpy(UC(nat_st[ch][0]) + 8, hle_rdram((flags & CH_VLOOP) ? ch_loop_state[ch] : ch_state[ch]), 16);
+    c->ofs = 0;
+    return true;
+}
+
+/** One channel's part of chunk k (samples [i0, i0 + n) of the round); false if it doesn't fit. */
+static bool nat_chunk_channel(typeof(nat_ch[0]) *c, int k, int i0, int n, int ns, uint32_t *cb)
+{
+    int nv = c->nv - i0; if (nv > n) nv = n;
+    if (nv <= 0) return true;                       // ended in an earlier chunk
+    bool last = i0 + n >= c->nv;
+    uint32_t pos = c->pos + (uint32_t)i0 * c->step, step = c->step;
+    // The ucode's taps put the output sample at (pos >> frac) + 1: a 4-tap resample from
+    // pos >> frac centres there, a straight copy starts there
+    uint32_t t0 = pos >> FRAC_BITS;
+    uint32_t tl = ((pos + (uint32_t)(nv - 1) * step) >> FRAC_BITS) + (c->direct ? 1 : 3);
+    uint32_t f0 = pos >> (FRAC_BITS + 4), f1 = tl >> 4;
+    // the next chunk starts decoding at g; the round's end state is frame e's
+    uint32_t g = last ? 0 : (pos + (uint32_t)n * step) >> (FRAC_BITS + 4);
+    uint32_t e = c->ef;
+    if (!last && g > f1 + 1) f1 = g - 1;
+    if (last && e > f1 + 1) f1 = e - 1;
+    if (f1 > c->nframes - 1) f1 = c->nframes - 1;
+    uint32_t nf = f1 - f0 + 1;
+    if (e > f1 + 1) e = f1 + 1;
+
+    // DMEM: L, R | compressed frames | decoded (16 history + frames + 16 zeros) | resampled.
+    // The plugin mixes 32-bit words: the first sample read and L/R must align alike
+    uint32_t src = c->ptr + f0 * 9, cs = (src & 7) + nf * 9, kk = c->direct ? t0 + 1 : t0;
+    uint32_t DEC = NAT_W + ((cs + 15) & ~15u) + 2 * (kk & 1);
+    uint32_t RES = (DEC + 64 + nf * 32 + 15) & ~15u;
+    if (RES + (c->direct ? 0 : ((nv * 2 + 15) & ~15u) + 32) > ABI_DMEM) return false;
+    if (al + 64 + 4 * ((nv + 15) / 16 + 1) > alist + sizeof(alist) / 4 - 48) return false;
+
+    int ch = c->ch;
+    if (c->cb != *cb) { acmd((uint32_t)A_LOADADPCM << 24 | 128, c->cb & ~3u); *cb = c->cb; }
+    SETBUFF(NAT_W, 0, cs);
+    acmd((uint32_t)A_LOADBUFF << 24, src & ~7u);
+    SETBUFF(NAT_W + (src & 7), DEC, nf * 32);
+    acmd((uint32_t)A_ADPCM << 24, PhysicalAddr(nat_st[ch][k]) + c->ofs);
+    acmd((uint32_t)A_CLEARBUFF << 24 | (DEC + 32 + nf * 32), 32);
+    if (!last) {        // the 8 samples before frame g, for the next chunk
+        uint32_t s = DEC + (8 + 16 * (g - f0)) * 2;
+        SETBUFF(0, s & ~3u, 24);
+        acmd((uint32_t)A_SAVEBUFF << 24, PhysicalAddr(nat_st[ch][k + 1]) + 16);
+        c->ofs = s & 3;
+    } else {            // and before frame e, the state of the next round
+        uint32_t s = DEC + (8 + 16 * (e - f0)) * 2;
+        SETBUFF(0, s & ~3u, 24);
+        acmd((uint32_t)A_SAVEBUFF << 24, PhysicalAddr(nat_shadow[ch]));
+        c->ofs = s & 3;
+    }
+
+    if (!(c->vol[0] || c->vol[1] || c->d[0] || c->d[1])) return true;
+    uint32_t S;
+    if (c->direct) {
+        S = DEC + (16 + t0 + 1 - 16 * f0) * 2;
+    } else {
+        uint32_t T = DEC + (16 + t0 - 16 * f0) * 2;      // the 4 taps, saved as the state
+        UC(nat_rs[ch])[4] = (pos & FRAC_MASK) << 4;
+        SETBUFF(0, T, 8);
+        acmd((uint32_t)A_SAVEBUFF << 24, PhysicalAddr(nat_rs[ch]));
+        SETBUFF(T + 8, RES, nv * 2);
+        acmd((uint32_t)A_RESAMPLE << 24 | (step << 3), PhysicalAddr(nat_rs[ch]));
+        S = RES;
+    }
+    if (nv < n) acmd((uint32_t)A_CLEARBUFF << 24 | (S + nv * 2), 32);     // the mixer reads 16 at a time
+    for (int s = 0; s < 2; s++) {
+        uint32_t dst = s ? NAT_L : 0;
+        if (!c->d[s]) {
+            if (!c->vol[s]) continue;
+            SETBUFF(0, 0, nv * 2);
+            acmd((uint32_t)A_MIXER << 24 | (uint16_t)c->vol[s], S << 16 | dst);
+            continue;
+        }
+        // A ramp: each block of 16 at the volume of its middle sample. The channel's
+        // volume moves on with the samples (vol and d are 1/4 units here)
+        int32_t v4 = c->vol[s] * 4; int16_t dd = c->d[s];
+        SETBUFF(0, 0, 32);
+        for (int i = 0; i < nv; i += 16) {
+            int32_t m4 = v4; int16_t md = dd;
+            for (int j = 0; j < 8; j++) ramp(&m4, &md, c->t[s]);
+            acmd((uint32_t)A_MIXER << 24 | (uint16_t)(m4 >> 2), (S + i * 2) << 16 | (dst + i * 2));
+            for (int j = 0; j < 16; j++) ramp(&v4, &dd, c->t[s]);
+        }
+        c->vol[s] = v4 >> 2; c->d[s] = dd;
+    }
+    return true;
+}
+
+/** Runs the round as an audio task writing ns stereo samples at out; false = flush in C. */
+static bool nat_flush(int ns, uint32_t out)
+{
+    if (!nat_n) return false;
+    bool ok = ns == nat_ns && !(out & 7);
+#ifdef HLE_TEST_AUDIO_AB    // test aid: mix the round in C too and compare
+    static int16_t ref[MAX_SAMPLES * 2], refst[MAX_CHANNELS][8], keep[MAX_CHANNELS][8];
+    static int32_t acc0[MAX_SAMPLES * 2];
+    if (ns == nat_ns) {
+        memcpy(acc0, accum, ns * 2 * sizeof(int32_t));
+        for (int i = 0; i < nat_n; i++) memcpy(keep[i], hle_rdram(nat_ch[i].state), 16);
+        for (int i = 0; i < nat_n; i++) mix_channel(nat_ch[i].args);
+        for (int i = 0; i < ns * 2; i++) ref[i] = clamp16(accum[i]);
+        for (int i = 0; i < nat_n; i++) { memcpy(refst[i], hle_rdram(nat_ch[i].state), 16); memcpy(hle_rdram(nat_ch[i].state), keep[i], 16); }
+        memcpy(accum, acc0, ns * 2 * sizeof(int32_t));
+    }
+#endif
+    if (ok && c_used) {         // the list starts from what was mixed in C
+        int16_t *sl = UC(nat_stage[0]), *sr = UC(nat_stage[1]);
+        for (int i = 0; i < ns; i++) { sl[i] = clamp16(accum[2*i]); sr[i] = clamp16(accum[2*i+1]); }
+    }
+    al = alist;
+    uint32_t cb = 0;
+    for (int i0 = 0, k = 0; ok && i0 < ns; i0 += NAT_CHUNK, k++) {
+        int n = ns - i0 < NAT_CHUNK ? ns - i0 : NAT_CHUNK;
+        if (c_used) {
+            SETBUFF(0, 0, n * 2); acmd((uint32_t)A_LOADBUFF << 24, PhysicalAddr(&nat_stage[0][i0]));
+            SETBUFF(NAT_L, 0, n * 2); acmd((uint32_t)A_LOADBUFF << 24, PhysicalAddr(&nat_stage[1][i0]));
+        } else {
+            acmd((uint32_t)A_CLEARBUFF << 24, n * 2);
+            acmd((uint32_t)A_CLEARBUFF << 24 | NAT_L, n * 2);
+        }
+        for (int j = 0; ok && j < nat_n; j++)
+            ok = nat_chunk_channel(&nat_ch[j], k, i0, n, ns, &cb);
+        SETBUFF(0, NAT_W, n * 2);
+        acmd((uint32_t)A_INTERLEAVE << 24, NAT_L);
+        SETBUFF(0, NAT_W, n * 4);
+        acmd((uint32_t)A_SAVEBUFF << 24, out + i0 * 4);
+    }
+    if (ok) {
+        SETBUFF(NAT_W, 0, 8);
+        acmd((uint32_t)A_LOADBUFF << 24, PhysicalAddr(nat_magic));
+        SETBUFF(0, NAT_W, 8);
+        acmd((uint32_t)A_SAVEBUFF << 24, PhysicalAddr(nat_mark));
+        UC(nat_mark)[0] = 0;
+        if (UC(nat_text)[0] != 0x0000000D) for (int i = 0; i < 64; i++) UC(nat_text)[i] = 0x0000000D;
+        data_cache_hit_writeback(alist, (al - alist) * 4);
+
+        *SP_STATUS = SP_WSTATUS_SET_HALT;
+        volatile uint32_t *t = (volatile uint32_t*)0xA4000FC0;   // OSTask in DMEM
+        t[0] = 2;                                   // M_AUDTASK
+        t[1] = 0;
+        t[2] = PhysicalAddr(nat_text); t[3] = sizeof(nat_text);     // boot (size must be <= 0x1000)
+        t[4] = PhysicalAddr(nat_text); t[5] = sizeof(nat_text);
+        t[6] = PhysicalAddr(nat_data); t[7] = sizeof(nat_data);
+        t[8] = 0; t[9] = 0; t[10] = 0; t[11] = 0;
+        t[12] = PhysicalAddr(alist);  t[13] = (al - alist) * 4;
+        t[14] = 0; t[15] = 0;
+        MEMORY_BARRIER();
+        // The emulator runs the whole task inside this write (no interrupt-on-break)
+        *SP_STATUS = SP_WSTATUS_CLEAR_INTR_BREAK | SP_WSTATUS_CLEAR_SSTEP |
+                     SP_WSTATUS_CLEAR_BROKE | SP_WSTATUS_CLEAR_HALT;
+        MEMORY_BARRIER();
+        ok = UC(nat_mark)[0] == nat_magic[0] && UC(nat_mark)[1] == nat_magic[1];
+        if (!nat_state)
+            hle_logf("audio: %s", ok ? "mixed by the emulator (an ABI1 audio task)" : "the emulator didn't run the audio task, mixing in C");
+#ifdef HLE_TEST_REQUIRE_NATIVE  // test aid: stop on the assert screen if the emulator didn't mix
+        assertf(ok, "HLE test: the emulator didn't run the audio task");
+#endif
+        if (!nat_state || !ok) nat_state = ok ? 1 : -1;
+        if (!ok) *SP_STATUS = SP_WSTATUS_SET_HALT;
+    }
+    if (ok) {
+        for (int i = 0; i < nat_n; i++)
+            memcpy(hle_rdram(nat_ch[i].state), (uint8_t*)UC(nat_shadow[nat_ch[i].ch]) + nat_ch[i].ofs, 16);
+#ifdef HLE_TEST_AUDIO_AB
+        static double se, sr; static int maxd, rounds, stbad, resampled;
+        const int16_t *o = hle_rdram(out);
+        static double sh[2];    // the error with the output a sample early / late: alignment
+        for (int i = 0; i < ns * 2; i++) { int dd = o[i] - ref[i]; se += (double)dd * dd; sr += (double)ref[i] * ref[i]; if (abs(dd) > maxd) maxd = abs(dd); }
+        for (int i = 2; i < ns * 2 - 2; i++) { double a = o[i] - ref[i - 2], b = o[i] - ref[i + 2]; sh[0] += a * a; sh[1] += b * b; }
+        for (int i = 0; i < nat_n; i++) { if (memcmp(refst[i], hle_rdram(nat_ch[i].state), 16)) stbad++; if (!nat_ch[i].direct) resampled++; }
+        if (++rounds % 200 == 0) {
+            hle_logf("audio A/B: %d rounds, error %.1f dB below the signal, max diff %d, %d end states differ, %d resampled channel-rounds",
+                rounds, sr > 0 && se > 0 ? 10.0 * log10(sr / se) : 999.0, maxd, stbad, resampled);
+            hle_logf("audio A/B: shifted a sample: %.1f / %.1f dB", 10.0 * log10(sr / sh[0]), 10.0 * log10(sr / sh[1]));
+            se = sr = sh[0] = sh[1] = 0; maxd = stbad = resampled = 0;
+        }
+#endif
+    } else {
+        // Mix them in C after all (their states weren't touched)
+        for (int i = 0; i < nat_n; i++) mix_channel(nat_ch[i].args);
+    }
+    nat_n = 0;
+    return ok;
+}
+
 void ovl_mixer(uint32_t cmd, const uint32_t *a, int n)
 {
     switch (cmd) {
-    case 0:     // MIX_CHANNEL
+    case 0: {   // MIX_CHANNEL
+        uint32_t flags = (a[0] >> 11) & 0xFF;
+        int ns = (a[0] & 0x1FF) * 2;
+        if (flags & CH_CLEAR) nat_begin(ns);
+        if (a[6] && ns && nat_channel(a, flags, ns)) {
+            if (flags & CH_CLEAR) memset(accum, 0, ns * 2 * sizeof(int32_t));
+            return;
+        }
         mix_channel(a);
+        if (a[6] && ns) c_used = true;
         return;
+    }
     case 1: {   // MIX_SETCHANNEL: VADPCM pointers of a channel
         int ch = (a[0] >> 16) & (MAX_CHANNELS - 1);
         ch_codebook[ch] = a[1]; ch_state[ch] = a[2]; ch_loop_state[ch] = a[3];
@@ -367,6 +647,7 @@ void ovl_mixer(uint32_t cmd, const uint32_t *a, int n)
         if (ns > MAX_SAMPLES) ns = MAX_SAMPLES;
         int16_t *out = hle_rdram(a[1]);
         uint32_t *o = (uint32_t*)out;       // one store per stereo sample (big-endian: L first)
+        if (!nat_flush(ns, a[1]))
         for (int i = 0; i < ns; i++)
             o[i] = (clamp16(accum[2*i]) << 16) | (clamp16(accum[2*i+1]) & 0xFFFF);
 #ifdef HLE_TEST_AUDIOLOG

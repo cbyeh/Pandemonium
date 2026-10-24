@@ -361,6 +361,9 @@ void audio_play_music(const char *path, bool loop)
     apply_stereo_volume(CHANNEL_MUSIC, v);
 
     wav64_play(&currentMusic, CHANNEL_MUSIC);
+#ifdef HLE_TEST_PITCH   // test aid: the music resampled (the HLE mixer's resample path)
+    mixer_ch_set_freq(CHANNEL_MUSIC, currentMusic.wave.frequency * 0.73f);
+#endif
     musicPlaying = true;
 }
 
