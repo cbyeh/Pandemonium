@@ -75,12 +75,15 @@ void joypad_update(void)
     joypad = joypad_get_inputs(JOYPAD_PORT_1);
     btn = joypad_get_buttons_pressed(JOYPAD_PORT_1);
     rel = joypad_get_buttons_released(JOYPAD_PORT_1);
+#if defined(HLE_AUTOPLAY) && defined(HLE_PAD_PHYSICAL)   // test aid: scripted input as physical buttons (before the layout)
+    { extern void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed); hle_autoplay(&joypad, &btn); }
+#endif
     if (s_gameplay && s_layout != LAYOUT_CLASSIC) {
         joypad_buttons_t held = joypad.btn;     // a packed member: remapped through a copy
         remap(&held); joypad.btn = held;
         remap(&btn); remap(&rel);
     }
-#ifdef HLE_AUTOPLAY
+#if defined(HLE_AUTOPLAY) && !defined(HLE_PAD_PHYSICAL)
     extern void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed);
     hle_autoplay(&joypad, &btn);
 #endif

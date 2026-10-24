@@ -2475,7 +2475,7 @@ void scene_draw(T3DViewport *viewport)
     // Draw UI elements after 3D rendering is complete.
     // Keep player UI visible during victory; hide it during death, cutscenes and the pause menu
     // (its pages, the Tower's run list, are drawn over the scene)
-    if (!cutsceneActive && !isDead && !menu_controller_is_active()) {
+    if (!cutsceneActive && !isDead && !menu_controller_is_active() && !s_towerDraft) {
         // Boss UI/debug is owned by boss_render/boss_ui now.
         // Keep scene responsible only for draw order and visibility gating.
 #ifdef HLE_PROF_SERIAL   // test aid: the HUD's parts, each run alone

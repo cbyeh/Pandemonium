@@ -42,6 +42,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
     static int frame;
     frame++;
+#ifdef HLE_PAD_LAYOUT       // test aid: play in this button layout (0 Classic, 1 A/B Swapped, 2 Skills on C)
+    { extern void joypad_set_layout(int); joypad_set_layout(HLE_PAD_LAYOUT); }     // every frame: loading the save sets it too
+#endif
 #ifdef HLE_SKILLS_OFF   // the Skills setting off throughout (a loaded save can't turn it back on)
     { extern void character_set_skills_enabled(bool); character_set_skills_enabled(false); }
 #endif
@@ -508,7 +511,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     // die: the death screen's summary, then A back to the title.
     {
         extern int tower_floor(void), tower_floor_boss(void);
-        extern bool tower_draft_is_open(void), tower_active(void);
+        extern bool tower_draft_is_open(void), tower_active(void); extern int tower_draft_selected(void);
         extern const char *tower_death_summary(void);
         static int phase = 0, t0 = 0, step = 0, lastFloor = 0;
         Boss *boss = boss_get_instance();
@@ -564,9 +567,16 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_RUN_SKIP
                     if (k == 10) { pressed->d_down = 1; in->btn.d_down = 1; }     // Down to Skip
 #elif defined(HLE_RUN_UPDOWN)   // Right to the second card, Down to Skip, Up back: the second card is taken
+#ifdef HLE_RUN_STICK            // (the same with the control stick)
+                    if (k >= 10 && k < 13) in->stick_x = 70;
+                    if (k >= 20 && k < 23) in->stick_y = -70;
+                    if (k >= 30 && k < 33) in->stick_y = 70;
+#else
                     if (k == 10) { pressed->d_right = 1; in->btn.d_right = 1; }
                     if (k == 20) { pressed->d_down = 1; in->btn.d_down = 1; }
                     if (k == 30) { pressed->d_up = 1; in->btn.d_up = 1; }
+#endif
+                    if (k == 40) debugf("[updown] the draft reads: card %d selected\n", tower_draft_selected());
 #else
                     if (k >= 10 && k < 10 + 6 * HLE_RUN_PICK && (k - 10) % 6 == 0) { pressed->d_right = 1; in->btn.d_right = 1; }
 #endif

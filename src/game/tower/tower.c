@@ -447,6 +447,7 @@ void tower_draft_open(void)
 }
 
 bool tower_draft_is_open(void) { return s.draftOpen; }
+int  tower_draft_selected(void) { return s.sel; }
 
 void tower_draft_pick(int index)
 {
