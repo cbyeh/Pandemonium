@@ -20,10 +20,10 @@
 #define BOSS_DMG_PER_CIRCLE 0.20f
 #define DRAFT_CHOICES       3
 #define START_POTIONS       3         // as in the original game
-// A floor is one fight: the Guardian's two phases (200 together in the story) are two floors of
-// 100, so a Bonus boss has half its story health and the story's ratios hold (75, 100, 125)
-#define BONUS_HP_IN_TOWER   0.5f
-#define HP_PER_SKILL        (1.0f / 3.0f)   // all three unlocked: double, like the Skills setting
+// A floor is one fight: the Guardian's two phases are two floors of 100, and a Bonus boss has
+// 55% of its story health (99, 132, 151), so each floor costs about what a Guardian phase does
+#define BONUS_HP_IN_TOWER   0.55f
+#define HP_PER_SKILL        0.08f     // per skill offered (a skill adds about 7-8% to the damage dealt)
 
 enum { TIER_COMMON, TIER_RARE, TIER_LEGENDARY };
 typedef struct { const char *name, *desc; uint8_t maxStacks, tier; } BoonDef;
@@ -150,6 +150,7 @@ static struct {
     uint32_t rng;
     TowerBoss order[FLOORS_PER_CIRCLE];
     uint8_t skills;                 // learned this run (bit per CharacterSkill)
+    uint8_t skillsOffered;          // whose Learn card has been on the table (taken or not)
     uint8_t stacks[BOON_COUNT];
     int runEmbers, lastFloorEmbers;
     bool unbrokenUsed;
@@ -427,6 +428,11 @@ void tower_draft_open(void)
         s.nChoices = 3;
     }
 #endif
+    for (int i = 0; i < s.nChoices; i++) {
+        if (s.choices[i] == BOON_LEARN_MOONBLADE) s.skillsOffered |= 1 << SKILL_MOON_BLADE_DANCE;
+        if (s.choices[i] == BOON_LEARN_HALFMOON)  s.skillsOffered |= 1 << SKILL_HALFMOON_SLASH;
+        if (s.choices[i] == BOON_LEARN_CLEAVE)    s.skillsOffered |= 1 << SKILL_CRESCENT_CLEAVE;
+    }
     s.sel = 0;
     s.draftOpen = true;
 #ifdef HLE_AUTOPLAY
@@ -823,7 +829,8 @@ float tower_boss_health_scale(int phase)
 {
     if (!s.active) return 1.0f;
     int n = 0;
-    for (int k = 0; k < SKILL_COUNT; k++) n += character_skills_enabled() && ((s.skills >> k) & 1);
+    // Every skill offered counts, learned or passed over: skipping them doesn't keep the bosses weak
+    for (int k = 0; k < SKILL_COUNT; k++) n += character_skills_enabled() && (((s.skills | s.skillsOffered) >> k) & 1);
     float k = (BOSS_HP_START + BOSS_HP_PER_CIRCLE * (tower_circle() - 1)) * (1.0f + HP_PER_SKILL * n);
     if (s.night == NIGHT_IRON) k *= 1.25f;
     return phase >= 3 ? k * BONUS_HP_IN_TOWER : k;     // phases 3+ are the Bonus bosses

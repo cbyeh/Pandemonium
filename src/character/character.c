@@ -3306,6 +3306,7 @@ void character_draw_ui(void)
 void character_apply_damage(float amount)
 {
     if (amount <= 0.0f) return;
+    amount *= boss_damage_scale();      // the Bonus bosses hit harder than their attacks' base numbers
     if (character_is_invulnerable()) {
         // A perfect dodge: a real blow (not a hazard's tick) caught in the first moments of a roll
         if (characterState == CHAR_STATE_ROLLING && !s_perfectThisRoll && amount >= 6.0f

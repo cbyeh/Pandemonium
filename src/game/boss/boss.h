@@ -342,6 +342,8 @@ BossState boss_get_state(const Boss* boss);
 /** Draws the boss with Guardian Unbound's look (the phase-2 reveal, before phase 2 starts). */
 void boss_draw_as_unbound(Boss* boss);
 void boss_apply_damage(Boss* boss, float amount);
+/** What the current boss's blows are multiplied by (the Bonus bosses' tuning; 1 for the Guardian). */
+float boss_damage_scale(void);
 /** A hit with its own share of the stagger meter (boss_apply_damage: the damage's, 28 fills it). */
 void boss_apply_hit(Boss* boss, float amount, float poise);
 // Full health for its current phase, as the Skills setting or a Tower run sizes it.

@@ -525,8 +525,11 @@ static inline void boss_update_shadow_mat(Boss* boss)
 
 static inline float boss_target_max_health(int phase)
 {
-    float base = (phase == FALLEN_KNIGHT_PHASE) ? 150.0f : (phase == SUN_BOSS_PHASE) ? 200.0f :
-                 (phase == DRAGON_BOSS_PHASE) ? 250.0f : 100.0f;
+    // The Bonus bosses climb after the story: about 45%, 52% and 60% of the player's health and
+    // potions spent in a fight (the story's two phases together: 58%), mostly through damage
+    // (boss_damage_scale) so the fights don't drag; measured with HLE_TEST_DUMMY
+    float base = (phase == FALLEN_KNIGHT_PHASE) ? 180.0f : (phase == SUN_BOSS_PHASE) ? 240.0f :
+                 (phase == DRAGON_BOSS_PHASE) ? 275.0f : 100.0f;
     if (tower_active()) return base * tower_boss_health_scale(phase);   // the climb and its unlocked skills
     return base;
 }
@@ -625,6 +628,9 @@ void boss_update(Boss* boss)
     if (!boss) return;
     boss_sync_max_health(boss);
     boss_poise_update(boss, deltaTime);
+#ifdef HLE_TEST_DUMMY   // test aid: the Guardian's and Unbound's openings (time not attacking), like the Bonus bosses'
+    if (boss->phaseIndex <= 2 && boss->mode == BOSS_MODE_COMBAT) { extern void hle_open_tick(bool, float); hle_open_tick(!boss->isAttacking, deltaTime); }
+#endif
 #ifdef HLE_TEST_FREEZE_BOSS
     if (boss->mode == BOSS_MODE_COMBAT) return;     // test aid: keep the boss out of the way
 #endif
@@ -770,6 +776,14 @@ int boss_get_phase(const Boss* boss)
 BossState boss_get_state(const Boss* boss)
 {
     return boss ? boss->state : BOSS_STATE_INTRO;
+}
+
+float boss_damage_scale(void)
+{
+    Boss *b = boss_get_instance();
+    if (!b) return 1.0f;
+    return b->phaseIndex == FALLEN_KNIGHT_PHASE ? 1.25f : b->phaseIndex == SUN_BOSS_PHASE ? 1.55f :
+           b->phaseIndex == DRAGON_BOSS_PHASE ? 1.75f : 1.0f;     // the Guardian's two phases as they were
 }
 
 void boss_apply_damage(Boss* boss, float amount)
