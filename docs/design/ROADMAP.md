@@ -28,7 +28,7 @@ The Bonus bosses climb past the story (`boss_target_max_health`, `boss_damage_sc
 ## The Tower (shipped)
 A run climbs floors, one fight each:
 - **A circle is five floors:** the Guardian first, the three Bonus bosses in a random order, Guardian Unbound last (a floor of its own).
-- **Scaling:** circle 1 bosses have 70% of their health and deal 60% of their damage; each circle adds 30% health and 20% damage. A Bonus boss has 55% of its story health, so every floor costs about what a Guardian phase does.
+- **Scaling:** circle 1 bosses have 70% of their health and deal 60% of their damage; each circle adds 30% health (40% from circle 6, so even a full set of boons eventually stalls) and 20% damage. A Bonus boss has 55% of its story health, so every floor costs about what a Guardian phase does.
 - **Skills:** learned from Learn cards in the draft. Boss health rises 8% for each skill offered (taken or passed over), so skipping skills never keeps bosses weak.
 - **The baseline:** each circle cleared gives the player +10% damage and 6% less damage taken.
 - **Nights** (from circle 2, one at random a circle): Blood Moon (bosses hit 20% harder, x1.5 Embers), Iron Night (bosses +25% health, x1.3), Starfall (skills recharge 30% faster, bosses hit 10% harder, x1.2).

@@ -16,6 +16,8 @@
 // The climb starts well below the story fights and passes them by circle 3
 #define BOSS_HP_START       0.70f     // circle 1, then +BOSS_HP_PER_CIRCLE a circle
 #define BOSS_HP_PER_CIRCLE  0.30f
+#define BOSS_HP_LATE_CIRCLE 6         // from this circle +BOSS_HP_PER_LATE a circle, so even full boon sets run out of floors
+#define BOSS_HP_PER_LATE    0.40f
 #define BOSS_DMG_START      0.60f     // circle 1, then +BOSS_DMG_PER_CIRCLE a circle
 #define BOSS_DMG_PER_CIRCLE 0.20f
 #define DRAFT_CHOICES       3
@@ -844,7 +846,8 @@ float tower_boss_health_scale(int phase)
     int n = 0;
     // Every skill offered counts, learned or passed over: skipping them doesn't keep the bosses weak
     for (int k = 0; k < SKILL_COUNT; k++) n += character_skills_enabled() && (((s.skills | s.skillsOffered) >> k) & 1);
-    float k = (BOSS_HP_START + BOSS_HP_PER_CIRCLE * (tower_circle() - 1)) * (1.0f + HP_PER_SKILL * n);
+    int c = tower_circle(), late = c >= BOSS_HP_LATE_CIRCLE ? c - BOSS_HP_LATE_CIRCLE + 1 : 0;
+    float k = (BOSS_HP_START + BOSS_HP_PER_CIRCLE * (c - 1 - late) + BOSS_HP_PER_LATE * late) * (1.0f + HP_PER_SKILL * n);
     if (s.night == NIGHT_IRON) k *= 1.25f;
     return phase >= 3 ? k * BONUS_HP_IN_TOWER : k;     // phases 3+ are the Bonus bosses
 }

@@ -177,6 +177,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (fabsf(tower_boss_health_scale(1) - 1.0f) > 0.01f) fails++;                    // circle 2: 0.7 + 0.3
         }
         tower_begin_run(7);
+        for (int f = 0; f < 25; f++) tower_next_floor();
+        { float h = tower_boss_health_scale(1); if (fabsf(h - 2.3f) > 0.01f && fabsf(h - 2.875f) > 0.01f) fails++; }   // circle 6: 0.7 + 4 x 0.3 + 0.4 (x1.25 on an Iron Night)
+        tower_begin_run(7);
         if (tower_mod_max_potions() != 3) fails++;
         if (fabsf(tower_boss_health_scale(1) - 0.7f) > 0.01f || fabsf(tower_boss_health_scale(5) - 0.385f) > 0.01f) fails++;   // circle 1, no skills (a Bonus boss: 0.7 x 0.55)
         { extern float tower_mod_damage_taken(void); if (fabsf(tower_mod_damage_taken() - 0.6f) > 0.01f) fails++; }
