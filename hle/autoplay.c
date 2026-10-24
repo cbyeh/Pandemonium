@@ -5,6 +5,9 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
+#ifndef HLE_STRIKE_EVERY
+#define HLE_STRIKE_EVERY 24     // frames between presses (fewer chains the combo)
+#endif
 #if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS)
 #include "camera_controller.h"
 #include "joypad_utility.h"
@@ -921,7 +924,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
               in->btn.z = 1;
               float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2];
               if (sqrtf(dx * dx + dz * dz) > 40.0f) in->stick_y = 70;
-              if (k % 24 == 0) { pressed->b = 1; in->btn.b = 1; } }
+              if (k % HLE_STRIKE_EVERY == 0) { pressed->b = 1; in->btn.b = 1; }
+#ifdef HLE_STRIKE_STAMINA     // a player who manages stamina: whole combos
+              character.stamina = character_get_max_stamina();
+#endif
+            }
 #endif
 #ifdef HLE_DUMMY_ROLL     // roll every 0.7 s: some catch a blow right at the start (a perfect dodge)
             { static int k; if (++k % 42 == 0) { pressed->a = 1; in->btn.a = 1; } }
@@ -1024,7 +1031,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 in->btn.z = 1;
                 float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2];
                 if (sqrtf(dx * dx + dz * dz) > 45.0f) in->stick_y = 70;
-                if (t % 24 == 0) { pressed->b = 1; in->btn.b = 1; }
+                if (t % HLE_STRIKE_EVERY == 0) { pressed->b = 1; in->btn.b = 1; }
                 {   // the blade's closest approach to the boss's capsule this swing (surface gap)
                     static float gap = 1e9f, lowY, tipY;
                     extern T3DVec3 charWeaponCapA, charWeaponCapB;     // the blade, as the collision system has it

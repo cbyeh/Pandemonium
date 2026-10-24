@@ -2804,7 +2804,12 @@ void character_update(void)
                 Boss* boss = boss_get_instance();
                 if (boss) {
                     boss_apply_damage(boss, damage);
-                    game_time_hitstop(0.045f);     // hit-stop: the blow lands with weight
+                    bool finisher = attackComboIndex == 3;     // the combo's last hit lands heaviest
+                    game_time_hitstop(finisher ? 0.08f : 0.045f);     // hit-stop: the blow lands with weight
+                    if (finisher) screen_shake_set_shake_mag(3.0f);
+#ifdef HLE_AUTOPLAY
+                    debugf("[hit] combo %d%s\n", attackComboIndex, finisher ? " (finisher)" : "");
+#endif
                     float storm = tower_on_sword_hit();     // Storm Blade: lightning on every 4th hit
                     if (storm > 0.0f) {
                         boss_apply_hit(boss, storm, 0.0f);     // a boon's damage: no stagger of its own
@@ -2868,7 +2873,7 @@ void character_update(void)
                             impact[2] = pBoss[2];
                         }
 
-                        blood_particles_fx_spawn_burst(impact[0], impact[1], impact[2], 1.0f);
+                        blood_particles_fx_spawn_burst(impact[0], impact[1], impact[2], attackComboIndex == 3 ? 1.6f : 1.0f);
                     }
                 }
                 character.currentAttackHasHit = true;

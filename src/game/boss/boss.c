@@ -566,6 +566,8 @@ static void boss_poise_update(Boss* boss, float dt)
         if (boss_try_stagger(boss)) {
             screen_shake_set_shake_mag(8.0f);
             audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH2, 0.9f, 0.0f);
+            game_time_hitstop(0.12f);           // the stance breaks: a beat of stillness, then a moment of slow motion
+            game_time_slowmo(0.5f, 0.4f);
 #ifdef HLE_AUTOPLAY
             debugf("[stagger] boss %d staggered for %.1f s\n", boss->phaseIndex, (double)boss->staggerT);
 #endif
@@ -805,7 +807,7 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
     if (boss->staggerT > 0.0f) amount *= STAGGER_DAMAGE_MULT * tower_mod_stagger_damage();     // staggered: hits land harder
     boss->health -= amount;
     if (boss->health < 0.0f) boss->health = 0.0f;
-    if (boss->staggerT <= 0.0f) {      // the stagger meter: seven sword hits, or two charged ones, without letting up
+    if (boss->staggerT <= 0.0f) {      // the stagger meter: seven sword hits without letting up
         // from the blow itself, not the damage: the same hits fill the same share on every floor,
         // whatever the damage boons (Crushing Blows, a stagger boon, is the one that adds)
         boss->poise = fminf(1.0f, boss->poise + poise * tower_mod_poise());
