@@ -8,6 +8,7 @@
 #include "audio_controller.h"
 #include "../scenes/guardian/guardian_scene.h"
 #include "../utilities/save_controller.h"
+#include <stdlib.h>
 #include "../character/character.h"
 #include "../character/character_skin.h"
 #include "../game/tower/tower.h"
@@ -17,13 +18,12 @@
 #include "camera_controller.h"
 
 // Menu state
-// The Shrine's relic row: the relic shown, -1 for None (the equipped one when the Shrine opens)
-#define RELIC_BROWSE_UNSET (-2)
-static int s_relicBrowse = RELIC_BROWSE_UNSET;
-static int shrine_relic_browse(void)
+// The Relics list: row 0 is None, row 1 + id each relic, then Back. The Skins list: one row a skin, then Back
+static const char *skin_lock_hint(int k)
 {
-    if (s_relicBrowse == RELIC_BROWSE_UNSET) s_relicBrowse = tower_relic_equipped();
-    return s_relicBrowse;
+    return k == SKIN_CRIMSON_CLOAK ? "Earned when every foe lies still"
+         : k == SKIN_TEAL_CLOAK ? "It waits high within the Tower"
+         : k == SKIN_NIGHTFARER ? "Its price is paid in embers" : "";
 }
 
 static MenuState currentMenu = MENU_MAIN;
@@ -99,7 +99,7 @@ static const char* settingsMenuOptions[MENU_SETTINGS_COUNT] = {
     "Video",
     "Controls",
     "Skills: %s",
-    "Skin: %s",           // Left/Right (or A) steps through them; no arrows, so the longest name fits the box
+    "Skin: %s",           // A: the Skins list
     "Back",
 };
 
@@ -168,6 +168,8 @@ static int get_menu_option_count(MenuState menu)
         case MENU_BONUS:     return MENU_BONUS_COUNT;
         case MENU_TOWER:     return MENU_TOWER_COUNT;
         case MENU_SHRINE:    return MENU_SHRINE_COUNT;
+        case MENU_RELICS:    return tower_relic_total() + 2;    // None, the relics, Back
+        case MENU_SKINS:     return SKIN_COUNT + 1;
         case MENU_CONTROLS:  return 2;    // Layout, Camera speed (B goes back)
         case MENU_CREDITS:   return 1;
         default:             return 1;
@@ -345,8 +347,10 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
 
     // The stick steers every menu as the D-pad does (one step a push)
     const int stickThreshold = 40;
-    bool stickUp = joypad.stick_y > stickThreshold, stickDown = joypad.stick_y < -stickThreshold;
-    bool stickLeft = joypad.stick_x < -stickThreshold, stickRight = joypad.stick_x > stickThreshold;
+    // only its main direction: a push up or down that leans sideways is not also left or right
+    bool vert = abs(joypad.stick_y) >= abs(joypad.stick_x);
+    bool stickUp = vert && joypad.stick_y > stickThreshold, stickDown = vert && joypad.stick_y < -stickThreshold;
+    bool stickLeft = !vert && joypad.stick_x < -stickThreshold, stickRight = !vert && joypad.stick_x > stickThreshold;
     bool upJustPressed = (upPressed && !lastUpPressed) || (stickUp && !lastStickUp);
     bool downJustPressed = (downPressed && !lastDownPressed) || (stickDown && !lastStickDown);
     bool leftJustPressed = (leftPressed && !lastLeftPressed) || (stickLeft && !lastStickLeft);
@@ -502,12 +506,10 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             }
         }
     } else if (currentMenu == MENU_SETTINGS) {
-        int skinStep = (rightJustPressed || (aJustPressed && selectedOption == MENU_SETTINGS_SKIN)) ? 1 : leftJustPressed ? -1 : 0;
-        if (skinStep && selectedOption == MENU_SETTINGS_SKIN) {
-            int k = character_skin_get();
-            do k = (k + skinStep + SKIN_COUNT) % SKIN_COUNT; while (!save_controller_skin_unlocked(k));   // the Knight is always unlocked
-            character_skin_set(k);
-            (void)save_controller_save_settings();
+        if (aJustPressed && selectedOption == MENU_SETTINGS_SKIN) {
+            currentMenu = MENU_SKINS;
+            selectedOption = character_skin_get();
+            return;
         }
         if ((leftJustPressed || rightJustPressed) && selectedOption == MENU_SETTINGS_SKILLS && settingsHubReturnMenu == MENU_TITLE) {
             character_set_skills_enabled(!character_skills_enabled());     // as A does, like every other toggle
@@ -753,7 +755,6 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             pendingAction = MENU_ACTION_TITLE_START_GAME;
         } else if (aJustPressed && selectedOption == MENU_TOWER_SHRINE) {
             currentMenu = MENU_SHRINE;
-            s_relicBrowse = RELIC_BROWSE_UNSET;     // shows the equipped relic first
             selectedOption = 0;
         } else if (bJustPressed || (aJustPressed && selectedOption == MENU_TOWER_BACK)) {
             currentMenu = MENU_TITLE;
@@ -764,15 +765,29 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
         if (back) {
             currentMenu = MENU_TOWER;
             selectedOption = MENU_TOWER_SHRINE;
-        } else if (selectedOption == MENU_SHRINE_RELIC && (leftJustPressed || rightJustPressed)) {
-            int n = tower_relic_total() + 1;       // None, then each relic
-            s_relicBrowse = (shrine_relic_browse() + 1 + (leftJustPressed ? n - 1 : 1)) % n - 1;
         } else if (selectedOption == MENU_SHRINE_RELIC && aJustPressed) {
-            if (tower_relic_select(shrine_relic_browse())) save_controller_save_settings();     // buy, equip or take off
+            currentMenu = MENU_RELICS;
+            selectedOption = tower_relic_equipped() + 1;      // on the one worn (None: row 0)
         } else if (selectedOption == MENU_SHRINE_NIGHTFARER && aJustPressed) {
             if (tower_nightfarer_buy()) save_controller_save_settings();
         } else if (aJustPressed && selectedOption < MENU_SHRINE_UPGRADES) {
             if (tower_upgrade_buy((UpgradeId)selectedOption)) save_controller_save_settings();
+        }
+    } else if (currentMenu == MENU_RELICS) {
+        int back = tower_relic_total() + 1;
+        if (bJustPressed || (aJustPressed && selectedOption == back)) {
+            currentMenu = MENU_SHRINE;
+            selectedOption = MENU_SHRINE_RELIC;
+        } else if (aJustPressed && selectedOption - 1 != tower_relic_equipped()) {
+            if (tower_relic_select(selectedOption - 1)) save_controller_save_settings();     // buy and equip, equip, or None
+        }
+    } else if (currentMenu == MENU_SKINS) {
+        if (bJustPressed || (aJustPressed && selectedOption == SKIN_COUNT)) {
+            currentMenu = MENU_SETTINGS;
+            selectedOption = MENU_SETTINGS_SKIN;
+        } else if (aJustPressed && save_controller_skin_unlocked(selectedOption) && selectedOption != character_skin_get()) {
+            character_skin_set(selectedOption);
+            (void)save_controller_save_settings();
         }
     }
 }
@@ -1141,7 +1156,8 @@ void menu_controller_draw(void)
 
     if (currentMenu == MENU_SETTINGS || currentMenu == MENU_AUDIO || currentMenu == MENU_VIDEO) {
         dialogHeight = 230;
-    } else if (currentMenu == MENU_CONTROLS || currentMenu == MENU_CREDITS || currentMenu == MENU_SHRINE || currentMenu == MENU_RUN) {
+    } else if (currentMenu == MENU_CONTROLS || currentMenu == MENU_CREDITS || currentMenu == MENU_SHRINE || currentMenu == MENU_RUN ||
+               currentMenu == MENU_RELICS || currentMenu == MENU_SKINS) {
         dialogHeight = 230;
     }
 
@@ -1156,7 +1172,7 @@ void menu_controller_draw(void)
         currentMenu == MENU_TOWER
     ) {
         dialogWidth = 260;
-    } else if (currentMenu == MENU_SHRINE || currentMenu == MENU_RUN) {
+    } else if (currentMenu == MENU_SHRINE || currentMenu == MENU_RUN || currentMenu == MENU_RELICS || currentMenu == MENU_SKINS) {
         dialogWidth = 300;
     }
 
@@ -1329,12 +1345,8 @@ void menu_controller_draw(void)
                 snprintf(name, sizeof name, "%s %d/%d", tower_upgrade_name((UpgradeId)i), tower_upgrade_level((UpgradeId)i), UPG_MAX_LEVEL);
                 if (c < 0) snprintf(right, sizeof right, "max"); else snprintf(right, sizeof right, "%d", c);
             } else if (i == MENU_SHRINE_RELIC) {
-                int r = shrine_relic_browse();
-                snprintf(name, sizeof name, "< %s >", tower_relic_name(r));      // Left/Right: browse
-                // What A does: buy (the price), equip, or nothing (already on)
-                if (tower_relic_equipped() == r) snprintf(right, sizeof right, r < 0 ? "chosen" : "equipped");
-                else if (r < 0 || tower_relic_owned(r)) snprintf(right, sizeof right, "A: equip");
-                else snprintf(right, sizeof right, "A: buy %d", tower_relic_cost(r));
+                snprintf(name, sizeof name, "Relics");
+                snprintf(right, sizeof right, "%s", tower_relic_name(tower_relic_equipped()));      // the one worn
             } else if (i == MENU_SHRINE_NIGHTFARER) {
                 snprintf(name, sizeof name, "Nightfarer (skin)");
                 if (tower_nightfarer_cost() < 0) snprintf(right, sizeof right, "owned"); else snprintf(right, sizeof right, "%d", tower_nightfarer_cost());
@@ -1360,9 +1372,57 @@ void menu_controller_draw(void)
         }
         // What the selected one does
         const char *desc = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_desc((UpgradeId)selectedOption)
-                         : selectedOption == MENU_SHRINE_RELIC ? (shrine_relic_browse() < 0 ? "Climb without a relic" : tower_relic_desc(shrine_relic_browse()))
+                         : selectedOption == MENU_SHRINE_RELIC ? "Choose the relic you climb with"
                          : selectedOption == MENU_SHRINE_NIGHTFARER ? "A tracker's winged helm and blue coat"
                          : "Skills are learned in the climb";
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
+                         FONT_UNBALANCED, x, y + 6, "%s", desc);
+        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+    } else if (currentMenu == MENU_RELICS || currentMenu == MENU_SKINS) {
+        // A list to scroll: name on the left, its state on the right, what the hovered one does below
+        bool relics = currentMenu == MENU_RELICS;
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
+                         FONT_UNBALANCED, x, y + titleYOffset, relics ? "RELICS" : "SKINS");
+        if (relics)
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 8, .height = contentH, .style_id = FONT_STYLE_GOLD },
+                             FONT_UNBALANCED, x, y + titleYOffset, "Embers %d", tower_embers());
+        y += lineHeight * 2 + titleYOffset;
+        int rows = get_menu_option_count(currentMenu);
+        for (int i = 0; i < rows; i++) {
+            const char *name, *right = "";
+            char cost[12];
+            bool grey = false;
+            if (i == rows - 1) name = "Back";
+            else if (relics) {
+                int r = i - 1;      // row 0: None
+                name = tower_relic_name(r);
+                if (tower_relic_equipped() == r) right = "equipped";
+                else if (r >= 0 && !tower_relic_owned(r)) {
+                    snprintf(cost, sizeof cost, "%d", tower_relic_cost(r)); right = cost;
+                    grey = tower_embers() < tower_relic_cost(r);       // can't afford it yet
+                }
+            } else {
+                name = character_skin_name(i);
+                if (!save_controller_skin_unlocked(i)) { right = "locked"; grey = true; }
+                else if (character_skin_get() == i) right = "worn";
+            }
+            if (i == selectedOption) {
+                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW - 8);
+                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+            } else {
+                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
+            }
+            int style = grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE;
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW - 16, .height = contentH, .style_id = style },
+                             FONT_UNBALANCED, x + 8, y, "%s", name);
+            if (right[0])
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 16, .height = contentH, .style_id = style },
+                                 FONT_UNBALANCED, x + 8, y, "%s", right);
+            y += lineHeight + 1;
+        }
+        const char *desc = selectedOption == rows - 1 ? ""
+                         : relics ? (selectedOption == 0 ? "Climb without a relic" : tower_relic_desc(selectedOption - 1))
+                         : save_controller_skin_unlocked(selectedOption) ? "" : skin_lock_hint(selectedOption);
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
                          FONT_UNBALANCED, x, y + 6, "%s", desc);
         rdpq_set_prim_color(RGBA32(255, 255, 255, 255));

@@ -51,6 +51,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_SKILLS_OFF   // the Skills setting off throughout (a loaded save can't turn it back on)
     { extern void character_set_skills_enabled(bool); character_set_skills_enabled(false); }
 #endif
+#ifdef HLE_LOG_RELIC    // test aid: the save's relics after boot (does the Shrine's choice survive a reboot?)
+    if (frame == 600) { extern int tower_relic_equipped(void); extern bool tower_relic_owned(int); debugf("[relic] after boot: equipped %d, owned%s%s%s%s%s\n", tower_relic_equipped(),
+        tower_relic_owned(0) ? " 0" : "", tower_relic_owned(1) ? " 1" : "", tower_relic_owned(2) ? " 2" : "", tower_relic_owned(3) ? " 3" : "", tower_relic_owned(4) ? " 4" : ""); }
+#endif
 #ifdef HLE_LOG_FPS
     {   // game frames per second, every 2 s (for hardware-path runs in Ares)
         static uint32_t last; static int lastFrame;
@@ -199,7 +203,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     {
         static int phase = 0, t0 = 0, step = 0;
         int t = frame - t0;
-        static const char *seqs[3] = { "DDDADA", "", "DADDDDRR" };     // Load Game > Save 2 | (from Load Game) Settings > Skin, Right x2
+        static const char *seqs[3] = { "DDDADA", "", "DADDDDADDDDA" };     // Load Game > Save 2 | (from Load Game) Settings > Skin: the list, Down x4 (Wolf Knight), A
         if (phase == 0) {
             if (menu_controller_is_active()) {
                 debugf("[slot] booted on slot %d with skin %d (%s)\n", save_controller_get_active_slot(), character_skin_get(), character_skin_name(character_skin_get()));
@@ -294,9 +298,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         }
         if (character_skin_get() != 0 && step == 0) return;    // second run: nothing to do
 #ifdef HLE_SKIN_SAVE_UMBER
-#define HLE_SKIN_SAVE_SEQ "DDDDADDDDR"                          // the Umber Cloak (a hood)
+#define HLE_SKIN_SAVE_SEQ "DDDDADDDDADDDA"                       // the Umber Cloak (a hood)
 #else
-#define HLE_SKIN_SAVE_SEQ "DDDDADDDDRRR"                        // Settings, Skin, Right x3: Knight > Umber > Wolf (locked ones skipped)
+#define HLE_SKIN_SAVE_SEQ "DDDDADDDDADDDDA"                      // Settings > Skin: the list, Down x4 (Wolf Knight), A
 #endif
         static const char seq[] = HLE_SKIN_SAVE_SEQ;
         int t = frame - start;
@@ -369,20 +373,21 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
             return;
         }
-        static const char seq[] = "DDDDADDDD";
+        static const char seq[] = "DDDDADDDDA";      // Settings > Skin: the list
         int t = frame - start;
-        if (step < 9 && t >= 20 + step * 15 && t < 20 + step * 15 + 1) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; }
+        if (step < 10 && t >= 20 + step * 15 && t < 20 + step * 15 + 1) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; }
         {   // the longest frame after each switch (a long one jerks the fog gate's scroll)
             static uint32_t last; static int worst;
             uint32_t now = get_ticks_ms();
             int d = last ? (int)(now - last) : 0; last = now;
-            if (step >= 9 && t > 200) { if (d > worst) worst = d; if ((t - 200) % 60 == 59) { debugf("[skin] worst frame %d ms\n", worst); worst = 0; } }
+            if (step >= 10 && t > 200) { if (d > worst) worst = d; if ((t - 200) % 60 == 59) { debugf("[skin] worst frame %d ms\n", worst); worst = 0; } }
         }
-        if (step >= 9 && t > 200 && (t - 200) % 60 == 0 && (t - 200) / 60 <= 8) {
-            pressed->d_right = 1;
-            debugf("[skin] right at %d\n", frame);
+        if (step >= 10 && t > 200 && (t - 200) % 60 == 0 && (t - 200) / 60 <= 8) {
+            pressed->d_down = 1;
+            debugf("[skin] down at %d\n", frame);
         }
-        if (step >= 9 && t > 200 && (t - 200) % 60 == 30)
+        if (step >= 10 && t > 200 && (t - 200) % 60 == 8) { pressed->a = 1; in->btn.a = 1; }     // wear it (a locked one stays as it was)
+        if (step >= 10 && t > 200 && (t - 200) % 60 == 30)
             debugf("[skin] now %d (%s) at %d | cam %.1f,%.1f,%.1f -> %.1f,%.1f,%.1f scale %.3f\n", character_skin_get(), character_skin_name(character_skin_get()), frame,
                    (double)camPos.v[0], (double)camPos.v[1], (double)camPos.v[2], (double)camTarget.v[0], (double)camTarget.v[1], (double)camTarget.v[2], (double)character.scale[0]);
         return;
@@ -435,18 +440,18 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
 #ifdef HLE_SHRINE_NONE
-            static const char seq[] = "DDADADDDDDRRADAULLA";    // ... and back up to Relic, Left x2 (to None), A: no relic
+            static const char seq[] = "DDADADDDDDADDABDAUAUUAB";    // ... and back up to Relics, Up x2 (to None), A: no relic
 #else
-            static const char seq[] = "DDADADDDDDRRADA";    // ... Relic: Right x2 (from None: Saint's Chalice), A buys it; Nightfarer
+            static const char seq[] = "DDADADDDDDADDABDA";    // ... Relics: A, Down x2 (Saint's Chalice), A buys it, B; Nightfarer
 #endif
             if (t >= 25 && seq[step]) {
                 char c = seq[step];
 #ifdef HLE_SHRINE_STICK     // the same, steered with the control stick
                 if (c == 'D') in->stick_y = -80; else if (c == 'R') in->stick_x = 80;
-                else if (c == 'U') in->stick_y = 80; else if (c == 'L') in->stick_x = -80; else { pressed->a = 1; in->btn.a = 1; }
+                else if (c == 'U') in->stick_y = 80; else if (c == 'L') in->stick_x = -80; else if (c == 'B') { pressed->b = 1; in->btn.b = 1; } else { pressed->a = 1; in->btn.a = 1; }
 #else
                 if (c == 'D') pressed->d_down = 1; else if (c == 'R') pressed->d_right = 1;
-                else if (c == 'U') pressed->d_up = 1; else if (c == 'L') pressed->d_left = 1; else { pressed->a = 1; in->btn.a = 1; }
+                else if (c == 'U') pressed->d_up = 1; else if (c == 'L') pressed->d_left = 1; else if (c == 'B') { pressed->b = 1; in->btn.b = 1; } else { pressed->a = 1; in->btn.a = 1; }
 #endif
                 step++; t0 = frame;
             }
