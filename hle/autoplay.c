@@ -30,8 +30,10 @@ int hle_dummy_hits;
 // Openings (HLE_TEST_DUMMY): time a Bonus boss spends not attacking, and how many such gaps
 float hle_open_time, hle_open_cur;
 int hle_open_gaps;
+bool hle_open_now;      // the boss is between attacks this frame (the bot playtest strikes then)
 void hle_open_tick(bool open, float dt)
 {
+    hle_open_now = open;
     if (open) { hle_open_time += dt; hle_open_cur += dt; }
     else if (hle_open_cur > 0.0f) { hle_open_gaps++; hle_open_cur = 0.0f; }
 }
@@ -173,11 +175,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         }
         tower_begin_run(7);
         if (tower_mod_max_potions() != 3) fails++;
-        if (fabsf(tower_boss_health_scale(1) - 0.7f) > 0.01f || fabsf(tower_boss_health_scale(5) - 0.35f) > 0.01f) fails++;   // circle 1, no skills
+        if (fabsf(tower_boss_health_scale(1) - 0.7f) > 0.01f || fabsf(tower_boss_health_scale(5) - 0.385f) > 0.01f) fails++;   // circle 1, no skills (a Bonus boss: 0.7 x 0.55)
         { extern float tower_mod_damage_taken(void); if (fabsf(tower_mod_damage_taken() - 0.6f) > 0.01f) fails++; }
         if (tower_mod_skill_allowed(0)) fails++;
         tower_end_run();
-        if (tower_mod_max_potions() != 7 || !tower_mod_skill_allowed(0) || tower_boss_health_scale(3) != 1.0f) fails++;
+        if (tower_mod_max_potions() != 3 || !tower_mod_skill_allowed(0) || tower_boss_health_scale(3) != 1.0f) fails++;
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }
     return;
@@ -553,14 +555,18 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
                 if (d > 60.0f) { character.pos[0] += dx / d * (d - 60.0f); character.pos[2] += dz / d * (d - 60.0f); }
             }
-#if defined(HLE_RUN_SKIP) || defined(HLE_RUN_PICK)   // a set card: HLE_RUN_PICK moves right that many, Skip is left of the first
+#if defined(HLE_RUN_SKIP) || defined(HLE_RUN_PICK) || defined(HLE_RUN_UPDOWN)   // a set card: HLE_RUN_PICK moves right that many, Skip is left of the first
             {
                 static int k;
                 if (!tower_draft_is_open()) k = 0;
                 else {
                     k++;
 #ifdef HLE_RUN_SKIP
-                    if (k == 10) { pressed->d_left = 1; in->btn.d_left = 1; }
+                    if (k == 10) { pressed->d_down = 1; in->btn.d_down = 1; }     // Down to Skip
+#elif defined(HLE_RUN_UPDOWN)   // Right to the second card, Down to Skip, Up back: the second card is taken
+                    if (k == 10) { pressed->d_right = 1; in->btn.d_right = 1; }
+                    if (k == 20) { pressed->d_down = 1; in->btn.d_down = 1; }
+                    if (k == 30) { pressed->d_up = 1; in->btn.d_up = 1; }
 #else
                     if (k >= 10 && k < 10 + 6 * HLE_RUN_PICK && (k - 10) % 6 == 0) { pressed->d_right = 1; in->btn.d_right = 1; }
 #endif
@@ -817,6 +823,48 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
             else if (frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 4) {
+#ifdef HLE_DUMMY_REAL    // the bot playtest: it fights (HLE_DUMMY_STRIKE, HLE_DUMMY_ROLL), drinks below 40% and says how it went
+            {
+                static int potions0 = -1, done;
+                if (potions0 < 0) potions0 = character.healthPotions;
+                if (!done && character.health < character.maxHealth * 0.4f && character_get_state() == CHAR_STATE_NORMAL) {
+                    extern bool character_try_use_health_potion(void);
+                    if (character_try_use_health_potion()) debugf("[bot] t %.0f s: potion at %.0f health\n", (double)tm, (double)character.health);
+                }
+                bool won = boss && boss->state == BOSS_STATE_DEAD && (HLE_DUMMY_BOSS != 1 || boss->phaseIndex == 2);
+                bool lost = character_get_state() == CHAR_STATE_DEAD;
+                if (!done && (won || lost || tm > 300.0f)) {
+                    done = 1;
+                    debugf("[bot] boss %d %s at %.0f s: took %.0f in %d hits, %d potions used, %.0f health left, boss at %.0f/%.0f\n", HLE_DUMMY_BOSS,
+                           won ? "beaten" : lost ? "player died" : "timed out", (double)tm, (double)hle_dummy_damage, hle_dummy_hits,
+                           potions0 - character.healthPotions, (double)character.health, (double)(boss ? boss->health : 0), (double)(boss ? boss->maxHealth : 0));
+                }
+                if (done) return;
+                if (HLE_DUMMY_BOSS == 1 && boss && boss->phaseIndex == 1 && boss->state == BOSS_STATE_DEAD) {   // the story: on to Unbound
+                    if (frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
+                    tm += deltaTime;
+                    return;
+                }
+                // Strike in the boss's openings, keep away and roll out while it attacks
+                if (boss && boss->mode == BOSS_MODE_COMBAT) {
+                    extern bool hle_open_now;
+                    static int k, lastRoll;
+                    k++;
+                    if (k % 60 == 1) pressed->z = 1;       // (re)lock on
+                    in->btn.z = 1;
+                    float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
+                    if (hle_open_now) {
+                        if (d > 38.0f) in->stick_y = 70;                       // in to sword reach
+                        else if (k % 20 == 0) { pressed->b = 1; in->btn.b = 1; }
+                    } else {
+                        in->stick_y = -70;                                     // back off
+                        if (d < 70.0f && k - lastRoll > 45 && character.stamina > 30.0f) { pressed->a = 1; in->btn.a = 1; lastRoll = k; }
+                    }
+                }
+                tm += deltaTime;
+                return;
+            }
+#endif
 #ifdef HLE_DUMMY_CAM      // the camera on the boss, from its front a little below (a pose check)
             if (boss) {
                 cameraLockOnActive = false;

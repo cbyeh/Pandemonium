@@ -1412,8 +1412,10 @@ static void scene_tower_begin_run(void)
 static void scene_tower_draft_update(void)
 {
     bool l = btn.d_left || joypad.stick_x < -40, r = btn.d_right || joypad.stick_x > 40, a = btn.a;
-    bool done = tower_draft_update(l && !s_towerLastL, r && !s_towerLastR, a && !s_towerLastA);
-    s_towerLastL = l; s_towerLastR = r; s_towerLastA = a;
+    bool u = btn.d_up || joypad.stick_y > 40, d = btn.d_down || joypad.stick_y < -40;
+    static bool lastU, lastD;
+    bool done = tower_draft_update(l && !s_towerLastL, r && !s_towerLastR, u && !lastU, d && !lastD, a && !s_towerLastA);
+    s_towerLastL = l; s_towerLastR = r; s_towerLastA = a; lastU = u; lastD = d;
     if (!done) return;
     s_towerDraft = false;
     tower_floor_restore();

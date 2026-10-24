@@ -3326,7 +3326,11 @@ void character_apply_damage(float amount)
     // Once the boss has fallen, whatever is still in flight is harmless
     { Boss *b = boss_get_instance(); if (b && b->state == BOSS_STATE_DEAD) return; }
 #ifdef HLE_TEST_DUMMY
+#ifdef HLE_DUMMY_REAL      // the bot playtest: counted, and it hurts
+    { extern float hle_dummy_damage; extern int hle_dummy_hits; hle_dummy_damage += amount * tower_mod_damage_taken(); hle_dummy_hits++; }
+#else
     { extern float hle_dummy_damage; extern int hle_dummy_hits; hle_dummy_damage += amount; hle_dummy_hits++; return; }   // test aid: count hits, never hurt
+#endif
 #endif
 
     // A hit during a wind-up cancels the skill (the cooldown is still spent)

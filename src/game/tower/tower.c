@@ -480,12 +480,16 @@ void tower_draft_pick(int index)
     s.draftOpen = false;
 }
 
-bool tower_draft_update(bool left, bool right, bool confirm)
+bool tower_draft_update(bool left, bool right, bool up, bool down, bool confirm)
 {
     if (!s.draftOpen) return false;
-    int n = s.nChoices + 1;             // the cards, then Skip
-    if (left)  s.sel = (s.sel + n - 1) % n;
-    if (right) s.sel = (s.sel + 1) % n;
+    int n = s.nChoices + 1;             // the cards, then Skip (below them: Down, Up back)
+    static int lastCard;
+    if (s.sel < s.nChoices) lastCard = s.sel;
+    if (down) s.sel = s.nChoices;
+    else if (up && s.sel == s.nChoices) s.sel = lastCard < s.nChoices ? lastCard : 0;
+    else if (left)  s.sel = (s.sel + n - 1) % n;
+    else if (right) s.sel = (s.sel + 1) % n;
     if (confirm) { tower_draft_pick(s.sel); return true; }
     return false;
 }
@@ -568,16 +572,23 @@ void tower_draft_draw(void)
         }
     }
     // Skip, under the cards
+    // A button of its own under the cards, framed like them: Down to it, Up back to the card
     bool skip = s.sel == s.nChoices;
-    snprintf(line, sizeof line, skip ? "> Skip: +%d Embers <" : "Skip: +%d Embers", SKIP_EMBERS);
-    text_style(0, y0 + ch + 12, SCREEN_WIDTH, ALIGN_CENTER, skip ? FONT_STYLE_GOLD : FONT_STYLE_GREY, line);
+    const int bw = 132, bh = 16, bx = (SCREEN_WIDTH - bw) / 2, by = y0 + ch + 5;
+    flat_mode();
+    rdpq_set_prim_color(skip ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
+    rdpq_fill_rectangle(bx - 2, by - 2, bx + bw + 2, by + bh + 2);
+    rdpq_set_prim_color(skip ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
+    rdpq_fill_rectangle(bx, by, bx + bw, by + bh);
+    snprintf(line, sizeof line, skip ? "Skip: +%d Embers" : "Down: Skip (+%d)", SKIP_EMBERS);
+    text_style(bx, by + 12, bw, ALIGN_CENTER, skip ? FONT_STYLE_GOLD : FONT_STYLE_GREY, line);
     if (s.floor % FLOORS_PER_CIRCLE == 0) {     // a new circle: stronger, and its night
         // the next circle: stronger bosses, and its night (two lines at most)
         snprintf(line, sizeof line, "Next: floor %d, %s. %s", s.floor + 1, NIGHTS[s.nextNight].name, NIGHTS[s.nextNight].desc);
-        text_style(12, y0 + ch + 26, SCREEN_WIDTH - 24, ALIGN_CENTER, FONT_STYLE_RED, line);
+        text_style(12, y0 + ch + 36, SCREEN_WIDTH - 24, ALIGN_CENTER, FONT_STYLE_RED, line);
     } else {
         snprintf(line, sizeof line, "Next: floor %d", s.floor + 1);
-        text_style(0, y0 + ch + 26, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+        text_style(0, y0 + ch + 36, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
     }
 }
 
