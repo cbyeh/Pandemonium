@@ -61,13 +61,15 @@ const char* tower_death_summary(void);   // a line for the death screen
 // ---- Nights: from the second circle each circle has one (a trade-off, more Embers) ----
 const char* tower_night_name(void);     // "" for none
 
-// ---- Relics: earned by clearing a circle, up to three kept; one equipped at the Shrine ----
-#define TOWER_RELIC_SLOTS 3
-int  tower_relic_count(void);
-const char* tower_relic_name(int i);
-const char* tower_relic_desc(int i);
+// ---- Relics: bought at the Shrine, one equipped for a climb ----
+#define TOWER_RELIC_SLOTS 3             // saves before 1.0 kept up to three found ones (converted on load)
+int  tower_relic_total(void);
+const char* tower_relic_name(int id);   // "None" for -1
+const char* tower_relic_desc(int id);
+bool tower_relic_owned(int id);
+int  tower_relic_cost(int id);          // -1 owned
 int  tower_relic_equipped(void);        // -1: none
-void tower_relic_cycle(int dir);        // none -> each relic -> none
+bool tower_relic_select(int id);        // buy (and equip) it, or equip / take off an owned one
 
 // ---- Nightfarer, a skin bought at the Shrine ----
 bool tower_nightfarer_owned(void);
@@ -89,6 +91,9 @@ bool  tower_mod_skill_allowed(int skill);
 float tower_mod_skill_damage(int skill);    // the skill's upgrade card: 1.5
 float tower_mod_damage_dealt(void);
 float tower_mod_damage_taken(void);
+float tower_mod_damage_vs(float bossHealthFrac, bool staggered);   // pacts against this boss
+bool  tower_hit_impaired(void);         // the Impaired curse: this hit does nothing
+void  tower_on_roll(void);              // a roll started (the Exposed curse)
 int   tower_mod_max_potions(void);
 float tower_mod_potion_heal(void);      // fraction of max health
 float tower_mod_max_health(void);

@@ -58,7 +58,9 @@ typedef struct {
     uint8_t  weaponsOwned;   // bit per weapon
     uint8_t  weapon;         // equipped
     uint8_t  flags;          // TOWER_FLAG_*; bits 1-2: the equipped relic (1-3, 0 none)
-    uint8_t  relics[3];      // two effects a relic (high, low nibble); 0: an empty slot
+    uint8_t  relics[3];      // before 1.0: found relics (two effects a byte), converted on load
+    uint8_t  relicsOwned;    // bit per relic bought
+    uint8_t  relicEquipped;  // 1-based, 0 none
 } TowerSave;
 #define TOWER_FLAG_NIGHTFARER 0x01   // the Nightfarer skin, bought at the Shrine
 void save_controller_get_tower(TowerSave *out);

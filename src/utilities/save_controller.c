@@ -470,7 +470,8 @@ bool save_controller_increment_run_count(void) {
     return blob_write_now();
 }
 
-// _pad[7..8] embers, [9..10] five 3-bit levels, [11] best floor, [12] weapons owned, [13] weapon, [15] Bonus bosses beaten
+// _pad[7..8] embers, [9..10] five 3-bit levels, [11] best floor, [12] weapons owned, [13] weapon, [15] Bonus bosses beaten,
+// [16..18] relics found before 1.0, [19] flags, [22] relics owned, [23] relic equipped
 void save_controller_get_tower(TowerSave *out)
 {
     memset(out, 0, sizeof(*out));
@@ -484,6 +485,8 @@ void save_controller_get_tower(TowerSave *out)
     out->weapon = p[13];
     out->flags = p[19];      // (14 held the old skills: stale on older saves)
     for (int i = 0; i < 3; i++) out->relics[i] = p[16 + i];
+    out->relicsOwned = p[22];
+    out->relicEquipped = p[23];
 }
 
 bool save_controller_set_tower(const TowerSave *in)
@@ -500,6 +503,8 @@ bool save_controller_set_tower(const TowerSave *in)
     p[13] = in->weapon;
     p[19] = in->flags;
     for (int i = 0; i < 3; i++) p[16 + i] = in->relics[i];
+    p[22] = in->relicsOwned;
+    p[23] = in->relicEquipped;
     d->checksum = compute_slot_checksum(d);
     extern double nowS;
     s_last_dirty_time_s = nowS;

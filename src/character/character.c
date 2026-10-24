@@ -951,6 +951,7 @@ static inline void try_start_roll(const joypad_buttons_t* buttons, const StickIn
     if (!can_roll_now(buttons, stick)) return;
 
     character_consume_stamina(STAMINA_COST_ROLL * tower_mod_roll_cost());
+    tower_on_roll();
 
     // Roll-cancel: drop the attack combo / the skill (its cooldown stays spent)
     attackQueued = false;

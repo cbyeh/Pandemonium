@@ -783,7 +783,8 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
     if (boss->mode != BOSS_MODE_COMBAT) return;
 
     if (tower_active()) {     // Tower run: damage boons and upgrades, and Bloodthirst's lifesteal
-        amount *= tower_mod_damage_dealt();
+        if (tower_hit_impaired()) return;      // the Impaired curse: this one does nothing
+        amount *= tower_mod_damage_dealt() * tower_mod_damage_vs(boss->health / fmaxf(boss->maxHealth, 1.0f), boss->staggerT > 0.0f);
         character.health = fminf(character.maxHealth, character.health + amount * tower_mod_lifesteal());
         tower_on_boss_hurt(amount);
     }

@@ -54,6 +54,32 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_CLEAVE_PLUS]     = { "Crescent Cleave+", "+50% damage", 1, TIER_RARE },
 };
 
+// ---- Pacts: a blessing and a curse, rolled for a card; stacks without end, so every draft has
+// three cards. The best blessings (Might, Bulwark) with a curse come out a little ahead, the
+// others about even: whether to take one or Skip depends on the build
+enum { PB_MIGHT, PB_BULWARK, PB_VITALITY, PB_WOUNDED, PB_STAGGERED, PB_LAST_BREATH, PB_COUNT };
+enum { PC_THIRST, PC_FRAILTY, PC_WEAKNESS, PC_EXPOSED, PC_IMPAIRED, PC_COUNT };
+static const struct { const char *name, *desc; } BLESSINGS[PB_COUNT] = {
+    [PB_MIGHT]       = { "Might",         "+8% damage" },
+    [PB_BULWARK]     = { "Bulwark",       "-6% damage taken" },
+    [PB_VITALITY]    = { "Vitality",      "+12 max health" },
+    [PB_WOUNDED]     = { "Wounded Foe",   "+12% damage vs a boss below 50%" },
+    [PB_STAGGERED]   = { "Breaker",       "+15% damage on staggers" },
+    [PB_LAST_BREATH] = { "Last Breath",   "+15% damage below 30% health" },
+};
+static const char *CURSES[PC_COUNT] = {
+    [PC_THIRST]   = "-1 potion",
+    [PC_FRAILTY]  = "+5% damage taken",
+    [PC_WEAKNESS] = "-5% damage dealt",
+    [PC_EXPOSED]  = "+15% taken after rolls",
+    [PC_IMPAIRED] = "3% of hits miss",
+};
+#ifndef PACT_CHANCE             // (a test aid may set it)
+#define PACT_CHANCE 4           // % a card is a pact while boons are left (legendary: 6% and up)
+#endif
+#define PACT_CARD(b, c) (BOON_COUNT + (b) * PC_COUNT + (c))
+#define SKIP_EMBERS 5
+
 // ---- Nights (from the second circle) ----
 typedef enum { NIGHT_NONE, NIGHT_BLOOD_MOON, NIGHT_IRON, NIGHT_STARFALL, NIGHT_COUNT } Night;
 static const struct { const char *name, *desc; float embers; } NIGHTS[NIGHT_COUNT] = {
@@ -88,6 +114,21 @@ static const struct { const char *adj, *desc; } RELIC_FX[RELIC_FX_COUNT] = {
 };
 #define NIGHTFARER_COST 450
 
+// The relics, bought at the Shrine (one equipped for a climb): four of two blessings that work
+// together, and a pact whose curse is the price of its blessing
+#define R(a, b) (uint8_t)(((a) << 4) | (b))
+static const struct { uint8_t fx; const char *name; } RELICS[] = {
+    { R(RELIC_DAMAGE, RELIC_HEALTH),  "Knight's Oath" },     // an all-rounder
+    { R(RELIC_WARD, RELIC_FLASK),     "Saint's Chalice" },   // to last
+    { R(RELIC_SKILL, RELIC_STAMINA),  "Moonlit Tome" },      // a skill from the start, the stamina to use it
+    { R(RELIC_EMBERS, RELIC_DAMAGE),  "Ember Crown" },       // for Embers
+    { R(RELIC_FURY, RELIC_FRAIL),     "Brand of Wrath" },    // glass cannon
+};
+#undef R
+#define RELIC_COUNT ((int)(sizeof RELICS / sizeof RELICS[0]))
+#define RELIC_COST  200
+#define CIRCLE_EMBERS 25        // a circle cleared
+
 typedef struct { const char *name, *desc; } UpgradeDef;
 
 static const UpgradeDef UPGRADES[UPG_COUNT] = {
@@ -97,9 +138,10 @@ static const UpgradeDef UPGRADES[UPG_COUNT] = {
     [UPG_VIGOR]          = { "Vigor",          "+10 max health" },
     [UPG_SKILL_MASTERY]  = { "Skill Mastery",  "Skill cooldowns -8%" },
 };
-// Everything (the five upgrades to 3, the Nightfarer) is 2400 Embers: about 6.5 hours of climbing
-// (2.5 min a floor, runs reaching floor 4 at first and 16 with it all), 7.5 with the story and Bonus bosses
-static const int UPGRADE_COST[UPG_MAX_LEVEL] = { 50, 120, 220 };
+// Everything (the five upgrades to 3, the five relics, the Nightfarer) is 2400 Embers: about 6.5
+// hours of climbing (2.5 min a floor, runs reaching floor 4 at first and 16 with it all), 7.5 with
+// the story and Bonus bosses
+static const int UPGRADE_COST[UPG_MAX_LEVEL] = { 30, 60, 100 };
 
 static struct {
     bool active;
@@ -112,13 +154,16 @@ static struct {
     bool unbrokenUsed;
     Night night, nextNight;
     uint8_t relicFx[2];             // the equipped relic's effects, for this run
-    bool relicFound;
+    bool circleCleared;            // this floor ended a circle (its Ember bonus)
     int hitCount;                   // sword hits landed (Storm Blade)
     float rally, rallyHold, rallyRate;  // Rally: health to win back, its hold, then its drain a second
     double riposteUntil;
+    uint16_t bless[PB_COUNT], curse[PC_COUNT];   // pacts taken
+    int potionDebt;                 // Thirst with no potion: the next bosses' potions are owed
+    double exposedUntil;            // Exposed: after a roll
     // draft
     bool draftOpen;
-    BoonId choices[DRAFT_CHOICES];
+    int choices[DRAFT_CHOICES];     // a BoonId, or PACT_CARD
     int nChoices, sel;
 } s;
 
@@ -146,108 +191,68 @@ static void shuffle_circle(void)
 #endif
 }
 
-// ---- Relics ----
+// ---- Relics: bought at the Shrine, one equipped for a climb ----
 
-static int relic_fx(uint8_t r, int k) { return k ? (r & 15) : (r >> 4); }
 static bool has_relic(int fx) { return s.active && (s.relicFx[0] == fx || s.relicFx[1] == fx); }
 
-int tower_relic_count(void)
+// Saves before 1.0 kept up to three found relics (a byte of two effects each) and the equipped
+// slot: each that is one of today's is owned now (and stays equipped), any other is refunded
+static void tower_load(TowerSave *t)
 {
-    TowerSave t; save_controller_get_tower(&t);
-    int n = 0;
-    for (int i = 0; i < TOWER_RELIC_SLOTS; i++) n += t.relics[i] != 0;
-    return n;
+    save_controller_get_tower(t);
+    if (!(t->relics[0] | t->relics[1] | t->relics[2])) return;
+    int e = ((t->flags >> 1) & 3) - 1;
+    for (int i = 0; i < TOWER_RELIC_SLOTS; i++) {
+        if (!t->relics[i]) continue;
+        int id = -1;
+        for (int k = 0; k < RELIC_COUNT; k++) if (RELICS[k].fx == t->relics[i]) id = k;
+        if (id >= 0) { t->relicsOwned |= 1 << id; if (i == e) t->relicEquipped = id + 1; }
+        else { int m = t->embers + RELIC_COST; t->embers = m > 65535 ? 65535 : m; }
+        t->relics[i] = 0;
+    }
+    t->flags &= ~6;
+    save_controller_set_tower(t);
 }
 
-// The relics there are: four of two blessings that work together, and a pact whose curse is
-// the price of its blessing. Old saves' other pairs keep working (named by their effects)
-#define R(a, b) (uint8_t)(((a) << 4) | (b))
-static const struct { uint8_t fx; const char *name; } RELICS[] = {
-    { R(RELIC_DAMAGE, RELIC_HEALTH),  "Knight's Oath" },     // an all-rounder
-    { R(RELIC_WARD, RELIC_FLASK),     "Saint's Chalice" },   // to last
-    { R(RELIC_SKILL, RELIC_STAMINA),  "Moonlit Tome" },      // a skill from the start, the stamina to use it
-    { R(RELIC_EMBERS, RELIC_DAMAGE),  "Ember Crown" },       // for Embers
-    { R(RELIC_FURY, RELIC_FRAIL),     "Brand of Wrath" },    // glass cannon
-};
-#undef R
-
-const char* tower_relic_name(int i)
-{
-    static char name[40];
-    TowerSave t; save_controller_get_tower(&t);
-    if (i < 0 || i >= TOWER_RELIC_SLOTS || !t.relics[i]) return "None";
-    for (unsigned k = 0; k < sizeof RELICS / sizeof RELICS[0]; k++) if (RELICS[k].fx == t.relics[i]) return RELICS[k].name;
-    snprintf(name, sizeof name, "%s %s Relic", RELIC_FX[relic_fx(t.relics[i], 0)].adj, RELIC_FX[relic_fx(t.relics[i], 1)].adj);
-    return name;
-}
-
-const char* tower_relic_desc(int i)
+int  tower_relic_total(void) { return RELIC_COUNT; }
+const char* tower_relic_name(int id) { return (id >= 0 && id < RELIC_COUNT) ? RELICS[id].name : "None"; }
+const char* tower_relic_desc(int id)
 {
     static char desc[64];
-    TowerSave t; save_controller_get_tower(&t);
-    if (i < 0 || i >= TOWER_RELIC_SLOTS || !t.relics[i]) return "Clear a circle to find a relic";
-    snprintf(desc, sizeof desc, "%s, %s", RELIC_FX[relic_fx(t.relics[i], 0)].desc, RELIC_FX[relic_fx(t.relics[i], 1)].desc);
+    if (id < 0 || id >= RELIC_COUNT) return "";
+    snprintf(desc, sizeof desc, "%s, %s", RELIC_FX[RELICS[id].fx >> 4].desc, RELIC_FX[RELICS[id].fx & 15].desc);
     return desc;
 }
-
-int tower_relic_equipped(void)
+bool tower_relic_owned(int id) { TowerSave t; tower_load(&t); return id >= 0 && id < RELIC_COUNT && ((t.relicsOwned >> id) & 1); }
+int  tower_relic_cost(int id) { return tower_relic_owned(id) ? -1 : RELIC_COST; }
+int  tower_relic_equipped(void)
 {
-    TowerSave t; save_controller_get_tower(&t);
-    int e = ((t.flags >> 1) & 3) - 1;
-    return (e >= 0 && t.relics[e]) ? e : -1;
+    TowerSave t; tower_load(&t);
+    int e = t.relicEquipped - 1;
+    return (e >= 0 && e < RELIC_COUNT && ((t.relicsOwned >> e) & 1)) ? e : -1;
 }
-
-void tower_relic_cycle(int dir)
+bool tower_relic_select(int id)
 {
-    TowerSave t; save_controller_get_tower(&t);
-    int e = tower_relic_equipped();
-    for (int n = 0; n < TOWER_RELIC_SLOTS + 1; n++) {   // the next filled slot, or none
-        e += dir;
-        if (e >= TOWER_RELIC_SLOTS) e = -1;
-        if (e < -1) e = TOWER_RELIC_SLOTS - 1;
-        if (e < 0 || t.relics[e]) break;
+    TowerSave t; tower_load(&t);
+    if (id < 0 || id >= RELIC_COUNT) return false;
+    if (!((t.relicsOwned >> id) & 1)) {             // buy it
+        if (t.embers < RELIC_COST) return false;
+        t.embers -= RELIC_COST;
+        t.relicsOwned |= 1 << id;
+        t.relicEquipped = id + 1;
+    } else {                                        // equip it, or take it off
+        t.relicEquipped = t.relicEquipped == id + 1 ? 0 : id + 1;
     }
-    t.flags = (uint8_t)((t.flags & ~6) | ((e + 1) << 1));
-    save_controller_set_tower(&t);
-}
-
-
-// A circle cleared: one of the relics, preferring one not held; with all slots full the oldest goes
-static void relic_award(void)
-{
-    TowerSave t; save_controller_get_tower(&t);
-    enum { N = sizeof RELICS / sizeof RELICS[0] };
-    uint8_t cand[N]; int nc = 0;
-    for (int i = 0; i < N; i++) {
-        bool held = false;
-        for (int k = 0; k < TOWER_RELIC_SLOTS; k++) held |= t.relics[k] == RELICS[i].fx;
-        if (!held) cand[nc++] = RELICS[i].fx;
-    }
-    uint8_t r = nc ? cand[rng_next() % nc] : RELICS[rng_next() % N].fx;
-    int slot = -1;
-    for (int i = 0; i < TOWER_RELIC_SLOTS; i++) if (!t.relics[i]) { slot = i; break; }
-    if (slot < 0) {
-        int e = ((t.flags >> 1) & 3) - 1;
-        for (int i = 0; i < TOWER_RELIC_SLOTS - 1; i++) t.relics[i] = t.relics[i + 1];
-        slot = TOWER_RELIC_SLOTS - 1;
-        e = e == 0 ? -1 : e - 1;            // the equipped one moved up a slot, or was the oldest
-        t.flags = (uint8_t)((t.flags & ~6) | ((e + 1) << 1));
-    }
-    t.relics[slot] = r;
-    save_controller_set_tower(&t);
-    s.relicFound = true;
-#ifdef HLE_AUTOPLAY
-    debugf("[relic] %s: %s (slot %d)\n", tower_relic_name(slot), tower_relic_desc(slot), slot);
-#endif
+    return save_controller_set_tower(&t);
 }
 
 // ---- Nightfarer ----
 
-bool tower_nightfarer_owned(void) { TowerSave t; save_controller_get_tower(&t); return t.flags & TOWER_FLAG_NIGHTFARER; }
+bool tower_nightfarer_owned(void) { TowerSave t; tower_load(&t); return t.flags & TOWER_FLAG_NIGHTFARER; }
 int  tower_nightfarer_cost(void) { return tower_nightfarer_owned() ? -1 : NIGHTFARER_COST; }
 bool tower_nightfarer_buy(void)
 {
-    TowerSave t; save_controller_get_tower(&t);
+    TowerSave t; tower_load(&t);
     if ((t.flags & TOWER_FLAG_NIGHTFARER) || t.embers < NIGHTFARER_COST) return false;
     t.embers -= NIGHTFARER_COST;
     t.flags |= TOWER_FLAG_NIGHTFARER;
@@ -268,15 +273,12 @@ void tower_begin_run(uint32_t seed)
 #endif
     // The equipped relic holds for the whole climb
     int e = tower_relic_equipped();
-#ifdef HLE_TOWER_RELIC      // test aid: climb with this relic (two effect indices, a * 16 + b)
-    e = 0;
+    uint8_t fx = e >= 0 ? RELICS[e].fx : 0;
+#ifdef HLE_TOWER_RELIC      // test aid: climb with these relic effects (a * 16 + b)
+    fx = HLE_TOWER_RELIC;
 #endif
-    if (e >= 0) {
-        TowerSave t; save_controller_get_tower(&t);
-        s.relicFx[0] = relic_fx(t.relics[e], 0); s.relicFx[1] = relic_fx(t.relics[e], 1);
-#ifdef HLE_TOWER_RELIC
-        s.relicFx[0] = relic_fx(HLE_TOWER_RELIC, 0); s.relicFx[1] = relic_fx(HLE_TOWER_RELIC, 1);
-#endif
+    if (fx) {
+        s.relicFx[0] = fx >> 4; s.relicFx[1] = fx & 15;
         if (has_relic(RELIC_SKILL) && character_skills_enabled()) s.skills |= 1 << (rng_next() % SKILL_COUNT);
         if (has_relic(RELIC_BLESSED)) {      // a boon that needs nothing applied on the spot
             static const BoonId GIFT[] = { BOON_EMBER_EDGE, BOON_IRON_SKIN, BOON_KINDLED_FLASK, BOON_SECOND_WIND,
@@ -314,16 +316,15 @@ void tower_floor_cleared(void)
 {
     if (!s.active) return;
     TowerSave t;
-    save_controller_get_tower(&t);
-    s.lastFloorEmbers = floor_embers();
+    tower_load(&t);
+    s.circleCleared = s.floor % FLOORS_PER_CIRCLE == 0;
+    s.lastFloorEmbers = floor_embers() + (s.circleCleared ? CIRCLE_EMBERS : 0);
     s.runEmbers += s.lastFloorEmbers;
     int e = t.embers + s.lastFloorEmbers;
     t.embers = e > 65535 ? 65535 : e;
     if (s.floor > t.bestFloor) t.bestFloor = s.floor > 255 ? 255 : s.floor;
     save_controller_set_tower(&t);
-    s.relicFound = false;
-    if (s.floor % FLOORS_PER_CIRCLE == 0) {     // a circle cleared: a relic, and the next circle's night
-        relic_award();
+    if (s.circleCleared) {      // a circle cleared: its bonus (above), and the next circle's night
         s.nextNight = (Night)(1 + rng_next() % (NIGHT_COUNT - 1));
     }
     tower_draft_open();
@@ -380,8 +381,26 @@ void tower_draft_open(void)
         skills[k] = skills[--ns];
         for (int i = 0; i < ns; i++) pool[n++] = skills[i];   // the rest may still turn up
     }
-    // The rest by rarity: legendary 6% on the first circle, +4% a circle (up to 25%); rare 30%
-    while (s.nChoices < DRAFT_CHOICES && n > 0) {
+    // The rest by rarity: legendary 6% on the first circle, +4% a circle (up to 25%); rare 30%.
+    // A pact now and then, and always once the boons run out
+    while (s.nChoices < DRAFT_CHOICES) {
+        if (n == 0 || (int)(rng_next() % 100) < PACT_CHANCE) {
+            int card = 0;
+            for (int tries = 0; tries < 8; tries++) {       // a pact not on the table yet
+                int b = rng_next() % PB_COUNT, c;
+                do c = rng_next() % PC_COUNT;               // never a curse that undoes its blessing
+                while ((b == PB_BULWARK && c == PC_FRAILTY) || (b == PB_MIGHT && c == PC_WEAKNESS));
+#ifdef HLE_PACT_CURSE       // test aid: every pact with this curse
+                c = HLE_PACT_CURSE;
+#endif
+                card = PACT_CARD(b, c);
+                bool dup = false;
+                for (int i = 0; i < s.nChoices; i++) dup |= s.choices[i] == card;
+                if (!dup) break;
+            }
+            s.choices[s.nChoices++] = card;
+            continue;
+        }
         int leg = 6 + 4 * (tower_circle() - 1), r = rng_next() % 100;
         if (leg > 25) leg = 25;
         int want = r < leg ? TIER_LEGENDARY : r < leg + 30 ? TIER_RARE : TIER_COMMON;
@@ -398,8 +417,12 @@ void tower_draft_open(void)
     s.draftOpen = true;
 #ifdef HLE_AUTOPLAY
     debugf("[draft] floor %d:", s.floor);
-    for (int i = 0; i < s.nChoices; i++) debugf(" %s (%d)", BOONS[s.choices[i]].name, BOONS[s.choices[i]].tier);
-    debugf("%s\n", s.relicFound ? " | relic found" : "");
+    for (int i = 0; i < s.nChoices; i++) {
+        int c = s.choices[i];
+        if (c < BOON_COUNT) debugf(" %s (%d)", BOONS[c].name, BOONS[c].tier);
+        else debugf(" Pact of %s / %s", BLESSINGS[(c - BOON_COUNT) / PC_COUNT].name, CURSES[(c - BOON_COUNT) % PC_COUNT]);
+    }
+    debugf("%s\n", s.circleCleared ? " | circle cleared" : "");
 #endif
 }
 
@@ -407,8 +430,26 @@ bool tower_draft_is_open(void) { return s.draftOpen; }
 
 void tower_draft_pick(int index)
 {
-    if (index >= 0 && index < s.nChoices) {
-        BoonId b = s.choices[index];
+    if (index == s.nChoices) {          // Skip: a few Embers instead
+        TowerSave t; tower_load(&t);
+        int e = t.embers + SKIP_EMBERS; t.embers = e > 65535 ? 65535 : e;
+        save_controller_set_tower(&t);
+        s.runEmbers += SKIP_EMBERS;
+    } else if (index >= 0 && index < s.nChoices && s.choices[index] >= BOON_COUNT) {
+        int b = (s.choices[index] - BOON_COUNT) / PC_COUNT, c = (s.choices[index] - BOON_COUNT) % PC_COUNT;
+        s.bless[b]++; s.curse[c]++;
+        if (b == PB_VITALITY) character.health += 12.0f;
+#ifdef HLE_PACT_CURSE
+        character.healthPotions = 0;      // test aid: no potion to give up
+#endif
+        if (c == PC_THIRST) { if (character.healthPotions > 0) character.healthPotions--; else s.potionDebt++; }
+#ifdef HLE_AUTOPLAY
+        debugf("[pact] took %s (%d) / %s (%d): damage x%.2f, taken x%.2f, max health %.0f, potions %d (owed %d)\n", BLESSINGS[b].name, s.bless[b],
+               CURSES[c], s.curse[c], (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken(), (double)tower_mod_max_health(),
+               character.healthPotions, s.potionDebt);
+#endif
+    } else if (index >= 0 && index < s.nChoices) {
+        BoonId b = (BoonId)s.choices[index];
         s.stacks[b]++;
         if (b == BOON_DEEP_FLASK) character.healthPotions = character.healthPotions + 3 > 9 ? 9 : character.healthPotions + 3;
         if (b == BOON_LEARN_MOONBLADE) s.skills |= 1 << SKILL_MOON_BLADE_DANCE;
@@ -422,9 +463,9 @@ void tower_draft_pick(int index)
 bool tower_draft_update(bool left, bool right, bool confirm)
 {
     if (!s.draftOpen) return false;
-    if (s.nChoices == 0) { tower_draft_pick(-1); return true; }   // everything maxed
-    if (left)  s.sel = (s.sel + s.nChoices - 1) % s.nChoices;
-    if (right) s.sel = (s.sel + 1) % s.nChoices;
+    int n = s.nChoices + 1;             // the cards, then Skip
+    if (left)  s.sel = (s.sel + n - 1) % n;
+    if (right) s.sel = (s.sel + 1) % n;
     if (confirm) { tower_draft_pick(s.sel); return true; }
     return false;
 }
@@ -453,49 +494,64 @@ void tower_draft_draw(void)
 
     char line[80];
     snprintf(line, sizeof line, "Floor %d cleared   +%d Embers", s.floor, s.lastFloorEmbers);
-    text_style(0, 30, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
-    if (s.relicFound) {
-        TowerSave t; save_controller_get_tower(&t);
-        int last = 0;
-        for (int i = 0; i < TOWER_RELIC_SLOTS; i++) if (t.relics[i]) last = i;
-        snprintf(line, sizeof line, "Relic found: %s", tower_relic_name(last));
-        text_style(0, 44, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_BLUE, line);
+    text_style(0, 26, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
+    if (s.circleCleared) {
+        snprintf(line, sizeof line, "Circle cleared: +%d Embers", CIRCLE_EMBERS);
+        text_style(0, 40, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_BLUE, line);
     }
-    text(0, 60, SCREEN_WIDTH, ALIGN_CENTER, "Choose a Boon");
+    text(0, 56, SCREEN_WIDTH, ALIGN_CENTER, "Choose a Boon");
 
-    const int cw = 96, ch = 112, gap = 6, y0 = 76;
+    const int cw = 96, ch = 122, gap = 6, y0 = 64;
     int x0 = (SCREEN_WIDTH - (cw * s.nChoices + gap * (s.nChoices - 1))) / 2;
     for (int i = 0; i < s.nChoices; i++) {
-        int x = x0 + i * (cw + gap);
-        const BoonDef *b = &BOONS[s.choices[i]];
+        int x = x0 + i * (cw + gap), card = s.choices[i];
+        bool pact = card >= BOON_COUNT;
+        int tier = pact ? 3 : BOONS[card].tier;
         flat_mode();
         bool on = i == s.sel;
-        // The frame tells the rarity: bronze, blue, gold (brighter when selected)
-        static const color_t FRAME[3][2] = {
+        // The frame tells the rarity: bronze, blue, gold; a pact crimson (brighter when selected)
+        static const color_t FRAME[4][2] = {
             { RGBA32(90, 70, 50, 255),  RGBA32(230, 150, 50, 255) },
             { RGBA32(50, 80, 150, 255), RGBA32(110, 170, 255, 255) },
             { RGBA32(150, 115, 30, 255), RGBA32(255, 215, 90, 255) },
+            { RGBA32(120, 20, 30, 255), RGBA32(230, 50, 60, 255) },
         };
-        rdpq_set_prim_color(FRAME[b->tier][on]);
+        rdpq_set_prim_color(FRAME[tier][on]);
         rdpq_fill_rectangle(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2);
         rdpq_set_prim_color(on ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
         rdpq_fill_rectangle(x, y0, x + cw, y0 + ch);
+        if (pact) {
+            int b = (card - BOON_COUNT) / PC_COUNT, c = (card - BOON_COUNT) % PC_COUNT;
+            // the blessing (a line of name, up to three of text), the curse below it in red (up to two)
+            text_style(x + 4, y0 + 14, cw - 8, ALIGN_CENTER, FONT_STYLE_RED, BLESSINGS[b].name);
+            text(x + 6, y0 + 32, cw - 12, ALIGN_CENTER, BLESSINGS[b].desc);
+            text_style(x + 6, y0 + 82, cw - 12, ALIGN_CENTER, FONT_STYLE_RED, CURSES[c]);
+            if (s.bless[b] > 0) {
+                snprintf(line, sizeof line, "Have %d", s.bless[b]);
+                text_style(x, y0 + ch - 2, cw, ALIGN_CENTER, FONT_STYLE_GREY, line);
+            }
+            continue;
+        }
+        const BoonDef *bd = &BOONS[card];
         static const int NAME_STYLE[3] = { FONT_STYLE_WHITE, FONT_STYLE_BLUE, FONT_STYLE_GOLD };
-        text_style(x + 4, y0 + 18, cw - 8, ALIGN_CENTER, NAME_STYLE[b->tier], b->name);
-        text(x + 6, y0 + 52, cw - 12, ALIGN_CENTER, b->desc);     // below a name of up to two lines
-        if (s.stacks[s.choices[i]] > 0) {
-            snprintf(line, sizeof line, "Have %d", s.stacks[s.choices[i]]);
-            text_style(x, y0 + ch - 8, cw, ALIGN_CENTER, FONT_STYLE_GREY, line);
+        text_style(x + 4, y0 + 14, cw - 8, ALIGN_CENTER, NAME_STYLE[bd->tier], bd->name);
+        text(x + 6, y0 + 50, cw - 12, ALIGN_CENTER, bd->desc);     // below a name of up to two lines
+        if (s.stacks[card] > 0) {
+            snprintf(line, sizeof line, "Have %d", s.stacks[card]);
+            text_style(x, y0 + ch - 2, cw, ALIGN_CENTER, FONT_STYLE_GREY, line);
         }
     }
+    // Skip, under the cards
+    bool skip = s.sel == s.nChoices;
+    snprintf(line, sizeof line, skip ? "> Skip: +%d Embers <" : "Skip: +%d Embers", SKIP_EMBERS);
+    text_style(0, y0 + ch + 12, SCREEN_WIDTH, ALIGN_CENTER, skip ? FONT_STYLE_GOLD : FONT_STYLE_GREY, line);
     if (s.floor % FLOORS_PER_CIRCLE == 0) {     // a new circle: stronger, and its night
-        snprintf(line, sizeof line, "Next: floor %d. The bosses grow stronger", s.floor + 1);
-        text_style(0, y0 + ch + 18, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
-        snprintf(line, sizeof line, "%s falls: %s", NIGHTS[s.nextNight].name, NIGHTS[s.nextNight].desc);
-        text_style(16, y0 + ch + 32, SCREEN_WIDTH - 32, ALIGN_CENTER, FONT_STYLE_RED, line);
+        // the next circle: stronger bosses, and its night (two lines at most)
+        snprintf(line, sizeof line, "Next: floor %d, %s. %s", s.floor + 1, NIGHTS[s.nextNight].name, NIGHTS[s.nextNight].desc);
+        text_style(12, y0 + ch + 26, SCREEN_WIDTH - 24, ALIGN_CENTER, FONT_STYLE_RED, line);
     } else {
         snprintf(line, sizeof line, "Next: floor %d", s.floor + 1);
-        text_style(0, y0 + ch + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+        text_style(0, y0 + ch + 26, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
     }
 }
 
@@ -519,18 +575,19 @@ const char* tower_death_summary(void)
     static char line[96];
     int boons = 0;
     for (int b = 0; b < BOON_COUNT; b++) boons += s.stacks[b];
+    for (int b = 0; b < PB_COUNT; b++) boons += s.bless[b];
     snprintf(line, sizeof line, "Floor %d   +%d Embers (%d)\n%d boons taken", s.floor, s.runEmbers, tower_embers(), boons);
     return line;
 }
 
 // ---- Shrine ----
 
-int tower_embers(void) { TowerSave t; save_controller_get_tower(&t); return t.embers; }
-int tower_best_floor(void) { TowerSave t; save_controller_get_tower(&t); return t.bestFloor; }
+int tower_embers(void) { TowerSave t; tower_load(&t); return t.embers; }
+int tower_best_floor(void) { TowerSave t; tower_load(&t); return t.bestFloor; }
 
 int tower_upgrade_level(UpgradeId u)
 {
-    TowerSave t; save_controller_get_tower(&t);
+    TowerSave t; tower_load(&t);
     int l = t.levels[u];
     return l > UPG_MAX_LEVEL ? UPG_MAX_LEVEL : l;
 }
@@ -544,7 +601,7 @@ int tower_upgrade_cost(UpgradeId u)
 bool tower_upgrade_buy(UpgradeId u)
 {
     int cost = tower_upgrade_cost(u);
-    TowerSave t; save_controller_get_tower(&t);
+    TowerSave t; tower_load(&t);
     if (cost < 0 || t.embers < cost) return false;
     t.embers -= cost;
     t.levels[u]++;
@@ -563,9 +620,17 @@ static int shrine(UpgradeId u) { return s.active ? tower_upgrade_level(u) : 0; }
 
 static float powf_int(float b, int e) { float r = 1.0f; while (e-- > 0) r *= b; return r; }
 
+// The climb's baseline: each circle cleared, +10% damage and 6% less taken (the bosses grow faster)
+static int circles_cleared(void) { return s.active ? tower_circle() - 1 : 0; }
+
 float tower_mod_damage_dealt(void)
 {
     float m = (1.0f + 0.08f * shrine(UPG_HONED_BLADE)) * (1.0f + 0.15f * tower_boon_stacks(BOON_EMBER_EDGE));
+    if (s.active) {
+        m *= 1.0f + 0.10f * circles_cleared();
+        m *= (1.0f + 0.08f * s.bless[PB_MIGHT]) * powf_int(0.95f, s.curse[PC_WEAKNESS]);
+        if (character.health < character.maxHealth * 0.3f) m *= 1.0f + 0.15f * s.bless[PB_LAST_BREATH];
+    }
     if (tower_boon_stacks(BOON_LAST_STAND) && character.health < character.maxHealth * 0.3f) m *= 1.4f;
     if (tower_boon_stacks(BOON_BLOOD_PACT)) m *= 1.35f;
     extern double nowS;
@@ -575,9 +640,31 @@ float tower_mod_damage_dealt(void)
     return m;
 }
 
+float tower_mod_damage_vs(float bossHealthFrac, bool staggered)
+{
+    if (!s.active) return 1.0f;
+    float m = 1.0f;
+    if (bossHealthFrac < 0.5f) m *= 1.0f + 0.12f * s.bless[PB_WOUNDED];
+    if (staggered) m *= 1.0f + 0.15f * s.bless[PB_STAGGERED];
+    return m;
+}
+
+bool tower_hit_impaired(void)
+{
+    if (!s.active || !s.curse[PC_IMPAIRED]) return false;
+    return (int)(rng_next() % 100) < 3 * s.curse[PC_IMPAIRED];
+}
+
+void tower_on_roll(void) { extern double nowS; s.exposedUntil = nowS + 2.0; }
+
 float tower_mod_damage_taken(void)
 {
     float m = powf_int(0.85f, tower_boon_stacks(BOON_IRON_SKIN));
+    if (s.active) {
+        extern double nowS;
+        m *= powf_int(0.94f, circles_cleared()) * powf_int(0.94f, s.bless[PB_BULWARK]) * (1.0f + 0.05f * s.curse[PC_FRAILTY]);
+        if (s.curse[PC_EXPOSED] && nowS < s.exposedUntil) m *= 1.0f + 0.15f * s.curse[PC_EXPOSED];
+    }
     if (s.active) m *= BOSS_DMG_START + BOSS_DMG_PER_CIRCLE * (tower_circle() - 1);
     if (s.active && s.night == NIGHT_BLOOD_MOON) m *= 1.2f;
     if (s.active && s.night == NIGHT_STARFALL) m *= 1.1f;
@@ -626,7 +713,7 @@ float tower_mod_potion_heal(void)
     return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.25f * tower_boon_stacks(BOON_KINDLED_FLASK))
            * (tower_boon_stacks(BOON_BLOOD_PACT) ? 0.75f : 1.0f);
 }
-float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH) - 20.0f * has_relic(RELIC_FRAIL); }
+float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH) - 20.0f * has_relic(RELIC_FRAIL) + 12.0f * (s.active ? s.bless[PB_VITALITY] : 0); }
 float tower_mod_roll_cost(void) { return (tower_boon_stacks(BOON_FLEETFOOT) ? 0.6f : 1.0f) * (has_relic(RELIC_LEADEN) ? 1.25f : 1.0f); }
 float tower_mod_stamina_regen(void) { return (1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND)) * (has_relic(RELIC_STAMINA) ? 1.2f : 1.0f); }
 float tower_mod_skill_cooldown(void)
@@ -696,5 +783,6 @@ float tower_boss_health_scale(int phase)
 void tower_floor_restore(void)
 {
     // One potion a fallen boss, no health: the potions are the run's healing
-    if (character.healthPotions < 9) character.healthPotions++;    // a potion every fallen boss, even past the run's maximum (9: the HUD's one digit)
+    if (s.potionDebt > 0) s.potionDebt--;      // Thirst taken with no potion: this one is owed
+    else if (character.healthPotions < 9) character.healthPotions++;    // a potion every fallen boss, even past the run's maximum (9: the HUD's one digit)
 }

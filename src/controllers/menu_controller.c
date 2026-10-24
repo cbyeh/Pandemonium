@@ -17,6 +17,14 @@
 #include "camera_controller.h"
 
 // Menu state
+// The Shrine's relic row: the relic shown (the equipped one when the Shrine opens)
+static int s_relicBrowse = -1;
+static int shrine_relic_browse(void)
+{
+    if (s_relicBrowse < 0) s_relicBrowse = tower_relic_equipped() >= 0 ? tower_relic_equipped() : 0;
+    return s_relicBrowse;
+}
+
 static MenuState currentMenu = MENU_MAIN;
 static MenuState parentMenu = MENU_MAIN;
 static int selectedOption = 0;
@@ -729,6 +737,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             pendingAction = MENU_ACTION_TITLE_START_GAME;
         } else if (aJustPressed && selectedOption == MENU_TOWER_SHRINE) {
             currentMenu = MENU_SHRINE;
+            s_relicBrowse = -1;     // shows the equipped relic first
             selectedOption = 0;
         } else if (bJustPressed || (aJustPressed && selectedOption == MENU_TOWER_BACK)) {
             currentMenu = MENU_TITLE;
@@ -739,9 +748,11 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
         if (back) {
             currentMenu = MENU_TOWER;
             selectedOption = MENU_TOWER_SHRINE;
-        } else if (selectedOption == MENU_SHRINE_RELIC && (aJustPressed || leftJustPressed || rightJustPressed)) {
-            tower_relic_cycle(leftJustPressed ? -1 : 1);
-            save_controller_save_settings();
+        } else if (selectedOption == MENU_SHRINE_RELIC && (leftJustPressed || rightJustPressed)) {
+            int n = tower_relic_total();
+            s_relicBrowse = (shrine_relic_browse() + (leftJustPressed ? n - 1 : 1)) % n;
+        } else if (selectedOption == MENU_SHRINE_RELIC && aJustPressed) {
+            if (tower_relic_select(shrine_relic_browse())) save_controller_save_settings();     // buy, equip or take off
         } else if (selectedOption == MENU_SHRINE_NIGHTFARER && aJustPressed) {
             if (tower_nightfarer_buy()) save_controller_save_settings();
         } else if (aJustPressed && selectedOption < MENU_SHRINE_UPGRADES) {
@@ -1301,7 +1312,11 @@ void menu_controller_draw(void)
                 snprintf(name, sizeof name, "%s %d/%d", tower_upgrade_name((UpgradeId)i), tower_upgrade_level((UpgradeId)i), UPG_MAX_LEVEL);
                 if (c < 0) snprintf(right, sizeof right, "max"); else snprintf(right, sizeof right, "%d", c);
             } else if (i == MENU_SHRINE_RELIC) {
-                snprintf(name, sizeof name, "Relic: %s", tower_relic_name(tower_relic_equipped()));
+                int r = shrine_relic_browse();
+                snprintf(name, sizeof name, "Relic: %s", tower_relic_name(r));
+                if (tower_relic_equipped() == r) snprintf(right, sizeof right, "equipped");
+                else if (tower_relic_owned(r)) snprintf(right, sizeof right, "owned");
+                else snprintf(right, sizeof right, "%d", tower_relic_cost(r));
             } else if (i == MENU_SHRINE_NIGHTFARER) {
                 snprintf(name, sizeof name, "Nightfarer (skin)");
                 if (tower_nightfarer_cost() < 0) snprintf(right, sizeof right, "owned"); else snprintf(right, sizeof right, "%d", tower_nightfarer_cost());
@@ -1327,9 +1342,7 @@ void menu_controller_draw(void)
         }
         // What the selected one does
         const char *desc = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_desc((UpgradeId)selectedOption)
-                         : selectedOption == MENU_SHRINE_RELIC ? (!tower_relic_count() ? "Clear a circle to find a relic"
-                                                                  : tower_relic_equipped() < 0 ? "Left/Right: choose one for the climb"
-                                                                  : tower_relic_desc(tower_relic_equipped()))
+                         : selectedOption == MENU_SHRINE_RELIC ? tower_relic_desc(shrine_relic_browse())
                          : selectedOption == MENU_SHRINE_NIGHTFARER ? "A tracker's winged helm and blue coat"
                          : "Skills are learned in the climb";
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },

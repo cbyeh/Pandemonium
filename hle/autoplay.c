@@ -423,13 +423,16 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 phase = 1; t0 = frame;
             } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
-            static const char seq[] = "DDADADDDDDRRDA";
+            static const char seq[] = "DDADADDDDDRRADA";    // ... Relic: Right x2 (Moonlit Tome), A buys it; Nightfarer
             if (t >= 25 && seq[step]) {
                 char c = seq[step];
                 if (c == 'D') pressed->d_down = 1; else if (c == 'R') pressed->d_right = 1; else { pressed->a = 1; in->btn.a = 1; }
                 step++; t0 = frame;
             }
             if (!seq[step] && t == 40) {
+                extern bool tower_relic_owned(int id);
+                debugf("[shrine] owned:%s%s%s%s%s\n", tower_relic_owned(0) ? " 0" : "", tower_relic_owned(1) ? " 1" : "", tower_relic_owned(2) ? " 2" : "",
+                       tower_relic_owned(3) ? " 3" : "", tower_relic_owned(4) ? " 4" : "");
                 debugf("[shrine] relic equipped %d, Nightfarer owned %d, skin unlocked %d, Embers %d\n", tower_relic_equipped(),
                        tower_nightfarer_owned(), save_controller_skin_unlocked(SKIN_NIGHTFARER), tower_embers());
                 pressed->d_up = 1; phase = 2;
@@ -545,7 +548,26 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
                 if (d > 60.0f) { character.pos[0] += dx / d * (d - 60.0f); character.pos[2] += dz / d * (d - 60.0f); }
             }
+#if defined(HLE_RUN_SKIP) || defined(HLE_RUN_PICK)   // a set card: HLE_RUN_PICK moves right that many, Skip is left of the first
+            {
+                static int k;
+                if (!tower_draft_is_open()) k = 0;
+                else {
+                    k++;
+#ifdef HLE_RUN_SKIP
+                    if (k == 10) { pressed->d_left = 1; in->btn.d_left = 1; }
+#else
+                    if (k >= 10 && k < 10 + 6 * HLE_RUN_PICK && (k - 10) % 6 == 0) { pressed->d_right = 1; in->btn.d_right = 1; }
+#endif
+#ifndef HLE_DRAFT_HOLD
+#define HLE_DRAFT_HOLD 60       // frames the draft stays up (longer: for a screenshot)
+#endif
+                    if (k == HLE_DRAFT_HOLD) { pressed->a = 1; in->btn.a = 1; }
+                }
+            }
+#else
             if (tower_draft_is_open() && t % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
+#endif
 #ifndef HLE_RUN_FLOORS
 #define HLE_RUN_FLOORS 7
 #endif
