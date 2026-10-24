@@ -64,7 +64,12 @@ static const struct { const char *name, *desc; float embers; } NIGHTS[NIGHT_COUN
 };
 
 // ---- Relics: two of these effects each ----
-enum { RELIC_NONE, RELIC_DAMAGE, RELIC_WARD, RELIC_FLASK, RELIC_HEALTH, RELIC_STAMINA, RELIC_EMBERS, RELIC_SKILL, RELIC_FX_COUNT };
+// Half are two blessings, half a pact: a strong blessing with a curse (a 4-bit index each)
+enum { RELIC_NONE, RELIC_DAMAGE, RELIC_WARD, RELIC_FLASK, RELIC_HEALTH, RELIC_STAMINA, RELIC_EMBERS, RELIC_SKILL,
+       RELIC_FURY, RELIC_AVARICE, RELIC_BLESSED, RELIC_VAMPIRIC,         // the pacts' blessings
+       RELIC_FRAIL, RELIC_PARCHED, RELIC_LEADEN, RELIC_DREAD,            // and their curses
+       RELIC_FX_COUNT };
+#define RELIC_BASIC_COUNT (RELIC_SKILL - RELIC_NONE)
 static const struct { const char *adj, *desc; } RELIC_FX[RELIC_FX_COUNT] = {
     [RELIC_DAMAGE]  = { "Keen",    "+6% damage" },
     [RELIC_WARD]    = { "Warding", "-6% damage taken" },
@@ -73,8 +78,16 @@ static const struct { const char *adj, *desc; } RELIC_FX[RELIC_FX_COUNT] = {
     [RELIC_STAMINA] = { "Swift",   "+20% stamina regen" },
     [RELIC_EMBERS]  = { "Gilded",  "+20% Embers" },
     [RELIC_SKILL]   = { "Sage",    "Start knowing a skill" },
+    [RELIC_FURY]    = { "Wrathful",    "+15% damage" },
+    [RELIC_AVARICE] = { "Avaricious",  "+40% Embers" },
+    [RELIC_BLESSED] = { "Blessed",     "Start with a boon" },
+    [RELIC_VAMPIRIC]= { "Vampiric",    "Heal 3% of damage dealt" },
+    [RELIC_FRAIL]   = { "Frail",       "-20 max health" },
+    [RELIC_PARCHED] = { "Parched",     "-1 potion" },
+    [RELIC_LEADEN]  = { "Leaden",      "Rolls cost 25% more" },
+    [RELIC_DREAD]   = { "Dreaded",     "Bosses hit 10% harder" },
 };
-#define NIGHTFARER_COST 300
+#define NIGHTFARER_COST 450
 
 typedef struct { const char *name, *desc; } UpgradeDef;
 
@@ -85,7 +98,9 @@ static const UpgradeDef UPGRADES[UPG_COUNT] = {
     [UPG_VIGOR]          = { "Vigor",          "+10 max health" },
     [UPG_SKILL_MASTERY]  = { "Skill Mastery",  "Skill cooldowns -8%" },
 };
-static const int UPGRADE_COST[UPG_MAX_LEVEL] = { 30, 70, 120 };
+// Everything (the five upgrades to 3, the Nightfarer) is 2400 Embers: about 6.5 hours of climbing
+// (2.5 min a floor, runs reaching floor 4 at first and 16 with it all), 7.5 with the story and Bonus bosses
+static const int UPGRADE_COST[UPG_MAX_LEVEL] = { 50, 120, 220 };
 
 static struct {
     bool active;
@@ -188,8 +203,14 @@ void tower_relic_cycle(int dir)
 static void relic_award(void)
 {
     TowerSave t; save_controller_get_tower(&t);
-    int a = 1 + rng_next() % (RELIC_FX_COUNT - 1), b;
-    do b = 1 + rng_next() % (RELIC_FX_COUNT - 1); while (b == a);
+    int a, b;
+    if (rng_next() & 1) {       // a pact: one of the strong blessings, one curse
+        a = RELIC_FURY + rng_next() % 4;
+        b = RELIC_FRAIL + rng_next() % 4;
+    } else {                    // two of the plain blessings
+        a = 1 + rng_next() % RELIC_BASIC_COUNT;
+        do b = 1 + rng_next() % RELIC_BASIC_COUNT; while (b == a);
+    }
     uint8_t r = (uint8_t)((a << 4) | b);
     int slot = -1;
     for (int i = 0; i < TOWER_RELIC_SLOTS; i++) if (!t.relics[i]) { slot = i; break; }
@@ -235,10 +256,29 @@ void tower_begin_run(uint32_t seed)
 #endif
     // The equipped relic holds for the whole climb
     int e = tower_relic_equipped();
+#ifdef HLE_TOWER_RELIC      // test aid: climb with this relic (two effect indices, a * 16 + b)
+    e = 0;
+#endif
     if (e >= 0) {
         TowerSave t; save_controller_get_tower(&t);
         s.relicFx[0] = relic_fx(t.relics[e], 0); s.relicFx[1] = relic_fx(t.relics[e], 1);
-        if (has_relic(RELIC_SKILL)) s.skills |= 1 << (rng_next() % SKILL_COUNT);
+#ifdef HLE_TOWER_RELIC
+        s.relicFx[0] = relic_fx(HLE_TOWER_RELIC, 0); s.relicFx[1] = relic_fx(HLE_TOWER_RELIC, 1);
+#endif
+        if (has_relic(RELIC_SKILL) && character_skills_enabled()) s.skills |= 1 << (rng_next() % SKILL_COUNT);
+        if (has_relic(RELIC_BLESSED)) {      // a boon that needs nothing applied on the spot
+            static const BoonId GIFT[] = { BOON_EMBER_EDGE, BOON_IRON_SKIN, BOON_KINDLED_FLASK, BOON_SECOND_WIND,
+                                           BOON_FLEETFOOT, BOON_BLOODTHIRST, BOON_CRUSHING_BLOWS, BOON_RIPOSTE, BOON_RALLY };
+            s.stacks[GIFT[rng_next() % (sizeof GIFT / sizeof GIFT[0])]]++;
+        }
+#ifdef HLE_AUTOPLAY
+        int gift = -1;
+        for (int b = 0; b < BOON_COUNT; b++) if (s.stacks[b]) gift = b;
+        debugf("[relic] climbing with %s / %s: skills %x, gift %s, max health %.0f, potions %d, damage x%.2f, taken x%.2f, roll x%.2f, lifesteal %.2f\n",
+               RELIC_FX[s.relicFx[0]].adj, RELIC_FX[s.relicFx[1]].adj, s.skills, gift >= 0 ? BOONS[gift].name : "none",
+               (double)tower_mod_max_health(), tower_mod_max_potions(), (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken(),
+               (double)tower_mod_roll_cost(), (double)tower_mod_lifesteal());
+#endif
     }
 }
 
@@ -254,6 +294,7 @@ static int floor_embers(void)
 {
     float e = (8 * tower_circle() + 3 * ((s.floor - 1) % FLOORS_PER_CIRCLE)) * NIGHTS[s.night].embers;
     if (has_relic(RELIC_EMBERS)) e *= 1.2f;
+    if (has_relic(RELIC_AVARICE)) e *= 1.4f;
     return (int)(e + 0.5f);
 }
 
@@ -304,6 +345,10 @@ static bool offerable(BoonId b)
     case BOON_CRESCENT_ECHO: return knows(SKILL_MOON_BLADE_DANCE);
     case BOON_HALFMOON_PLUS: return knows(SKILL_HALFMOON_SLASH);
     case BOON_CLEAVE_PLUS:   return knows(SKILL_CRESCENT_CLEAVE);
+    // never a skill already known (the Sage relic teaches one without its card)
+    case BOON_LEARN_MOONBLADE: return !knows(SKILL_MOON_BLADE_DANCE);
+    case BOON_LEARN_HALFMOON:  return !knows(SKILL_HALFMOON_SLASH);
+    case BOON_LEARN_CLEAVE:    return !knows(SKILL_CRESCENT_CLEAVE);
     default: return true;
     }
 }
@@ -514,6 +559,7 @@ float tower_mod_damage_dealt(void)
     extern double nowS;
     if (tower_boon_stacks(BOON_RIPOSTE) && nowS < s.riposteUntil) m *= 1.5f;
     if (has_relic(RELIC_DAMAGE)) m *= 1.06f;
+    if (has_relic(RELIC_FURY)) m *= 1.15f;
     return m;
 }
 
@@ -524,6 +570,7 @@ float tower_mod_damage_taken(void)
     if (s.active && s.night == NIGHT_BLOOD_MOON) m *= 1.2f;
     if (s.active && s.night == NIGHT_STARFALL) m *= 1.1f;
     if (has_relic(RELIC_WARD)) m *= 0.94f;
+    if (has_relic(RELIC_DREAD)) m *= 1.1f;
     return m;
 }
 
@@ -554,7 +601,7 @@ float tower_on_sword_hit(void)
     return storm ? 12.0f : 0.0f;
 }
 
-int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + 3 * tower_boon_stacks(BOON_DEEP_FLASK) + 2 * has_relic(RELIC_FLASK) : 3; }   // Story and Bonus: 3
+int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + 3 * tower_boon_stacks(BOON_DEEP_FLASK) + 2 * has_relic(RELIC_FLASK) - has_relic(RELIC_PARCHED) : 3; }   // Story and Bonus: 3
 bool  tower_mod_skill_allowed(int skill) { return character_skills_enabled() && (!s.active || knows(skill)); }
 float tower_mod_skill_damage(int skill)
 {
@@ -567,15 +614,15 @@ float tower_mod_potion_heal(void)
     return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.25f * tower_boon_stacks(BOON_KINDLED_FLASK))
            * (tower_boon_stacks(BOON_BLOOD_PACT) ? 0.75f : 1.0f);
 }
-float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH); }
-float tower_mod_roll_cost(void) { return tower_boon_stacks(BOON_FLEETFOOT) ? 0.6f : 1.0f; }
+float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH) - 20.0f * has_relic(RELIC_FRAIL); }
+float tower_mod_roll_cost(void) { return (tower_boon_stacks(BOON_FLEETFOOT) ? 0.6f : 1.0f) * (has_relic(RELIC_LEADEN) ? 1.25f : 1.0f); }
 float tower_mod_stamina_regen(void) { return (1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND)) * (has_relic(RELIC_STAMINA) ? 1.2f : 1.0f); }
 float tower_mod_skill_cooldown(void)
 {
     return (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * powf_int(0.8f, tower_boon_stacks(BOON_MOON_MASTERY))
            * ((s.active && s.night == NIGHT_STARFALL) ? 0.7f : 1.0f);
 }
-float tower_mod_lifesteal(void) { return 0.06f * tower_boon_stacks(BOON_BLOODTHIRST); }
+float tower_mod_lifesteal(void) { return 0.06f * tower_boon_stacks(BOON_BLOODTHIRST) + 0.03f * has_relic(RELIC_VAMPIRIC); }
 
 // Rally, at Bloodborne's pace in our numbers: lost health stays winnable 1 s, then drains away
 // over 4 s; each hit wins back what it dealt (a sword hit 4: about four hits for a typical blow,
