@@ -44,7 +44,7 @@
 #define COL_IVORY  proc_rgb(232, 226, 210)
 
 typedef enum { DG_INTRO, DG_IDLE, DG_CLAW, DG_BITE, DG_TAIL, DG_BREATH, DG_CHARGE, DG_FLY,
-               DG_ROAR, DG_NOVA, DG_ORBS, DG_BEAM, DG_TIRED, DG_DEAD, DG_WHIP, DG_FLINCH, DG_DOWN } DgState;
+               DG_ROAR, DG_NOVA, DG_ORBS, DG_BEAM, DG_TIRED, DG_DEAD, DG_WHIP, DG_DOWN } DgState;
 
 typedef struct { float p[3], from[3], t; bool moving; } Foot;
 typedef struct { float p[3], v[3], age, life, size; } Flame;
@@ -160,18 +160,6 @@ bool dragon_boss_stagger(Boss* b)
     enter(DG_DOWN);     // its legs give: a lurch, then down on its belly, head lolling (dg_down)
     b->staggerT = 2.5f;
     return true;
-}
-
-void dragon_boss_half_stagger(Boss* b)
-{
-    (void)b;
-    // Flinches: rears back shaking its head; a windup (before the strike) is broken off
-    if (!s.ready || s.state == DG_INTRO || s.state == DG_FLY || s.state == DG_ROAR || s.state == DG_DOWN || s.state == DG_DEAD || s.alt > 1.0f) return;
-    bool winding = (s.state == DG_CLAW && (s.step == 0 || s.step == 2)) || ((s.state == DG_BITE || s.state == DG_BREATH || s.state == DG_CHARGE ||
-                   s.state == DG_WHIP || s.state == DG_NOVA || s.state == DG_BEAM) && s.step == 0) || s.state == DG_IDLE;
-    if (!winding) return;
-    s.glow = 0.0f;
-    enter(DG_FLINCH);
 }
 
 static void player_chest(float o[3]) { o[0] = character.pos[0]; o[1] = character.pos[1] + 12.0f; o[2] = character.pos[2]; }
@@ -456,7 +444,7 @@ void dragon_boss_begin(Boss* boss)
     boss->health = boss->maxHealth;
     boss->mode = BOSS_MODE_CINEMATIC;       // not damageable until it has landed
     boss->state = BOSS_STATE_INTRO;
-    boss->poise = boss->poiseIdleT = boss->staggerT = boss->recoilT = 0.0f; boss->halfDone = false;
+    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
     boss->damageFlashTimer = 0.0f;
     boss->velX = boss->velZ = 0.0f;
     boss->handAttackColliderActive = false;
@@ -1096,7 +1084,7 @@ void dragon_boss_update(Boss* b, float dt)
 
 
 #ifdef HLE_TEST_DUMMY
-    { extern void hle_open_tick(bool, float); hle_open_tick((s.state == DG_IDLE || s.state == DG_TIRED || s.state == DG_FLINCH || s.state == DG_DOWN), dt); }   // test aid: measure the openings
+    { extern void hle_open_tick(bool, float); hle_open_tick((s.state == DG_IDLE || s.state == DG_TIRED || s.state == DG_DOWN), dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {
     case DG_INTRO:
@@ -1142,13 +1130,6 @@ void dragon_boss_update(Boss* b, float dt)
     case DG_NOVA:   nova_update(b, dt); break;
     case DG_ORBS:   orbs_update(b, dt); break;
     case DG_BEAM:   beam_update(b, dt); break;
-
-    case DG_FLINCH:
-        // Rears back, head thrown up and shaking, then settles: an opening of about a second
-        s.tNeckPitch = 0.75f; s.tNeckYaw = 0.35f * sinf(s.t * 22.0f) * (1.0f - clamp01(s.t / 0.7f)); s.tJaw = 0.7f;
-        s.tCrouch = -2.0f; s.tWingRaise = 0.7f; s.tWingSpan = 0.9f; s.tTail = 0.25f * sinf(s.t * 9.0f); s.poseRate = 10.0f;
-        if (s.t >= 1.0f / sm) enter(DG_IDLE);
-        break;
 
     case DG_DOWN: {
         // A full stagger: a lurch, the legs buckle and it drops onto its belly, head lolling,

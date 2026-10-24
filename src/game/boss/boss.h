@@ -275,8 +275,6 @@ typedef struct Boss {
 
     // Stagger meter: hits fill it (0..1), it drains when left alone; full, the boss staggers
     float poise, poiseIdleT, staggerT;     // staggerT > 0: staggered, hits land harder
-    float recoilT;                         // a half stagger (the meter half full): the flinch, counting down
-    bool halfDone;                         // this fill's half stagger has played
 } Boss;
 
 // Intent/command struct - what AI wants to happen this frame
@@ -315,8 +313,6 @@ void boss_update(Boss* boss);
 void boss_draw(Boss* boss);
 // A broken stagger meter: each boss's own stagger (false if it can't right now: airborne, mid-cast)
 bool boss_try_stagger(Boss* boss);
-void boss_try_half_stagger(Boss* boss);
-float boss_recoil(const Boss* boss);     // 0..1: a half stagger's flinch, for drawing
 void boss_draw_ui(Boss* boss, void* viewport); // T3DViewport* but avoiding header dependency
 
 void boss_turn_towards_yaw(Boss *boss, float targetYaw, float maxTurn);
@@ -345,6 +341,9 @@ void boss_apply_damage(Boss* boss, float amount);
 /** What the current boss's blows are multiplied by (the Bonus bosses' tuning; 1 for the Guardian). */
 float boss_damage_scale(void);
 /** A hit with its own share of the stagger meter (boss_apply_damage: the damage's, 28 fills it). */
+// The stagger meter, as in Elden Ring: a blow's stance damage, not its damage. This much fills it:
+// 12 plain sword hits (combo finishers and skills count for more)
+#define POISE_DAMAGE 48.0f
 void boss_apply_hit(Boss* boss, float amount, float poise);
 // Full health for its current phase, as the Skills setting or a Tower run sizes it.
 void boss_set_full_health(Boss* boss);

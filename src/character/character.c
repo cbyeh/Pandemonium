@@ -1182,7 +1182,8 @@ static const float HALFMOON_RADIUS = 85.0f;
 // medium reward (10, 2.5 hits in 1.3 s), the Halfmoon a high risk (a 2 s root a hit breaks) for
 // a high reward (28, 7 hits in 2.8 s)
 static const float HALFMOON_DAMAGE = 28.0f;
-static const float HALFMOON_POISE = 0.35f;         // of the stagger meter (its damage alone would fill it)
+static const float HALFMOON_POISE = 0.30f;         // of the stagger meter, about four sword hits (its damage alone would fill it)
+static const float FINISHER_POISE = 2.5f;          // a combo's third hit: this many plain hits' stance damage
 static const float CLEAVE_RELEASE = 0.85f;         // interruptible wind-up (the SkillCleave upswing)
 static const float CLEAVE_END = 1.7f;
 static const int   CLEAVE_BLADES = 5;
@@ -1363,7 +1364,7 @@ static void update_skill(float dt)
             float dx = -fm_sinf(a), dz = fm_cosf(a);
             float origin[3] = { character.pos[0] + dx * dist, groundY, character.pos[2] + dz * dist };
             // 56/s for 1.6 s: ~100 out, the outer blades ~65 to each side
-            skill_fx_next_poise(1.25f / 28.0f);   // the base tick's (not Cleave+'s)
+            skill_fx_next_poise(1.25f / POISE_DAMAGE);   // the base tick's (not Cleave+'s)
             skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 56.0f, 0.0f, dz * 56.0f },
                                 1.25f * tower_mod_skill_damage(SKILL_CRESCENT_CLEAVE), 4, 0.3f, 1.6f, false);    // ~8 ticks a cast in reach: 10
             skill_fx_spawn_burst(origin, a);
@@ -2803,8 +2804,8 @@ void character_update(void)
             if (!character.currentAttackHasHit && charWeaponCollision) {
                 Boss* boss = boss_get_instance();
                 if (boss) {
-                    boss_apply_damage(boss, damage);
                     bool finisher = attackComboIndex == 3;     // the combo's last hit lands heaviest
+                    boss_apply_hit(boss, damage, (finisher ? FINISHER_POISE : 1.0f) * damage / POISE_DAMAGE);
                     game_time_hitstop(finisher ? 0.08f : 0.045f);     // hit-stop: the blow lands with weight
                     if (finisher) screen_shake_set_shake_mag(3.0f);
 #ifdef HLE_AUTOPLAY

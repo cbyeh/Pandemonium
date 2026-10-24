@@ -911,8 +911,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE && frame % 20 == 0) debugf("[cam] f%d aerial, y %.0f\n", frame, (double)boss->pos[1]);
             }
 #endif
-#ifdef HLE_TEST_STAGGER   // the stagger meter filled in steps every 5 s: a half stagger, then a full one, and again
-            if (boss && (frame % 60) == 0 && boss->staggerT <= 0.0f && boss->recoilT <= 0.0f) { boss->poise = fminf(1.0f, boss->poise + 0.55f); boss->poiseIdleT = 0.0f;
+#ifdef HLE_TEST_STAGGER   // the stagger meter filled in steps: a full stagger every other second, and again
+            if (boss && (frame % 60) == 0 && boss->staggerT <= 0.0f) { boss->poise = fminf(1.0f, boss->poise + 0.55f); boss->poiseIdleT = 0.0f;
                 debugf("[stagtest] f%d poise %.2f\n", frame, (double)boss->poise); }
 #endif
 #ifdef HLE_DUMMY_MOVE   // keep running in a wide circle (the cloth in motion)

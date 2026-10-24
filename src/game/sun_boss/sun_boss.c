@@ -77,7 +77,6 @@ static struct {
     float raysSpin;
     float chainAcc;         // time gathered for the chains' next step (every other frame)
     float downT;            // knocked down by a full stagger: time since it hit the floor (< 0: not)
-    float knock[2];         // a half stagger's shove, per second, easing off
     bool chainStepped;      // stepped this frame: drawn halfway from the last state
 } s;
 
@@ -175,7 +174,7 @@ void sun_boss_begin(Boss* boss)
     boss->health = boss->maxHealth;
     boss->mode = BOSS_MODE_CINEMATIC;       // not damageable until it has come down
     boss->state = BOSS_STATE_INTRO;
-    boss->poise = boss->poiseIdleT = boss->staggerT = boss->recoilT = 0.0f; boss->halfDone = false;
+    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
     boss->damageFlashTimer = 0.0f;
     boss->velX = boss->velZ = 0.0f;
     boss->handAttackColliderActive = false;
@@ -196,7 +195,7 @@ void sun_boss_begin(Boss* boss)
     s.cdGlare = 2.0f; s.cdRain = 6.0f; s.cdCorona = 10.0f; s.cdDive = 14.0f; s.cdLash = 4.0f; s.cdSweep = 9.0f;
     s.chainsReady = false;
     s.weights = true;
-    s.downT = -1.0f; s.knock[0] = s.knock[1] = 0.0f;
+    s.downT = -1.0f;
     for (int i = 0; i < RAIN_MAX; i++) s.rainT[i] = -1.0f;
     enter(SB_INTRO);
 }
@@ -323,22 +322,6 @@ bool sun_boss_stagger(Boss* b)
     s.downT = 0.0f;         // it falls from where it was: a bounce and a rocking on the floor
     b->staggerT = 2.5f;
     return true;
-}
-
-void sun_boss_half_stagger(Boss* b)
-{
-    // Flinches: shoved back through the air, the corona flaring; a windup is broken off
-    if (!s.ready || s.state == SB_INTRO || s.state == SB_DIVE || s.state == SB_REST || s.state == SB_BREAK || s.state == SB_DEAD) return;
-    float dx, dz, d = to_player(b, &dx, &dz);
-    if (d > 1e-3f) { s.knock[0] = -dx / d * 70.0f; s.knock[1] = -dz / d * 70.0f; }
-    s.raysSpin = 7.0f;
-    b->damageFlashTimer = 0.3f;
-    bool winding = (s.state == SB_GLARE && s.step == 0) || (s.state == SB_CORONA && s.step == 0) ||
-                   ((s.state == SB_LASH || s.state == SB_SWEEP) && s.step == 0);
-    if (winding) {
-        for (int k = 0; k < NCH; k++) s.ch[k].kin = s.ch[k].hot = false;
-        enter(SB_HOVER);
-    }
 }
 
 // ---- Shackles ----
@@ -594,12 +577,6 @@ void sun_boss_update(Boss* b, float dt)
     rain_tick(dt);
     if (!s.chainsReady) chains_reset(b);
 
-    if (s.knock[0] != 0.0f || s.knock[1] != 0.0f) {      // a half stagger's shove
-        move_toward(b, b->pos[0] + s.knock[0], b->pos[2] + s.knock[1], sqrtf(s.knock[0] * s.knock[0] + s.knock[1] * s.knock[1]), dt);
-        float k = fmaxf(0.0f, 1.0f - 5.0f * dt);
-        s.knock[0] *= k; s.knock[1] *= k;
-        if (fabsf(s.knock[0]) + fabsf(s.knock[1]) < 2.0f) s.knock[0] = s.knock[1] = 0.0f;
-    }
     float dx, dz, dist = to_player(b, &dx, &dz);
 
     if (b->state == BOSS_STATE_DEAD && s.state != SB_DEAD) {
@@ -815,7 +792,6 @@ void sun_boss_draw(Boss* b)
     float yaw = -b->rot[1];     // Tiny3D's yaw turns +z the other way round
     // Knocked down: it rocks side to side on the floor, settling (and squashes as it lands)
     float rock = s.state == SB_REST && s.downT > 0.25f ? 0.45f * sinf((s.downT - 0.25f) * 7.0f) * expf(-(s.downT - 0.25f) * 1.2f) : 0.0f;
-    scale *= 1.0f - 0.06f * boss_recoil(b);
     proc_mesh_set_transform(s.unshackled ? &s.eyeHot : &s.eye, scale, (float[3]){ rock, yaw, 0.0f }, b->pos);
 
     // Corona: two rings of flame tongues behind the eye, turning opposite ways

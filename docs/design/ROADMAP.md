@@ -78,7 +78,7 @@ The first card is a skill card (learn a skill or upgrade one) while any are left
 A best blessing (Might, Bulwark) with a curse comes out a little ahead; the others about even, so Skip is a real choice.
 
 ### Stagger
-The meter fills from the blow, not its damage (`boss_apply_hit`): a sword hit is 1/7, Halfmoon Slash 35%. Damage boons don't add stagger; Crushing Blows does. It drains 8% a second after 4 s untouched.
+The meter fills from the blow, not its damage (`boss_apply_hit`, `POISE_DAMAGE`), as stance does in Elden Ring: a sword hit is 1/12, a combo's third hit 2.5 of those, Halfmoon Slash 30%, the Cleave its damage's worth. There is no half stagger. Damage boons don't add stagger; Crushing Blows does. It keeps 5 s untouched (a dodge or two), then drains 10% a second. A bot that swings without dodging breaks a stance every 35-40 s.
 
 ## The Shrine (shipped)
 Embers are spent on the title screen; everything applies only in the Tower. Everything costs 2400 Embers, about 6.5 hours of climbing (7.5 with the story and Bonus bosses).

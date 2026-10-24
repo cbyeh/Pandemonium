@@ -181,14 +181,8 @@ static void boss_update_transforms(Boss* boss)
     if (!boss || !boss->modelMat) return;
 
     T3DMat4FP* mat = (T3DMat4FP*)boss->modelMat;
-    // A half stagger: jolted back and down a little, squashed
-    float k = boss_recoil(boss), p[3] = { boss->pos[0], boss->pos[1] - 2.5f * k, boss->pos[2] };
-    float sc[3] = { boss->scale[0] * (1.0f + 0.05f * k), boss->scale[1] * (1.0f - 0.07f * k), boss->scale[2] * (1.0f + 0.05f * k) };
-    if (k > 0.0f) {
-        extern Character character;
-        float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz) + 1e-3f;
-        p[0] += dx / d * 6.0f * k; p[2] += dz / d * 6.0f * k;
-    }
+    float p[3] = { boss->pos[0], boss->pos[1], boss->pos[2] };
+    float sc[3] = { boss->scale[0], boss->scale[1], boss->scale[2] };
     t3d_mat4fp_from_srt_euler(mat, sc, boss->rot, p);
 
     boss_update_shadow_mat(boss);
@@ -518,10 +512,11 @@ static inline void boss_update_shadow_mat(Boss* boss)
 // Health per fight, skills or not (the D-pad skills are tuned under the sword). The bonus bosses are
 // sized to the same difficulty as the Guardian's two phases together (measured damage
 // against a dummy + a binomial dodge model): they hit softer but more often.
-#define POISE_DAMAGE        28.0f    // stagger meter: this much damage fills it (7 sword hits; the half stagger on the 4th)
+// The stagger meter keeps through a dodge or two, then drains (POISE_DAMAGE: boss.h)
+#define POISE_KEEP_S        5.0f     // no hits this long: it drains
+#define POISE_DRAIN         0.10f    // a second, of the full meter
 #define STAGGER_DAMAGE_MULT 1.3f
 #define GUARDIAN_STAGGER_S  2.0f
-#define RECOIL_S            0.6f     // a half stagger's flinch
 
 static inline float boss_target_max_health(int phase)
 {
@@ -554,10 +549,9 @@ static void boss_sync_max_health(Boss* boss)
 // The stagger meter drains once the player lets up; full, the boss staggers as soon as it can
 static void boss_poise_update(Boss* boss, float dt)
 {
-    if (boss->recoilT > 0.0f) boss->recoilT = fmaxf(0.0f, boss->recoilT - dt);
     if (boss->staggerT > 0.0f) {
         boss->staggerT -= dt;
-        if (boss->staggerT <= 0.0f) { boss->staggerT = 0.0f; boss->poise = 0.0f; boss->halfDone = false; }
+        if (boss->staggerT <= 0.0f) { boss->staggerT = 0.0f; boss->poise = 0.0f; }
         return;
     }
     if (boss->mode != BOSS_MODE_COMBAT || boss->health <= 0.0f) { boss->poise = 0.0f; return; }
@@ -569,41 +563,12 @@ static void boss_poise_update(Boss* boss, float dt)
             game_time_hitstop(0.12f);           // the stance breaks: a beat of stillness, then a moment of slow motion
             game_time_slowmo(0.5f, 0.4f);
 #ifdef HLE_AUTOPLAY
-            debugf("[stagger] boss %d staggered for %.1f s\n", boss->phaseIndex, (double)boss->staggerT);
+            debugf("[stagger] boss %d staggered for %.1f s at %.1f s\n", boss->phaseIndex, (double)boss->staggerT, (double)gameTime);
 #endif
         }
         return;
     }
-    // Half full: a half stagger, once a fill (a flinch; the Bonus bosses lose the move they were winding up)
-    if (!boss->halfDone && boss->poise >= 0.5f) {
-        boss->halfDone = true;
-        boss->recoilT = RECOIL_S;
-        boss_try_half_stagger(boss);
-        audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH1, 0.6f, 0.0f);
-#ifdef HLE_AUTOPLAY
-        debugf("[stagger] boss %d half stagger\n", boss->phaseIndex);
-#endif
-    }
-    if (boss->poiseIdleT > 4.0f) boss->poise = fmaxf(0.0f, boss->poise - 0.08f * dt);    // 4 s let alone: it drains, 8% a second
-    if (boss->poise < 0.25f) boss->halfDone = false;     // drained well down: the next fill flinches again
-}
-
-void boss_try_half_stagger(Boss* boss)
-{
-    // The Guardian's is the recoil alone (its patterns stay as they were)
-    if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) fallen_knight_half_stagger(boss);
-    else if (boss->phaseIndex == SUN_BOSS_PHASE) sun_boss_half_stagger(boss);
-    else if (boss->phaseIndex == DRAGON_BOSS_PHASE) dragon_boss_half_stagger(boss);
-}
-
-float boss_recoil(const Boss* boss)
-{
-    // 0..1..0 over the flinch: a sharp jolt back, a slower recovery
-    if (boss->recoilT <= 0.0f) return 0.0f;
-    float u = 1.0f - boss->recoilT / RECOIL_S;
-    if (u < 0.15f) return sinf(u / 0.15f * 1.5707963f);      // eased into the jolt and out of the recovery, no corners
-    float v = (u - 0.15f) / 0.85f;
-    return 1.0f - v * v * (3.0f - 2.0f * v);
+    if (boss->poiseIdleT > POISE_KEEP_S) boss->poise = fmaxf(0.0f, boss->poise - POISE_DRAIN * dt);
 }
 
 bool boss_try_stagger(Boss* boss)
@@ -807,7 +772,7 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
     if (boss->staggerT > 0.0f) amount *= STAGGER_DAMAGE_MULT * tower_mod_stagger_damage();     // staggered: hits land harder
     boss->health -= amount;
     if (boss->health < 0.0f) boss->health = 0.0f;
-    if (boss->staggerT <= 0.0f) {      // the stagger meter: seven sword hits without letting up
+    if (boss->staggerT <= 0.0f) {      // the stagger meter
         // from the blow itself, not the damage: the same hits fill the same share on every floor,
         // whatever the damage boons (Crushing Blows, a stagger boon, is the one that adds)
         boss->poise = fminf(1.0f, boss->poise + poise * tower_mod_poise());
@@ -1100,7 +1065,7 @@ void boss_init(Boss* boss)
     boss->visible = true;
     boss->mode = BOSS_MODE_INACTIVE;
     boss->pendingRequests = 0;
-    boss->poise = boss->poiseIdleT = boss->staggerT = boss->recoilT = 0.0f; boss->halfDone = false;
+    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
 
     boss_anim_init(boss);
     boss_ai_init(boss);
@@ -1211,7 +1176,7 @@ void boss_reset(Boss* boss)
     boss->visible = true;
     boss->mode = BOSS_MODE_INACTIVE;
     boss->pendingRequests = 0;
-    boss->poise = boss->poiseIdleT = boss->staggerT = boss->recoilT = 0.0f; boss->halfDone = false;
+    boss->poise = boss->poiseIdleT = boss->staggerT = 0.0f;
 
     boss_ai_init(boss);
     boss_anim_init(boss);
