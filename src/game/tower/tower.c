@@ -159,11 +159,24 @@ int tower_relic_count(void)
     return n;
 }
 
+// The relics there are: four of two blessings that work together, and a pact whose curse is
+// the price of its blessing. Old saves' other pairs keep working (named by their effects)
+#define R(a, b) (uint8_t)(((a) << 4) | (b))
+static const struct { uint8_t fx; const char *name; } RELICS[] = {
+    { R(RELIC_DAMAGE, RELIC_HEALTH),  "Knight's Oath" },     // an all-rounder
+    { R(RELIC_WARD, RELIC_FLASK),     "Saint's Chalice" },   // to last
+    { R(RELIC_SKILL, RELIC_STAMINA),  "Moonlit Tome" },      // a skill from the start, the stamina to use it
+    { R(RELIC_EMBERS, RELIC_DAMAGE),  "Ember Crown" },       // for Embers
+    { R(RELIC_FURY, RELIC_FRAIL),     "Brand of Wrath" },    // glass cannon
+};
+#undef R
+
 const char* tower_relic_name(int i)
 {
     static char name[40];
     TowerSave t; save_controller_get_tower(&t);
     if (i < 0 || i >= TOWER_RELIC_SLOTS || !t.relics[i]) return "None";
+    for (unsigned k = 0; k < sizeof RELICS / sizeof RELICS[0]; k++) if (RELICS[k].fx == t.relics[i]) return RELICS[k].name;
     snprintf(name, sizeof name, "%s %s Relic", RELIC_FX[relic_fx(t.relics[i], 0)].adj, RELIC_FX[relic_fx(t.relics[i], 1)].adj);
     return name;
 }
@@ -198,20 +211,6 @@ void tower_relic_cycle(int dir)
     save_controller_set_tower(&t);
 }
 
-// The relics there are: four of two blessings that work together, four pacts whose curse is
-// the price of a style (old saves' other pairs keep working)
-#define R(a, b) (uint8_t)(((a) << 4) | (b))
-static const uint8_t RELICS[] = {
-    R(RELIC_DAMAGE, RELIC_HEALTH),     // Keen Hale: an all-rounder
-    R(RELIC_WARD, RELIC_FLASK),        // Warding Brimming: to last
-    R(RELIC_SKILL, RELIC_STAMINA),   // Sage Swift: a skill from the start, the stamina to use it
-    R(RELIC_EMBERS, RELIC_DAMAGE),     // Gilded Keen: for Embers
-    R(RELIC_FURY, RELIC_FRAIL),        // Wrathful Frail: glass cannon
-    R(RELIC_VAMPIRIC, RELIC_DREAD),    // Vampiric Dreaded: heal by hitting, hit harder in turn
-    R(RELIC_AVARICE, RELIC_PARCHED),   // Avaricious Parched: greed, fewer potions
-    R(RELIC_BLESSED, RELIC_LEADEN),    // Blessed Leaden: a boon to start, heavier rolls
-};
-#undef R
 
 // A circle cleared: one of the relics, preferring one not held; with all slots full the oldest goes
 static void relic_award(void)
@@ -221,10 +220,10 @@ static void relic_award(void)
     uint8_t cand[N]; int nc = 0;
     for (int i = 0; i < N; i++) {
         bool held = false;
-        for (int k = 0; k < TOWER_RELIC_SLOTS; k++) held |= t.relics[k] == RELICS[i];
-        if (!held) cand[nc++] = RELICS[i];
+        for (int k = 0; k < TOWER_RELIC_SLOTS; k++) held |= t.relics[k] == RELICS[i].fx;
+        if (!held) cand[nc++] = RELICS[i].fx;
     }
-    uint8_t r = nc ? cand[rng_next() % nc] : RELICS[rng_next() % N];
+    uint8_t r = nc ? cand[rng_next() % nc] : RELICS[rng_next() % N].fx;
     int slot = -1;
     for (int i = 0; i < TOWER_RELIC_SLOTS; i++) if (!t.relics[i]) { slot = i; break; }
     if (slot < 0) {

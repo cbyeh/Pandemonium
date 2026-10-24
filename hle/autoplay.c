@@ -419,7 +419,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         int t = frame - t0;
         if (phase == 0) {
             if (menu_controller_is_active()) {
-                TowerSave ts; save_controller_get_tower(&ts); debugf("[shrine] Embers at the menu %d\n", ts.embers); ts.embers = 500; ts.relics[0] = 0x12; ts.relics[1] = 0x9F; save_controller_set_tower(&ts);   // the second relic a pact (the longest name)
+                TowerSave ts; save_controller_get_tower(&ts); debugf("[shrine] Embers at the menu %d\n", ts.embers); ts.embers = 500; ts.relics[0] = 0x12; ts.relics[1] = 0x8C; save_controller_set_tower(&ts);   // the second relic a pact (Brand of Wrath)
                 phase = 1; t0 = frame;
             } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
