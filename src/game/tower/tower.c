@@ -64,12 +64,11 @@ static const struct { const char *name, *desc; float embers; } NIGHTS[NIGHT_COUN
 };
 
 // ---- Relics: two of these effects each ----
-// Half are two blessings, half a pact: a strong blessing with a curse (a 4-bit index each)
+// Plain relics are two blessings, pacts a strong blessing with a curse (a 4-bit index each; RELICS below)
 enum { RELIC_NONE, RELIC_DAMAGE, RELIC_WARD, RELIC_FLASK, RELIC_HEALTH, RELIC_STAMINA, RELIC_EMBERS, RELIC_SKILL,
        RELIC_FURY, RELIC_AVARICE, RELIC_BLESSED, RELIC_VAMPIRIC,         // the pacts' blessings
        RELIC_FRAIL, RELIC_PARCHED, RELIC_LEADEN, RELIC_DREAD,            // and their curses
        RELIC_FX_COUNT };
-#define RELIC_BASIC_COUNT (RELIC_SKILL - RELIC_NONE)
 static const struct { const char *adj, *desc; } RELIC_FX[RELIC_FX_COUNT] = {
     [RELIC_DAMAGE]  = { "Keen",    "+6% damage" },
     [RELIC_WARD]    = { "Warding", "-6% damage taken" },
@@ -199,19 +198,33 @@ void tower_relic_cycle(int dir)
     save_controller_set_tower(&t);
 }
 
-// A circle cleared: a relic of two random effects; with all slots full the oldest goes
+// The relics there are: four of two blessings that work together, four pacts whose curse is
+// the price of a style (old saves' other pairs keep working)
+#define R(a, b) (uint8_t)(((a) << 4) | (b))
+static const uint8_t RELICS[] = {
+    R(RELIC_DAMAGE, RELIC_HEALTH),     // Keen Hale: an all-rounder
+    R(RELIC_WARD, RELIC_FLASK),        // Warding Brimming: to last
+    R(RELIC_SKILL, RELIC_STAMINA),   // Sage Swift: a skill from the start, the stamina to use it
+    R(RELIC_EMBERS, RELIC_DAMAGE),     // Gilded Keen: for Embers
+    R(RELIC_FURY, RELIC_FRAIL),        // Wrathful Frail: glass cannon
+    R(RELIC_VAMPIRIC, RELIC_DREAD),    // Vampiric Dreaded: heal by hitting, hit harder in turn
+    R(RELIC_AVARICE, RELIC_PARCHED),   // Avaricious Parched: greed, fewer potions
+    R(RELIC_BLESSED, RELIC_LEADEN),    // Blessed Leaden: a boon to start, heavier rolls
+};
+#undef R
+
+// A circle cleared: one of the relics, preferring one not held; with all slots full the oldest goes
 static void relic_award(void)
 {
     TowerSave t; save_controller_get_tower(&t);
-    int a, b;
-    if (rng_next() & 1) {       // a pact: one of the strong blessings, one curse
-        a = RELIC_FURY + rng_next() % 4;
-        b = RELIC_FRAIL + rng_next() % 4;
-    } else {                    // two of the plain blessings
-        a = 1 + rng_next() % RELIC_BASIC_COUNT;
-        do b = 1 + rng_next() % RELIC_BASIC_COUNT; while (b == a);
+    enum { N = sizeof RELICS / sizeof RELICS[0] };
+    uint8_t cand[N]; int nc = 0;
+    for (int i = 0; i < N; i++) {
+        bool held = false;
+        for (int k = 0; k < TOWER_RELIC_SLOTS; k++) held |= t.relics[k] == RELICS[i];
+        if (!held) cand[nc++] = RELICS[i];
     }
-    uint8_t r = (uint8_t)((a << 4) | b);
+    uint8_t r = nc ? cand[rng_next() % nc] : RELICS[rng_next() % N];
     int slot = -1;
     for (int i = 0; i < TOWER_RELIC_SLOTS; i++) if (!t.relics[i]) { slot = i; break; }
     if (slot < 0) {
