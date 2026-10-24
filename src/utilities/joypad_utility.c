@@ -41,6 +41,13 @@ void joypad_set_gameplay(bool on)
 #endif
     s_gameplay = on;
 }
+const char* joypad_skill_button(int dir)
+{
+    static const char *D[3] = { "D-up", "D-right", "D-down" }, *C[3] = { "C-up", "C-right", "C-down" };
+    if (dir < 0 || dir > 2) return "";
+    return s_layout == LAYOUT_SKILLS_ON_C ? C[dir] : D[dir];
+}
+
 const char* joypad_layout_name(int layout)
 {
     static const char *N[LAYOUT_COUNT] = { "Classic", "A/B Swapped", "Skills on C" };

@@ -21,6 +21,7 @@ enum { LAYOUT_CLASSIC, LAYOUT_SWAPPED, LAYOUT_SKILLS_ON_C, LAYOUT_COUNT };
 void joypad_set_layout(int layout);
 int  joypad_get_layout(void);
 const char* joypad_layout_name(int layout);
+const char* joypad_skill_button(int dir);   // a skill's button in the layout (0 up, 1 right, 2 down): "D-up" or "C-up"
 void joypad_set_gameplay(bool on);     // the scene says, each frame, whether the player is in control
 
 #endif

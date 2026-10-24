@@ -57,6 +57,7 @@ bool tower_draft_update(bool left, bool right, bool confirm);
 void tower_draft_draw(void);
 void tower_hud_draw(void);              // floor / circle during a run fight
 const char* tower_death_summary(void);   // a line for the death screen
+const char* tower_run_summary(void);     // the run so far, for the pause menu (several lines)
 
 // ---- Nights: from the second circle each circle has one (a trade-off, more Embers) ----
 const char* tower_night_name(void);     // "" for none

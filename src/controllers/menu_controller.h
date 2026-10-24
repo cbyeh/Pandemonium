@@ -18,10 +18,12 @@ typedef enum {
     MENU_BONUS,
     MENU_TOWER,
     MENU_SHRINE,
+    MENU_RUN,           // the Tower run's boons, pacts and totals (from the pause menu)
 } MenuState;
 
 typedef enum {
     MENU_MAIN_RESUME,
+    MENU_MAIN_RUN,      // Tower runs only
     MENU_MAIN_RESTART,
     MENU_MAIN_SETTINGS,
     MENU_MAIN_CONTROLS,

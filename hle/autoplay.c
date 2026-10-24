@@ -423,10 +423,15 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 phase = 1; t0 = frame;
             } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
-            static const char seq[] = "DDADADDDDDRRADA";    // ... Relic: Right x2 (Moonlit Tome), A buys it; Nightfarer
+#ifdef HLE_SHRINE_NONE
+            static const char seq[] = "DDADADDDDDRRADAULLA";    // ... and back up to Relic, Left x2 (to None), A: no relic
+#else
+            static const char seq[] = "DDADADDDDDRRADA";    // ... Relic: Right x2 (from None: Saint's Chalice), A buys it; Nightfarer
+#endif
             if (t >= 25 && seq[step]) {
                 char c = seq[step];
-                if (c == 'D') pressed->d_down = 1; else if (c == 'R') pressed->d_right = 1; else { pressed->a = 1; in->btn.a = 1; }
+                if (c == 'D') pressed->d_down = 1; else if (c == 'R') pressed->d_right = 1;
+                else if (c == 'U') pressed->d_up = 1; else if (c == 'L') pressed->d_left = 1; else { pressed->a = 1; in->btn.a = 1; }
                 step++; t0 = frame;
             }
             if (!seq[step] && t == 40) {
@@ -567,6 +572,15 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
 #else
             if (tower_draft_is_open() && t % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
+#endif
+#ifdef HLE_RUN_PAUSE        // on floor 2: pause, open Run (one down) and stay on the page
+            if (lastFloor == 2) {
+                if (t == 30) pressed->start = 1;
+                if (t == 50) { pressed->d_down = 1; in->btn.d_down = 1; }
+                if (t == 70) { pressed->a = 1; in->btn.a = 1; }
+                if (t == 400 || t == 420) { pressed->b = 1; in->btn.b = 1; }     // back, then close the pause menu
+                if (t >= 70 && t < 430) return;
+            }
 #endif
 #ifndef HLE_RUN_FLOORS
 #define HLE_RUN_FLOORS 7

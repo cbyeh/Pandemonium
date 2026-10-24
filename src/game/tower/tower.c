@@ -9,6 +9,7 @@
 #include "save_controller.h"
 #include "video_controller.h"
 #include "video_layout.h"
+#include "joypad_utility.h"
 
 // ---- Tuning ----
 #define FLOORS_PER_CIRCLE   5
@@ -63,16 +64,16 @@ static const struct { const char *name, *desc; } BLESSINGS[PB_COUNT] = {
     [PB_MIGHT]       = { "Might",         "+8% damage" },
     [PB_BULWARK]     = { "Bulwark",       "-6% damage taken" },
     [PB_VITALITY]    = { "Vitality",      "+12 max health" },
-    [PB_WOUNDED]     = { "Wounded Foe",   "+12% damage vs a boss below 50%" },
+    [PB_WOUNDED]     = { "Wounded Foe",   "+12% damage boss < 50%" },
     [PB_STAGGERED]   = { "Breaker",       "+15% damage on staggers" },
-    [PB_LAST_BREATH] = { "Last Breath",   "+15% damage below 30% health" },
+    [PB_LAST_BREATH] = { "Last Breath",   "+15% damage you < 30%" },
 };
-static const char *CURSES[PC_COUNT] = {
-    [PC_THIRST]   = "-1 potion",
-    [PC_FRAILTY]  = "+5% damage taken",
-    [PC_WEAKNESS] = "-5% damage dealt",
-    [PC_EXPOSED]  = "+15% taken after rolls",
-    [PC_IMPAIRED] = "3% of hits miss",
+static const struct { const char *name, *desc; } CURSES[PC_COUNT] = {
+    [PC_THIRST]   = { "Thirst",   "-1 potion" },
+    [PC_FRAILTY]  = { "Frailty",  "+5% damage taken" },
+    [PC_WEAKNESS] = { "Weakness", "-5% damage dealt" },
+    [PC_EXPOSED]  = { "Exposed",  "+15% taken after rolls" },
+    [PC_IMPAIRED] = { "Impaired", "3% of hits miss" },
 };
 #ifndef PACT_CHANCE             // (a test aid may set it)
 #define PACT_CHANCE 4           // % a card is a pact while boons are left (legendary: 6% and up)
@@ -234,7 +235,8 @@ int  tower_relic_equipped(void)
 bool tower_relic_select(int id)
 {
     TowerSave t; tower_load(&t);
-    if (id < 0 || id >= RELIC_COUNT) return false;
+    if (id < 0) { t.relicEquipped = 0; return save_controller_set_tower(&t); }     // climb without one
+    if (id >= RELIC_COUNT) return false;
     if (!((t.relicsOwned >> id) & 1)) {             // buy it
         if (t.embers < RELIC_COST) return false;
         t.embers -= RELIC_COST;
@@ -413,6 +415,18 @@ void tower_draft_open(void)
         s.choices[s.nChoices++] = pool[k];
         pool[k] = pool[--n];
     }
+#ifdef HLE_DRAFT_GALLERY     // test aid: each floor shows set cards (every boon, the longest pacts) for a look
+    {
+        static const int G[][3] = {
+            { PACT_CARD(PB_WOUNDED, PC_EXPOSED), PACT_CARD(PB_LAST_BREATH, PC_WEAKNESS), PACT_CARD(PB_STAGGERED, PC_IMPAIRED) },
+            { PACT_CARD(PB_MIGHT, PC_THIRST), PACT_CARD(PB_BULWARK, PC_EXPOSED), PACT_CARD(PB_VITALITY, PC_FRAILTY) },
+            { 0, 1, 2 }, { 3, 4, 5 }, { 6, 7, 8 }, { 9, 10, 11 }, { 12, 13, 14 }, { 15, 16, 17 }, { 18, 19, 20 }, { 21, 22, 23 },
+        };
+        int g = (s.floor - 1) % (int)(sizeof G / sizeof G[0]);
+        for (int i = 0; i < 3; i++) s.choices[i] = G[g][i];
+        s.nChoices = 3;
+    }
+#endif
     s.sel = 0;
     s.draftOpen = true;
 #ifdef HLE_AUTOPLAY
@@ -420,7 +434,7 @@ void tower_draft_open(void)
     for (int i = 0; i < s.nChoices; i++) {
         int c = s.choices[i];
         if (c < BOON_COUNT) debugf(" %s (%d)", BOONS[c].name, BOONS[c].tier);
-        else debugf(" Pact of %s / %s", BLESSINGS[(c - BOON_COUNT) / PC_COUNT].name, CURSES[(c - BOON_COUNT) % PC_COUNT]);
+        else debugf(" Pact of %s / %s", BLESSINGS[(c - BOON_COUNT) / PC_COUNT].name, CURSES[(c - BOON_COUNT) % PC_COUNT].name);
     }
     debugf("%s\n", s.circleCleared ? " | circle cleared" : "");
 #endif
@@ -445,7 +459,7 @@ void tower_draft_pick(int index)
         if (c == PC_THIRST) { if (character.healthPotions > 0) character.healthPotions--; else s.potionDebt++; }
 #ifdef HLE_AUTOPLAY
         debugf("[pact] took %s (%d) / %s (%d): damage x%.2f, taken x%.2f, max health %.0f, potions %d (owed %d)\n", BLESSINGS[b].name, s.bless[b],
-               CURSES[c], s.curse[c], (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken(), (double)tower_mod_max_health(),
+               CURSES[c].name, s.curse[c], (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken(), (double)tower_mod_max_health(),
                character.healthPotions, s.potionDebt);
 #endif
     } else if (index >= 0 && index < s.nChoices) {
@@ -501,7 +515,7 @@ void tower_draft_draw(void)
     }
     text(0, 56, SCREEN_WIDTH, ALIGN_CENTER, "Choose a Boon");
 
-    const int cw = 96, ch = 122, gap = 6, y0 = 64;
+    const int cw = 96, ch = 114, gap = 6, y0 = 64;
     int x0 = (SCREEN_WIDTH - (cw * s.nChoices + gap * (s.nChoices - 1))) / 2;
     for (int i = 0; i < s.nChoices; i++) {
         int x = x0 + i * (cw + gap), card = s.choices[i];
@@ -522,20 +536,26 @@ void tower_draft_draw(void)
         rdpq_fill_rectangle(x, y0, x + cw, y0 + ch);
         if (pact) {
             int b = (card - BOON_COUNT) / PC_COUNT, c = (card - BOON_COUNT) % PC_COUNT;
-            // the blessing (a line of name, up to three of text), the curse below it in red (up to two)
-            text_style(x + 4, y0 + 14, cw - 8, ALIGN_CENTER, FONT_STYLE_RED, BLESSINGS[b].name);
-            text(x + 6, y0 + 32, cw - 12, ALIGN_CENTER, BLESSINGS[b].desc);
-            text_style(x + 6, y0 + 82, cw - 12, ALIGN_CENTER, FONT_STYLE_RED, CURSES[c]);
-            if (s.bless[b] > 0) {
-                snprintf(line, sizeof line, "Have %d", s.bless[b]);
-                text_style(x, y0 + ch - 2, cw, ALIGN_CENTER, FONT_STYLE_GREY, line);
-            }
+            // the blessing (a line of name, two of text), then its curse (name, two of text)
+            // the curse in a band of its own at the bottom (a line holds about 11 characters)
+            flat_mode();
+            rdpq_set_prim_color(on ? RGBA32(110, 16, 22, 240) : RGBA32(70, 12, 16, 230));
+            rdpq_fill_rectangle(x, y0 + 60, x + cw, y0 + ch);
+            text_style(x + 4, y0 + 14, cw - 8, ALIGN_CENTER, FONT_STYLE_GOLD, BLESSINGS[b].name);
+            text(x + 6, y0 + 30, cw - 12, ALIGN_CENTER, BLESSINGS[b].desc);
+            text_style(x + 4, y0 + 74, cw - 8, ALIGN_CENTER, FONT_STYLE_RED, CURSES[c].name);
+            text_style(x + 6, y0 + 92, cw - 12, ALIGN_CENTER, FONT_STYLE_WHITE, CURSES[c].desc);
             continue;
         }
         const BoonDef *bd = &BOONS[card];
         static const int NAME_STYLE[3] = { FONT_STYLE_WHITE, FONT_STYLE_BLUE, FONT_STYLE_GOLD };
         text_style(x + 4, y0 + 14, cw - 8, ALIGN_CENTER, NAME_STYLE[bd->tier], bd->name);
-        text(x + 6, y0 + 50, cw - 12, ALIGN_CENTER, bd->desc);     // below a name of up to two lines
+        const char *desc = bd->desc;    // a Learn card names the skill's button in the layout
+        if (card == BOON_LEARN_MOONBLADE || card == BOON_LEARN_HALFMOON || card == BOON_LEARN_CLEAVE) {
+            snprintf(line, sizeof line, "Learn it: %s", joypad_skill_button(card - BOON_LEARN_MOONBLADE));
+            desc = line;
+        }
+        text(x + 6, y0 + 50, cw - 12, ALIGN_CENTER, desc);     // below a name of up to two lines
         if (s.stacks[card] > 0) {
             snprintf(line, sizeof line, "Have %d", s.stacks[card]);
             text_style(x, y0 + ch - 2, cw, ALIGN_CENTER, FONT_STYLE_GREY, line);
@@ -568,6 +588,35 @@ void tower_hud_draw(void)
         text_style(0, top + 12, w, ALIGN_RIGHT, FONT_STYLE_RED, line);
         if (s.night) text_style(0, top + 24, w, ALIGN_RIGHT, FONT_STYLE_RED, NIGHTS[s.night].name);
     }
+}
+
+const char* tower_run_summary(void)
+{
+    static char b[640];
+    int n = 0;
+    #define ADD(...) n += snprintf(b + n, n < (int)sizeof b ? sizeof b - n : 0, __VA_ARGS__)
+    ADD("Floor %d", s.floor);
+    if (tower_circle() > 1) ADD(", Ascension %d", tower_circle() - 1);
+    if (s.night) ADD(", %s", NIGHTS[s.night].name);
+    ADD("\nRelic: %s\n", tower_relic_name(tower_relic_equipped()));
+    ADD("Damage x%.2f, damage taken x%.2f\n", (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken());
+    ADD("Max health %.0f, potions %d", (double)tower_mod_max_health(), character.healthPotions);
+    if (s.potionDebt) ADD(" (%d owed)", s.potionDebt);
+    ADD("\nBoons:");
+    int k = 0;
+    for (int i = 0; i < BOON_COUNT; i++) if (s.stacks[i]) {
+        ADD("%s %s", k++ ? "," : "", BOONS[i].name);
+        if (BOONS[i].maxStacks > 1) ADD(" %d", s.stacks[i]);
+    }
+    if (!k) ADD(" none");
+    ADD("\nBlessings:"); k = 0;
+    for (int i = 0; i < PB_COUNT; i++) if (s.bless[i]) ADD("%s %s %d", k++ ? "," : "", BLESSINGS[i].name, s.bless[i]);
+    if (!k) ADD(" none");
+    ADD("\nCurses:"); k = 0;
+    for (int i = 0; i < PC_COUNT; i++) if (s.curse[i]) ADD("%s %s %d", k++ ? "," : "", CURSES[i].name, s.curse[i]);
+    if (!k) ADD(" none");
+    #undef ADD
+    return b;
 }
 
 const char* tower_death_summary(void)

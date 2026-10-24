@@ -17,11 +17,12 @@
 #include "camera_controller.h"
 
 // Menu state
-// The Shrine's relic row: the relic shown (the equipped one when the Shrine opens)
-static int s_relicBrowse = -1;
+// The Shrine's relic row: the relic shown, -1 for None (the equipped one when the Shrine opens)
+#define RELIC_BROWSE_UNSET (-2)
+static int s_relicBrowse = RELIC_BROWSE_UNSET;
 static int shrine_relic_browse(void)
 {
-    if (s_relicBrowse < 0) s_relicBrowse = tower_relic_equipped() >= 0 ? tower_relic_equipped() : 0;
+    if (s_relicBrowse == RELIC_BROWSE_UNSET) s_relicBrowse = tower_relic_equipped();
     return s_relicBrowse;
 }
 
@@ -75,6 +76,7 @@ static int8_t overscanPrevY = 0;
 // Menu text
 static const char* mainMenuOptions[MENU_MAIN_COUNT] = {
     "Resume",
+    "Run",
     "Restart",
     "Settings",
     "Controls",
@@ -371,6 +373,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             if (selectedOption < 0) {
                 selectedOption = maxOptions - 1;
             }
+            if (currentMenu == MENU_MAIN && selectedOption == MENU_MAIN_RUN && !tower_active()) selectedOption--;   // Tower only
         }
 
         if (downJustPressed || stickDownJustPressed) {
@@ -378,6 +381,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             if (selectedOption >= maxOptions) {
                 selectedOption = 0;
             }
+            if (currentMenu == MENU_MAIN && selectedOption == MENU_MAIN_RUN && !tower_active()) selectedOption++;
         }
     }
 
@@ -391,6 +395,11 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             switch (selectedOption) {
                 case MENU_MAIN_RESUME:
                     menu_controller_close();
+                    break;
+
+                case MENU_MAIN_RUN:
+                    currentMenu = MENU_RUN;
+                    selectedOption = 0;
                     break;
 
                 case MENU_MAIN_RESTART:
@@ -691,6 +700,8 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             else camera_set_speed((camera_get_speed() - 1 + d + 5) % 5 + 1);
             (void)save_controller_save_settings();
         }
+    } else if (currentMenu == MENU_RUN) {
+        if (bJustPressed || aJustPressed) { currentMenu = MENU_MAIN; selectedOption = MENU_MAIN_RUN; }
     } else if (currentMenu == MENU_CREDITS) {
         if (aJustPressed || bJustPressed) {
             currentMenu = parentMenu;
@@ -737,7 +748,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             pendingAction = MENU_ACTION_TITLE_START_GAME;
         } else if (aJustPressed && selectedOption == MENU_TOWER_SHRINE) {
             currentMenu = MENU_SHRINE;
-            s_relicBrowse = -1;     // shows the equipped relic first
+            s_relicBrowse = RELIC_BROWSE_UNSET;     // shows the equipped relic first
             selectedOption = 0;
         } else if (bJustPressed || (aJustPressed && selectedOption == MENU_TOWER_BACK)) {
             currentMenu = MENU_TITLE;
@@ -749,8 +760,8 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             currentMenu = MENU_TOWER;
             selectedOption = MENU_TOWER_SHRINE;
         } else if (selectedOption == MENU_SHRINE_RELIC && (leftJustPressed || rightJustPressed)) {
-            int n = tower_relic_total();
-            s_relicBrowse = (shrine_relic_browse() + (leftJustPressed ? n - 1 : 1)) % n;
+            int n = tower_relic_total() + 1;       // None, then each relic
+            s_relicBrowse = (shrine_relic_browse() + 1 + (leftJustPressed ? n - 1 : 1)) % n - 1;
         } else if (selectedOption == MENU_SHRINE_RELIC && aJustPressed) {
             if (tower_relic_select(shrine_relic_browse())) save_controller_save_settings();     // buy, equip or take off
         } else if (selectedOption == MENU_SHRINE_NIGHTFARER && aJustPressed) {
@@ -1125,7 +1136,7 @@ void menu_controller_draw(void)
 
     if (currentMenu == MENU_SETTINGS || currentMenu == MENU_AUDIO || currentMenu == MENU_VIDEO) {
         dialogHeight = 230;
-    } else if (currentMenu == MENU_CONTROLS || currentMenu == MENU_CREDITS || currentMenu == MENU_SHRINE) {
+    } else if (currentMenu == MENU_CONTROLS || currentMenu == MENU_CREDITS || currentMenu == MENU_SHRINE || currentMenu == MENU_RUN) {
         dialogHeight = 230;
     }
 
@@ -1140,7 +1151,7 @@ void menu_controller_draw(void)
         currentMenu == MENU_TOWER
     ) {
         dialogWidth = 260;
-    } else if (currentMenu == MENU_SHRINE) {
+    } else if (currentMenu == MENU_SHRINE || currentMenu == MENU_RUN) {
         dialogWidth = 300;
     }
 
@@ -1190,6 +1201,7 @@ void menu_controller_draw(void)
         y += (lineHeight * 3) + titleYOffset;
 
         for (int i = 0; i < MENU_MAIN_COUNT; i++) {
+            if (i == MENU_MAIN_RUN && !tower_active()) continue;     // Tower runs only
             if (i == selectedOption) {
                 draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, 90);
                 rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
@@ -1314,8 +1326,8 @@ void menu_controller_draw(void)
             } else if (i == MENU_SHRINE_RELIC) {
                 int r = shrine_relic_browse();
                 snprintf(name, sizeof name, "Relic: %s", tower_relic_name(r));
-                if (tower_relic_equipped() == r) snprintf(right, sizeof right, "equipped");
-                else if (tower_relic_owned(r)) snprintf(right, sizeof right, "owned");
+                if (tower_relic_equipped() == r) snprintf(right, sizeof right, r < 0 ? "chosen" : "equipped");
+                else if (r < 0 || tower_relic_owned(r)) snprintf(right, sizeof right, r < 0 ? "" : "owned");
                 else snprintf(right, sizeof right, "%d", tower_relic_cost(r));
             } else if (i == MENU_SHRINE_NIGHTFARER) {
                 snprintf(name, sizeof name, "Nightfarer (skin)");
@@ -1342,7 +1354,7 @@ void menu_controller_draw(void)
         }
         // What the selected one does
         const char *desc = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_desc((UpgradeId)selectedOption)
-                         : selectedOption == MENU_SHRINE_RELIC ? tower_relic_desc(shrine_relic_browse())
+                         : selectedOption == MENU_SHRINE_RELIC ? (shrine_relic_browse() < 0 ? "Climb without a relic" : tower_relic_desc(shrine_relic_browse()))
                          : selectedOption == MENU_SHRINE_NIGHTFARER ? "A tracker's winged helm and blue coat"
                          : "Skills are learned in the climb";
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
@@ -1483,6 +1495,11 @@ void menu_controller_draw(void)
         draw_icon_line(iconCLeft, listX, y, lineHeight, listW, lay == LAYOUT_SKILLS_ON_C ? "Skills / Potion" : "Move Camera");
         y += step;
         draw_icon_line(iconDpad, listX, y, lineHeight, listW, lay == LAYOUT_SKILLS_ON_C ? "Move Camera" : "Skills / Potion");
+    } else if (currentMenu == MENU_RUN) {
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
+                         FONT_UNBALANCED, x, y + titleYOffset, "THIS CLIMB");
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW + 40, .height = contentH, .wrap = WRAP_WORD },
+                         FONT_UNBALANCED, x - 20, y + titleYOffset + 22, "%s", tower_run_summary());
     } else if (currentMenu == MENU_CREDITS) {
         rdpq_text_printf(&(rdpq_textparms_t){
             .align = ALIGN_CENTER,
