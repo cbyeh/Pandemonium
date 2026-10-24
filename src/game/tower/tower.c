@@ -580,7 +580,7 @@ void tower_draft_draw(void)
     rdpq_fill_rectangle(bx - 2, by - 2, bx + bw + 2, by + bh + 2);
     rdpq_set_prim_color(skip ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
     rdpq_fill_rectangle(bx, by, bx + bw, by + bh);
-    snprintf(line, sizeof line, skip ? "Skip: +%d Embers" : "Down: Skip (+%d)", SKIP_EMBERS);
+    snprintf(line, sizeof line, "Skip: +%d Embers", SKIP_EMBERS);
     text_style(bx, by + 12, bw, ALIGN_CENTER, skip ? FONT_STYLE_GOLD : FONT_STYLE_GREY, line);
     if (s.floor % FLOORS_PER_CIRCLE == 0) {     // a new circle: stronger, and its night
         // the next circle: stronger bosses, and its night (two lines at most)
