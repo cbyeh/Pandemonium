@@ -23,7 +23,7 @@ Z trigger: Toggle z targetting
 Hold Z trigger + left/right on Cpad: Change z target
 
 ## New in this fork
-**Download:** [Releases](https://github.com/cbyeh/Pandemonium/releases). `pandemonium-*.z64` for hardware and accurate emulators, `pandemonium-hle-*.z64` for Delta and Mupen64Plus.
+**Download:** [Releases](https://github.com/cbyeh/Pandemonium/releases). `Pandemonium.z64` for hardware and accurate emulators (Ares, flashcarts), `The.Pandemonium.z64` for Delta and Mupen64Plus.
 
 ### Skills (D-pad)
 Toggle in **Settings > Skills** (title screen). Bosses have double health with skills on. In the Tower the setting doesn't apply: skills are learned during the climb.
