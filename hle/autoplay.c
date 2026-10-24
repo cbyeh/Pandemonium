@@ -533,6 +533,17 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 debugf("[run] floor %d boss %d phase %d hp %.0f/%.0f | player hp %.0f/%.0f potions %d\n", lastFloor, tower_floor_boss(),
                        boss->phaseIndex, (double)boss->health, (double)boss->maxHealth, (double)character.health, (double)character.maxHealth,
                        character.healthPotions);
+#ifdef HLE_RUN_CLIMB    // the long climb: the run's numbers each floor
+                {
+                    extern float tower_mod_damage_dealt(void), tower_mod_damage_taken(void), tower_mod_max_health(void);
+                    extern int tower_run_embers(void), tower_circle(void);
+                    heap_stats_t h; sys_get_heap_stats(&h);
+                    debugf("[climb] floor %d circle %d boss %d hp %.0f | dealt x%.2f taken x%.2f maxhp %.0f potions %d | embers %d | heap %d KB free\n",
+                           lastFloor, tower_circle(), tower_floor_boss(), (double)boss->maxHealth, (double)tower_mod_damage_dealt(),
+                           (double)tower_mod_damage_taken(), (double)tower_mod_max_health(), character.healthPotions, tower_run_embers(),
+                           (h.total - h.used) / 1024);
+                }
+#endif
             }
             if (t == 30) pressed->d_up = 1;
             if (t == 34) debugf("[run] D-up: state %d (%s)\n", character_get_state(), character_get_state() == CHAR_STATE_SKILL ? "cast: Moon Blade Dance learned" : "no skill");
@@ -558,13 +569,22 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
                 if (d > 60.0f) { character.pos[0] += dx / d * (d - 60.0f); character.pos[2] += dz / d * (d - 60.0f); }
             }
-#if defined(HLE_RUN_SKIP) || defined(HLE_RUN_PICK) || defined(HLE_RUN_UPDOWN)   // a set card: HLE_RUN_PICK moves right that many, Skip is left of the first
+#if defined(HLE_RUN_SKIP) || defined(HLE_RUN_PICK) || defined(HLE_RUN_UPDOWN) || defined(HLE_RUN_CLIMB)   // a set card: HLE_RUN_PICK moves right that many, Skip is left of the first
             {
                 static int k;
                 if (!tower_draft_is_open()) k = 0;
                 else {
                     k++;
-#ifdef HLE_RUN_SKIP
+#if defined(HLE_RUN_CLIMB)    // take a boon while any are offered (so they run out), else the first pact
+                    static int want;
+                    if (k == 1) {
+                        extern int tower_draft_card(int i);
+                        want = 0;
+                        for (int i = 2; i >= 0; i--) if (tower_draft_card(i) >= 0) want = i;
+                        debugf("[climb] cards %d %d %d, taking %d\n", tower_draft_card(0), tower_draft_card(1), tower_draft_card(2), want);
+                    }
+                    if (k >= 10 && k < 10 + 6 * want && (k - 10) % 6 == 0) { pressed->d_right = 1; in->btn.d_right = 1; }
+#elif defined(HLE_RUN_SKIP)
                     if (k == 10) { pressed->d_down = 1; in->btn.d_down = 1; }     // Down to Skip
 #elif defined(HLE_RUN_UPDOWN)   // Right to the second card, Down to Skip, Up back: the second card is taken
 #ifdef HLE_RUN_STICK            // (the same with the control stick)

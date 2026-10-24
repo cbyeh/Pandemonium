@@ -448,6 +448,7 @@ void tower_draft_open(void)
 
 bool tower_draft_is_open(void) { return s.draftOpen; }
 int  tower_draft_selected(void) { return s.sel; }
+int  tower_draft_card(int i) { return (i >= 0 && i < s.nChoices && s.choices[i] < BOON_COUNT) ? s.choices[i] : -1; }   // a boon, -1 a pact
 
 void tower_draft_pick(int index)
 {
