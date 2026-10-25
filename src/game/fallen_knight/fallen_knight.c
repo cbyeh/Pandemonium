@@ -131,6 +131,9 @@ static void enter(FkState st)
     s.step = 0;
     s.hitDone = false;
     s.windK = 0.0f;
+#ifdef HLE_FK_LOG   // test aid: each move as it starts
+    debugf("[fk] state %d\n", st);
+#endif
 }
 
 static void swing_sfx(void) { audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_SWING1, 1.0f, 0.0f); }

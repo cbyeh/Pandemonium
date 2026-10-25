@@ -944,6 +944,15 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE && frame % 20 == 0) debugf("[cam] f%d aerial, y %.0f\n", frame, (double)boss->pos[1]);
             }
 #endif
+#ifdef HLE_DUMMY_CAM_HIGH  // a wide view from high up, fixed in the world, on the boss and the player (aim and turning)
+            if (boss) {
+                cameraLockOnActive = false;
+                float mx = (boss->pos[0] + character.pos[0]) * 0.5f, mz = (boss->pos[2] + character.pos[2]) * 0.5f;
+                customCamPos = (T3DVec3){{ mx, boss->pos[1] + 190.0f, mz - 150.0f }};
+                customCamTarget = (T3DVec3){{ mx, boss->pos[1] + 10.0f, mz }};
+                camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+            }
+#endif
 #ifdef HLE_TEST_STAGGER   // the stagger meter filled in steps: a full stagger every other second, and again
             if (boss && (frame % 60) == 0 && boss->staggerT <= 0.0f) { boss->poise = fminf(1.0f, boss->poise + 0.55f); boss->poiseIdleT = 0.0f;
                 debugf("[stagtest] f%d poise %.2f\n", frame, (double)boss->poise); }
