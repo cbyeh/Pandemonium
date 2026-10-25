@@ -54,7 +54,7 @@ typedef enum {
 // first), then the charged clip's overhead slam (played from DN_FROM: the slam, no more)
 static const float WIN[3][2] = { { 0.55f, 0.85f }, { 0.42f, 0.75f }, { 0.9f, 1.2f } };
 static const float W_DN[2] = { 1.88f, 2.08f };
-#define DN_FROM 1.72f     // the sword already raised: held there, glowing, then down
+#define DN_FROM 1.72f     // the sword already raised: held there, then down
 
 static struct {
     bool ready;
@@ -75,9 +75,8 @@ static struct {
     float moveX, moveZ;     // roll / jump drift
     float cdCleave, cdHalfmoon, cdMoonblade, cdRoll, cdSplitter, cdUpdown, cdTri, cdHoly;
     float tri[3][2];        // the triangle slam's corners on the floor
-    float windK;            // 0..1 through the current swing's windup (its glow), 0 once it strikes
+    float windK;            // 0..1 through the current swing's windup, 0 once it strikes
     bool enraged;           // the war cry at half health
-    float flashT;           // a white flash on the armour, just before a skill lands
     float bladeTgt, bladeW; // the held blade pose (blade_pose): wanted and current weight
     float bladeDir[3];      // its direction: forward, side, up (the boss's frame)
     T3DQuat handBase, handPosed;
@@ -192,16 +191,12 @@ static void swing_pace(float from, float strike, float wind)
     s.windK = clip < pre ? clamp01f((clip - from) / (pre - from)) : 0.0f;
 }
 
-#define FK_LOCK_K 0.7f      // a swing stops turning this far through its windup: it commits (a glint at the tip)
+#define FK_LOCK_K 0.7f      // a swing stops turning this far through its windup: it commits
 
-/** True while a swing may still turn to the player; the frame it commits, a glint at the blade's tip */
-static bool swing_tracks(float prevK, float lockK)
+/** True while a swing may still turn to the player (until lockK through its windup) */
+static bool swing_tracks(float lockK)
 {
     if (s.windK < lockK) return true;
-    if (prevK < lockK) {
-        float base[3], tip[3];
-        if (sword_segment(base, tip)) skill_fx_spawn_burst_hostile(tip, s.t * 7.0f);
-    }
     return false;
 }
 
@@ -322,7 +317,7 @@ void fallen_knight_begin(Boss* boss)
     s.velY = 0.0f;
     s.cdCleave = 5.0f; s.cdHalfmoon = 12.0f; s.cdMoonblade = 9.0f; s.cdRoll = 0.0f; s.cdSplitter = 6.0f; s.cdUpdown = 3.0f; s.cdTri = 14.0f; s.cdHoly = 20.0f;
     s.enraged = false;
-    s.bladeW = s.flashT = 0.0f;
+    s.bladeW = 0.0f;
     enter(FK_INTRO);
 }
 
@@ -380,7 +375,6 @@ static void cleave_update(Boss *b, float dt)
             audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_LAND1, 0.6f, 0.0f);
             screen_shake_set_shake_mag(2.0f);
         }
-        if (s.t >= RELEASE - 0.1f && s.t - dt < RELEASE - 0.1f) s.flashT = 0.1f;
     }
     if (s.step < 5 && s.t >= RELEASE + s.step * GAP) {
         float o[3], dx, dz;
@@ -410,7 +404,6 @@ static void halfmoon_update(Boss *b, float dt)
                 skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] - fm_sinf(a) * 34.0f, s.groundY, b->pos[2] + fm_cosf(a) * 34.0f }, a);
             }
         }
-        if (s.t >= CHARGE - 0.1f && s.t - dt < CHARGE - 0.1f) s.flashT = 0.1f;
         if (s.t >= CHARGE) {
             skill_fx_next_arc_half(HALF);
             skill_fx_spawn_arc_hostile((float[3]){ b->pos[0], b->pos[1] + 12.0f, b->pos[2] }, b->rot[1], 90.0f, 30.0f);
@@ -464,11 +457,11 @@ static void moonblade_update(Boss *b, float dt)
 
 static void splitter_update(Boss *b, float dt)
 {
-    // Moonlight Splitter: plants its feet in a crimson glow, then three wound-up swings, each
+    // Moonlight Splitter: plants its feet, then three wound-up swings, each
     // loosing a crescent at the player (level, the other diagonal, upright): step aside
     static const int clips[3] = { FKA_ATTACK1, FKA_ATTACK2, FKA_ATTACK3 };
     static const float roll[3] = { 0.25f, -0.6f, 1.45f };
-    if (s.step == 0) {      // a step back, glowing violet, before it looses them
+    if (s.step == 0) {      // a step back before it looses them
         face_player(b, dt, 4.0f);
         if (s.t < 0.45f) {
             play(FKA_BACKSTEP, false);
@@ -480,9 +473,9 @@ static void splitter_update(Boss *b, float dt)
         return;
     }
     const float *w = WIN[s.step - 1];
-    float clip = clip_time(), prevK = s.windK;
+    float clip = clip_time();
     swing_pace(0.0f, w[0], 0.55f);
-    if (clip < w[0] && swing_tracks(prevK, 0.35f)) face_player(b, dt, 3.0f);     // then the aim holds (early: it flies): sidestep the glint
+    if (clip < w[0] && swing_tracks(0.35f)) face_player(b, dt, 3.0f);     // then the aim holds (early: it flies): sidestep it
     if (!s.hitDone && clip >= w[0]) {
         s.hitDone = true;
         float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
@@ -499,12 +492,12 @@ static void splitter_update(Boss *b, float dt)
 
 static void updown_update(Boss *b, float dt)
 {
-    // Two wound-up slashes: rising from low in front, then held overhead (glowing) and down
-    // with a burst where it lands: back off or roll each. Amber; each commits at its glint
-    float clip = clip_time(), prevK = s.windK;
+    // Two wound-up slashes: rising from low in front, then held overhead and down
+    // with a burst where it lands: back off or roll each; each commits late in its windup
+    float clip = clip_time();
     const float *w = s.step == 0 ? WIN[1] : W_DN;
     swing_pace(s.step == 0 ? 0.0f : DN_FROM, w[0], 0.7f);
-    if (clip < w[0] && swing_tracks(prevK, FK_LOCK_K)) face_player(b, dt, 3.0f);
+    if (clip < w[0] && swing_tracks(FK_LOCK_K)) face_player(b, dt, 3.0f);
     melee_check(b, w[0], w[1], s.step == 0 ? 14.0f : 18.0f);
     if (s.step == 0) {
         if (clip >= w[1] || clip_done()) { s.step = 1; s.hitDone = false; play(FKA_CHARGED, true);
@@ -528,7 +521,7 @@ static void tri_point(int i, float k, float out[3])     // along the edge from c
 
 static void trislam_update(Boss *b, float dt)
 {
-    // Triangle slam: the sword raised, glowing, then driven into the floor; a triangle of
+    // Triangle slam: the sword raised, then driven into the floor; a triangle of
     // warnings closes round the player and blades erupt along it, striking all inside: get out
     const float ERUPT = 0.7f;
     float clip = clip_time();
@@ -574,13 +567,12 @@ static void trislam_update(Boss *b, float dt)
 
 static void holyslam_update(Boss *b, float dt)
 {
-    // A swing, then the sword held high, glowing ever brighter as the light gathers round
+    // A swing, then the sword held high while the light gathers round
     // it, then slammed down: a blast all round it. Get far away, roll it or jump it
     float clip = clip_time();
     if (s.step == 0) {          // the opening swing (wound up like the combo's)
-        float prevK = s.windK;
         swing_pace(0.0f, WIN[0][0], FK_WIND);
-        if (clip < WIN[0][0] && swing_tracks(prevK, FK_LOCK_K)) face_player(b, dt, 2.5f);
+        if (clip < WIN[0][0] && swing_tracks(FK_LOCK_K)) face_player(b, dt, 2.5f);
         melee_check(b, WIN[0][0], WIN[0][1], FK_MELEE_DAMAGE);
         if (clip >= WIN[0][1] || clip_done()) {
             s.step = 1; s.t = 0.0f; s.hitDone = false;
@@ -590,7 +582,7 @@ static void holyslam_update(Boss *b, float dt)
     } else if (s.step == 1) {   // the gathering
         face_player(b, dt, 1.5f);
         swing_pace(DN_FROM, W_DN[0], 1.5f);
-        if (!s.hitDone && clip >= W_DN[0] - 0.08f) { s.hitDone = true; s.flashT = 0.1f; }    // as it comes down
+        if (!s.hitDone && clip >= W_DN[0] - 0.08f) s.hitDone = true;    // as it comes down
         if ((int)(s.t * 5.0f) != (int)((s.t - dt) * 5.0f)) {    // the light drawn in toward it
             float a = s.t * 5.0f, r = 45.0f - 25.0f * clamp01f(s.t / 1.5f);
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * r, s.groundY, b->pos[2] + cosf(a) * r }, a);
@@ -643,7 +635,6 @@ void fallen_knight_update(Boss* b, float dt)
     if (b->damageFlashTimer > 0.0f) b->damageFlashTimer -= dt;
     s.t += dt;
     s.cdCleave -= dt; s.cdHalfmoon -= dt; s.cdMoonblade -= dt; s.cdRoll -= dt; s.cdSplitter -= dt; s.cdUpdown -= dt; s.cdTri -= dt; s.cdHoly -= dt;
-    s.flashT -= dt;
     s.bladeTgt = 0.0f;      // a move that holds the blade asks again each frame (hold_blade)
 
     float dx, dz, dist = to_player(b, &dx, &dz);
@@ -705,11 +696,10 @@ void fallen_knight_update(Boss* b, float dt)
     }
 
     case FK_COMBO:
-        {   // each swing wound up, tracking the player until it commits (the glint), just before the strike
+        {   // each swing wound up, tracking the player until it commits, just before the strike
             const float *w = WIN[s.anim == FKA_ATTACK2 ? 1 : s.anim == FKA_ATTACK3 ? 2 : 0];
-            float prevK = s.windK;
-            swing_pace(0.0f, w[0], FK_WIND);
-            if (clip_time() < w[0] && swing_tracks(prevK, FK_LOCK_K)) face_player(b, dt, 2.5f);
+                swing_pace(0.0f, w[0], FK_WIND);
+            if (clip_time() < w[0] && swing_tracks(FK_LOCK_K)) face_player(b, dt, 2.5f);
             melee_check(b, w[0], w[1], FK_MELEE_DAMAGE);
         }
         if (clip_done()) {
@@ -796,32 +786,24 @@ void fallen_knight_update(Boss* b, float dt)
 #endif
 }
 
+#ifdef HLE_LOG_HURTBOX
+bool fallen_knight_bone(const char *name, float out[3])     // test aid: a bone's world position
+{
+    int i = t3d_skeleton_find_bone(&s.skel, name);
+    if (i < 0 || !s.mat) return false;
+    float h[3];
+    mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[i], (float[3]){ 0.0f, 0.0f, 0.0f }, h);
+    mat4fp_mul_point_f32_row3_colbasis(s.mat, h, out);
+    return true;
+}
+#endif
 void fallen_knight_draw(Boss* b)
 {
     if (!s.ready || !b->visible) return;
-    // Dark crimson armour; brighter while it flashes from a hit. Each move winds up in its
-    // own glow: a soft red before a swing, amber for the up-down, violet for the Splitter,
-    // blue for the triangle, gold for the holy slam, teal for the Cleave and a throbbing deep
-    // crimson for the Halfmoon; the skills flash white just before they land
+    // Dark crimson armour, brighter while it flashes from a hit. Its moves are told apart by its
+    // poses alone (no glows)
     bool flash = b->damageFlashTimer > 0.0f;
-    static const uint8_t TELL[][3] = { { 255, 20, 20 }, { 255, 130, 10 }, { 190, 40, 255 }, { 60, 110, 255 },
-                                       { 255, 210, 90 }, { 20, 210, 170 }, { 255, 0, 30 } };
-    int c = 0;
-    float warn = 0.0f, throb = 8.0f;
-    switch (s.state) {
-    case FK_COMBO:    warn = 0.5f * s.windK; break;
-    case FK_UPDOWN:   c = 1; warn = 0.85f * s.windK; break;
-    case FK_SPLITTER: c = 2; warn = 0.85f * s.windK; break;
-    case FK_TRISLAM:  c = 3; warn = 0.9f * s.windK; break;
-    case FK_HOLYSLAM: if (s.step == 1) { c = 4; warn = 0.4f + 0.6f * s.windK; } else warn = s.step == 0 ? 0.5f * s.windK : 0.0f; break;
-    case FK_CLEAVE:   c = 5; warn = s.step == 0 ? clamp01f(s.t / 0.4f) : 0.0f; break;
-    case FK_HALFMOON: c = 6; warn = s.step == 0 ? clamp01f(s.t / 0.6f) : 0.0f; throb = 18.0f; break;
-    default: break;
-    }
-    warn *= 0.75f + 0.25f * sinf(s.t * throb);
-    const uint8_t *tc = TELL[c];
-    uint8_t amb[4] = { (uint8_t)(120 + (tc[0] - 120) * warn), (uint8_t)(45 + (tc[1] - 45) * warn), (uint8_t)(70 + (tc[2] - 70) * warn), 255 };
-    t3d_light_set_ambient(flash ? (uint8_t[4]){ 255, 120, 120, 255 } : s.flashT > 0.0f ? (uint8_t[4]){ 255, 240, 230, 255 } : amb);
+    t3d_light_set_ambient(flash ? (uint8_t[4]){ 255, 120, 120, 255 } : (uint8_t[4]){ 120, 45, 70, 255 });
     t3d_matrix_set(gpu_mat(s.mat), true);
     T3DMat4FP *bones = gpu_skeleton_begin(&s.skel);
     t3d_model_draw_skinned(characterModel, &s.skel);

@@ -68,6 +68,31 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         }
     }
 #endif
+#ifdef HLE_LOG_HURTBOX     // test aid: the hit capsule against the model's bones (height span, and how far the body leans out of it)
+    {
+        Boss *bb = boss_get_instance();
+        if (bb && bb->mode == BOSS_MODE_COMBAT && frame % 10 == 0) {
+            static const char *names[] = { "Head", "Waist", "LowerLeg-Left", "LowerLeg-Right" };
+            float lo = fminf(bb->capsuleCollider.localCapA.v[1], bb->capsuleCollider.localCapB.v[1]) - bb->capsuleCollider.radius;
+            float hi = fmaxf(bb->capsuleCollider.localCapA.v[1], bb->capsuleCollider.localCapB.v[1]) + bb->capsuleCollider.radius;
+            static float worstOut[4], worstH[4][2] = { { 1e9f, -1e9f }, { 1e9f, -1e9f }, { 1e9f, -1e9f }, { 1e9f, -1e9f } }; static int n;
+            for (int i = 0; i < 4; i++) {
+                float w[3]; bool ok = false;
+                if (bb->phaseIndex <= 2) { T3DVec3 v; extern bool boss_get_bone_world_pos(const Boss*, int, T3DVec3*);
+                    int idx = i == 0 ? bb->headBoneIndex : i == 1 ? bb->waistBoneIndex : i == 2 ? bb->lowerLegLeftBoneIndex : bb->lowerLegRightBoneIndex;
+                    ok = boss_get_bone_world_pos(bb, idx, &v); w[0] = v.v[0]; w[1] = v.v[1]; w[2] = v.v[2]; }
+                else if (bb->phaseIndex == 3) { extern bool fallen_knight_bone(const char*, float*); ok = fallen_knight_bone(names[i], w); }
+                if (!ok) continue;
+                float rel = w[1] - bb->pos[1], dx = w[0] - bb->pos[0], dz = w[2] - bb->pos[2];
+                float out = sqrtf(dx * dx + dz * dz) - bb->capsuleCollider.radius;      // > 0: outside the capsule sideways
+                if (out > worstOut[i]) worstOut[i] = out;
+                worstH[i][0] = fminf(worstH[i][0], rel); worstH[i][1] = fmaxf(worstH[i][1], rel);
+            }
+            if (++n % 90 == 0) debugf("[hurtbox] boss %d capsule %.0f..%.0f r %.0f | head %.0f..%.0f out %.0f | waist %.0f..%.0f out %.0f | legs %.0f..%.0f out %.0f\n", bb->phaseIndex, (double)lo, (double)hi, (double)bb->capsuleCollider.radius,
+                (double)worstH[0][0], (double)worstH[0][1], (double)worstOut[0], (double)worstH[1][0], (double)worstH[1][1], (double)worstOut[1], (double)fminf(worstH[2][0], worstH[3][0]), (double)fmaxf(worstH[2][1], worstH[3][1]), (double)fmaxf(worstOut[2], worstOut[3]));
+        }
+    }
+#endif
 #ifdef HLE_LOG_RELIC    // test aid: the save's relics after boot (does the Shrine's choice survive a reboot?)
     if (frame == 600) { extern int tower_relic_equipped(void); extern bool tower_relic_owned(int); debugf("[relic] after boot: equipped %d, owned%s%s%s%s%s\n", tower_relic_equipped(),
         tower_relic_owned(0) ? " 0" : "", tower_relic_owned(1) ? " 1" : "", tower_relic_owned(2) ? " 2" : "", tower_relic_owned(3) ? " 3" : "", tower_relic_owned(4) ? " 4" : ""); }
