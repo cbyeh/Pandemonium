@@ -937,7 +937,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
               in->btn.z = 1;
               float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2];
               if (sqrtf(dx * dx + dz * dz) > 40.0f) in->stick_y = 70;
+#ifdef HLE_STRIKE_OPEN     // swing only while the boss isn't attacking (a player who dodges its moves)
+              extern bool hle_open_now;
+              if (k % HLE_STRIKE_EVERY == 0 && hle_open_now) { pressed->b = 1; in->btn.b = 1; }
+#else
               if (k % HLE_STRIKE_EVERY == 0) { pressed->b = 1; in->btn.b = 1; }
+#endif
 #ifdef HLE_STRIKE_STAMINA     // a player who manages stamina: whole combos
               character.stamina = character_get_max_stamina();
 #endif

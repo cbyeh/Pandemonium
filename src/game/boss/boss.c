@@ -515,7 +515,7 @@ static inline void boss_update_shadow_mat(Boss* boss)
 // The stagger meter keeps 2 s unhit, then drains; slower while the boss strikes or is in the air
 // (POISE_DAMAGE: boss.h)
 #define POISE_KEEP_S        2.0f     // no hits this long: it drains
-#define POISE_DRAIN         0.10f    // a second, of the full meter
+#define POISE_DRAIN         0.05f    // a second, of the full meter
 #define POISE_CLOSED        0.33f    // the hold and drain's pace while it strikes or is in the air
 
 static inline float boss_target_max_health(int phase)
