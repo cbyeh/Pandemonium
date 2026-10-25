@@ -997,7 +997,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (boss) {
                 cameraLockOnActive = false;
                 float mx = (boss->pos[0] + character.pos[0]) * 0.5f, mz = (boss->pos[2] + character.pos[2]) * 0.5f;
-                customCamPos = (T3DVec3){{ mx, boss->pos[1] + 120.0f, mz - 95.0f }};
+#ifndef HLE_CAM_HIGH_K     // how far out (2: twice as high and far back)
+#define HLE_CAM_HIGH_K 1.0f
+#endif
+                customCamPos = (T3DVec3){{ mx, boss->pos[1] + 120.0f * HLE_CAM_HIGH_K, mz - 95.0f * HLE_CAM_HIGH_K }};
                 customCamTarget = (T3DVec3){{ mx, boss->pos[1] + 10.0f, mz }};
                 camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
             }
@@ -1112,9 +1115,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         static int phase = 0, t0 = 0, step = 0;
         Boss *boss = boss_get_instance();
         int t = frame - t0;
-        if (frame % 60 == 0) debugf("[bonus] f%d phase %d boss %d mode %d state %d hp %.0f\n", frame, phase,
+        static int heapMin = 1 << 30;     // the lowest free heap in the fight, sampled every 10 frames
+        if (phase == 3 && frame % 10 == 0) { heap_stats_t h; sys_get_heap_stats(&h); if (h.total - h.used < heapMin) heapMin = h.total - h.used; }
+        if (frame % 60 == 0) debugf("[bonus] f%d phase %d boss %d mode %d state %d hp %.0f heap min %d KB\n", frame, phase,
                                     boss ? boss->phaseIndex : -1, boss ? boss->mode : -1, boss ? boss->state : -1,
-                                    boss ? (double)boss->health : 0.0);
+                                    boss ? (double)boss->health : 0.0, phase == 3 ? heapMin / 1024 : -1);
         if (phase == 0) {               // tap A until the title menu opens
             if (menu_controller_is_active()) { phase = 1; t0 = frame; }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
