@@ -1008,7 +1008,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
               in->stick_x = 45; }
 #endif
 #ifdef HLE_DUMMY_STRIKE   // and fight back: locked on, walk in, swing (the stagger meter, hit-stop)
-            { static int k; k++;
+            if (boss) { static int k; k++;     // (no boss once the run is back at the title)
               if (k == 1) pressed->z = 1;
               in->btn.z = 1;
               float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2];
