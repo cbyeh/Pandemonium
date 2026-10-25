@@ -51,6 +51,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_SKILLS_OFF   // the Skills setting off throughout (a loaded save can't turn it back on)
     { extern void character_set_skills_enabled(bool); character_set_skills_enabled(false); }
 #endif
+#ifdef HLE_TEST_T3D_EXACT
+    if (frame % 300 == 0) { extern uint32_t hle_exact_calls, hle_exact_strips, hle_exact_bad; debugf("[exact] %lu vertex loads, %lu strips, %lu mismatched\n", (unsigned long)hle_exact_calls, (unsigned long)hle_exact_strips, (unsigned long)hle_exact_bad); }
+#endif
 #ifdef HLE_LOG_RELIC    // test aid: the save's relics after boot (does the Shrine's choice survive a reboot?)
     if (frame == 600) { extern int tower_relic_equipped(void); extern bool tower_relic_owned(int); debugf("[relic] after boot: equipped %d, owned%s%s%s%s%s\n", tower_relic_equipped(),
         tower_relic_owned(0) ? " 0" : "", tower_relic_owned(1) ? " 1" : "", tower_relic_owned(2) ? " 2" : "", tower_relic_owned(3) ? " 3" : "", tower_relic_owned(4) ? " 4" : ""); }

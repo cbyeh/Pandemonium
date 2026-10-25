@@ -94,6 +94,9 @@ static inline int32_t fp_elem(const int16_t *col, int r)
 
 static void update_zrow(int k)
 {
+#ifdef HLE_TEST_PERF
+    extern uint32_t hle_vl_zrow; hle_vl_zrow++;
+#endif
     const int64_t *base = (slots[k].mul && k > 0) ? zrow[k - 1] : proj_z;
     if (!slots[k].addr) return;
     const int16_t *p = hle_rdram(slots[k].addr);
@@ -261,8 +264,49 @@ static void apply_depth_offset(uint32_t z)
 
 // ---- Geometry ----
 
+// T3DVertPacked (2 vertices): posA normA | posB normB | rgbaA | rgbaB | stA | stB
+// gbi_vtx_t: ob[0..1] | ob[2] flag | tc | cn
+// One copy loop per combination of UV offset, ambient and fog (always inlined with constants),
+// so the per-vertex work has no branches on them; positions are read as int16 (no sign-extending)
+__attribute__((always_inline)) static inline void vert_copy(uint32_t *o, const uint32_t *in, int count, bool uv, bool scale, bool fog,
+                                                             int16_t uv_s, int16_t uv_t, const uint8_t (*amb_tbl)[256], const int64_t *k)
+{
+    for (int i = 0; i < count; i += 2, in += 8, o += 8) {
+        o[0] = in[0]; o[1] = in[1] & 0xFFFF0000; o[2] = in[6]; o[3] = in[4];
+        o[4] = in[2]; o[5] = in[3] & 0xFFFF0000; o[6] = in[7]; o[7] = in[5];
+        if (uv) {
+            o[2] = ((uint32_t)(uint16_t)((o[2] >> 16) + uv_s) << 16) | (uint16_t)(o[2] + uv_t);
+            o[6] = ((uint32_t)(uint16_t)((o[6] >> 16) + uv_s) << 16) | (uint16_t)(o[6] + uv_t);
+        }
+        if (scale) {
+            for (int j = 3; j <= 7; j += 4) {
+                uint8_t *cn = (uint8_t*)&o[j];
+                cn[0] = amb_tbl[0][cn[0]]; cn[1] = amb_tbl[1][cn[1]];
+                cn[2] = amb_tbl[2][cn[2]]; cn[3] = amb_tbl[3][cn[3]];
+            }
+        }
+        if (fog) {
+            const int16_t *p = (const int16_t*)in;      // x y z of A at 0 1 2, of B at 4 5 6
+            for (int j = 0; j < 2; j++, p += 4) {
+                int64_t f = k[0] * p[0] + k[1] * p[1] + k[2] * p[2] + k[3];
+                int32_t a = f >> 16;
+                o[j*4+3] = (o[j*4+3] & ~0xFFu) | (a <= 0 ? 0 : a >= 255 ? 255 : a);
+            }
+        }
+    }
+}
+
+#ifdef HLE_TEST_PERF
+uint32_t hle_vl_ticks[6], hle_vl_verts, hle_vl_amb, hle_vl_zrow, hle_vl_fog;     // test aid: vert_load's setup, t3d_begin, the loop, the G_VTX
+#define VL_MARK(i) do { uint32_t _n = TICKS_READ(); hle_vl_ticks[i] += _n - _vl; _vl = _n; } while (0)
+#else
+#define VL_MARK(i) do {} while (0)
+#endif
 static void vert_load(const uint32_t *a)
 {
+#ifdef HLE_TEST_PERF
+    uint32_t _vl = TICKS_READ();
+#endif
     int count = (a[0] & 0xFFFF) / 16;   // always an even number of vertices
     int dest = vtx_index(a[2] & 0xFFFF);
     if (dest + count > T3D_VERTEX_CACHE_SIZE) count = T3D_VERTEX_CACHE_SIZE - dest;
@@ -281,9 +325,14 @@ static void vert_load(const uint32_t *a)
     if (!unlit && VDMEM8(D(ACTIVE_LIGHT_SIZE)))
         hle_warn_once("t3dlights", "Tiny3D directional/point lights are ignored (ambient only)");
 
+    VL_MARK(4);
     bool fog = fog_enabled();
     int64_t k[4] = {0};
     if (fog) fog_plane(k);
+    VL_MARK(5);
+#ifdef HLE_TEST_PERF
+    hle_vl_fog += fog;
+#endif
     static uint8_t amb_tbl[4][256];     // c * ambient / 255 per channel
     static uint32_t amb_tbl_for = 0xFFFFFFFF;
     if (scale && amb != amb_tbl_for) {
@@ -291,40 +340,64 @@ static void vert_load(const uint32_t *a)
             for (int v = 0; v < 256; v++)
                 amb_tbl[ch][v] = v * ((amb >> (24 - 8*ch)) & 0xFF) / 255;
         amb_tbl_for = amb;
+#ifdef HLE_TEST_PERF
+        hle_vl_amb++;
+#endif
     }
+    VL_MARK(0);
     t3d_begin(2, count * sizeof(gbi_vtx_t));
+    VL_MARK(1);
     uint32_t *out = gbi_alloc(count * sizeof(gbi_vtx_t));
     const uint32_t *in = (const uint32_t*)src;
-    uint32_t *o = out;
-    // T3DVertPacked (2 vertices): posA normA | posB normB | rgbaA | rgbaB | stA | stB
-    // gbi_vtx_t: ob[0..1] | ob[2] flag | tc | cn
-    for (int i = 0; i < count; i += 2, in += 8, o += 8) {
-        o[0] = in[0]; o[1] = in[1] & 0xFFFF0000; o[2] = in[6]; o[3] = in[4];
-        o[4] = in[2]; o[5] = in[3] & 0xFFFF0000; o[6] = in[7]; o[7] = in[5];
-        if (uv_ofs) {
-            o[2] = ((uint32_t)(uint16_t)((o[2] >> 16) + uv_s) << 16) | (uint16_t)(o[2] + uv_t);
-            o[6] = ((uint32_t)(uint16_t)((o[6] >> 16) + uv_s) << 16) | (uint16_t)(o[6] + uv_t);
-        }
-        if (scale) {
-            for (int j = 3; j <= 7; j += 4) {
-                uint8_t *cn = (uint8_t*)&o[j];
-                cn[0] = amb_tbl[0][cn[0]]; cn[1] = amb_tbl[1][cn[1]];
-                cn[2] = amb_tbl[2][cn[2]]; cn[3] = amb_tbl[3][cn[3]];
+    switch ((uv_ofs != 0) | scale << 1 | fog << 2) {
+    case 0: vert_copy(out, in, count, false, false, false, uv_s, uv_t, amb_tbl, k); break;
+    case 1: vert_copy(out, in, count, true,  false, false, uv_s, uv_t, amb_tbl, k); break;
+    case 2: vert_copy(out, in, count, false, true,  false, uv_s, uv_t, amb_tbl, k); break;
+    case 3: vert_copy(out, in, count, true,  true,  false, uv_s, uv_t, amb_tbl, k); break;
+    case 4: vert_copy(out, in, count, false, false, true,  uv_s, uv_t, amb_tbl, k); break;
+    case 5: vert_copy(out, in, count, true,  false, true,  uv_s, uv_t, amb_tbl, k); break;
+    case 6: vert_copy(out, in, count, false, true,  true,  uv_s, uv_t, amb_tbl, k); break;
+    default: vert_copy(out, in, count, true, true,  true,  uv_s, uv_t, amb_tbl, k); break;
+    }
+#ifdef HLE_TEST_T3D_EXACT   // test aid: the loop as it was, on the same input: every word must match
+    {
+        extern uint32_t hle_exact_calls, hle_exact_bad;
+        static uint32_t ref[T3D_VERTEX_CACHE_SIZE * 4];
+        const uint32_t *in = (const uint32_t*)src; uint32_t *o = ref;
+        for (int i = 0; i < count; i += 2, in += 8, o += 8) {
+            o[0] = in[0]; o[1] = in[1] & 0xFFFF0000; o[2] = in[6]; o[3] = in[4];
+            o[4] = in[2]; o[5] = in[3] & 0xFFFF0000; o[6] = in[7]; o[7] = in[5];
+            if (uv_ofs) {
+                o[2] = ((uint32_t)(uint16_t)((o[2] >> 16) + uv_s) << 16) | (uint16_t)(o[2] + uv_t);
+                o[6] = ((uint32_t)(uint16_t)((o[6] >> 16) + uv_s) << 16) | (uint16_t)(o[6] + uv_t);
             }
-        }
-        if (fog) {
-            for (int j = 0; j < 8; j += 4) {
+            if (scale) for (int j = 3; j <= 7; j += 4) {
+                uint8_t *cn = (uint8_t*)&o[j];
+                cn[0] = amb_tbl[0][cn[0]]; cn[1] = amb_tbl[1][cn[1]]; cn[2] = amb_tbl[2][cn[2]]; cn[3] = amb_tbl[3][cn[3]];
+            }
+            if (fog) for (int j = 0; j < 8; j += 4) {
                 int64_t f = k[0] * (int16_t)(o[j] >> 16) + k[1] * (int16_t)o[j] + k[2] * (int16_t)(o[j+1] >> 16) + k[3];
                 int32_t a = f >> 16;
                 o[j+3] = (o[j+3] & ~0xFFu) | (a <= 0 ? 0 : a >= 255 ? 255 : a);
             }
         }
+        hle_exact_calls++;
+        if (memcmp(ref, out, count * sizeof(gbi_vtx_t))) hle_exact_bad++;
     }
+#endif
+    VL_MARK(2);
     GBI_VTX(dest, count, PhysicalAddr(out));
+    VL_MARK(3);
+#ifdef HLE_TEST_PERF
+    hle_vl_verts += count;
+#endif
 }
 
 // Triangles are paired into G_TRI2, also across commands: hle_t3d_flush() is
 // called before anything else reaches the display list.
+#ifdef HLE_TEST_T3D_EXACT
+uint32_t hle_exact_calls, hle_exact_strips, hle_exact_bad;
+#endif
 static uint32_t tri_pending;
 static bool tri_has_pending;
 
@@ -336,9 +409,8 @@ void hle_t3d_flush(void)
 }
 
 /** Triangle in RDPQ_Triangle vertex order; `flip` = culling flag inverted by the caller. */
-static inline void tri(uint32_t d0, uint32_t d1, uint32_t d2, bool flip)
+static inline void tri_idx(int a, int b, int c, bool flip)
 {
-    int a = vtx_index(d0), b = vtx_index(d1), c = vtx_index(d2);
     uint32_t idx = flip ? GBI_TRI_IDX(a, c, b) : GBI_TRI_IDX(a, b, c);
     if (tri_has_pending) {
         tri_has_pending = false;
@@ -349,6 +421,11 @@ static inline void tri(uint32_t d0, uint32_t d1, uint32_t d2, bool flip)
     }
 }
 
+static inline void tri(uint32_t d0, uint32_t d1, uint32_t d2, bool flip)
+{
+    tri_idx(vtx_index(d0), vtx_index(d1), vtx_index(d2), flip);
+}
+
 static void tri_strip(uint32_t a0, uint32_t a1)
 {
     int count = ((a1 & 0xFFFF) + 1) / 2;
@@ -356,16 +433,50 @@ static void tri_strip(uint32_t a0, uint32_t a1)
     t3d_begin(count / 2 + 2, 0);
     // Literal port of the STRIP_LOOP: strips alternate winding, and an index
     // with the MSB set restarts a new strip.
+#ifdef HLE_TEST_T3D_EXACT   // test aid: the strip walked as it was: the same triangles, in order
+    uint32_t ref[256]; int nref = 0;
+    {
+        int end = count - 2, p = 0; bool flip = true;
+        while (p < end && nref < 256) {
+            int16_t i1 = (int16_t)e[p + 2];
+            if (i1 < 0) { p += 2; flip = true; continue; }
+            int a = vtx_index(e[p + 1]), b = vtx_index(i1), c = vtx_index(e[p]);
+            ref[nref++] = flip ? GBI_TRI_IDX(a, c, b) : GBI_TRI_IDX(a, b, c);
+            p += 1; flip = !flip;
+        }
+    }
+    uint64_t *dl0 = __gbi_ptr; bool pend0 = tri_has_pending; uint32_t pidx0 = tri_pending;
+#endif
+    // Each index is converted once: a triangle shares two with the one before
     int end = count - 2;
     int p = 0;
     bool flip = true;
+    int v0 = vtx_index(e[0]), v1 = vtx_index(e[1]);
     while (p < end) {
         int16_t i1 = (int16_t)e[p + 2];
-        if (i1 < 0) { p += 2; flip = true; continue; }
-        tri(e[p + 1], i1, e[p], flip);
+        if (i1 < 0) {
+            p += 2; flip = true;
+            if (p < end) { v0 = vtx_index(e[p]); v1 = vtx_index(e[p + 1]); }
+            continue;
+        }
+        int v2 = vtx_index(i1);
+        tri_idx(v1, v2, v0, flip);      // = tri(e[p + 1], i1, e[p], flip)
+        v0 = v1; v1 = v2;
         p += 1;
         flip = !flip;
     }
+#ifdef HLE_TEST_T3D_EXACT
+    {   // what went out: pairs of G_TRI2 (plus the one pending before and after)
+        extern uint32_t hle_exact_strips, hle_exact_bad;
+        uint32_t got[260]; int ngot = 0;
+        if (pend0) got[ngot++] = pidx0;
+        for (uint64_t *d = dl0; d < __gbi_ptr && ngot < 258; d++) { got[ngot++] = (uint32_t)(*d >> 32) & 0xFFFFFF; got[ngot++] = (uint32_t)*d; }
+        if (tri_has_pending) got[ngot++] = tri_pending;
+        int off = pend0 ? 1 : 0;
+        hle_exact_strips++;
+        if (nref < 256 && (ngot - off != nref || memcmp(got + off, ref, nref * 4))) hle_exact_bad++;
+    }
+#endif
 }
 
 static void tri_seq(uint32_t a0, uint32_t a1)

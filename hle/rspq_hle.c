@@ -1932,6 +1932,13 @@ void hle_perf_dump(uint32_t total)
                 (unsigned long)(__hle_perf_cmd[o][c] * 100ULL / total), (unsigned long)__hle_perf_cnt[o][c]);
         __hle_perf_cmd[o][c] = __hle_perf_cnt[o][c] = 0;
     }
+    extern uint32_t hle_vl_ticks[6], hle_vl_verts, hle_vl_amb, hle_vl_zrow, hle_vl_fog;
+    debugf("[hle]   vert_load setup: before fog %lu%%, fog plane %lu%%\n", (unsigned long)(hle_vl_ticks[4] * 100ULL / total), (unsigned long)(hle_vl_ticks[5] * 100ULL / total)); hle_vl_ticks[4] = hle_vl_ticks[5] = 0;
+    debugf("[hle]   vert_load: %lu ambient tables, %lu z rows, %lu fogged loads\n", (unsigned long)hle_vl_amb, (unsigned long)hle_vl_zrow, (unsigned long)hle_vl_fog);
+    hle_vl_amb = hle_vl_zrow = hle_vl_fog = 0;
+    debugf("[hle]   vert_load: setup %lu%% begin %lu%% loop %lu%% vtx %lu%%, %lu verts\n", (unsigned long)(hle_vl_ticks[0] * 100ULL / total), (unsigned long)(hle_vl_ticks[1] * 100ULL / total),
+           (unsigned long)(hle_vl_ticks[2] * 100ULL / total), (unsigned long)(hle_vl_ticks[3] * 100ULL / total), (unsigned long)hle_vl_verts);
+    hle_vl_ticks[0] = hle_vl_ticks[1] = hle_vl_ticks[2] = hle_vl_ticks[3] = hle_vl_verts = 0;
 }
 #endif
 
@@ -2031,7 +2038,13 @@ static void vrsp_run(void)
         assertf(size || cmd == 0, "HLE: invalid command %02lx in overlay %s", cmd_byte, rspq_overlay_ucodes[base]->name);
         if (vrsp_handlers[base] == ovl_t3d && cmd == 0) {
             // Runs of Tiny3D triangles are the bulk of the queue: take them in one go
+#ifdef HLE_TEST_PERF
+            uint32_t c0 = TICKS_READ();
+#endif
             vrsp_ptr += hle_t3d_tri_run(a, cmd_byte);
+#ifdef HLE_TEST_PERF
+            { extern uint32_t __hle_perf_cmd[16][64], __hle_perf_cnt[16][64]; __hle_perf_cmd[base][0] += TICKS_READ() - c0; __hle_perf_cnt[base][0]++; }
+#endif
             continue;
         }
         vrsp_ptr += size;   // advance first: handlers may re-enter the queue state
