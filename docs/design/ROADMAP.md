@@ -47,7 +47,7 @@ The first card is a skill card (learn a skill or upgrade one) while any are left
 | Iron Skin | Common | 2 | -15% damage taken |
 | Deep Flask | Common | 2 | +3 potions |
 | Kindled Flask | Common | 2 | potions heal 25% more |
-| Second Wind | Common | 2 | +40% stamina regen |
+| Second Wind | Common | 2 | +40% stamina regen; the 2.5 s wait after the bar empties is cut the same way (1.8 s, then 1.4 s) |
 | Vigor | Common | 3 | +25 max health |
 | Fleetfoot | Rare | 1 | rolls cost 40% less stamina |
 | Bloodthirst | Rare | 2 | heal 6% of damage dealt |

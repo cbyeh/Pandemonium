@@ -580,6 +580,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
             if (t == 30) pressed->d_up = 1;
             if (t == 34) debugf("[run] D-up: state %d (%s)\n", character_get_state(), character_get_state() == CHAR_STATE_SKILL ? "cast: Moon Blade Dance learned" : "no skill");
+#ifdef HLE_RUN_ROLLS       // roll until the stamina runs out (the wait before it refills)
+            if (t == 40) character.stamina = 1.0f;          // a sliver left: this roll empties the bar
+            if (t == 41) { pressed->a = 1; in->btn.a = 1; in->stick_y = 80; }
+#endif
 #ifdef HLE_RUN_STRIKE      // fight with the sword for 20 s first (the boons that hook into hits)
             if (t < 1200) {
                 if (t == 1) pressed->z = 1;

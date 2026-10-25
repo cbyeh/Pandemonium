@@ -36,7 +36,7 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_DEEP_FLASK]    = { "Deep Flask",    "+3 potions",                   2, TIER_COMMON },
     [BOON_KINDLED_FLASK] = { "Kindled Flask", "Potions heal 25% more",        2, TIER_COMMON },
     [BOON_FLEETFOOT]     = { "Fleetfoot",     "Rolls cost 40% less stamina",  1, TIER_RARE },
-    [BOON_SECOND_WIND]   = { "Second Wind",   "+40% stamina regen",           2, TIER_COMMON },
+    [BOON_SECOND_WIND]   = { "Second Wind",   "+40% stamina regen, faster from empty",     2, TIER_COMMON },
     [BOON_MOON_MASTERY]  = { "Moon Mastery",  "Skill cooldowns -20%",         2, TIER_RARE },
     [BOON_BLOODTHIRST]   = { "Bloodthirst",   "Heal 6% of damage dealt",      2, TIER_RARE },
     [BOON_VIGOR]         = { "Vigor",         "+25 max health",               3, TIER_COMMON },
@@ -791,6 +791,7 @@ float tower_mod_potion_heal(void)
 }
 float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH) - 20.0f * has_relic(RELIC_FRAIL) + 12.0f * (s.active ? s.bless[PB_VITALITY] : 0); }
 float tower_mod_roll_cost(void) { return (tower_boon_stacks(BOON_FLEETFOOT) ? 0.6f : 1.0f) * (has_relic(RELIC_LEADEN) ? 1.25f : 1.0f); }
+float tower_mod_stamina_empty(void) { return 1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND); }   // the wait once the bar is empty: x1/1.4 a stack
 float tower_mod_stamina_regen(void) { return (1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND)) * (has_relic(RELIC_STAMINA) ? 1.2f : 1.0f); }
 float tower_mod_skill_cooldown(void)
 {

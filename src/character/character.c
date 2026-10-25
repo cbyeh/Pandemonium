@@ -128,7 +128,10 @@ static inline void character_consume_stamina(float amount)
     character.stamina -= amount;
     if (character.stamina <= 0.0f) {
         character.stamina = 0.0f;
-        character.staminaRegenDelay = STAMINA_EXHAUSTED_DELAY;
+        character.staminaRegenDelay = STAMINA_EXHAUSTED_DELAY / tower_mod_stamina_empty();   // Second Wind shortens the wait too
+#ifdef HLE_AUTOPLAY
+        debugf("[stamina] empty: regen waits %.2f s\n", (double)character.staminaRegenDelay);
+#endif
     } else {
         character.staminaRegenDelay = STAMINA_REGEN_DELAY;
     }
