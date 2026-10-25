@@ -27,8 +27,10 @@
 #define DRIFT_SPEED    32.0f
 #define KEEP_DIST      36.0f           // hovers within sword reach (at 55 it backed out of every swing)
 #define MESH_R         16.0f           // the eye mesh is built at this radius (1/8-unit storage)
+#define FAR_DIST       70.0f           // past the chains' reach: the crosses are for a player who keeps away
 
-typedef enum { SB_INTRO, SB_HOVER, SB_GLARE, SB_CORONA, SB_DIVE, SB_REST, SB_LASH, SB_SWEEP, SB_BREAK, SB_DEAD } SbState;
+typedef enum { SB_INTRO, SB_HOVER, SB_GLARE, SB_CORONA, SB_DIVE, SB_REST, SB_LASH, SB_SWEEP, SB_BREAK, SB_DEAD,
+               SB_SPIRAL, SB_EMBER } SbState;
 
 // ---- Shackles: iron chains hanging from the sun to weights that drag on the floor ----
 #define NCH        4               // chains
@@ -71,7 +73,9 @@ static struct {
     int step;
     float groundY, orbit;
     bool unshackled;
-    float cdGlare, cdRain, cdCorona, cdDive, cdLash, cdSweep;
+    float cdGlare, cdRain, cdCorona, cdDive, cdLash, cdSweep, cdSpiral, cdEmber;
+    float aim;              // a volley's locked yaw (the crosses)
+    float gold, red;        // the eye's tells, eased: gold = it is charging fire, red = it is about to slam
     float rainT[RAIN_MAX], rainPos[RAIN_MAX][2];
     float diveTarget[2];
     float raysSpin;
@@ -112,7 +116,11 @@ static void move_toward(Boss *b, float x, float z, float speed, float dt)
     if (scene_bounds_check_room(nx, s.groundY, nz)) { b->pos[0] = nx; b->pos[2] = nz; }
 }
 
-static void enter(SbState st) { s.state = st; s.t = 0.0f; s.step = 0; }
+static void enter(SbState st) {
+#ifdef HLE_SUN_TRACE
+    debugf("[sun] %.1f s: state %d -> %d\n", (double)s.life, s.state, st);
+#endif
+    s.state = st; s.t = 0.0f; s.step = 0; }
 
 static void sfx_boom(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH1, 1.0f, 0.0f); }
 static void sfx_cast(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SWING2, 1.0f, 0.0f); }
@@ -192,7 +200,8 @@ void sun_boss_begin(Boss* boss)
     s.unshackled = false;
     s.life = 0.0f;
     s.orbit = 0.0f;
-    s.cdGlare = 2.0f; s.cdRain = 6.0f; s.cdCorona = 10.0f; s.cdDive = 14.0f; s.cdLash = 4.0f; s.cdSweep = 9.0f;
+    s.cdGlare = 2.0f; s.cdRain = 6.0f; s.cdCorona = 10.0f; s.cdDive = 14.0f; s.cdLash = 4.0f; s.cdSweep = 9.0f; s.cdSpiral = 7.0f; s.cdEmber = 5.0f;
+    s.gold = s.red = 0.0f;
     s.chainsReady = false;
     s.weights = true;
     s.downT = -1.0f;
@@ -211,26 +220,121 @@ void sun_boss_skip_intro(Boss* boss)
 
 // ---- Attacks (hostile skill effects, crimson) ----
 
+static void eye_front(const Boss *b, float a, float side, float out[3])
+{
+    out[0] = b->pos[0] + sinf(a) * (SUN_R + 4.0f) + cosf(a) * side;
+    out[1] = b->pos[1];
+    out[2] = b->pos[2] + cosf(a) * (SUN_R + 4.0f) - sinf(a) * side;
+}
+
+// Sunbrand Cross (only at range, FAR_DIST): the eye burns gold and turns on the player, then
+// locks: three crosses swell in front of it, the middle one big, and the lane it will fly down
+// flares on the floor; 0.55 s later they fly, straight along the lock. Step wide or roll.
+// Unshackled, a second volley, locked afresh.
+#define CROSS_LOCK 0.55f
 static void glare_update(Boss *b, float dt)
 {
-    // The eye narrows on the player, then looses crossed waves one after another,
-    // each aimed where the player is: keep moving
-    face_player(b, dt, 3.0f);
-    int n = s.unshackled ? 4 : 3;
-    const float WIND = 1.0f / speed_mult(), GAP = 0.32f, SPEED = 58.0f;
-    if (s.step < n && s.t >= WIND + s.step * GAP) {
+    const float WIND = 1.1f / speed_mult(), SPEED = 80.0f, GAP = 0.55f;
+    int volleys = s.unshackled ? 2 : 1;
+    float lockAt = WIND - CROSS_LOCK + s.step * (CROSS_LOCK + GAP);
+    if (s.step < volleys && s.t < lockAt) face_player(b, dt, 3.0f);
+    else {      // locked: turn (eased) onto the aim and hold it
+        float d = remainderf(s.aim - b->rot[1], 2.0f * T3D_PI);
+        b->rot[1] += d * fminf(1.0f, dt * 12.0f);
+    }
+    // it rises a little to shoot down the lane
+    b->pos[1] += (s.groundY + HOVER_H + 6.0f - b->pos[1]) * fminf(1.0f, dt * 3.0f);
+    if (s.step < volleys && s.t >= lockAt) {
         float dx, dz, d = to_player(b, &dx, &dz);
-        float a = atan2f(dx, dz) + ((s.step & 1) ? 0.12f : -0.12f) * (s.step > 0);
+        s.aim = atan2f(dx, dz);
         float dy = (character.pos[1] + 10.0f) - b->pos[1];
         float h = sqrtf(d * d + dy * dy);
-        float vy = h > 1e-3f ? dy / h * SPEED : 0.0f, vh = h > 1e-3f ? d / h * SPEED : SPEED;
-        float o[3] = { b->pos[0] + sinf(a) * SUN_R, b->pos[1], b->pos[2] + cosf(a) * SUN_R };
-        skill_fx_spawn_wave_hostile(SKILL_WAVE_X, o, (float[3]){ sinf(a) * vh, vy, cosf(a) * vh },
-                                    hurt(10.0f), 1, 0.0f, 2.4f, false);
-        sfx_cast();
+        for (int k = -1; k <= 1; k++) {
+            float a = s.aim + k * 0.3f;
+            float vy = h > 1e-3f ? dy / h * SPEED : 0.0f, vh = h > 1e-3f ? d / h * SPEED : SPEED;
+            float o[3]; eye_front(b, s.aim, k * 9.0f, o);
+            skill_fx_next_shape(k ? 1.35f : 1.9f, CROSS_LOCK + fabsf((float)k) * 0.06f);
+            skill_fx_spawn_wave_hostile(SKILL_WAVE_X, o, (float[3]){ sinf(a) * vh, vy, cosf(a) * vh },
+                                        hurt(k ? 13.0f : 18.0f), 1, 0.0f, fmaxf(2.2f, (h + 40.0f) / SPEED), false);   // far enough to reach
+        }
+        for (int i = 1; i <= 4; i++)    // the middle lane, on the floor, out to the player
+            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(s.aim) * d * 0.25f * i, s.groundY,
+                                                     b->pos[2] + cosf(s.aim) * d * 0.25f * i }, s.aim + i);
+        audio_play_scene_sfx_dist(SCENE1_SFX_DARK_BEAM, 0.8f, 0.0f);
+#ifdef HLE_AUTOPLAY
+        debugf("[sun] cross volley %d at %.0f\n", s.step + 1, (double)d);
+#endif
         s.step++;
     }
-    if (s.t > WIND + n * GAP + 0.5f) enter(SB_HOVER);
+    // loosed: they fly on their own when their charge runs out
+    float rel = WIND + (s.step - 1) * (CROSS_LOCK + GAP);
+    if (s.step > 0 && s.t >= rel && s.t - dt < rel) { sfx_cast(); screen_shake_set_shake_mag(5.0f); }
+    if (s.t > WIND + (volleys - 1) * (CROSS_LOCK + GAP) + 0.7f) enter(SB_HOVER);
+}
+
+// Solar Spiral: the sun climbs, its corona spins up and a ring of sparks runs round the
+// floor under it, then two arms of slow embers (three unshackled) wheel out of it, wide
+// enough to fill the arena: roll through an arm, or weave between them
+static void spiral_update(Boss *b, float dt)
+{
+    const float WIND = 1.0f / speed_mult(), EMIT = 0.15f, TURN = 0.5f;     // embers ~18 apart where the player stands: gaps to slip through
+    int arms = s.unshackled ? 3 : 2, shots = 10;
+    b->pos[1] += (s.groundY + HOVER_H + 12.0f - b->pos[1]) * fminf(1.0f, dt * 2.5f);
+    s.raysSpin = 4.0f + 4.0f * clamp01(s.t / WIND);
+    if (s.t < WIND) {
+        face_player(b, dt, 2.0f);
+        int k = (int)(s.t * 6.0f / WIND);
+        if (k != (int)((s.t - dt) * 6.0f / WIND) && k < 6) {
+            float a = b->rot[1] + k * (T3D_PI / 3.0f);
+            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * 22.0f, s.groundY, b->pos[2] + cosf(a) * 22.0f }, a);
+        }
+        if (s.t - dt <= 0.0f) audio_play_scene_sfx_dist(SCENE1_SFX_FIRE, 0.9f, 0.0f);
+        s.aim = b->rot[1];
+        return;
+    }
+    if (s.step < shots && s.t >= WIND + s.step * EMIT) {
+        float spin = TURN * s.step;
+        for (int k = 0; k < arms; k++) {
+            float a = s.aim + spin + k * 2.0f * T3D_PI / arms;
+            float o[3] = { b->pos[0] + sinf(a) * SUN_R, s.groundY + 9.0f, b->pos[2] + cosf(a) * SUN_R };
+            skill_fx_spawn_orb_hostile(o, (float[3]){ sinf(a) * 34.0f, 0.0f, cosf(a) * 34.0f }, hurt(8.0f), 3.2f, 0.0f);
+        }
+        if (s.step == 0) { sfx_cast(); screen_shake_set_shake_mag(4.0f); }
+        s.step++;
+    }
+    // the sun turns with its arms, easing out
+    b->rot[1] += TURN / EMIT * dt * (1.0f - clamp01((s.t - WIND - shots * EMIT) / 0.4f));
+    if (s.t > WIND + shots * EMIT + 0.6f) { enter(SB_HOVER); s.t = -1.0f; }     // spent: a longer opening after it
+}
+
+// Sun Ember (at range): the sun draws back and an ember swells in front of the eye, then it
+// is loosed and hunts the player, turning after it, until it comes close: from there it flies
+// straight, so a late sidestep or roll slips it. Unshackled, a second from the other side.
+static void ember_update(Boss *b, float dt)
+{
+    const float CHARGE = 0.85f / speed_mult();
+    int n = s.unshackled ? 2 : 1;
+    face_player(b, dt, 3.0f);
+    float dx, dz, d = to_player(b, &dx, &dz);
+    if (d > 1e-3f && s.t < CHARGE)      // draws back a little while it charges
+        move_toward(b, b->pos[0] - dx / d * 10.0f, b->pos[2] - dz / d * 10.0f, 14.0f, dt);
+    b->pos[1] += (s.groundY + HOVER_H + 4.0f - b->pos[1]) * fminf(1.0f, dt * 3.0f);
+    if (s.step < n && s.t >= s.step * 0.5f) {
+        float a = atan2f(dx, dz), side = (s.step ? -1.0f : 1.0f) * 10.0f;
+        float o[3]; eye_front(b, a, side, o);
+        o[1] += 4.0f;
+        // it leaves sideways and up, then curls round onto the player
+        float v[3] = { sinf(a) * 38.0f + cosf(a) * side * 1.5f, 20.0f, cosf(a) * 38.0f - sinf(a) * side * 1.5f };
+        skill_fx_next_shape(1.9f, CHARGE);
+        skill_fx_spawn_orb_hostile(o, v, hurt(20.0f), fmaxf(3.6f, d / 40.0f + 1.5f), 2.4f);
+        audio_play_scene_sfx_dist(SCENE1_SFX_FIRE, 0.8f, 0.0f);
+#ifdef HLE_AUTOPLAY
+        debugf("[sun] ember %d at %.0f\n", s.step + 1, (double)d);
+#endif
+        s.step++;
+    }
+    if (s.t >= CHARGE && s.t - dt < CHARGE) sfx_cast();
+    if (s.t > CHARGE + (n - 1) * 0.5f + 0.6f) enter(SB_HOVER);
 }
 
 static void rain_spawn(void)
@@ -541,10 +645,14 @@ static void sweep_update(Boss *b, float dt)
 
 static void choose(Boss *b, float dist)
 {
-#ifdef HLE_SUN_FORCE   // test aid: 1 = lash, 2 = sweep, 3 = dive, 4 = corona, back to back
-    if (HLE_SUN_FORCE != 9) { float dx, dz, d = to_player(b, &dx, &dz);   // within reach of the player
+#ifdef HLE_SUN_FORCE   // test aid: 1 = lash, 2 = sweep, 3 = dive, 4 = corona, 5 = crosses, 6 = spiral, 7 = ember, back to back
+    if (HLE_SUN_FORCE == 5 || HLE_SUN_FORCE == 7) { if (dist < FAR_DIST + 5.0f) return; }    // the ranged ones: it drifts out to range first
+    else if (HLE_SUN_FORCE != 9) { float dx, dz, d = to_player(b, &dx, &dz);   // within reach of the player
       if (d > 50.0f) { b->pos[0] = character.pos[0] - dx / d * 50.0f; b->pos[2] = character.pos[2] - dz / d * 50.0f; } }
     if (HLE_SUN_FORCE == 9) return;     // 9 = never attacks: it only hovers (can a sword reach it?)
+    if (HLE_SUN_FORCE == 5) { enter(SB_GLARE); return; }
+    if (HLE_SUN_FORCE == 6) { enter(SB_SPIRAL); debugf("[sun] spiral\n"); return; }
+    if (HLE_SUN_FORCE == 7) { enter(SB_EMBER); return; }
     if (HLE_SUN_FORCE == 1) { lash_start(b, s.unshackled ? 2 : 1); return; }
     if (HLE_SUN_FORCE == 3) { enter(SB_DIVE); debugf("[sun] dive\n"); return; }
     if (HLE_SUN_FORCE == 4) { enter(SB_CORONA); debugf("[sun] corona\n"); return; }
@@ -552,6 +660,12 @@ static void choose(Boss *b, float dist)
 #endif
     if (s.cdDive <= 0.0f && dist < 90.0f) { s.cdDive = 13.0f; enter(SB_DIVE); return; }
     if (s.cdCorona <= 0.0f && dist < 60.0f) { s.cdCorona = 11.0f; enter(SB_CORONA); return; }
+    // before the lash: by priority alone the dive, corona and lash took every turn up close
+    if (s.cdSpiral <= 0.0f) { s.cdSpiral = s.unshackled ? 10.0f : 13.0f; enter(SB_SPIRAL);
+#ifdef HLE_AUTOPLAY
+        debugf("[sun] spiral\n");
+#endif
+        return; }
     if (s.cdLash <= 0.0f && dist < CHAIN_LEN + SUN_R) { s.cdLash = s.unshackled ? 4.5f : 6.0f; lash_start(b, s.unshackled ? 2 : 1); return; }
     if (s.unshackled && s.cdSweep <= 0.0f && dist < CHAIN_LEN + SUN_R) {
         float dx, dz; to_player(b, &dx, &dz);
@@ -561,8 +675,10 @@ static void choose(Boss *b, float dist)
 #endif
         return;
     }
+    // At range: the crosses and the hunting ember (standing off is not safe)
+    if (s.cdGlare <= 0.0f && dist > FAR_DIST) { s.cdGlare = s.unshackled ? 3.5f : 5.0f; enter(SB_GLARE); return; }
+    if (s.cdEmber <= 0.0f && dist > 50.0f) { s.cdEmber = s.unshackled ? 5.0f : 7.0f; enter(SB_EMBER); return; }
     if (s.cdRain <= 0.0f) { s.cdRain = s.unshackled ? 6.0f : 8.0f; rain_spawn(); sfx_cast(); s.t = -0.3f; return; }
-    if (s.cdGlare <= 0.0f) { s.cdGlare = s.unshackled ? 3.0f : 4.5f; enter(SB_GLARE); return; }
 }
 
 void sun_boss_update(Boss* b, float dt)
@@ -573,6 +689,7 @@ void sun_boss_update(Boss* b, float dt)
     s.life += dt;
     float sm = speed_mult();
     s.cdGlare -= dt * sm; s.cdRain -= dt * sm; s.cdCorona -= dt * sm; s.cdDive -= dt * sm; s.cdLash -= dt * sm; s.cdSweep -= dt * sm;
+    s.cdSpiral -= dt * sm; s.cdEmber -= dt * sm;
     s.raysSpin += (1.0f - s.raysSpin) * fminf(1.0f, dt * 2.0f);
     rain_tick(dt);
     if (!s.chainsReady) chains_reset(b);
@@ -594,7 +711,8 @@ void sun_boss_update(Boss* b, float dt)
 
 
     // Past a move's windup (step 0), or diving: the strike itself
-    b->striking = s.state == SB_DIVE || ((s.state == SB_GLARE || s.state == SB_CORONA || s.state == SB_LASH || s.state == SB_SWEEP) && s.step > 0);
+    b->striking = s.state == SB_DIVE || ((s.state == SB_GLARE || s.state == SB_CORONA || s.state == SB_LASH || s.state == SB_SWEEP
+                                          || s.state == SB_SPIRAL || s.state == SB_EMBER) && s.step > 0);
 #ifdef HLE_TEST_DUMMY
     { extern void hle_open_tick(bool, float); hle_open_tick((s.state == SB_HOVER || s.state == SB_REST), dt); }   // test aid: measure the openings
 #endif
@@ -614,7 +732,11 @@ void sun_boss_update(Boss* b, float dt)
         face_player(b, dt, 3.0f);
         s.orbit += dt * 0.35f * sm;
         float away = atan2f(-dx, -dz) + s.orbit * 0.3f;
-        move_toward(b, character.pos[0] + sinf(away) * KEEP_DIST, character.pos[2] + cosf(away) * KEEP_DIST, DRIFT_SPEED * sm, dt);
+        float keep = KEEP_DIST;
+#ifdef HLE_SUN_FORCE
+        if (HLE_SUN_FORCE == 5 || HLE_SUN_FORCE == 7) keep = 85.0f;     // test aid: hovers at range (the ranged moves)
+#endif
+        move_toward(b, character.pos[0] + sinf(away) * keep, character.pos[2] + cosf(away) * keep, DRIFT_SPEED * sm, dt);
         float hy = s.groundY + HOVER_H + sinf(s.life * 2.0f) * 3.0f;
         b->pos[1] += (hy - b->pos[1]) * fminf(1.0f, dt * 3.0f);
         if (s.t > 1.5f / sm) choose(b, dist);     // a pause between attacks: the opening
@@ -626,6 +748,8 @@ void sun_boss_update(Boss* b, float dt)
     case SB_DIVE:   dive_update(b, dt);  break;
     case SB_LASH:   lash_update(b, dt);  break;
     case SB_SWEEP:  sweep_update(b, dt); break;
+    case SB_SPIRAL: spiral_update(b, dt); break;
+    case SB_EMBER:  ember_update(b, dt); break;
 
     case SB_REST:
         // Dimmed on the floor: the opening (a stagger drops it there from the air)
@@ -672,6 +796,16 @@ void sun_boss_update(Boss* b, float dt)
         break;
     }
     b->rot[0] = b->rot[2] = 0.0f;
+
+    // The eye's tells, eased in and out (no snapping): red before it slams down (the dive) or
+    // bursts (the corona); gold while it charges fire (crosses, spiral, ember)
+    float red = s.state == SB_DIVE ? (s.step ? 1.0f : clamp01((s.t - 0.2f) / 0.6f))
+              : s.state == SB_CORONA && s.step == 0 ? 1.0f : 0.0f;
+    float gold = (s.state == SB_GLARE && s.t < 1.1f / sm + (s.unshackled ? 1.1f : 0.0f)) || (s.state == SB_SPIRAL && s.step == 0)
+               || (s.state == SB_EMBER && s.t < 0.85f / sm) ? 1.0f : 0.0f;
+    s.red += (red - s.red) * fminf(1.0f, dt * 10.0f);
+    if (gold > 0.0f && s.raysSpin < 5.0f) s.raysSpin += (5.0f - s.raysSpin) * fminf(1.0f, dt * 4.0f);   // and its corona spins up
+    s.gold += (gold - s.gold) * fminf(1.0f, dt * (gold > s.gold ? 6.0f : 4.0f));
 
 #ifdef HLE_LOG_CLOTH     // test aid: the chains' time a frame (simulation; drawing logged in sun_boss_draw)
     uint32_t t0 = TICKS_READ();
@@ -785,7 +919,8 @@ void sun_boss_draw(Boss* b)
 {
     if (!s.ready || !b->visible) return;
     float dying = (s.state == SB_DEAD) ? clamp01(s.t / 3.0f) : 0.0f;
-    float pulse = 1.0f + 0.04f * sinf(s.life * 5.0f) + (b->damageFlashTimer > 0.0f ? 0.08f : 0.0f);
+    float pulse = 1.0f + 0.04f * sinf(s.life * 5.0f) + (b->damageFlashTimer > 0.0f ? 0.08f : 0.0f)
+                + s.gold * (0.06f + 0.03f * sinf(s.life * 12.0f));     // swells, throbbing, while it charges fire
     float scale = (SUN_R / MESH_R) * pulse * (1.0f - 0.5f * dying);
     static float restK;     // shrinks a little on the floor, easing (a stagger drops it there)
     restK += ((s.state == SB_REST ? 1.0f : 0.0f) - restK) * fminf(1.0f, deltaTime * 6.0f);
@@ -804,11 +939,9 @@ void sun_boss_draw(Boss* b)
     for (int i = 0; i < 2; i++)
         proc_mesh_set_transform(&cor[i], cs, (float[3]){ rock, yaw, i ? -spinAngle * 1.3f : spinAngle }, b->pos);
 
-    // Glows blood red, pulsing, before it slams down (the dive) or bursts (the corona)
-    float warn = s.state == SB_DIVE ? (s.step ? 1.0f : clamp01((s.t - 0.2f) / 0.6f))
-               : s.state == SB_CORONA && s.step == 0 ? clamp01(s.t / 0.5f) : 0.0f;
-    warn *= 0.7f + 0.3f * sinf(s.life * 18.0f);
-    color_t tint = RGBA32(255, 255 - (int)(225 * warn), 255 - (int)(235 * warn), 255);
+    // Glows blood red, pulsing, before it slams down or bursts; burns gold while it charges fire
+    float warn = s.red * (0.7f + 0.3f * sinf(s.life * 18.0f)), gold = s.gold * (0.75f + 0.25f * sinf(s.life * 12.0f));
+    color_t tint = RGBA32(255, (int)((255 - 225 * warn) * (1.0f - 0.08f * gold)), (int)((255 - 235 * warn) * (1.0f - 0.9f * gold)), 255);
 
 #ifdef HLE_LOG_CLOTH
     uint32_t t0 = TICKS_READ();
