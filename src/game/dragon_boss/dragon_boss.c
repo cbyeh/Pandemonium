@@ -1083,9 +1083,11 @@ void dragon_boss_update(Boss* b, float dt)
     }
 
 
-    b->open = (s.state == DG_IDLE || s.state == DG_TIRED || s.state == DG_DOWN);     // the player can hit back: the stagger meter's keep timer runs
+    // Past a move's windup, a tail swing, or up in the air: the strike itself
+    b->striking = s.state == DG_FLY || s.state == DG_TAIL || (s.state == DG_CLAW && s.step != 0 && s.step != 2) ||
+                  ((s.state == DG_BITE || s.state == DG_BREATH || s.state == DG_CHARGE || s.state == DG_WHIP || s.state == DG_NOVA || s.state == DG_BEAM) && s.step > 0);
 #ifdef HLE_TEST_DUMMY
-    { extern void hle_open_tick(bool, float); hle_open_tick(b->open, dt); }   // test aid: measure the openings
+    { extern void hle_open_tick(bool, float); hle_open_tick((s.state == DG_IDLE || s.state == DG_TIRED || s.state == DG_DOWN), dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {
     case DG_INTRO:

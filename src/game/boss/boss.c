@@ -512,11 +512,11 @@ static inline void boss_update_shadow_mat(Boss* boss)
 // Health per fight, skills or not (the D-pad skills are tuned under the sword). The bonus bosses are
 // sized to the same difficulty as the Guardian's two phases together (measured damage
 // against a dummy + a binomial dodge model): they hit softer but more often.
-// The stagger meter keeps 5 s unhit, then drains; slower while the boss attacks or is out of reach
+// The stagger meter keeps 2 s unhit, then drains; slower while the boss strikes or is in the air
 // (POISE_DAMAGE: boss.h)
-#define POISE_KEEP_S        5.0f     // no hits this long: it drains
+#define POISE_KEEP_S        2.0f     // no hits this long: it drains
 #define POISE_DRAIN         0.10f    // a second, of the full meter
-#define POISE_CLOSED        0.33f    // the hold and drain's pace while it attacks or is out of reach
+#define POISE_CLOSED        0.33f    // the hold and drain's pace while it strikes or is in the air
 
 static inline float boss_target_max_health(int phase)
 {
@@ -555,8 +555,12 @@ static void boss_poise_update(Boss* boss, float dt)
         return;
     }
     if (boss->mode != BOSS_MODE_COMBAT || boss->health <= 0.0f) { boss->poise = 0.0f; return; }
-    // Time it spends attacking or out of reach counts a third: backing off still lets it recover, slowly
-    float rec = dt * (boss->open ? 1.0f : POISE_CLOSED);
+    // Time it spends mid-strike or in the air counts a third (the player can't hit then); backing off still lets it recover
+    float rec = dt * (boss->striking ? POISE_CLOSED : 1.0f);
+#ifdef HLE_TEST_DUMMY   // test aid: the share of the fight it spends striking
+    { static float all, str; all += dt; if (boss->striking) str += dt;
+      if (all >= 30.0f) { debugf("[stagger] striking %.0f%% of the time\n", (double)(str * 100.0f / all)); all = str = 0.0f; } }
+#endif
     boss->poiseIdleT += rec;
     if (boss->poise >= 1.0f) {
         if (boss_try_stagger(boss)) {
@@ -597,9 +601,10 @@ void boss_update(Boss* boss)
     if (!boss) return;
     boss_sync_max_health(boss);
     boss_poise_update(boss, deltaTime);
-    if (boss->phaseIndex <= 2) boss->open = !boss->isAttacking && boss->state != BOSS_STATE_AERIAL_SWORD_BARRAGE;     // the Guardian's and Unbound's openings: not attacking, not in the air
+    if (boss->phaseIndex <= 2)      // the Guardian's and Unbound's: a blow's live part, or the barrage in the air
+        boss->striking = boss->handAttackColliderActive || boss->sphereAttackColliderActive || boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE;
 #ifdef HLE_TEST_DUMMY   // test aid: the Guardian's and Unbound's openings (time not attacking), like the Bonus bosses'
-    if (boss->phaseIndex <= 2 && boss->mode == BOSS_MODE_COMBAT) { extern void hle_open_tick(bool, float); hle_open_tick(boss->open, deltaTime); }
+    if (boss->phaseIndex <= 2 && boss->mode == BOSS_MODE_COMBAT) { extern void hle_open_tick(bool, float); hle_open_tick(!boss->isAttacking, deltaTime); }
 #endif
 #ifdef HLE_TEST_FREEZE_BOSS
     if (boss->mode == BOSS_MODE_COMBAT) return;     // test aid: keep the boss out of the way

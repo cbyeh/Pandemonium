@@ -70,6 +70,7 @@ static struct {
     float t;                // time in state
     int step;               // events fired in the state / combo index
     bool hitDone;           // the current swing already connected
+    bool striking;          // inside a swing's damage window this frame
     float groundY, velY;
     float moveX, moveZ;     // roll / jump drift
     float cdCleave, cdHalfmoon, cdMoonblade, cdRoll, cdSplitter, cdUpdown, cdTri, cdHoly;
@@ -152,7 +153,9 @@ static void melee_check(Boss *b, float t0, float t1, float damage)
 {
     (void)b;
     float clip = t3d_anim_get_time(&s.anims[s.anim]);
-    if (s.hitDone || clip < t0 || clip > t1) return;
+    if (clip < t0 || clip > t1) return;
+    s.striking = true;
+    if (s.hitDone) return;
     float base[3], tip[3];
     if (!sword_segment(base, tip)) return;
     const float *p = character.pos;
@@ -537,9 +540,10 @@ void fallen_knight_update(Boss* b, float dt)
         screen_shake_set_shake_mag(6.0f);
     }
 
-    b->open = (s.state == FK_CHASE || s.state == FK_RECOVER);     // the player can hit back: the stagger meter's keep timer runs
+    b->striking = s.striking || s.state == FK_ROLL;     // mid-swing (melee_check) or rolling off
+    s.striking = false;
 #ifdef HLE_TEST_DUMMY
-    { extern void hle_open_tick(bool, float); hle_open_tick(b->open, dt); }   // test aid: measure the openings
+    { extern void hle_open_tick(bool, float); hle_open_tick((s.state == FK_CHASE || s.state == FK_RECOVER), dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {
     case FK_INTRO:

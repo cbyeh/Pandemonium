@@ -593,9 +593,10 @@ void sun_boss_update(Boss* b, float dt)
     }
 
 
-    b->open = (s.state == SB_HOVER || s.state == SB_REST);     // the player can hit back: the stagger meter's keep timer runs
+    // Past a move's windup (step 0), or diving: the strike itself
+    b->striking = s.state == SB_DIVE || ((s.state == SB_GLARE || s.state == SB_CORONA || s.state == SB_LASH || s.state == SB_SWEEP) && s.step > 0);
 #ifdef HLE_TEST_DUMMY
-    { extern void hle_open_tick(bool, float); hle_open_tick(b->open, dt); }   // test aid: measure the openings
+    { extern void hle_open_tick(bool, float); hle_open_tick((s.state == SB_HOVER || s.state == SB_REST), dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {
     case SB_INTRO:
