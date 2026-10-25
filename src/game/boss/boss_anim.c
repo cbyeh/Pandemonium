@@ -126,6 +126,12 @@ void boss_anim_request(Boss* boss, BossAnimState target, float start_time, bool 
         boss->blendTimer = 0.0f;
         // swings short (the weapon collider rides the hand), a stagger or a fall a little longer
         s_blendDur = priority == BOSS_ANIM_PRIORITY_CRITICAL ? 0.35f : priority >= BOSS_ANIM_PRIORITY_HIGH ? 0.2f : 0.4f;
+        {   // up into the barrage and back down: no snap at either end
+            static bool wasAir;
+            bool air = boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE;
+            if (air || wasAir) s_blendDur = fmaxf(s_blendDur, 0.45f);
+            wasAir = air;
+        }
         if (boss->currentAnimState == BOSS_ANIM_KNEEL && boss->state == BOSS_STATE_RECOVER) s_blendDur = 0.8f;   // up off the knee, unhurried
     }
     
@@ -314,12 +320,13 @@ void boss_anim_update(Boss* boss) {
     {
         static float crossT, breathT;
         bool jump = boss->state == BOSS_STATE_POWER_JUMP || boss->state == BOSS_STATE_FLIP_ATTACK || boss->state == BOSS_STATE_TRACKING_SLAM;
+        bool barrage = boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE;
         bool hang = boss->phaseIndex == 2 && boss->state != BOSS_STATE_DEAD &&
-                    (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE || (boss->pos[1] > 30.0f && !jump));
+                    (barrage ? boss->currentBarrageVariation == 1 : (boss->pos[1] > 30.0f && !jump));   // Angel Rain only
 #ifdef HLE_TEST_CRUCIFIX
         hang = boss->phaseIndex == 2;       // test aid: held for a look
 #endif
-        crossT += (hang ? 1.0f : -1.0f) * deltaTime * 1.6f;
+        crossT += (hang ? 1.0f : -1.0f) * deltaTime * 1.2f;     // into and out of the pose over ~0.8 s
         crossT = fminf(1.0f, fmaxf(0.0f, crossT));
         float w = crossT * crossT * (3.0f - 2.0f * crossT);
         boss_render_set_sword_float(w);     // the sword leaves the hand for over the head

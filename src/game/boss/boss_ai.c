@@ -709,6 +709,9 @@ void boss_ai_start_aerial_sword_barrage(Boss* boss) {
     boss->attackCooldown = 1.0f;
 
     boss->currentBarrageVariation = rand() % 2;
+#ifdef HLE_BARRAGE_VAR
+    boss->currentBarrageVariation = HLE_BARRAGE_VAR;     // test aid: one variant only
+#endif
     boss->consecutiveSwordRingUses++;
 
     boss->swordRingSpawned = false;
@@ -730,6 +733,9 @@ void boss_ai_start_aerial_sword_barrage(Boss* boss) {
     boss->currentAttackHasHit = false;
 
     boss->currentAttackName = boss->currentBarrageVariation == 0 ? "Angel Burst" : "Angel Rain";
+#ifdef HLE_AUTOPLAY
+    debugf("[barrage] %s at %.1f s\n", boss->currentAttackName, (double)gameTime);
+#endif
     boss->attackNameDisplayTimer = 3.0f;
     boss->currentAttackId = BOSS_ATTACK_AERIAL_SWORD_BARRAGE;
 }
@@ -1407,10 +1413,15 @@ void boss_ai_update(Boss* boss, BossIntent* out_intent) {
                 if (boss->state != prevState) out_intent->force_restart = true;
                 break;
             case BOSS_STATE_AERIAL_SWORD_BARRAGE:
-                // Levitates in the upright pose that ends its Phase 2 reveal (held by
-                // boss_attacks.c), not the ground stance
-                out_intent->anim = BOSS_ANIM_PHASE2_REVEAL;
-                out_intent->start_time = AERIAL_POSE_TIME;
+                // Angel Rain: levitates in the upright pose that ends its Phase 2 reveal (held by
+                // boss_attacks.c), hung as if crucified (boss_anim); Angel Burst: rises in its
+                // standing pose, sword in hand, as in the original game
+                if (boss->currentBarrageVariation == 1) {
+                    out_intent->anim = BOSS_ANIM_PHASE2_REVEAL;
+                    out_intent->start_time = AERIAL_POSE_TIME;
+                } else {
+                    out_intent->anim = BOSS_ANIM_IDLE;
+                }
                 out_intent->priority = BOSS_ANIM_PRIORITY_HIGH;
                 if (boss->state != prevState) out_intent->force_restart = true;
                 break;
