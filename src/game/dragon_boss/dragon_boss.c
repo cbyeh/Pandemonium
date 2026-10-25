@@ -27,15 +27,14 @@
 #define TAIL_SEG   17.0f
 #define LEG_L      19.0f        // each leg bone
 #define MESH       16.0f        // the segment and limb meshes are built 16 across, 16 long
-#define HIT_R      17.0f
-#define HIT_H      18.0f        // the hit capsule's height above its feet
+#define HIT_R      20.0f        // the hit capsule: wide enough for its legs at sword height (17 missed their outer 4)
 #define DROP_H     160.0f       // flies down from this high
 
 #define FL_MAX   40             // flames
 #define ORB_MAX  8
 #define BL_MAX   14             // the dark beam's delayed explosions
 #define BALL_MAX 4              // the triple breath's fireballs
-#define MAT_MAX  (40 + FL_MAX + ORB_MAX + 2 * BALL_MAX + 5)
+#define MAT_MAX  (40 + FL_MAX + ORB_MAX + 2 * BALL_MAX + 6)
 #define MAT_RING 3              // frames the RSP may still be reading
 
 #define COL_BACK   proc_rgb(46, 42, 54)
@@ -46,17 +45,17 @@
 
 typedef enum { DG_INTRO, DG_IDLE, DG_CLAW, DG_BITE, DG_TAIL, DG_BREATH, DG_CHARGE, DG_FLY,
                DG_ROAR, DG_NOVA, DG_ORBS, DG_BEAM, DG_DEAD = 13, DG_WHIP, DG_DOWN,
-               DG_TURN, DG_TRIPLE, DG_SNIPE, DG_SKYBEAM, DG_SWEEP } DgState;     // (12 was the beam's spent state; the numbers kept for HLE_DRAGON_FORCE)
+               DG_TURN, DG_TRIPLE, DG_SNIPE, DG_SKYBEAM, DG_SWEEP, DG_CONE, DG_HOVER } DgState;     // (12 was the beam's spent state; the numbers kept for HLE_DRAGON_FORCE)
 
 typedef struct { float p[3], from[3], t; bool moving; } Foot;
-typedef struct { float p[3], v[3], age, life, size; } Flame;
+typedef struct { float p[3], v[3], age, life, size; bool harm; } Flame;
 typedef struct { float p[3], v[3], age; bool on; } Orb;
 typedef struct { float p[2], t; bool on; } Blast;
 typedef struct { float p[3], v[3]; bool on; } Ball;
 
 static struct {
     bool ready;
-    ProcMesh seg, segDark, tseg, tsegDark, limb, mFoot, mHead, mHeadDark, mJaw, wing, wingDark, wingMemb, tip, tipDark, flame, mOrb, mIce;
+    ProcMesh seg, segDark, tseg, tsegDark, limb, mFoot, mHead, mHeadDark, mJaw, wing, wingDark, wingMemb, tip, tipDark, flame, mOrb, mIce, mCone;
     T3DMat4FP *mats;
     int matRing, mi;
     DgState state;
@@ -65,8 +64,8 @@ static struct {
     float groundY, alt;
     bool dark;                  // the second half: the dark has taken it
     // The pose, eased each frame toward the targets the current move sets
-    float neckPitch, neckYaw, neckReach, jaw, wingRaise, wingSpan, tail, crouch, claw[2], aimK;
-    float tNeckPitch, tNeckYaw, tNeckReach, tJaw, tWingRaise, tWingSpan, tTail, tCrouch, tClaw[2], tAimK;
+    float neckPitch, neckYaw, neckReach, jaw, wingRaise, wingSpan, tail, crouch, claw[2], aimK, rear;
+    float tNeckPitch, tNeckYaw, tNeckReach, tJaw, tWingRaise, tWingSpan, tTail, tCrouch, tClaw[2], tAimK, tRear;
     float poseRate, flapRate, flapPh;
     float aim[3];               // where the head looks when aimK > 0
     // The rig, rebuilt each frame
@@ -75,7 +74,8 @@ static struct {
     Foot feet[4];
     bool feetReady;
     // Moves
-    float cdClaw, cdBite, cdTail, cdBreath, cdCharge, cdFly, cdNova, cdOrbs, cdBeam, cdWhip, cdTriple, cdSnipe, cdSweep;
+    float cdClaw, cdBite, cdTail, cdBreath, cdCharge, cdFly, cdNova, cdOrbs, cdBeam, cdWhip, cdTriple, cdSnipe, cdSweep, cdCone;
+    int sweeps;                 // the ground beam's sweeps still to come
     float idleWait;
     float sweepFrom, sweepSpan, range, sg, target[3], beamFrom[3], flyTo[2], emit, fireCd, glow, beamW;
     bool hitDone;
@@ -89,9 +89,13 @@ static struct {
     int ballNext;
     float beamP[3];
     bool beamOn;
+    struct { float p[2], yaw, t; bool on, hit; } cone;     // a fire cone on the floor (DG_CONE)
 } s;
+static float tailPrev[NTAIL + 2][3];    // the tail's points and the blade's tip last frame (tail_sweep_hits)
+static bool tailPrevOk;
 
 static inline float clamp01(float x) { return x < 0.0f ? 0.0f : x > 1.0f ? 1.0f : x; }
+static float smooth01(float u) { u = clamp01(u); return u * u * (3.0f - 2.0f * u); }
 static inline float ease(float cur, float to, float rate, float dt) { return cur + (to - cur) * fminf(1.0f, rate * dt); }
 static inline float frand(void) { return (rand_custom_u32() % 2001) / 1000.0f - 1.0f; }     // -1..1
 static inline float len3(const float a[3]) { return sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]); }
@@ -145,9 +149,15 @@ static bool move_by(Boss *b, float dx, float dz)
     return true;
 }
 
+#ifdef HLE_LOG_HURTBOX
+static void hb_move_end(void);
+#endif
 static void enter(DgState st)
 {
-    s.state = st; s.t = 0.0f; s.step = 0; s.hitDone = false;
+#ifdef HLE_LOG_HURTBOX
+    hb_move_end();
+#endif
+    s.state = st; s.t = 0.0f; s.step = 0; s.hitDone = false; tailPrevOk = false;
     // Between attacks a pause; now and then (35%) a longer breather, its head low: an opening
     if (st == DG_IDLE) s.idleWait = (rand_custom_u32() % 100 < 35) ? 3.3f + (rand_custom_u32() % 100) / 100.0f : 1.8f;
 #ifdef HLE_AUTOPLAY
@@ -155,19 +165,97 @@ static void enter(DgState st)
 #endif
 }
 
-static bool player_low(void) { return character.pos[1] - s.groundY < 10.0f; }
 bool dragon_boss_stagger(Boss* b)
 {
     (void)b;
     // Not in the air, not already spent
     if (!s.ready || s.state == DG_INTRO || s.state == DG_FLY || s.state == DG_DEAD || s.alt > 1.0f) return false;
-    s.beamOn = false; s.glow = 0.0f;
+    s.beamOn = false; s.glow = 0.0f; s.cone.on = false;
     enter(DG_DOWN);     // its legs give: a lurch, then down on its belly, head lolling (dg_down)
     b->staggerT = BOSS_STAGGER_S;
     return true;
 }
 
 static void player_chest(float o[3]) { o[0] = character.pos[0]; o[1] = character.pos[1] + 12.0f; o[2] = character.pos[2]; }
+
+// ---- Contact with the player ----
+// The player's body is its capsule: an axis from feet + 4 to feet + 16, 8 round. A blow lands when
+// what is drawn comes within PLAYER_R of that axis (2 short of touching: a little grace)
+#define PLAYER_R 6.0f
+static float axis_d2(const float q[3])
+{
+    float y0 = character.pos[1] + 4.0f, y1 = character.pos[1] + 16.0f;
+    float dx = q[0] - character.pos[0], dz = q[2] - character.pos[2], dy = q[1] < y0 ? y0 - q[1] : q[1] > y1 ? q[1] - y1 : 0.0f;
+    return dx * dx + dy * dy + dz * dz;
+}
+// From the segment a-b to the player's axis (the distance is convex along a-b: a ternary search)
+static float axis_dist_seg(const float a[3], const float b[3])
+{
+    float lo = 0.0f, hi = 1.0f, q[3];
+    for (int i = 0; i < 16; i++) {
+        float m1 = lo + (hi - lo) * (1.0f / 3.0f), m2 = hi - (hi - lo) * (1.0f / 3.0f), q2[3];
+        lerp3(q, a, b, m1); lerp3(q2, a, b, m2);
+        if (axis_d2(q) < axis_d2(q2)) hi = m2; else lo = m1;
+    }
+    lerp3(q, a, b, (lo + hi) * 0.5f);
+    return sqrtf(axis_d2(q));
+}
+static float axis_dist_pt(const float p[3]) { return sqrtf(axis_d2(p)); }
+
+// What is drawn, as a distance from the player's axis less the drawn shape's own radius
+static float tail_r(int i) { return (14.5f - i * 1.8f) * 0.9f; }     // a tail link's tube (put_link r, tapering to 0.82)
+static void tail_tip(float e[3])        // the end of the crystal blade (dragon_boss_draw)
+{
+    float d[3] = { s.tl[NTAIL][0] - s.tl[NTAIL - 1][0], s.tl[NTAIL][1] - s.tl[NTAIL - 1][1], s.tl[NTAIL][2] - s.tl[NTAIL - 1][2] };
+    norm3(d);
+    mad3(e, s.tl[NTAIL], d, 16.0f);
+}
+static float tail_gap(void)
+{
+    float g = 1e9f, e[3];
+    for (int i = 0; i < NTAIL; i++) g = fminf(g, axis_dist_seg(s.tl[i], s.tl[i + 1]) - tail_r(i));
+    tail_tip(e);
+    return fminf(g, axis_dist_seg(s.tl[NTAIL], e) - 3.4f);
+}
+static float head_gap(void)             // the skull, about 6 round, 26 long
+{
+    float sn[3];
+    mad3(sn, s.head, s.hz, 26.0f);
+    return axis_dist_seg(s.head, sn) - 6.0f;
+}
+static float body_gap(void)             // the torso (18 round), the neck, the head and the legs
+{
+    float g = fminf(axis_dist_seg(s.chest, s.hips) - 17.0f, head_gap());
+    for (int i = 0; i < NNECK; i++) g = fminf(g, axis_dist_seg(s.neck[i], s.neck[i + 1]) - (11.0f - i * 1.2f) * 0.9f);
+    for (int k = 0; k < 4; k++) g = fminf(g, axis_dist_seg(s.shoulder[k], s.foot[k]) - 6.0f);
+    return g;
+}
+static float flame_r(float size, float age, float life)    // as dragon_boss_draw sizes it (the octahedron, ~0.8 of its points' reach)
+{
+    float u = age / life;
+    return 0.8f * size * (0.4f + 0.6f * clamp01(u * 2.0f)) * (1.0f - u * u);
+}
+
+#ifdef HLE_LOG_HURTBOX    // test aid: each blow's gap between what is drawn and the player's body (8 round; < 0: touching)
+enum { HB_BITE, HB_TAIL, HB_WHIP, HB_CHARGE, HB_LAND, HB_FLAME, HB_ORB, HB_BLAST, HB_BALL, HB_BALLBURST, HB_BEAM, HB_STREAM, HB_CONE, HB_N };
+static const char *const hbName[HB_N] = { "bite", "tail", "whip", "charge", "land", "flame", "orb", "blast", "ball", "ballburst", "beam", "stream", "cone" };
+static float hbMin[HB_N] = { [0 ... HB_N - 1] = 1e9f };
+static int hbHits[HB_N];
+static void hb_hit(int src, float gap) { debugf("[hb] hit %s gap %.1f state %d t %.2f\n", hbName[src], (double)gap, s.state, (double)s.t); hbHits[src]++; }
+static void hb_touch(int src, float gap) { if (gap < hbMin[src]) hbMin[src] = gap; }     // a frame its blow could land
+static void hb_move_end(void)     // the move's closest pass of each blow it could deal, and the hits
+{
+    for (int i = 0; i < HB_N; i++) {
+        if (hbMin[i] < 1e8f) debugf("[hb] move %d %s closest %.1f hits %d%s\n", s.state, hbName[i], (double)hbMin[i], hbHits[i], hbMin[i] < PLAYER_R - 8.0f - 0.5f && !hbHits[i] ? " TOUCHED NOT HIT" : "");
+        hbMin[i] = 1e9f; hbHits[i] = 0;
+    }
+}
+#define HB_HIT(src, gap) hb_hit(src, gap)
+#define HB_TOUCH(src, gap) hb_touch(src, gap)
+#else
+#define HB_HIT(src, gap) ((void)sizeof(gap))       // (not evaluated)
+#define HB_TOUCH(src, gap) ((void)sizeof(gap))
+#endif
 
 static void sfx_boom(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH2, 1.0f, 0.0f); }
 static void sfx_swing(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SWING3, 1.0f, 0.0f); }
@@ -182,6 +270,22 @@ static void sfx_roar(void)
 static void sfx(int id, float vol) { audio_play_scene_sfx_dist(id, vol, 0.0f); }
 static void sfx_step(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_STEP1, 0.6f, 0.0f); }
 
+// A fire cone (DG_CONE): from a point on the floor out along `yaw`, CONE_L long, CONE_HALF each side;
+// it rolls out over CONE_GROW, burns CONE_HOLD, then dies down over CONE_FADE (harmless). Its height
+// at a share `f` of its length and `a` round from its middle (the mesh is built from the same)
+#define CONE_L 125.0f
+#define CONE_HALF 0.5f
+#define CONE_GROW 0.2f
+#define CONE_HOLD 0.1f
+#define CONE_FADE 0.22f
+static const float CONE_F[4] = { 0.0f, 0.3f, 0.65f, 1.0f }, CONE_H[4] = { 3.0f, 12.0f, 18.0f, 10.0f };
+static float cone_h(float f, float a)
+{
+    if (f < 0.0f || f > 1.0f) return 0.0f;
+    int i = f < CONE_F[1] ? 0 : f < CONE_F[2] ? 1 : 2;
+    float u = (f - CONE_F[i]) / (CONE_F[i + 1] - CONE_F[i]), q = a / CONE_HALF;
+    return (CONE_H[i] + (CONE_H[i + 1] - CONE_H[i]) * u) * (1.0f - 0.6f * fminf(q * q, 1.0f));     // lower to its sides
+}
 // ---- Meshes ----
 
 // A crystal: an unlit four-sided spike (it glows), faceted light and dark
@@ -407,13 +511,37 @@ static void build_glow(ProcMesh *out, uint32_t a, uint32_t b)
     proc_mesh_end(out);
 }
 
+// The fire cone at full size, its point at the origin, along +z (cone_h: its height); drawn
+// scaled as it rolls out. Hot near its point, red at its rim, a low wall of fire along the rim
+static void build_cone(void)
+{
+    enum { NA = 6 };
+    float P[3][NA + 1][3], G[NA + 1][3];
+    for (int r = 0; r < 3; r++)
+        for (int j = 0; j <= NA; j++) {
+            float a = CONE_HALF * (-1.0f + 2.0f * j / NA), d = CONE_L * CONE_F[r + 1];
+            P[r][j][0] = sinf(a) * d; P[r][j][1] = cone_h(CONE_F[r + 1], a); P[r][j][2] = cosf(a) * d;
+            if (r == 2) { memcpy(G[j], P[r][j], sizeof(G[j])); G[j][1] = 0.0f; }
+        }
+    const float apex[3] = { 0.0f, CONE_H[0], 0.0f };
+    proc_mesh_begin();
+    for (int j = 0; j < NA; j++) {
+        bool alt = j & 1;
+        proc_mesh_tri(apex, P[0][j], P[0][j + 1], proc_rgb(255, 214, 96), true);
+        proc_mesh_quad(P[0][j], P[1][j], P[1][j + 1], P[0][j + 1], alt ? proc_rgb(255, 176, 60) : proc_rgb(255, 150, 46), true);
+        proc_mesh_quad(P[1][j], P[2][j], P[2][j + 1], P[1][j + 1], alt ? proc_rgb(255, 104, 30) : proc_rgb(240, 84, 24), true);
+        proc_mesh_quad(P[2][j], G[j], G[j + 1], P[2][j + 1], alt ? proc_rgb(230, 70, 22) : proc_rgb(255, 120, 34), true);
+    }
+    proc_mesh_end(&s.mCone);
+}
+
 // ---- Lifetime ----
 
 void dragon_boss_free(void)
 {
     if (!s.ready) return;
     gpu_wait();
-    ProcMesh *all[] = { &s.seg, &s.segDark, &s.tseg, &s.tsegDark, &s.limb, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.wing, &s.wingDark, &s.wingMemb, &s.tip, &s.tipDark, &s.flame, &s.mOrb, &s.mIce };
+    ProcMesh *all[] = { &s.seg, &s.segDark, &s.tseg, &s.tsegDark, &s.limb, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.wing, &s.wingDark, &s.wingMemb, &s.tip, &s.tipDark, &s.flame, &s.mOrb, &s.mIce, &s.mCone };
     for (unsigned i = 0; i < sizeof(all) / sizeof(all[0]); i++) proc_mesh_free(all[i]);
     free_uncached(s.mats);
     memset(&s, 0, sizeof(s));
@@ -426,6 +554,7 @@ static void clear_hazards(void)
     for (int i = 0; i < BL_MAX; i++) s.bl[i].on = false;
     for (int i = 0; i < BALL_MAX; i++) s.ball[i].on = false;
     s.beamOn = false;
+    s.cone.on = false;
     s.glow = 0.0f;
 }
 
@@ -443,6 +572,7 @@ void dragon_boss_begin(Boss* boss)
         build_glow(&s.flame, proc_rgb(255, 120, 30), proc_rgb(255, 200, 70));
         build_glow(&s.mOrb, proc_rgb(150, 50, 255), proc_rgb(230, 170, 255));
         build_glow(&s.mIce, proc_rgb(110, 170, 255), proc_rgb(225, 240, 255));     // the crystal beam, before the dark
+        build_cone();
         s.mats = malloc_uncached(sizeof(T3DMat4FP) * MAT_RING * MAT_MAX);
         s.ready = true;
     }
@@ -472,7 +602,7 @@ void dragon_boss_begin(Boss* boss)
     s.wingSpan = 1.0f; s.wingRaise = 0.3f;
     s.cdWhip = 8.0f;
     s.cdClaw = 2.0f; s.cdBite = 4.0f; s.cdTail = 3.0f; s.cdBreath = 6.0f; s.cdCharge = 9.0f; s.cdFly = 16.0f;
-    s.cdNova = 0.0f; s.cdOrbs = 4.0f; s.cdBeam = 9.0f; s.cdTriple = 5.0f; s.cdSnipe = 7.0f; s.cdSweep = 10.0f;
+    s.cdNova = 0.0f; s.cdOrbs = 4.0f; s.cdBeam = 9.0f; s.cdTriple = 5.0f; s.cdSnipe = 7.0f; s.cdSweep = 10.0f; s.cdCone = 6.0f;
     clear_hazards();
     enter(DG_INTRO);
 }
@@ -488,12 +618,21 @@ void dragon_boss_skip_intro(Boss* boss)
 
 // ---- Hazards: flames, dark orbs, the beam's explosions ----
 
-static void flame_spawn(const float p[3], const float v[3], float life, float size)
+static void flame_spawn(const float p[3], const float v[3], float life, float size, bool harm)
 {
     Flame *f = &s.fl[s.flNext];
     s.flNext = (s.flNext + 1) % FL_MAX;
     memcpy(f->p, p, sizeof(f->p)); memcpy(f->v, v, sizeof(f->v));
-    f->age = 0.0f; f->life = life; f->size = size;
+    f->age = 0.0f; f->life = life; f->size = size; f->harm = harm;
+}
+
+// A burst (skill_fx's crimson spikes, 14 long, ~11 high) as an explosion: it hits where its spikes
+// are, ~12 out, to the feet, as it appears
+#define BURST_R 12.0f
+static bool burst_hits(const float p[3])
+{
+    float dx = character.pos[0] - p[0], dz = character.pos[2] - p[2];
+    return dx * dx + dz * dz < (BURST_R + PLAYER_R) * (BURST_R + PLAYER_R) && character.pos[1] - s.groundY < 11.0f;
 }
 
 static void blast_spawn(const float p[3])
@@ -519,9 +658,15 @@ static void hazards_update(float dt)
             f->p[1] = s.groundY + 2.0f;
             f->v[1] = 0.0f;
         }
-        float d[3] = { f->p[0] - pc[0], f->p[1] - pc[1], f->p[2] - pc[2] };
-        float r = f->size * (0.4f + 0.6f * clamp01(f->age / (f->life * 0.5f)));
-        if (s.fireCd <= 0.0f && len3(d) < r * 0.8f + 6.0f) { character_apply_damage(9.0f); s.fireCd = 0.4f; }
+        // as drawn (it shrinks as it dies: the hit didn't); the young flames of the ground sweep are the
+        // stream itself, the first to catch the player a heavier blow (once); the rest burn
+        float gap = axis_dist_pt(f->p) - flame_r(f->size, f->age, f->life);
+        if (!f->harm || s.fireCd > 0.0f || gap >= PLAYER_R) continue;
+        bool stream = s.state == DG_SWEEP && s.step == 1 && !s.hitDone && f->age < 0.6f;
+        HB_HIT(stream ? HB_STREAM : HB_FLAME, gap - 8.0f);
+        character_apply_damage(stream ? 20.0f : 9.0f);
+        s.fireCd = 0.4f;
+        if (stream) s.hitDone = true;
     }
     for (int i = 0; i < ORB_MAX; i++) {
         Orb *o = &s.orb[i];
@@ -535,9 +680,9 @@ static void hazards_update(float dt)
             for (int m = 0; m < 3; m++) o->v[m] += (want[m] * 58.0f - o->v[m]) * fminf(1.0f, dt * 1.3f);
             mad3(o->p, o->p, o->v, dt);
         }
-        float d[3] = { o->p[0] - pc[0], o->p[1] - pc[1], o->p[2] - pc[2] };
-        bool hit = len3(d) < 8.0f;
-        if (hit) character_apply_damage(12.0f);
+        bool hit = axis_dist_pt(o->p) < 4.5f + PLAYER_R;      // drawn 4.5 round (the chest point within 8 let some pass through)
+        HB_TOUCH(HB_ORB, axis_dist_pt(o->p) - 4.5f - 8.0f);
+        if (hit) { HB_HIT(HB_ORB, axis_dist_pt(o->p) - 4.5f - 8.0f); character_apply_damage(12.0f); }
         if (hit || o->p[1] < s.groundY + 1.0f || o->age > 7.0f || !room_ok(o->p[0], o->p[2])) {
             o->on = false;
             skill_fx_spawn_burst_hostile((float[3]){ o->p[0], fmaxf(o->p[1], s.groundY), o->p[2] }, 0.0f);
@@ -550,9 +695,13 @@ static void hazards_update(float dt)
         if (e->t > 0.0f) continue;
         e->on = false;
         float p[3] = { e->p[0], s.groundY, e->p[1] };
+        // a burst with the blade: the blade alone is 4 wide and the hit reached 13 (its warning
+        // burst gone half a second before)
         skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, p, (float[3]){ 0, 0, 0 }, 0.0f, 0, 1.0f, 0.8f, false);
+        skill_fx_spawn_burst_hostile(p, s.life + i);
         float dx = character.pos[0] - p[0], dz = character.pos[2] - p[2];
-        if (dx * dx + dz * dz < 13.0f * 13.0f && player_low()) character_apply_damage(12.0f);
+        HB_TOUCH(HB_BLAST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f);
+        if (burst_hits(p)) { HB_HIT(HB_BLAST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage(12.0f); }
         screen_shake_set_shake_mag(3.0f);
         if (i & 1) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);     // every other one: they come five a second
     }
@@ -560,31 +709,31 @@ static void hazards_update(float dt)
         Ball *o = &s.ball[i];
         if (!o->on) continue;
         mad3(o->p, o->p, o->v, dt);
-        float d[3] = { o->p[0] - pc[0], o->p[1] - pc[1], o->p[2] - pc[2] };
-        if (len3(d) > 10.0f && o->p[1] > s.groundY + 2.0f && room_ok(o->p[0], o->p[2])) continue;
+        bool direct = axis_dist_pt(o->p) < 5.5f + PLAYER_R;      // the ball is drawn 5.5 round
+        if (!direct && o->p[1] > s.groundY + 2.0f && room_ok(o->p[0], o->p[2])) continue;
         o->on = false;      // bursts where it lands
         float p[3] = { o->p[0], s.groundY, o->p[2] };
         skill_fx_spawn_burst_hostile(p, s.life);
         float dx = character.pos[0] - p[0], dz = character.pos[2] - p[2];
-        if (len3(d) <= 10.0f || (dx * dx + dz * dz < 18.0f * 18.0f && player_low())) character_apply_damage(12.0f);
+        HB_TOUCH(HB_BALLBURST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f);
+        if (direct || burst_hits(p)) { HB_HIT(direct ? HB_BALL : HB_BALLBURST, direct ? axis_dist_pt(o->p) - 5.5f - 8.0f : sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage(12.0f); }
         screen_shake_set_shake_mag(4.0f);
         sfx_boom();
     }
 }
 
-// A beam from the mouth to `to` this frame: hits the player's chest within `w` of the line (once a
-// move); a beam that reaches the floor (`blasts`) leaves explosions behind every 0.2 s
+// A beam from the mouth to `to` this frame: hits the player where it is drawn (the beam `w` round,
+// the glow where it meets the floor 9; once a move); a beam that reaches the floor (`blasts`)
+// leaves explosions behind every 0.2 s. (It tested the player's chest point only, and some beams
+// passing over the head or through the legs missed)
 static void beam_at(const float to[3], float w, float dmg, bool blasts, float dt)
 {
     memcpy(s.beamP, to, sizeof(s.beamP));
     memcpy(s.aim, to, sizeof(s.aim)); s.tAimK = 1.0f;
     s.beamOn = true; s.beamW = w; s.glow = 1.0f;
-    float pc[3], u[3] = { to[0] - s.mouth[0], to[1] - s.mouth[1], to[2] - s.mouth[2] };
-    player_chest(pc);
-    float l2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
-    float k = l2 > 1e-3f ? clamp01(((pc[0] - s.mouth[0]) * u[0] + (pc[1] - s.mouth[1]) * u[1] + (pc[2] - s.mouth[2]) * u[2]) / l2) : 0.0f;
-    float e[3] = { s.mouth[0] + u[0] * k - pc[0], s.mouth[1] + u[1] * k - pc[1], s.mouth[2] + u[2] * k - pc[2] };
-    if (!s.hitDone && len3(e) < w + 6.0f) { character_apply_damage(dmg); s.hitDone = true; }
+    float bg = fminf(axis_dist_seg(s.mouth, to) - w, axis_dist_pt(to) - 9.0f);
+    HB_TOUCH(HB_BEAM, bg - 8.0f);
+    if (!s.hitDone && bg < PLAYER_R) { HB_HIT(HB_BEAM, bg - 8.0f); character_apply_damage(dmg); s.hitDone = true; }
     if (!blasts) return;
     s.emit -= dt;
     if (s.emit <= 0.0f) { s.emit += 0.2f; blast_spawn(to); }
@@ -602,7 +751,7 @@ static void breathe(const float to[3], float speed, float life, float dt)
         float v[3] = { to[0] - s.mouth[0], to[1] - s.mouth[1], to[2] - s.mouth[2] };
         norm3(v);
         for (int m = 0; m < 3; m++) v[m] = v[m] * speed + frand() * 12.0f;
-        flame_spawn(s.mouth, v, life, 16.0f + 4.0f * frand());
+        flame_spawn(s.mouth, v, life, 16.0f + 4.0f * frand(), true);
     }
 }
 
@@ -677,7 +826,7 @@ static void rig(Boss *b, float dt)
     b->pos[1] = base;
 
     mad3(s.chest, b->pos, s.F, CHEST_Z);
-    s.chest[1] = base + BODY_H + 2.0f - s.crouch + breath;
+    s.chest[1] = base + BODY_H + 2.0f - s.crouch + breath + s.rear;     // `rear`: up on its hind legs
     mad3(s.hips, b->pos, s.F, HIPS_Z);
     s.hips[1] = base + BODY_H - s.crouch * 0.6f;
 
@@ -724,16 +873,115 @@ static void rig(Boss *b, float dt)
 
     // The hit capsule runs the length of the body, from the base of the neck (or the head,
     // when it is down) to the hips, at the height a sword swings (the spine is above it:
-    // a capsule on the spine was out of reach)
-    float a[3], c[3];
-    bool headDown = s.head[1] - s.groundY < 16.0f;
-    lerp3(a, s.neck[1], s.head, headDown ? 1.0f : 0.0f);
+    // a capsule on the spine was out of reach). Its bottom stays at its lowest foot (in the air
+    // it hung 8-14 below them), its front end rises with the chest when it rears, and it stops
+    // where the neck's base and forefeet do (it reached 7 past them)
+    float a[3], c[3], low = fminf(fminf(fminf(s.foot[0][1], s.foot[1][1]), fminf(s.foot[2][1], s.foot[3][1])), fminf(s.chest[1] - 18.0f, s.hips[1] - 16.0f));
+    float axisY = low + HIT_R - 1.0f;
+    bool headDown = s.head[1] - s.groundY < 30.0f;     // in sword reach (at 16 a head lowered 16-30 up was out of it)
+    mad3(a, s.neck[1], s.F, -10.0f);
+    if (headDown) memcpy(a, s.head, sizeof(a));
+    else a[1] = fmaxf(fminf(s.chest[1] - 13.0f, fminf(fminf(s.foot[0][1], s.foot[1][1]), s.chest[1] - 18.0f) + HIT_R - 1.0f), axisY);
     memcpy(c, s.hips, sizeof(c));
-    if (!headDown) a[1] = base + HIT_H;
-    c[1] = base + HIT_H;
+    c[1] = axisY;
     for (int m = 0; m < 3; m++) {
         b->capsuleCollider.localCapA.v[m] = a[m] - b->pos[m];
         b->capsuleCollider.localCapB.v[m] = c[m] - b->pos[m];
+    }
+#ifdef HLE_LOG_HURTBOX   // the hit capsule against the drawn body: heights over the floor, reach along its facing, width at sword height
+    {
+        static int n;
+        if (++n % 15 == 0) {
+#define DOTF(p) (((p)[0] - b->pos[0]) * s.F[0] + ((p)[2] - b->pos[2]) * s.F[2])
+#define DOTR(p) fabsf(((p)[0] - b->pos[0]) * s.R[0] + ((p)[2] - b->pos[2]) * s.R[2])
+            float r = b->capsuleCollider.radius, gy = s.groundY;
+            float lowF = fminf(s.chest[1] - 18.0f, fminf(s.foot[0][1], s.foot[1][1])) - gy, lowR = fminf(s.hips[1] - 16.0f, fminf(s.foot[2][1], s.foot[3][1])) - gy;
+            float front = fmaxf(fmaxf(DOTF(s.neck[1]) + 10.0f, DOTF(s.chest) + 7.0f), fmaxf(DOTF(s.foot[0]), DOTF(s.foot[1])) + 8.0f), sn[3];
+            mad3(sn, s.head, s.hz, 26.0f);
+            if (s.head[1] - gy < 30.0f) front = fmaxf(front, fmaxf(DOTF(s.head), DOTF(sn)) + 6.0f);    // the head, when it is in reach
+            float side = 0.0f;
+            for (int k = 0; k < 4; k++) side = fmaxf(side, fmaxf(DOTR(s.foot[k]) + 4.0f, DOTR(s.shoulder[k]) + 8.0f) * (s.foot[k][1] - gy < 26.0f));
+            if (fabsf(s.chest[1] - gy - 15.0f) < 18.0f) side = fmaxf(side, sqrtf(18.0f * 18.0f - (s.chest[1] - gy - 15.0f) * (s.chest[1] - gy - 15.0f)));
+            debugf("[hurtbox] st %d alt %.0f | front end %.0f..%.0f over the floor (drawn lowest %.0f), rear %.0f..%.0f (drawn lowest %.0f) | reach %.0f drawn %.0f | half-width %.0f drawn %.0f\n",
+                   s.state, (double)s.alt, (double)(a[1] - r - gy), (double)(a[1] + r - gy), (double)lowF, (double)(c[1] - r - gy), (double)(c[1] + r - gy), (double)lowR,
+                   (double)(DOTF(a) + r), (double)front, (double)r, (double)side);
+#undef DOTF
+#undef DOTR
+        }
+    }
+#endif
+}
+
+// ---- Blows checked on the pose as drawn (after the rig) ----
+
+static float cone_grow(void) { float u = clamp01(s.cone.t / CONE_GROW); return 1.0f - (1.0f - u) * (1.0f - u); }    // its reach, eased out
+
+static bool cone_hits(void)
+{
+    // the player within the drawn cone (its reach so far, its sides, its height there), body and all
+    float k = cone_grow(), dx = character.pos[0] - s.cone.p[0], dz = character.pos[2] - s.cone.p[1];
+    float fx = sinf(s.cone.yaw), fz = cosf(s.cone.yaw), along = dx * fx + dz * fz, across = dx * fz - dz * fx, d = sqrtf(dx * dx + dz * dz);
+    if (d - PLAYER_R > CONE_L * k || along < -PLAYER_R) return false;
+    float a = atan2f(fabsf(across), fmaxf(along, 0.0f)), m = d > PLAYER_R ? asinf(PLAYER_R / d) : T3D_PI;
+    if (a > CONE_HALF + m) return false;
+    float f = fminf(d / (CONE_L * k), 1.0f);
+    return character.pos[1] - s.groundY < cone_h(f, fminf(a, CONE_HALF)) * k + 1.0f;
+}
+
+// The tail as drawn, now and where it passed since the last frame (a fast swing moves the blade
+// ~20-50 a frame, more than the tail is thick: three in-between poses, flat, the low tail cleared
+// by a jump as before)
+static float seg_dist_xz(const float a[3], const float b[3], float px, float pz)
+{
+    float ux = b[0] - a[0], uz = b[2] - a[2], l2 = ux * ux + uz * uz;
+    float t = l2 > 1e-4f ? clamp01(((px - a[0]) * ux + (pz - a[2]) * uz) / l2) : 0.0f;
+    float ex = a[0] + ux * t - px, ez = a[2] + uz * t - pz;
+    return sqrtf(ex * ex + ez * ez);
+}
+static float tail_sweep_gap(void)     // < PLAYER_R: a hit
+{
+    float cur[NTAIL + 2][3], g = tail_gap();
+    memcpy(cur, s.tl, sizeof(s.tl));
+    tail_tip(cur[NTAIL + 1]);
+    if (tailPrevOk && g >= PLAYER_R && character.pos[1] - s.groundY < 10.0f)
+        for (int k = 1; k <= 3; k++)
+            for (int i = 0; i <= NTAIL; i++) {
+                float a[3], c[3];
+                lerp3(a, tailPrev[i], cur[i], k * 0.25f); lerp3(c, tailPrev[i + 1], cur[i + 1], k * 0.25f);
+                g = fminf(g, seg_dist_xz(a, c, character.pos[0], character.pos[2]) - (i < NTAIL ? tail_r(i) : 3.4f));
+            }
+    memcpy(tailPrev, cur, sizeof(cur)); tailPrevOk = true;
+    return g;
+}
+
+static void hits_after_rig(Boss *b, float dt)
+{
+    if (s.state == DG_TAIL && s.step == 1) {
+        float g = tail_sweep_gap();
+        HB_TOUCH(HB_TAIL, g - 8.0f);
+        if (g < PLAYER_R && !s.hitDone) { s.hitDone = true; HB_HIT(HB_TAIL, g - 8.0f); character_apply_damage(20.0f); }
+    } else if (s.state == DG_WHIP && s.step == 1) {
+        float g = fminf(tail_sweep_gap(), body_gap());      // the head and body spin round too
+        HB_TOUCH(HB_WHIP, g - 8.0f);
+        if (g < PLAYER_R && !s.hitDone) { s.hitDone = true; HB_HIT(HB_WHIP, g - 8.0f); character_apply_damage(22.0f); }
+    } else if (s.state == DG_CHARGE && s.step == 1) {
+        // the body as drawn (it was a flat 25 round the head-hips line, wider than the neck and head)
+        HB_TOUCH(HB_CHARGE, body_gap() - 8.0f);
+        if (!s.hitDone && body_gap() < PLAYER_R) { s.hitDone = true; HB_HIT(HB_CHARGE, body_gap() - 8.0f); character_apply_damage(28.0f); }
+    } else tailPrevOk = false;
+    if (s.cone.on) {
+        s.cone.t += dt;
+        if (s.cone.t < CONE_GROW + CONE_HOLD) {
+#ifdef HLE_LOG_HURTBOX
+            {   // the gap to the drawn cone: outside its reach or sides (as a distance), or above it
+                float k = cone_grow(), dx = character.pos[0] - s.cone.p[0], dz = character.pos[2] - s.cone.p[1], d = sqrtf(dx * dx + dz * dz);
+                float fx = sinf(s.cone.yaw), fz = cosf(s.cone.yaw), along = dx * fx + dz * fz, across = dx * fz - dz * fx;
+                float side = fabsf(across) * cosf(CONE_HALF) - fmaxf(along, 0.0f) * sinf(CONE_HALF);   // past its side edge
+                HB_TOUCH(HB_CONE, fmaxf(fmaxf(d - CONE_L * k, side), -along) - 8.0f);
+            }
+#endif
+            if (!s.cone.hit && cone_hits()) { s.cone.hit = true; HB_HIT(HB_CONE, 0.0f); character_apply_damage(18.0f); }
+        } else if (s.cone.t >= CONE_GROW + CONE_HOLD + CONE_FADE) s.cone.on = false;
     }
 }
 
@@ -785,9 +1033,11 @@ static void bite_update(Boss *b, float dt)
     } else if (s.step == 1) {
         s.tNeckReach = s.range; s.tNeckPitch = -0.75f; s.tJaw = 0.9f; s.poseRate = 16.0f;
         memcpy(s.aim, s.target, sizeof(s.aim)); s.tAimK = 1.0f;
+        if (s.t >= 0.1f) {     // the head as drawn, as it comes down (it hit anyone within 22 of the mouth, flat)
+            HB_TOUCH(HB_BITE, head_gap() - 8.0f);
+            if (!s.hitDone && head_gap() < PLAYER_R) { s.hitDone = true; HB_HIT(HB_BITE, head_gap() - 8.0f); character_apply_damage(38.0f); }
+        }
         if (s.t >= 0.2f) {
-            float mx = character.pos[0] - s.mouth[0], mz = character.pos[2] - s.mouth[2];
-            if (mx * mx + mz * mz < 22.0f * 22.0f && player_low()) character_apply_damage(38.0f);
             s.tJaw = 0.0f;
             screen_shake_set_shake_mag(6.0f);
             sfx_boom();
@@ -799,13 +1049,6 @@ static void bite_update(Boss *b, float dt)
     }
 }
 
-static float seg_dist_xz(const float a[3], const float b[3], float px, float pz)
-{
-    float ux = b[0] - a[0], uz = b[2] - a[2], l2 = ux * ux + uz * uz;
-    float t = l2 > 1e-4f ? clamp01(((px - a[0]) * ux + (pz - a[2]) * uz) / l2) : 0.0f;
-    float ex = a[0] + ux * t - px, ez = a[2] + uz * t - pz;
-    return sqrtf(ex * ex + ez * ez);
-}
 
 static void tail_update(Boss *b, float dt)
 {
@@ -829,13 +1072,7 @@ static void tail_update(Boss *b, float dt)
     } else if (s.step == 1) {
         s.tTail = s.sweepFrom + s.sweepSpan; s.poseRate = 11.0f;
         b->rot[1] += (s.sweepSpan > 0.0f ? 1.0f : -1.0f) * 0.7f * dt * (1.0f - s.t / 0.45f) * 2.0f;   // the hips twist with it (~0.3 rad)
-        if (!s.hitDone && player_low())
-            for (int i = 1; i < NTAIL; i++)
-                if (seg_dist_xz(s.tl[i], s.tl[i + 1], character.pos[0], character.pos[2]) < 10.0f) {
-                    s.hitDone = true;
-                    character_apply_damage(20.0f);
-                    break;
-                }
+        // (the hit: hits_after_rig, on the tail as drawn)
         if (s.t >= 0.45f) {
             skill_fx_spawn_burst_hostile((float[3]){ s.tl[NTAIL][0], s.groundY, s.tl[NTAIL][2] }, 0.0f);
             screen_shake_set_shake_mag(5.0f);
@@ -852,8 +1089,9 @@ static void whip_update(Boss *b, float dt)
     // Spins a full turn with its tail out, a scything whip all round it: jump it, roll
     // through, or be out of the tail's reach. Warned by bursts on the floor at that reach.
     const float WIND = 0.8f / (s.dark ? 1.2f : 1.0f), SPIN = 0.6f;
-    float rx = s.tl[NTAIL][0] - b->pos[0], rz = s.tl[NTAIL][2] - b->pos[2];
-    float reach = sqrtf(rx * rx + rz * rz);
+    float e[3];
+    tail_tip(e);        // the warnings at the blade's reach (it hits that far: hits_after_rig)
+    float rx = e[0] - b->pos[0], rz = e[2] - b->pos[2], reach = sqrtf(rx * rx + rz * rz);
     if (s.step == 0) {      // it doesn't turn to face you: the spin reaches all round
         s.tCrouch = 7.0f; s.tNeckPitch = -0.4f; s.tTail = 0.0f; s.poseRate = 5.0f;
         if ((int)(s.t * 6.0f) != (int)((s.t - dt) * 6.0f)) {     // a ring of warnings at the tail's reach
@@ -864,12 +1102,8 @@ static void whip_update(Boss *b, float dt)
     } else if (s.step == 1) {
         b->rot[1] = remainderf(b->rot[1] + 2.0f * T3D_PI * dt / SPIN, 2.0f * T3D_PI);     // counter-clockwise on screen
         s.tCrouch = 5.0f; s.tTail = 0.0f; s.poseRate = 12.0f;
-        // the whole warned circle, as the tail and body sweep it
-        float dx, dz;
-        if (!s.hitDone && player_low() && s.t > SPIN * 0.3f && to_player(b, &dx, &dz) < reach + 6.0f) {
-            s.hitDone = true;
-            character_apply_damage(22.0f);
-        }
+        // the whole warned circle, as the tail and body sweep it (hits_after_rig: it hit everyone
+        // in the circle 0.18 s in, wherever the tail was)
         if (s.t >= SPIN) {
             skill_fx_spawn_burst_hostile((float[3]){ s.tl[NTAIL][0], s.groundY, s.tl[NTAIL][2] }, 0.0f);
             screen_shake_set_shake_mag(7.0f);
@@ -924,13 +1158,28 @@ static void charge_update(Boss *b, float dt)
         if (s.t >= 0.9f / (s.dark ? 1.2f : 1.0f)) { s.step = 1; s.t = 0.0f; sfx_lunge(); }
     } else if (s.step == 1) {
         s.tNeckPitch = -0.2f; s.tNeckReach = 1.2f; s.tCrouch = 6.0f; s.tJaw = 0.3f;
-        bool moved = move_by(b, s.F[0] * 240.0f * dt, s.F[2] * 240.0f * dt);
-        if (!s.hitDone && player_low() && seg_dist_xz(s.head, s.hips, character.pos[0], character.pos[2]) < HIT_R + 8.0f) {
-            s.hitDone = true;
-            character_apply_damage(28.0f);
-        }
+        bool moved = move_by(b, s.F[0] * 240.0f * dt, s.F[2] * 240.0f * dt);     // (the hit: hits_after_rig)
         if (!moved || s.t >= 0.6f) { s.step = 2; s.t = 0.0f; screen_shake_set_shake_mag(6.0f); }
     } else if (s.t >= 0.6f) enter(DG_IDLE);
+}
+
+// Touching down: bursts at its feet and a quake; under its body or in a burst, a blow (the strafe's
+// landing hit everyone within 40 of the root, wider than the body and short of its feet; the
+// sky beam's landing drew the same bursts and was harmless)
+static void land_slam(float shake)
+{
+    bool hit = body_gap() < PLAYER_R;
+    float lg = body_gap();
+    for (int i = 0; i < 4; i++) {
+        float p[3] = { s.foot[i][0], s.groundY, s.foot[i][2] };
+        skill_fx_spawn_burst_hostile(p, i * 1.5f);
+        hit |= burst_hits(p);
+        lg = fminf(lg, sqrtf((character.pos[0] - p[0]) * (character.pos[0] - p[0]) + (character.pos[2] - p[2]) * (character.pos[2] - p[2])) - BURST_R);
+    }
+    HB_TOUCH(HB_LAND, lg - 8.0f);
+    if (hit) { HB_HIT(HB_LAND, lg - 8.0f); character_apply_damage(20.0f); }
+    screen_shake_set_shake_mag(shake);
+    sfx_boom();
 }
 
 static void fly_update(Boss *b, float dt)
@@ -973,12 +1222,7 @@ static void fly_update(Boss *b, float dt)
         s.alt = ease(s.alt, 0.0f, 3.0f, dt);
         if (s.alt < 1.0f) {
             s.alt = 0.0f;
-            float dx, dz;
-            if (to_player(b, &dx, &dz) < 40.0f && player_low()) character_apply_damage(20.0f);
-            for (int i = 0; i < 4; i++)
-                skill_fx_spawn_burst_hostile((float[3]){ s.foot[i][0], s.groundY, s.foot[i][2] }, i * 1.5f);
-            screen_shake_set_shake_mag(12.0f);
-            sfx_boom();
+            land_slam(12.0f);
             s.step = 3; s.t = 0.0f;
         }
     } else if (s.t >= 0.6f) enter(DG_IDLE);
@@ -1047,16 +1291,22 @@ static void beam_update(Boss *b, float dt)
 {
     // Midir's laser: it rears up and gathers the dark (wings high, the light in its jaws
     // swelling, a burst where the sweep will start), then rakes a beam across the hall from
-    // one side to the other, the floor exploding behind it. Roll through it or get under its
-    // chin. A short, heavy recovery after, its head low (no longer spent on the floor)
+    // one side to the other, the floor exploding behind it; one to three times (at random), the
+    // first from either side, each after back the other way after a short gathering (the light
+    // swelling again, a burst where it will start). Roll through each or get under its chin.
+    // A short, heavy recovery after, its head low (no longer spent on the floor)
     float dx, dz, dist = to_player(b, &dx, &dz);
-    const float CHARGE = 1.4f, SWEEP = 2.0f;
+    const float CHARGE = 1.4f, SWEEP = 2.0f, RECHARGE = 0.6f;
     if (s.step == 0) {
         face_player(b, dt, 2.0f);
         s.tNeckPitch = 0.9f; s.tNeckReach = 0.85f; s.tJaw = 0.8f; s.tCrouch = 4.0f; s.tWingRaise = 0.75f; s.tWingSpan = 1.0f; s.poseRate = 4.0f;
         s.glow = clamp01(s.t / CHARGE);
         if (s.t < dt * 1.5f) {
             float sg = (rand_custom_u32() & 1) ? 1.0f : -1.0f;
+            s.sweeps = 1 + (int)(rand_custom_u32() % 3);
+#ifdef HLE_AUTOPLAY
+            debugf("[dragon] beam: %d sweeps, the first %s\n", s.sweeps, sg > 0.0f ? "left to right" : "right to left");
+#endif
             s.sweepFrom = atan2f(dx, dz) - 1.2f * sg; s.sweepSpan = 2.4f * sg;
             s.range = fminf(fmaxf(dist + 40.0f, 90.0f), 280.0f);       // just past the player: the beam is at chest height where they stand
             sfx(SCENE1_SFX_SPELL_CAST, 0.8f);
@@ -1075,14 +1325,33 @@ static void beam_update(Boss *b, float dt)
         turn_toward(b, a, 1.1f, dt);       // the body swings round behind its head
         beam_at(to, 3.0f, 21.0f, true, dt);
         screen_shake_set_shake_mag(2.5f);
-        if (s.t >= SWEEP) { s.beamOn = false; s.glow = 0.0f; s.step = 2; s.t = 0.0f; }
+        if (s.t >= SWEEP) {
+            s.beamOn = false; s.t = 0.0f;
+            if (--s.sweeps > 0) {       // again, from where this one ended, back across where you are now
+                float sg = s.sweepSpan > 0.0f ? 1.0f : -1.0f, p[3];
+                s.sweepFrom = atan2f(dx, dz) + 1.2f * sg; s.sweepSpan = -2.4f * sg;
+                s.range = fminf(fmaxf(dist + 40.0f, 90.0f), 280.0f);
+                floor_point(b, s.sweepFrom, s.range, p);
+                skill_fx_spawn_burst_hostile(p, 0.0f);
+                sfx(SCENE1_SFX_SPELL_CAST, 0.7f);
+                s.glow = 0.45f; s.step = 2;
+            } else { s.glow = 0.0f; s.step = 3; }
+        }
+    } else if (s.step == 2) {
+        // Gathers again: the head swings to the new start, the light swelling and flickering
+        float p[3];
+        floor_point(b, s.sweepFrom, s.range, p);
+        lerp3(s.aim, s.beamP, p, smooth01(s.t / (RECHARGE * 0.8f))); s.tAimK = 1.0f;    // from where the last ended
+        s.tJaw = 0.7f; s.tNeckPitch = 0.5f; s.tCrouch = 4.0f; s.tWingRaise = 0.65f; s.poseRate = 5.0f;
+        turn_toward(b, s.sweepFrom, 0.8f, dt);
+        s.glow = 0.45f + 0.55f * smooth01(s.t / RECHARGE) + 0.12f * sinf(s.life * 26.0f);
+        if (s.t >= RECHARGE) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; s.hitDone = false; sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(6.0f); }
     } else {
         s.tCrouch = 6.0f; s.tNeckPitch = -0.5f; s.tJaw = 0.4f; s.poseRate = 3.0f;    // it settles, head low...
         if (s.t >= 0.5f) { enter(DG_IDLE); s.idleWait = 3.0f; }      // ...into a breather, panting: the opening it pays for the beam
     }
 }
 
-static float smooth01(float u) { u = clamp01(u); return u * u * (3.0f - 2.0f * u); }
 
 static void skybeam_update(Boss *b, float dt)
 {
@@ -1159,9 +1428,7 @@ static void skybeam_update(Boss *b, float dt)
             s.alt = (ALT - DIP) * (1.0f - smooth01(s.t / LAND));
             if (s.t >= LAND) {
                 s.alt = 0.0f;
-                for (int i = 0; i < 4; i++) skill_fx_spawn_burst_hostile((float[3]){ s.foot[i][0], s.groundY, s.foot[i][2] }, i * 1.5f);
-                screen_shake_set_shake_mag(9.0f);
-                sfx_boom();
+                land_slam(9.0f);
                 s.step = 4; s.t = 0.0f;
             }
         }
@@ -1309,10 +1576,14 @@ static void sweep_update(Boss *b, float dt)
         b->rot[1] = s.sweepFrom + off * 0.15f * clamp01(s.t / 0.4f);
         floor_point(b, s.sweepFrom + off, REACH, to);
         breathe(to, 190.0f, 1.4f, dt);      // the flames spread on the floor and burn on
-        if (!s.hitDone && player_low() && seg_dist_xz(s.mouth, to, character.pos[0], character.pos[2]) < 12.0f) {
-            s.hitDone = true;       // caught by the stream itself (once); the burning floor after is the flames'
-            character_apply_damage(20.0f);
-        }
+        // Caught in the stream: its young flames (hazards_update), once; the burning floor after
+        // is the flames' own. (A line to the aim point hit out to 200 at once: the flames only
+        // ever reach ~125 and take a second to)
+#ifdef HLE_LOG_HURTBOX
+        float sg2 = 1e9f;
+        for (int i = 0; i < FL_MAX; i++) if (s.fl[i].age < s.fl[i].life) sg2 = fminf(sg2, axis_dist_pt(s.fl[i].p) - flame_r(s.fl[i].size, s.fl[i].age, s.fl[i].life) - 8.0f);
+        HB_TOUCH(HB_STREAM, sg2);
+#endif
         to[1] += 6.0f;
         memcpy(s.aim, to, sizeof(s.aim)); s.tAimK = 1.0f;
         s.tNeckPitch = -0.6f; s.tNeckYaw = off * 0.7f; s.tJaw = 0.9f; s.poseRate = 6.0f;
@@ -1322,6 +1593,127 @@ static void sweep_update(Boss *b, float dt)
         s.tNeckPitch = -0.35f; s.tNeckYaw = s.sg * HALF * 0.5f; s.tJaw = 0.4f; s.poseRate = 3.0f;    // head low, spent: the opening
         if (s.t >= 1.0f) enter(DG_IDLE);
     }
+}
+
+#define CONE_AT 62.0f      // the cone's point: on the floor this far ahead of the root (under the head, its mouth at ~85)
+static void cone_fire(Boss *b)
+{
+    s.cone.p[0] = b->pos[0] + s.F[0] * CONE_AT; s.cone.p[1] = b->pos[2] + s.F[2] * CONE_AT;
+    s.cone.yaw = b->rot[1]; s.cone.t = 0.0f; s.cone.on = true; s.cone.hit = false;
+    for (int i = 0; i < 5; i++) {       // harmless flames rolling out over it (they die inside it)
+        float a = s.cone.yaw + 0.4f * frand(), dd = CONE_L * (0.35f + 0.45f * (i / 4.0f));
+        float p[3] = { s.cone.p[0], s.groundY + 2.0f, s.cone.p[1] }, v[3] = { sinf(a) * dd / 0.33f, 0.0f, cosf(a) * dd / 0.33f };
+        flame_spawn(p, v, 0.45f, 13.0f + 3.0f * frand(), false);
+    }
+    sfx(SCENE1_SFX_FIRE, 1.0f);
+    sfx_lunge();
+    screen_shake_set_shake_mag(4.0f);
+}
+
+static void cone_update(Boss *b, float dt)
+{
+    // Kalameet's fire: it rears up on its hind legs, the fire swelling in its jaws, and comes down
+    // on its forefeet with a quake; then three bursts of fire, each a cone rolling out over the
+    // floor in front of it. Before each it draws its head back, the jaws glowing, then thrusts it
+    // down (0.12 s) and the cone spreads as the head comes down (it burns 0.3 s); 0.83 s from one
+    // burning to the next. Roll through each burst, or get beside it, behind it or in under its chest
+    const float REAR = 0.8f, PLANT = 0.45f, TELL = 0.75f, LEAD = 0.08f, BURST = CONE_GROW + CONE_HOLD, REST = 1.0f;
+    float sm = s.dark ? 1.15f : 1.0f, flick = 0.12f * sinf(s.life * 26.0f);
+    float aim[3] = { b->pos[0] + s.F[0] * (CONE_AT + 35.0f), s.groundY + 4.0f, b->pos[2] + s.F[2] * (CONE_AT + 35.0f) };
+    s.tNeckYaw = 0.0f; s.tWingSpan = 1.0f;
+    if (s.step == 0) {          // rears up
+        if (s.t < dt * 1.5f) sfx_roar();
+        face_player(b, dt, 1.8f);
+        s.tRear = 16.0f; s.tClaw[0] = s.tClaw[1] = 0.8f; s.tNeckPitch = 0.8f; s.tNeckReach = 0.8f; s.tJaw = 0.4f; s.tWingRaise = 0.75f; s.poseRate = 4.0f;
+        s.glow = 0.5f * smooth01(s.t / (REAR / sm));
+        if (s.t >= REAR / sm) { s.step = 1; s.t = 0.0f; }
+    } else if (s.step == 1) {   // down on its forefeet, the head still drawn back: the first tell
+        face_player(b, dt, 1.2f);
+        s.tNeckPitch = 0.75f; s.tNeckReach = 0.75f; s.tJaw = 0.35f; s.tCrouch = 3.0f; s.tWingRaise = 0.6f; s.poseRate = 6.0f;
+        if (s.t >= 0.15f && s.t - dt < 0.15f) { screen_shake_set_shake_mag(7.0f); sfx_boom(); }
+        s.glow = 0.5f + 0.5f * smooth01(s.t / (PLANT / sm)) + flick;
+        if (s.t >= PLANT / sm) { s.step = 2; s.t = 0.0f; }
+    } else if (s.step <= 6 && !(s.step & 1)) {     // 2, 4, 6: a burst, the head thrust down along it
+        float u = smooth01(s.t / 0.12f);
+        memcpy(s.aim, aim, sizeof(s.aim)); s.tAimK = u;
+        s.tNeckPitch = 0.7f - 1.15f * u; s.tNeckReach = 0.8f + 0.15f * u; s.tJaw = 0.35f + 0.65f * u; s.tCrouch = 4.0f; s.poseRate = 12.0f;
+        if (s.t >= LEAD && s.t - dt < LEAD) cone_fire(b);
+        s.glow = 1.0f - 0.6f * clamp01((s.t - LEAD) / BURST);
+        if (s.t >= LEAD + BURST) { s.step++; s.t = 0.0f; }
+    } else if (s.step <= 5) {   // 3, 5: the next tell: the head drawn back up, the jaws glowing
+        face_player(b, dt, 1.2f);
+        float u = smooth01(s.t / (TELL / sm)), back = smooth01(s.t / 0.3f);
+        s.tNeckPitch = -0.45f + 1.15f * back; s.tNeckReach = 0.95f - 0.15f * back; s.tJaw = 1.0f - 0.7f * back; s.tCrouch = 3.0f; s.poseRate = 8.0f;
+        s.glow = 0.4f + 0.6f * u + flick * u;
+        if (s.t >= TELL / sm) { s.step++; s.t = 0.0f; }
+    } else {                    // spent: head low a moment, the opening
+        s.tNeckPitch = -0.5f; s.tCrouch = 5.0f; s.tJaw = 0.4f; s.poseRate = 3.0f;
+        s.glow = 0.4f * (1.0f - clamp01(s.t / 0.4f));
+        if (s.t >= REST) enter(DG_IDLE);
+    }
+}
+
+static void hover_update(Boss *b, float dt)
+{
+    // The hovering beam: it rises where it stands and hangs there, wings beating, the dark
+    // gathering in its jaws (a burst marks its left, where the beam will touch down); rakes the
+    // beam over the floor from its left to its right through where you stand; gathers again a
+    // moment (a burst on its right) and rakes it back from right to left; then sinks and lands.
+    // Roll each sweep, or get in under it
+    const float RISE = 1.3f, CHARGE = 0.8f, SWEEP = 1.7f, RECHARGE = 0.7f, LAND = 1.2f, ALT = 70.0f, HALF = 1.1f;
+    s.tWingSpan = 1.0f;
+    float bob = 3.0f * sinf(s.life * 2.2f), to[3];
+    if (s.step == 0) {          // up, then the charge
+        if (s.t < dt * 1.5f) sfx(SCENE1_SFX_SPELL_CAST, 0.8f);
+        float u = smooth01(s.t / RISE);
+        s.alt = (ALT + bob) * u;
+        s.flapRate = s.t < RISE ? 9.0f : 7.0f;
+        s.tNeckPitch = -0.3f; s.tJaw = 0.5f; s.poseRate = 4.0f;
+        s.glow = 0.9f * clamp01(s.t / (RISE + CHARGE)) + 0.1f * sinf(s.life * 24.0f) * clamp01((s.t - RISE) / CHARGE);
+        if (s.t < RISE) face_player(b, dt, 1.6f);
+        else {
+            if (s.t - dt < RISE) {      // the line fixed: from its left to its right, over where you stand
+                float dx, dz;       // (from up here a beam aimed past you passes over your head)
+                s.range = fminf(fmaxf(to_player(b, &dx, &dz), 50.0f), 230.0f);
+                s.sweepFrom = b->rot[1] - HALF; s.sweepSpan = 2.0f * HALF;
+                floor_point(b, s.sweepFrom, s.range, to);
+                skill_fx_spawn_burst_hostile(to, 0.0f);
+            }
+            floor_point(b, s.sweepFrom, s.range, to);
+            memcpy(s.aim, to, sizeof(s.aim)); s.tAimK = smooth01((s.t - RISE) / (CHARGE * 0.7f));
+        }
+        if (s.t >= RISE + CHARGE) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; s.hitDone = false; sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(5.0f); }
+    } else if (s.step == 1 || s.step == 3) {   // a sweep: left to right, then back
+        s.alt = ALT + bob; s.flapRate = 7.0f;
+        float u = smooth01(s.t / SWEEP), a = s.sweepFrom + s.sweepSpan * (s.step == 1 ? u : 1.0f - u);
+        floor_point(b, a, s.range, to);
+        turn_toward(b, a, 0.5f, dt);        // the body leans round with it a little
+        s.tNeckPitch = -0.4f; s.tJaw = 1.0f; s.poseRate = 6.0f;
+        beam_at(to, 3.0f, 22.0f, true, dt);
+        screen_shake_set_shake_mag(2.0f);
+        if (s.t >= SWEEP) {
+            s.beamOn = false; s.glow = 0.5f; s.step++; s.t = 0.0f;
+            if (s.step == 2) {      // the way back over where you are now
+                float dx, dz;
+                s.range = fminf(fmaxf(to_player(b, &dx, &dz), 50.0f), 230.0f);
+                floor_point(b, s.sweepFrom + s.sweepSpan, s.range, to);
+                skill_fx_spawn_burst_hostile(to, 0.0f);
+                sfx(SCENE1_SFX_SPELL_CAST, 0.7f);
+            } else s.sg = s.alt;    // the height it sinks from
+        }
+    } else if (s.step == 2) {   // gathers again
+        s.alt = ALT + bob; s.flapRate = 7.0f;
+        floor_point(b, s.sweepFrom + s.sweepSpan, s.range, to);
+        lerp3(s.aim, s.beamP, to, smooth01(s.t / (RECHARGE * 0.8f))); s.tAimK = 1.0f;
+        s.tNeckPitch = -0.3f; s.tJaw = 0.6f; s.poseRate = 5.0f;
+        s.glow = 0.5f + 0.5f * smooth01(s.t / RECHARGE) + 0.12f * sinf(s.life * 26.0f);
+        if (s.t >= RECHARGE) { s.step = 3; s.t = 0.0f; s.emit = 0.0f; s.hitDone = false; sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(5.0f); }
+    } else if (s.step == 4) {   // sinks and lands
+        s.glow = 0.5f * (1.0f - clamp01(s.t / 0.4f));
+        s.flapRate = 6.0f;
+        s.alt = s.sg * (1.0f - smooth01(s.t / LAND));
+        if (s.t >= LAND) { s.alt = 0.0f; land_slam(9.0f); s.step = 5; s.t = 0.0f; }
+    } else if (s.t >= 0.7f) enter(DG_IDLE);
 }
 
 static void choose(Boss *b, float dist, float rel)
@@ -1338,9 +1730,13 @@ static void choose(Boss *b, float dist, float rel)
         if (s.cdBeam <= 0.0f && front && dist > 60.0f) { s.cdBeam = 18.0f; enter(DG_BEAM); return; }
         if (s.cdOrbs <= 0.0f) { s.cdOrbs = 13.0f; enter(DG_ORBS); return; }
     }
-    if (s.cdFly <= 0.0f && dist > 70.0f) { s.cdFly = 22.0f; enter(s.dark && (rand_custom_u32() & 1) ? DG_SKYBEAM : DG_FLY); return; }
+    if (s.cdFly <= 0.0f && dist > 70.0f) {      // in the dark half: half the time a sky beam instead, gliding or hovering
+        uint32_t r = rand_custom_u32() % 4;
+        s.cdFly = 22.0f; enter(!s.dark || r < 2 ? DG_FLY : r == 2 ? DG_SKYBEAM : DG_HOVER); return;
+    }
     if (front && dist > 170.0f && s.cdSnipe <= 0.0f) { s.cdSnipe = 10.0f; enter(DG_SNIPE); return; }
     if (front && dist > 55.0f && dist < 160.0f && s.cdSweep <= 0.0f) { s.cdSweep = 15.0f; enter(DG_SWEEP); return; }
+    if (front && dist > 40.0f && dist < 140.0f && s.cdCone <= 0.0f) { s.cdCone = 14.0f; enter(DG_CONE); return; }
     if (front && dist < 85.0f && s.cdClaw <= 0.0f) { s.cdClaw = 2.5f; enter(DG_CLAW); return; }
     if (front && dist < 100.0f && s.cdBite <= 0.0f) { s.cdBite = 5.0f; enter(DG_BITE); return; }
     if (front && dist > 110.0f && dist < 260.0f && s.cdTriple <= 0.0f) { s.cdTriple = 13.0f; enter(DG_TRIPLE); return; }
@@ -1357,7 +1753,7 @@ void dragon_boss_update(Boss* b, float dt)
     float sm = s.dark ? 1.2f : 1.0f;
     s.cdWhip -= dt * sm;
     s.cdClaw -= dt * sm; s.cdBite -= dt * sm; s.cdTail -= dt * sm; s.cdBreath -= dt * sm; s.cdCharge -= dt * sm;
-    s.cdFly -= dt * sm; s.cdNova -= dt * sm; s.cdOrbs -= dt * sm; s.cdBeam -= dt * sm; s.cdTriple -= dt * sm; s.cdSnipe -= dt * sm; s.cdSweep -= dt * sm;
+    s.cdFly -= dt * sm; s.cdNova -= dt * sm; s.cdOrbs -= dt * sm; s.cdBeam -= dt * sm; s.cdTriple -= dt * sm; s.cdSnipe -= dt * sm; s.cdSweep -= dt * sm; s.cdCone -= dt * sm;
     s.fireCd -= dt;
 
     float dx, dz, dist = to_player(b, &dx, &dz);
@@ -1366,13 +1762,13 @@ void dragon_boss_update(Boss* b, float dt)
     // The resting pose, which each move overrides: it watches the player
     s.tNeckPitch = 0.0f; s.tNeckYaw = fminf(fmaxf(rel * 0.6f, -0.6f), 0.6f); s.tNeckReach = 1.0f;
     s.tJaw = 0.05f; s.tWingRaise = 0.25f; s.tWingSpan = 0.5f; s.tTail = 0.0f; s.tCrouch = 0.0f;
-    s.tClaw[0] = s.tClaw[1] = 0.0f; s.tAimK = 0.0f; s.poseRate = 6.0f; s.flapRate = 0.0f;
+    s.tClaw[0] = s.tClaw[1] = 0.0f; s.tAimK = 0.0f; s.tRear = 0.0f; s.poseRate = 6.0f; s.flapRate = 0.0f;
 
     if (b->state == BOSS_STATE_DEAD && s.state != DG_DEAD) { enter(DG_DEAD); clear_hazards(); }
     if (!s.dark && s.state != DG_DEAD && s.state != DG_INTRO && b->health <= b->maxHealth * 0.5f) {
         s.dark = true;
         b->mode = BOSS_MODE_CINEMATIC;
-        s.glow = 0.0f; s.beamOn = false;
+        s.glow = 0.0f; s.beamOn = false; s.cone.on = false;
         enter(DG_ROAR);
     }
 
@@ -1380,7 +1776,7 @@ void dragon_boss_update(Boss* b, float dt)
     // Past a move's windup, a tail swing, or up in the air: the strike itself
     b->striking = s.state == DG_FLY || s.state == DG_TAIL || (s.state == DG_CLAW && s.step != 0 && s.step != 2) ||
                   ((s.state == DG_BITE || s.state == DG_BREATH || s.state == DG_CHARGE || s.state == DG_WHIP || s.state == DG_NOVA || s.state == DG_BEAM ||
-                    s.state == DG_TRIPLE || s.state == DG_SNIPE || s.state == DG_SKYBEAM || s.state == DG_SWEEP) && s.step > 0);
+                    s.state == DG_TRIPLE || s.state == DG_SNIPE || s.state == DG_SKYBEAM || s.state == DG_SWEEP || s.state == DG_CONE || s.state == DG_HOVER) && s.step > 0);
 #ifdef HLE_TEST_DUMMY
     { extern void hle_open_tick(bool, float); hle_open_tick((s.state == DG_IDLE || s.state == DG_TURN || s.state == DG_DOWN), dt); }   // test aid: measure the openings
 #endif
@@ -1436,6 +1832,8 @@ void dragon_boss_update(Boss* b, float dt)
     case DG_TRIPLE: triple_update(b, dt); break;
     case DG_TURN:   turn_update(b, dt); break;
     case DG_SWEEP:  sweep_update(b, dt); break;
+    case DG_CONE:   cone_update(b, dt); break;
+    case DG_HOVER:  hover_update(b, dt); break;
 
     case DG_DOWN: {
         // A full stagger: a lurch, the legs buckle and it drops onto its belly, head lolling,
@@ -1473,6 +1871,7 @@ void dragon_boss_update(Boss* b, float dt)
     s.tail = ease(s.tail, s.tTail, pr, dt);
     s.crouch = ease(s.crouch, s.tCrouch, s.state == DG_DOWN ? 7.0f : 5.0f, dt);     // it drops when its legs give
     s.aimK = ease(s.aimK, s.tAimK, 8.0f, dt);
+    s.rear = ease(s.rear, s.tRear, 4.0f, dt);
     for (int k = 0; k < 2; k++) s.claw[k] = ease(s.claw[k], s.tClaw[k], 9.0f, dt);
     if (s.flapRate > 0.0f) {
         s.flapPh += dt * s.flapRate;
@@ -1482,6 +1881,7 @@ void dragon_boss_update(Boss* b, float dt)
     }
 
     rig(b, dt);
+    hits_after_rig(b, dt);
     hazards_update(dt);
 #ifdef HLE_DRAGON_TRACE   // test aid: the pose every frame (snaps), the player and the beam
     extern float hle_dummy_damage;
@@ -1676,6 +2076,14 @@ void dragon_boss_draw(Boss* b)
             put_glow(&s.flame, s.ball[i].p, 5.5f + 1.0f * sinf(s.life * 14.0f + i));
             put_glow(&s.flame, tr, 3.5f);
         }
+    if (s.cone.on) {        // the fire cone: rolls out, flickers, then sinks and fades (harmless by then)
+        float k = fmaxf(cone_grow(), 0.04f), v = clamp01((s.cone.t - CONE_GROW - CONE_HOLD) / CONE_FADE);
+        float fz[3] = { sinf(s.cone.yaw), 0.0f, cosf(s.cone.yaw) }, fx[3] = { fz[2], 0.0f, -fz[0] }, p[3] = { s.cone.p[0], s.groundY, s.cone.p[1] };
+        float flick = 1.0f + 0.12f * sinf(s.life * 31.0f), mir = sinf(s.life * 17.0f) > 0.0f ? 1.0f : -1.0f;     // mirrored now and then: its tongues shift
+        rdpq_set_prim_color(RGBA32(255, 255, 255, (int)(170 * (1.0f - v))));
+        put(&s.mCone, p, fx, UP, fz, k * mir, k * flick * (1.0f - 0.7f * v), k);
+        rdpq_set_prim_color(RGBA32(255, 255, 255, 170));
+    }
     const ProcMesh *light = s.dark ? &s.mOrb : &s.mIce;     // the beams: crystal light, then the dark
     if (s.beamOn) {
         float mid[3], z[3] = { s.beamP[0] - s.mouth[0], s.beamP[1] - s.mouth[1], s.beamP[2] - s.mouth[2] };
@@ -1692,7 +2100,7 @@ void dragon_boss_draw(Boss* b)
     }
     if (s.state == DG_TAIL && s.step == 0)      // the tail's crystal blade glows before it swings
         put_glow(light, s.tl[NTAIL], 3.0f + 2.5f * clamp01(s.t / 0.5f) + sinf(s.life * 16.0f));
-    bool beamish = s.state == DG_BEAM || s.state == DG_NOVA || s.state == DG_SNIPE || s.state == DG_SKYBEAM;
+    bool beamish = s.state == DG_BEAM || s.state == DG_NOVA || s.state == DG_SNIPE || s.state == DG_SKYBEAM || s.state == DG_HOVER;
     if (s.glow > 0.01f) put_glow(beamish || s.dark ? light : &s.flame, s.mouth, 2.0f + 5.0f * s.glow);
 #ifdef HLE_PROF_DRAGON
     DPROF(4);
