@@ -944,6 +944,17 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE && frame % 20 == 0) debugf("[cam] f%d aerial, y %.0f\n", frame, (double)boss->pos[1]);
             }
 #endif
+#ifdef HLE_DUMMY_SIDECAM  // the camera off to the side of the boss and the player, both in view (attack videos)
+            if (boss) {
+                cameraLockOnActive = false;
+                float mx = (boss->pos[0] + character.pos[0]) * 0.5f, mz = (boss->pos[2] + character.pos[2]) * 0.5f;
+                float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz) + 1e-3f;
+                float back = fmaxf(110.0f, d * 1.05f);
+                customCamPos = (T3DVec3){{ mx - dz / d * back - dx / d * 25.0f, character.pos[1] + 55.0f, mz + dx / d * back - dz / d * 25.0f }};
+                customCamTarget = (T3DVec3){{ mx, character.pos[1] + 18.0f, mz }};
+                camera_mode_smooth(CAMERA_CUSTOM, 0.02f);
+            }
+#endif
 #ifdef HLE_TEST_STAGGER   // the stagger meter filled in steps: a full stagger every other second, and again
             if (boss && (frame % 60) == 0 && boss->staggerT <= 0.0f) { boss->poise = fminf(1.0f, boss->poise + 0.55f); boss->poiseIdleT = 0.0f;
                 debugf("[stagtest] f%d poise %.2f\n", frame, (double)boss->poise); }
@@ -973,10 +984,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
             float prev = tm;
             tm += deltaTime;
+            static int heapMin = 1 << 30;     // the lowest free heap, sampled each second
+            if ((int)tm != (int)prev) { heap_stats_t h; sys_get_heap_stats(&h); if (h.total - h.used < heapMin) heapMin = h.total - h.used; }
             if ((int)(tm / 30.0f) != (int)(prev / 30.0f))
-                debugf("[dummy] boss %d t %.0f s damage %.0f hits %d | open %.0f%% of the time, %d gaps of %.2f s\n", HLE_DUMMY_BOSS, (double)tm,
+                debugf("[dummy] boss %d t %.0f s damage %.0f hits %d | open %.0f%% of the time, %d gaps of %.2f s | %.1f fps, heap min %d KB free\n", HLE_DUMMY_BOSS, (double)tm,
                        (double)hle_dummy_damage, hle_dummy_hits, (double)(100.0f * hle_open_time / (tm > 0 ? tm : 1)), hle_open_gaps,
-                       (double)(hle_open_gaps ? hle_open_time / hle_open_gaps : 0.0f));
+                       (double)(hle_open_gaps ? hle_open_time / hle_open_gaps : 0.0f), (double)display_get_fps(), heapMin / 1024);
         }
         return;
     }

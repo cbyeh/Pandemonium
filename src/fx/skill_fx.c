@@ -14,7 +14,7 @@
 #include "utilities/general_utility.h"
 #include "character/character.h"
 
-#define SKILL_FX_MAX 24
+#define SKILL_FX_MAX 40     // the Shackled Sun's spiral has 20 embers in the air
 
 typedef enum { FX_NONE, FX_ARC, FX_WAVE, FX_PILLAR, FX_BURST } FxType;
 
@@ -31,13 +31,18 @@ typedef struct {
     float hitInterval, hitTimer;
     bool  pillarOnEnd;
     bool  hostile;          // hits the player (Fallen Knight) instead of the boss
+    float scale;            // a wave's size (hit and drawn), 1 by default
+    float delay;            // charging where it was spawned: still, harmless and growing until then
+    float homing;           // turn rate toward the player (an orb), 0 once it has committed
 } SkillFx;
 
 static bool s_spawnHostile;     // palette/target for effects spawned now
 static float s_spawnRoll;       // a crescent's tilt, for waves spawned now
 static float s_spawnPoise = -1.0f;   // for the next spawn only (skill_fx_next_poise)
+static float s_spawnScale = 1.0f, s_spawnDelay, s_spawnHoming;     // for the next spawn only (skill_fx_next_shape)
 
 void skill_fx_next_poise(float poise) { s_spawnPoise = poise; }
+void skill_fx_next_shape(float scale, float delay) { s_spawnScale = scale; s_spawnDelay = delay; }
 
 static SkillFx s_fx[SKILL_FX_MAX];
 
@@ -77,7 +82,7 @@ void skill_fx_spawn_wave(SkillWaveShape shape, const float pos[3], const float v
                          float damage, int hits, float hitInterval, float life, bool pillarOnEnd)
 {
     SkillFx *f = fx_alloc(FX_WAVE);
-    if (!f) return;
+    if (!f) { s_spawnScale = 1.0f; s_spawnDelay = s_spawnHoming = 0.0f; s_spawnPoise = -1.0f; return; }
     f->shape = shape;
     memcpy(f->pos, pos, sizeof(f->pos));
     memcpy(f->vel, vel, sizeof(f->vel));
@@ -88,6 +93,15 @@ void skill_fx_spawn_wave(SkillWaveShape shape, const float pos[3], const float v
     f->life = life;
     f->pillarOnEnd = pillarOnEnd;
     f->yaw = s_spawnRoll;
+    f->scale = s_spawnScale; f->delay = s_spawnDelay; f->homing = s_spawnHoming;
+    s_spawnScale = 1.0f; s_spawnDelay = 0.0f; s_spawnHoming = 0.0f;
+}
+
+void skill_fx_spawn_orb_hostile(const float pos[3], const float vel[3], float damage, float life, float homing)
+{
+    s_spawnHoming = homing;
+    skill_fx_spawn_wave_hostile(SKILL_WAVE_ORB, pos, vel, damage, 1, 0.0f, life, false);
+    s_spawnHoming = 0.0f;   // (a full pool dropped it)
 }
 
 void skill_fx_spawn_crescent_hostile(const float pos[3], const float vel[3], float roll, float damage, float life)
@@ -250,7 +264,7 @@ static void update_arc_hit(SkillFx *f, Boss *b)
 
 static void update_wave_hit(SkillFx *f, Boss *b, float dt)
 {
-    if (f->hitsLeft <= 0) return;
+    if (f->hitsLeft <= 0 || f->age < f->delay) return;
     f->hitTimer -= dt;
     if (f->hitTimer > 0.0f) return;
     float c[3], contact[3];
@@ -261,7 +275,7 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
         r = 7.0f;
     } else {
         memcpy(c, f->pos, sizeof(c));
-        r = f->shape == SKILL_WAVE_CRESCENT ? 14.0f : f->hostile ? 12.0f : 14.0f;     // the player's crosses are wider
+        r = (f->shape == SKILL_WAVE_ORB ? 5.0f : f->shape == SKILL_WAVE_CRESCENT ? 14.0f : f->hostile ? 12.0f : 14.0f) * f->scale;     // the player's crosses are wider
     }
     if (f->hostile) {
         if (!sphere_hits_player(c, r)) return;
@@ -283,6 +297,18 @@ void skill_fx_update(float dt)
         if (f->type == FX_NONE) continue;
         f->age += dt;
         if (f->type == FX_WAVE) {
+            if (f->age < f->delay) { f->life += dt; continue; }     // charging: its life starts on release
+            if (f->homing > 0.0f) {     // steer at the player's chest, until close: then straight on (dodge it late)
+                float d[3] = { character.pos[0] - f->pos[0], character.pos[1] + 10.0f - f->pos[1], character.pos[2] - f->pos[2] };
+                float l = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]), sp = sqrtf(f->vel[0] * f->vel[0] + f->vel[1] * f->vel[1] + f->vel[2] * f->vel[2]);
+                if (l < 32.0f) f->homing = 0.0f;
+                else if (sp > 1e-3f) {
+                    float k = fminf(1.0f, f->homing * dt), v[3], vl = 0.0f;
+                    for (int m = 0; m < 3; m++) { v[m] = f->vel[m] / sp + (d[m] / l - f->vel[m] / sp) * k; vl += v[m] * v[m]; }
+                    vl = sqrtf(vl);
+                    for (int m = 0; m < 3; m++) f->vel[m] = v[m] / vl * sp;
+                }
+            }
             for (int k = 0; k < 3; k++) f->pos[k] += f->vel[k] * dt;
             update_wave_hit(f, b, dt);
         } else if (f->type == FX_ARC) {
@@ -464,18 +490,49 @@ static void draw_xwave(const SkillFx *f)
             }
             continue;
         }
+        // charging (a delay): it grows where it will be loosed from
+        float sc = f->scale * (f->delay > 0.0f ? 0.3f + 0.7f * fminf(1.0f, f->age / f->delay) : 1.0f);
         for (int i = 0; i < N; i++) {
             float t = -1.0f + 2.0f * i / (N - 1);
             float bulge = 1.0f - t * t;
             for (int c = 0; c < 3; c++) {
-                outer[i][c] = f->pos[c] + e[c] * t * (one ? 30.0f : 24.0f) + d[c] * bulge * (one ? 6.0f : 3.0f);
-                inner[i][c] = outer[i][c] - d[c] * bulge * (one ? 6.0f : 4.0f);
+                outer[i][c] = f->pos[c] + e[c] * t * (one ? 30.0f : 24.0f) * sc + d[c] * bulge * (one ? 6.0f : 3.0f) * sc;
+                inner[i][c] = outer[i][c] - d[c] * bulge * (one ? 6.0f : 4.0f) * sc;
             }
             co[i] = rgba(235, 250, 255, a);
             ci[i] = rgba(90, 200, 255, a * 0.2f);
         }
         build_ribbon(outer, inner, co, ci, N);
     }
+}
+
+/** An ember (the Shackled Sun's): a fire star, a white-gold core in an orange flame turning
+ *  the other way. Its own colours, not the crimson palette: it is the sun's fire */
+static void draw_orb(const SkillFx *f)
+{
+    float g = f->delay > 0.0f ? fminf(1.0f, f->age / f->delay) : 1.0f;     // charging: it swells
+    float a = fade(f, 0.0f, 0.15f);
+    if (a < 0.2f) return;   // see draw_blade
+    float R = 4.0f * f->scale * (0.25f + 0.75f * g) * (1.0f + 0.12f * sinf(f->age * 23.0f));
+    bool hostile = s_drawHostile;
+    s_drawHostile = false;
+    for (int layer = 1; layer >= 0; layer--) {     // the flame, then the core over it (no depth writes)
+        float r = layer ? R * 1.8f : R * 0.85f, sp = (layer ? -5.0f : 7.0f) * f->age + layer * 0.785f, c = cosf(sp), sn = sinf(sp);
+        uint32_t tip = layer ? rgba(255, 60, 10, 0.0f) : rgba(255, 255, 235, a), mid = layer ? rgba(255, 120, 30, a * 0.6f) : rgba(255, 220, 110, a);
+        int base = build_reserve(6, 8);
+        const float *p = f->pos;
+        build_vert((float[3]){ p[0], p[1] + r, p[2] }, tip);
+        build_vert((float[3]){ p[0], p[1] - r, p[2] }, tip);
+        for (int k = 0; k < 4; k++) {
+            float ang = k * T3D_PI * 0.5f, x = cosf(ang), z = sinf(ang);
+            build_vert((float[3]){ p[0] + (x * c - z * sn) * r, p[1], p[2] + (x * sn + z * c) * r }, mid);
+        }
+        for (int k = 0; k < 4; k++) {
+            build_tri(base, base + 2 + k, base + 2 + (k + 1) % 4);
+            build_tri(base + 1, base + 2 + (k + 1) % 4, base + 2 + k);
+        }
+    }
+    s_drawHostile = hostile;
 }
 
 /** Crescent Cleave blade: a tall, slightly curved sliver rising out of the ground. */
@@ -603,7 +660,7 @@ void skill_fx_draw(void)
         s_drawHostile = f->hostile;
         switch (f->type) {
             case FX_ARC:    draw_arc(f); break;
-            case FX_WAVE:   if (f->shape != SKILL_WAVE_BLADE) draw_xwave(f); else draw_blade(f); break;
+            case FX_WAVE:   if (f->shape == SKILL_WAVE_ORB) draw_orb(f); else if (f->shape != SKILL_WAVE_BLADE) draw_xwave(f); else draw_blade(f); break;
             case FX_PILLAR: draw_pillar(f); break;
             case FX_BURST:  draw_burst(f); break;
             default: break;
