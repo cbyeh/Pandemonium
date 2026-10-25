@@ -996,6 +996,17 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_DUMMY_MOVE   // keep running in a wide circle (the cloth in motion)
             in->stick_x = (int)(70 * cosf(tm * 0.8f)); in->stick_y = (int)(70 * sinf(tm * 0.8f));
 #endif
+#ifdef HLE_DUMMY_PIN      // held where it started: a blow's knockback can't shove it out past a wall (Shadowborne then stood stuck at the wall)
+            { static float pin[2]; static bool set; if (!set) { pin[0] = character.pos[0]; pin[1] = character.pos[2]; set = true; }
+              character.pos[0] = pin[0]; character.pos[2] = pin[1]; }
+#endif
+#ifdef HLE_DUMMY_KEEP     // locked on, keep about this far from the boss, strafing round it (its moves at range, from the side)
+            if (boss) { static int k; if (k++ % 60 == 0) pressed->z = 1;
+              in->btn.z = 1;
+              float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
+              in->stick_y = d < HLE_DUMMY_KEEP - 15.0f ? -70 : d > HLE_DUMMY_KEEP + 15.0f ? 70 : 0;
+              in->stick_x = 45; }
+#endif
 #ifdef HLE_DUMMY_STRIKE   // and fight back: locked on, walk in, swing (the stagger meter, hit-stop)
             { static int k; k++;
               if (k == 1) pressed->z = 1;
