@@ -978,8 +978,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 cameraLockOnActive = false;
                 float mx = (boss->pos[0] + character.pos[0]) * 0.5f, mz = (boss->pos[2] + character.pos[2]) * 0.5f;
                 float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz) + 1e-3f;
-                float back = fmaxf(110.0f, d * 1.05f);
-                customCamPos = (T3DVec3){{ mx - dz / d * back - dx / d * 25.0f, character.pos[1] + 55.0f, mz + dx / d * back - dz / d * 25.0f }};
+#ifndef HLE_SIDECAM_K       // how far out (2: twice as far and high)
+#define HLE_SIDECAM_K 1.0f
+#endif
+                float back = fmaxf(110.0f, d * 1.05f) * HLE_SIDECAM_K;
+                customCamPos = (T3DVec3){{ mx - dz / d * back - dx / d * 25.0f, character.pos[1] + 55.0f * HLE_SIDECAM_K, mz + dx / d * back - dz / d * 25.0f }};
                 customCamTarget = (T3DVec3){{ mx, character.pos[1] + 18.0f, mz }};
                 camera_mode_smooth(CAMERA_CUSTOM, 0.02f);
             }
