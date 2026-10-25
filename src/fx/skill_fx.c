@@ -25,6 +25,7 @@ typedef struct {
     float yaw;
     float age, life;
     float radius;           // arc: final radius
+    float half;             // arc: how far round it reaches each side of yaw
     float damage;
     float poise;            // share of the boss's stagger meter a hit fills (< 0: the damage's)
     int   hitsLeft;
@@ -38,6 +39,8 @@ static float s_spawnRoll;       // a crescent's tilt, for waves spawned now
 static float s_spawnPoise = -1.0f;   // for the next spawn only (skill_fx_next_poise)
 
 void skill_fx_next_poise(float poise) { s_spawnPoise = poise; }
+static float s_spawnHalf = T3D_PI * 0.5f;
+void skill_fx_next_arc_half(float half) { s_spawnHalf = half; }
 
 static SkillFx s_fx[SKILL_FX_MAX];
 
@@ -67,6 +70,7 @@ void skill_fx_spawn_arc(const float pos[3], float yaw, float radius, float damag
     memcpy(f->pos, pos, sizeof(f->pos));
     f->yaw = yaw;
     f->radius = radius;
+    f->half = s_spawnHalf; s_spawnHalf = T3D_PI * 0.5f;
     f->damage = damage;
     f->poise = s_spawnPoise; s_spawnPoise = -1.0f;
     f->hitsLeft = 1;
@@ -227,8 +231,12 @@ static void update_arc_hit(SkillFx *f, Boss *b)
         float dist = sqrtf(dx*dx + dz*dz);
         float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
         if (dist - character.capsuleCollider.radius > arc_radius(f)) return;
-        if (dist > 1e-3f && (dx*fx + dz*fz) / dist < -0.2f) return;
+        float rr = character.capsuleCollider.radius;     // only as far round as it's drawn (with the body's width)
+        if (dist > rr && acosf(fmaxf(-1.0f, fminf(1.0f, (dx*fx + dz*fz) / dist))) > f->half + asinf(rr / dist)) return;
         if (character.pos[1] > f->pos[1] + 2.0f) return;     // a wave along the floor: one in the air clears it
+#ifdef HLE_FK_TRACE
+        debugf("[arc] hit: player at %.0f deg, %.0f away, age %.2f\n", (double)(acosf(fmaxf(-1.0f, fminf(1.0f, (dx*fx + dz*fz) / (dist + 1e-3f)))) * 57.3f), (double)dist, (double)f->age);
+#endif
         f->hitsLeft = 0;
         character_apply_damage(f->damage);
         return;
@@ -265,6 +273,10 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
     }
     if (f->hostile) {
         if (!sphere_hits_player(c, r)) return;
+#ifdef HLE_FK_TRACE
+        debugf("[fxhit] shape %d age %.2f at %.0f,%.0f,%.0f player %.0f,%.0f,%.0f vel %.0f,%.0f\n", f->shape, (double)f->age, (double)c[0], (double)c[1], (double)c[2],
+               (double)character.pos[0], (double)character.pos[1], (double)character.pos[2], (double)f->vel[0], (double)f->vel[2]);
+#endif
         character_apply_damage(f->damage);
     } else {
         if (!sphere_hits_boss(b, c, r, contact)) return;
@@ -401,9 +413,9 @@ static void draw_arc(const SkillFx *f)
     // outer edge, so the slash also reads from a low camera
     for (int layer = 0; layer < 2; layer++) {
         for (int i = 0; i < N; i++) {
-            float th = -T3D_PI * 0.5f + T3D_PI * i / (N - 1);
+            float th = f->half * (-1.0f + 2.0f * i / (N - 1));
             float dx = fx * cosf(th) + rx * sinf(th), dz = fz * cosf(th) + rz * sinf(th);
-            float taper = cosf(th);           // crescent: thin at the tips
+            float taper = cosf(th * (T3D_PI * 0.5f) / f->half);     // crescent: thin at the tips
             outer[i][0] = f->pos[0] + dx * R; outer[i][2] = f->pos[2] + dz * R;
             if (layer == 0) {
                 float w = 16.0f * taper;

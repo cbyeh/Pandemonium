@@ -944,13 +944,34 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE && frame % 20 == 0) debugf("[cam] f%d aerial, y %.0f\n", frame, (double)boss->pos[1]);
             }
 #endif
+#ifdef HLE_DUMMY_CAM_NEAR  // close on the boss from its front-left (past the player): its poses
+            if (boss) {
+                cameraLockOnActive = false;
+                float a = boss->rot[1] + 0.9f;
+                customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * 80.0f, boss->pos[1] + 28.0f, boss->pos[2] + cosf(a) * 80.0f }};
+                customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + 18.0f, boss->pos[2] }};
+                camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+            }
+#endif
 #ifdef HLE_DUMMY_CAM_HIGH  // a wide view from high up, fixed in the world, on the boss and the player (aim and turning)
             if (boss) {
                 cameraLockOnActive = false;
                 float mx = (boss->pos[0] + character.pos[0]) * 0.5f, mz = (boss->pos[2] + character.pos[2]) * 0.5f;
-                customCamPos = (T3DVec3){{ mx, boss->pos[1] + 190.0f, mz - 150.0f }};
+                customCamPos = (T3DVec3){{ mx, boss->pos[1] + 120.0f, mz - 95.0f }};
                 customCamTarget = (T3DVec3){{ mx, boss->pos[1] + 10.0f, mz }};
                 camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+            }
+#endif
+#ifdef HLE_DUMMY_ORBIT   // run round the boss about 50 away (a sidestep the whole time)
+            if (boss) {
+                float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz) + 1e-3f;
+                float k = fmaxf(-1.0f, fminf(1.0f, (d - 50.0f) * 0.08f));
+                float wx = -dz / d + dx / d * k, wz = dx / d + dz / d * k;      // round it, and in or out to the radius
+                float ya = cameraAngleX;     // the stick back from world (character.c, compute_desired_velocity)
+                in->stick_y = (int)(70 * (wx * -fm_sinf(ya) + wz * -fm_cosf(ya)));
+                in->stick_x = (int)(70 * (wx * fm_cosf(ya) + wz * -fm_sinf(ya)));
+                if (frame % 15 == 0) debugf("[orbit] d %.0f player %.0f,%.0f boss %.0f,%.0f stick %d,%d cam %.2f\n", (double)d, (double)character.pos[0], (double)character.pos[2],
+                                            (double)boss->pos[0], (double)boss->pos[2], in->stick_x, in->stick_y, (double)ya);
             }
 #endif
 #ifdef HLE_TEST_STAGGER   // the stagger meter filled in steps: a full stagger every other second, and again

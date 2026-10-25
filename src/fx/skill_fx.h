@@ -23,6 +23,8 @@ void skill_fx_draw(void);
 void skill_fx_spawn_arc(const float pos[3], float yaw, float radius, float damage);
 /** The stagger the next spawned effect's hits deal (a share of the meter; by default the damage's). */
 void skill_fx_next_poise(float poise);
+/** How far round the next arc reaches each side of its yaw (radians; by default a half-disc, pi/2). */
+void skill_fx_next_arc_half(float half);
 struct Boss; bool skill_arc_reaches(const struct Boss *b, float arcY);   // Halfmoon's wave reaches the boss (not up in the air)
 
 // Moving wave. It damages the boss every `hitInterval` seconds while touching
