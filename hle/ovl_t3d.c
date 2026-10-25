@@ -434,10 +434,10 @@ static void tri_strip(uint32_t a0, uint32_t a1)
     // Literal port of the STRIP_LOOP: strips alternate winding, and an index
     // with the MSB set restarts a new strip.
 #ifdef HLE_TEST_T3D_EXACT   // test aid: the strip walked as it was: the same triangles, in order
-    uint32_t ref[256]; int nref = 0;
+    static uint32_t ref[4096]; int nref = 0;
     {
         int end = count - 2, p = 0; bool flip = true;
-        while (p < end && nref < 256) {
+        while (p < end && nref < 4096) {
             int16_t i1 = (int16_t)e[p + 2];
             if (i1 < 0) { p += 2; flip = true; continue; }
             int a = vtx_index(e[p + 1]), b = vtx_index(i1), c = vtx_index(e[p]);
@@ -468,13 +468,13 @@ static void tri_strip(uint32_t a0, uint32_t a1)
 #ifdef HLE_TEST_T3D_EXACT
     {   // what went out: pairs of G_TRI2 (plus the one pending before and after)
         extern uint32_t hle_exact_strips, hle_exact_bad;
-        uint32_t got[260]; int ngot = 0;
+        static uint32_t got[4100]; int ngot = 0;
         if (pend0) got[ngot++] = pidx0;
-        for (uint64_t *d = dl0; d < __gbi_ptr && ngot < 258; d++) { got[ngot++] = (uint32_t)(*d >> 32) & 0xFFFFFF; got[ngot++] = (uint32_t)*d; }
+        for (uint64_t *d = dl0; d < __gbi_ptr && ngot < 4098; d++) { got[ngot++] = (uint32_t)(*d >> 32) & 0xFFFFFF; got[ngot++] = (uint32_t)*d; }
         if (tri_has_pending) got[ngot++] = tri_pending;
         int off = pend0 ? 1 : 0;
         hle_exact_strips++;
-        if (nref < 256 && (ngot - off != nref || memcmp(got + off, ref, nref * 4))) hle_exact_bad++;
+        if (nref < 4096 && (ngot - off != nref || memcmp(got + off, ref, nref * 4))) hle_exact_bad++;
     }
 #endif
 }
