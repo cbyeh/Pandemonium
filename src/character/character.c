@@ -2563,9 +2563,11 @@ void character_init(void)
     t3d_model_draw(characterShadowModel);
     rspq_block_t* dpl_shadow = gpu_block_end();
 
+    // The body as drawn: the arms and feet reach ~8 out (the torso 3), the helmet 19.5 up (the
+    // top at 24 took blows passing over the head)
     CapsuleCollider collider = {
         .localCapA = {{0.0f, 4.0f, 0.0f}},
-        .localCapB = {{0.0f, 16.0f, 0.0f}},
+        .localCapB = {{0.0f, 12.0f, 0.0f}},
         .radius = 8.0f
     };
 
@@ -2813,6 +2815,9 @@ void character_update(void)
                     if (finisher) screen_shake_set_shake_mag(3.0f);
 #ifdef HLE_AUTOPLAY
                     debugf("[hit] combo %d%s%s\n", attackComboIndex, finisher ? " (finisher)" : "", boss->staggerT > 0.0f ? " on a staggered boss" : "");
+#ifdef HLE_LOG_HITVOL
+                    { extern bool hle_limb_only; if (hle_limb_only) debugf("[hitvol] that hit met only a limb outside the capsule\n"); }
+#endif
 #endif
                     float storm = tower_on_sword_hit();     // Storm Blade: lightning on every 4th hit
                     if (storm > 0.0f) {

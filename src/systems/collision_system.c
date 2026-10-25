@@ -1,6 +1,7 @@
 #include <libdragon.h>
 #include "gpu_frame.h"
 #include <t3d/t3d.h>
+#include <t3d/t3dskeleton.h>
 #include <math.h>
 
 #include "character.h"
@@ -84,6 +85,43 @@ static inline bool circle_vs_circle_push_xz(
     out_push[2] = nz * pen;
 
     return true;
+}
+
+// The Guardian's body leans and strides well out of its upright capsule (its legs ~10 past it a
+// tenth of the time, its bent-over torso and head 15-20): the sword also meets it along its
+// spine and legs, from the bones (radii from the model's limbs)
+#ifdef HLE_LOG_HITVOL
+bool hle_limb_only;     // test aid: this frame's sword contact came from the limbs alone
+#endif
+static bool guardian_body_hit(const Boss *boss, const float a[3], const float b[3], float r)
+{
+    static const struct { const char *from, *to; float r; } LIMBS[] = {
+        { "Waist", "Head", 7.0f },
+        { "Waist", "LowerLeg-Left", 5.0f }, { "LowerLeg-Left", "Foot-Left", 4.0f },
+        { "Waist", "LowerLeg-Right", 5.0f }, { "LowerLeg-Right", "Foot-Right", 4.0f },
+    };
+    enum { N = sizeof(LIMBS) / sizeof(LIMBS[0]) };
+    static const void *skel;
+    static int bone[N][2];
+    if (boss->phaseIndex > 2 || boss->mode != BOSS_MODE_COMBAT || !boss->skeleton) return false;
+    if (skel != boss->skeleton) {
+        skel = boss->skeleton;
+        for (int i = 0; i < N; i++) {
+            bone[i][0] = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, LIMBS[i].from);
+            bone[i][1] = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, LIMBS[i].to);
+        }
+    }
+    for (int i = 0; i < N; i++) {
+        T3DVec3 p, q;
+        if (!boss_get_bone_world_pos(boss, bone[i][0], &p) || !boss_get_bone_world_pos(boss, bone[i][1], &q)) continue;
+        if (scu_capsule_vs_capsule_f(a, b, r, p.v, q.v, LIMBS[i].r)) {
+#ifdef HLE_LOG_HITVOL
+            if (character_get_state() == CHAR_STATE_ATTACKING && !character.currentAttackHasHit) debugf("[hitvol] sword met the Guardian's %s-%s, outside its capsule\n", LIMBS[i].from, LIMBS[i].to);
+#endif
+            return true;
+        }
+    }
+    return false;
 }
 
 static inline void update_character_capsule_world(void)
@@ -402,6 +440,21 @@ void collision_update(void)
                     bossCapB.v,
                     bossRadius
                 );
+#ifdef HLE_LOG_HITVOL     // test aid: a swing that landed on a limb: would the capsule alone have met the boss later in it?
+                { static bool pending, wasHit;
+                  bool att = character_get_state() == CHAR_STATE_ATTACKING && character.currentAttackHasHit;
+                  if (!pending && att && !wasHit && hle_limb_only) pending = true;
+                  if (pending && att && charWeaponCollision) { debugf("[hitvol] limb hit: the capsule met it later in the swing\n"); pending = false; }
+                  if (pending && !att) { debugf("[hitvol] limb hit: the capsule never met it that swing\n"); pending = false; }
+                  wasHit = att; }
+                hle_limb_only = false;
+#endif
+                if (!charWeaponCollision && character_get_state() == CHAR_STATE_ATTACKING) {     // (only read mid-swing)
+                    charWeaponCollision = guardian_body_hit(boss, charWeaponCapA.v, charWeaponCapB.v, charWeaponRadius);
+#ifdef HLE_LOG_HITVOL
+                    hle_limb_only = charWeaponCollision;
+#endif
+                }
             }
         }
     }

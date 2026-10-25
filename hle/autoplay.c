@@ -5,6 +5,10 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
+#ifdef HLE_LOG_HITVOL
+#include <t3d/t3dmodel.h>
+#include <t3d/t3dskeleton.h>
+#endif
 #ifndef HLE_STRIKE_EVERY
 #define HLE_STRIKE_EVERY 24     // frames between presses (fewer chains the combo)
 #endif
@@ -91,6 +95,42 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (++n % 90 == 0) debugf("[hurtbox] boss %d capsule %.0f..%.0f r %.0f | head %.0f..%.0f out %.0f | waist %.0f..%.0f out %.0f | legs %.0f..%.0f out %.0f\n", bb->phaseIndex, (double)lo, (double)hi, (double)bb->capsuleCollider.radius,
                 (double)worstH[0][0], (double)worstH[0][1], (double)worstOut[0], (double)worstH[1][0], (double)worstH[1][1], (double)worstOut[1], (double)fminf(worstH[2][0], worstH[3][0]), (double)fmaxf(worstH[2][1], worstH[3][1]), (double)fmaxf(worstOut[2], worstOut[3]));
         }
+    }
+#endif
+#ifdef HLE_LOG_HITVOL     // test aid: the drawn bodies (every skinned vertex, swords left out) against the hit capsules
+    if (frame % 30 == 0) debugf("[f] %d\n", frame);     // (to find a logged moment's frame, for a screenshot)
+    if (frame % 6 == 0) {
+        extern T3DModel *characterModel;
+        extern bool hle_silhouette(const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M, const float o[3], float yaw, float h, float out[7]);
+        enum { NS = 1200, NC = 7 };
+        static float smp[2][NC][NS]; static int ns[2];
+        static const char *cn[NC] = { "legs r", "torso r", "arms r", "head r", "top", "front", "side" };
+        Boss *bb = boss_get_instance();
+        CharacterState st = character_get_state();
+        float o[NC];
+        if (bb && bb->mode == BOSS_MODE_COMBAT && bb->health > 0.0f && st != CHAR_STATE_DEAD) {
+            // the player at all heights; a boss below 32 above its feet (what a sword on the floor reaches)
+            if (ns[0] < NS && hle_silhouette(characterModel, character.skeleton, character.modelMat, character.pos, character.rot[1], 1e9f, o)) {
+                for (int c = 0; c < NC; c++) smp[0][c][ns[0]] = o[c];
+                ns[0]++;
+            }
+            bool ok = false;
+            if (bb->phaseIndex <= 2) ok = hle_silhouette(bb->model, bb->skeleton, bb->modelMat, bb->pos, bb->rot[1], 32.0f, o);
+            else if (bb->phaseIndex == 3) { extern bool fallen_knight_hle_pose(const T3DSkeleton **, const T3DMat4FP **); const T3DSkeleton *sk; const T3DMat4FP *M;
+                if (fallen_knight_hle_pose(&sk, &M)) ok = hle_silhouette(characterModel, sk, M, bb->pos, bb->rot[1], 32.0f, o); }
+            if (ok && ns[1] < NS) { for (int c = 0; c < NC; c++) smp[1][c][ns[1]] = o[c]; ns[1]++; }
+            if (ok && frame % 240 == 0) debugf("[hitvol] boss %d state %d: below 32 legs %.1f torso %.1f arms %.1f head %.1f | top %.1f | capsule r %.0f, %.0f..%.0f\n", bb->phaseIndex, bb->state,
+                (double)o[0], (double)o[1], (double)o[2], (double)o[3], (double)o[4], (double)bb->capsuleCollider.radius,
+                (double)(fminf(bb->capsuleCollider.localCapA.v[1], bb->capsuleCollider.localCapB.v[1]) - bb->capsuleCollider.radius),
+                (double)(fmaxf(bb->capsuleCollider.localCapA.v[1], bb->capsuleCollider.localCapB.v[1]) + bb->capsuleCollider.radius));
+        }
+        if (frame % 1800 == 0)     // percentiles (50 / 90 / max) of each extent
+            for (int w = 0; w < 2; w++) for (int c = 0; c < NC; c++) {
+                int n = ns[w]; if (n < 10) continue;
+                static float tmp[NS]; memcpy(tmp, smp[w][c], n * sizeof(float));
+                for (int i = 1; i < n; i++) { float v = tmp[i]; int j = i - 1; while (j >= 0 && tmp[j] > v) { tmp[j + 1] = tmp[j]; j--; } tmp[j + 1] = v; }
+                debugf("[hitvol] %s %s: p50 %.1f p90 %.1f p99 %.1f max %.1f (%d)\n", w ? "boss" : "player", cn[c], (double)tmp[n / 2], (double)tmp[n * 9 / 10], (double)tmp[n * 99 / 100], (double)tmp[n - 1], n);
+            }
     }
 #endif
 #ifdef HLE_LOG_RELIC    // test aid: the save's relics after boot (does the Shrine's choice survive a reboot?)
@@ -1453,5 +1493,58 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     }
     if (frame > 2400 && frame < 2600) in->stick_y = 80;   // walk forward a bit
     if (frame > 2600 && frame % 45 == 0) { pressed->b = 1; in->btn.b = 1; }   // attack
+}
+#endif
+#ifdef HLE_LOG_HITVOL
+#include <t3d/t3dmodel.h>
+#include <t3d/t3dskeleton.h>
+#include "utilities/game_math.h"
+/** Every skinned vertex (swords and the summoned swords left out) in world space, from o: the
+ *  widest (horizontal) below h above o of the legs, torso, arms and head; the top; the furthest
+ *  in front of yaw (facing (-sin, cos)) and to its side */
+bool hle_silhouette(const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M, const float o[3], float yaw, float h, float out[7])
+{
+    if (!m || !sk || !M) return false;
+    float fx = -fm_sinf(yaw), fz = fm_cosf(yaw);
+    for (int i = 0; i < 7; i++) out[i] = 0.0f;
+    T3DModelIter it = t3d_model_iter_create(m, T3D_CHUNK_TYPE_OBJECT);
+    while (t3d_model_iter_next(&it)) {
+        const T3DObject *ob = it.object;
+        const char *mn = ob->material && ob->material->name ? ob->material->name : "";
+        static int said;
+        if ((!strcmp(mn, "sword") || !strcmp(mn, "z_sword1")) && said < 2) {     // the blade's ends, in the hand's space (the hit segments are set from these)
+            said++;
+            for (int p = 0; p < ob->numParts; p++) {
+                const T3DObjectPart *pt = &ob->parts[p];
+                int lo = 0, hi = 0; const int16_t *L = NULL, *H = NULL;
+                for (int v = 0; v < pt->vertLoadCount; v++) {
+                    const int16_t *q = (v & 1) ? pt->vert[v >> 1].posB : pt->vert[v >> 1].posA;
+                    if (!L || q[0] < lo) { lo = q[0]; L = q; }
+                    if (!H || q[0] > hi) { hi = q[0]; H = q; }
+                }
+                if (L) debugf("[hitvol] %s part %d bone %d: x from %d,%d,%d to %d,%d,%d\n", mn, p, pt->matrixIdx, L[0], L[1], L[2], H[0], H[1], H[2]);
+            }
+        }
+        if (strstr(mn, "sword") || strstr(mn, "a_black")) continue;
+        for (int p = 0; p < ob->numParts; p++) {
+            const T3DObjectPart *pt = &ob->parts[p];
+            if (pt->matrixIdx >= sk->skeletonRef->boneCount) continue;
+            const char *bn = sk->skeletonRef->bones[pt->matrixIdx].name;
+            int c = (strstr(bn, "Leg") || strstr(bn, "Foot")) ? 0 : (strstr(bn, "Arm") || strstr(bn, "Hand") || strstr(bn, "Finger") || strstr(bn, "Thumb")) ? 2 : strstr(bn, "Head") ? 3 : 1;
+            const T3DMat4FP *B = &sk->boneMatricesFP[pt->matrixIdx];
+            for (int v = 0; v < pt->vertLoadCount; v++) {
+                const T3DVertPacked *vp = &pt->vert[v >> 1];
+                const int16_t *q = (v & 1) ? vp->posB : vp->posA;
+                float l[3] = { q[0], q[1], q[2] }, mm[3], w[3];
+                mat4fp_mul_point_f32_row3_colbasis(B, l, mm);
+                mat4fp_mul_point_f32_row3_colbasis(M, mm, w);
+                float dx = w[0] - o[0], dz = w[2] - o[2], dy = w[1] - o[1], r = sqrtf(dx * dx + dz * dz);
+                if (dy < h) out[c] = fmaxf(out[c], r);
+                out[4] = fmaxf(out[4], dy);
+                out[5] = fmaxf(out[5], dx * fx + dz * fz); out[6] = fmaxf(out[6], fabsf(dx * fz - dz * fx));
+            }
+        }
+    }
+    return true;
 }
 #endif

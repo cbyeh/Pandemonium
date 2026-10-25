@@ -13,6 +13,9 @@
 #include "../scenes/guardian/guardian_scene_sfx.h"
 #include "utilities/general_utility.h"
 #include "character/character.h"
+#include "utilities/simple_collision_utility.h"
+
+static void dir_basis(const float v[3], float d[3], float s[3], float u[3]);
 
 #define SKILL_FX_MAX 40     // the Shackled Sun's spiral has 20 embers in the air
 
@@ -280,13 +283,33 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
     if (f->shape == SKILL_WAVE_BLADE) {
         if (f->age < 0.2f) return;      // still rising out of the ground
         c[0] = f->pos[0]; c[1] = f->pos[1] + 14.0f; c[2] = f->pos[2];
-        r = 7.0f;
+        r = f->hostile ? 4.0f : 7.0f;   // a hostile one is drawn 4 wide: no further (the player's own reaches wider)
     } else {
         memcpy(c, f->pos, sizeof(c));
         r = (f->shape == SKILL_WAVE_ORB ? 5.0f : f->shape == SKILL_WAVE_CRESCENT ? 14.0f : f->hostile ? 12.0f : 14.0f) * f->scale;     // the player's crosses are wider
     }
     if (f->hostile) {
-        if (!sphere_hits_player(c, r)) return;
+        if (f->shape == SKILL_WAVE_CRESCENT) {
+            // A crescent is one long thin blade (draw_xwave): hit along it, not with a ball round its
+            // middle (that missed the ends of a level one and hit well clear of an upright one)
+            float d[3], sd[3], u[3], a[3], b[3], pa[3], pb[3];
+            dir_basis(f->vel, d, sd, u);
+            float ca = cosf(f->yaw), sa = sinf(f->yaw), L = 28.0f * f->scale, k = 3.0f * f->scale;
+            for (int m = 0; m < 3; m++) {
+                float e = sd[m] * ca + u[m] * sa;
+                a[m] = f->pos[m] + d[m] * k + e * L; b[m] = f->pos[m] + d[m] * k - e * L;
+                pa[m] = character.pos[m] + character.capsuleCollider.localCapA.v[m];
+                pb[m] = character.pos[m] + character.capsuleCollider.localCapB.v[m];
+            }
+            bool hit = scu_capsule_vs_capsule_f(a, b, k, pa, pb, character.capsuleCollider.radius);
+#ifdef HLE_LOG_HITVOL     // test aid: the old ball (14) against the blade
+            static int said;
+            if (hit != sphere_hits_player(c, r) && said++ < 60) { float q[3] = { character.pos[0] - f->pos[0], character.pos[1] + 8.0f - f->pos[1], character.pos[2] - f->pos[2] };
+                debugf("[hitvol] crescent tilt %.2f: the old ball %s, the blade %s; player %.0f to its side, %.0f up\n", (double)f->yaw, hit ? "misses" : "hits", hit ? "hits" : "misses",
+                       (double)(q[0] * sd[0] + q[2] * sd[2]), (double)q[1]); }
+#endif
+            if (!hit) return;
+        } else if (!sphere_hits_player(c, r)) return;
 #ifdef HLE_FK_TRACE
         debugf("[fxhit] shape %d age %.2f at %.0f,%.0f,%.0f player %.0f,%.0f,%.0f vel %.0f,%.0f\n", f->shape, (double)f->age, (double)c[0], (double)c[1], (double)c[2],
                (double)character.pos[0], (double)character.pos[1], (double)character.pos[2], (double)f->vel[0], (double)f->vel[2]);
@@ -442,6 +465,7 @@ static void draw_arc(const SkillFx *f)
             float th = f->half * (-1.0f + 2.0f * i / (N - 1));
             float dx = fx * cosf(th) + rx * sinf(th), dz = fz * cosf(th) + rz * sinf(th);
             float taper = cosf(th * (T3D_PI * 0.5f) / f->half);     // crescent: thin at the tips
+            if (f->hostile) taper = 0.35f + 0.65f * taper;  // but a hostile one hurts right out to them: show it (a ring's two halves met in nothing at its sides)
             outer[i][0] = f->pos[0] + dx * R; outer[i][2] = f->pos[2] + dz * R;
             if (layer == 0) {
                 float w = 16.0f * taper;

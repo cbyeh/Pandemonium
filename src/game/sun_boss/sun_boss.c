@@ -67,7 +67,7 @@ static struct {
     bool chainsReady, weights;
     int lashChain, lashLeft;
     float strikeDir[2], sweepFrom, sweepSpan;
-    bool hitDone;
+    bool hitDone, chainHit;     // the strike's impact (its bursts) is done; the drawn chain has struck the player
     SbState state;
     float t, life;          // time in state, total time
     int step;
@@ -407,6 +407,10 @@ static void dive_update(Boss *b, float dt)
             if (to_player(b, &dx, &dz) < 34.0f && character.pos[1] - s.groundY < 6.0f) character_apply_damage(hurt(20.0f));
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.0f);
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.5f);
+            for (int i = 0; i < 8; i++) {   // and out to its reach (34: the two in the middle showed 14 of it)
+                float a = i * (T3D_PI / 4.0f) + b->rot[1];
+                skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * 24.0f, s.groundY, b->pos[2] + cosf(a) * 24.0f }, a);
+            }
             screen_shake_set_shake_mag(14.0f);
             sfx_boom();
             enter(SB_REST);
@@ -514,6 +518,48 @@ static void chain_pose(const Boss *b, Chain *c, float dx, float dz, float al, bo
     }
 }
 
+// ---- The chains' hits: against the chain as drawn (a link is 3.4 across its half), not a
+// line out of the sun's middle: a chain hangs from a root on the sun's side, ~11 off that line
+#define LINK_HALF_W 3.4f
+
+static void chain_drawn(const Boss *b, const Chain *c, float P[NN][3])     // as chains_draw has it
+{
+    chain_root(b, c, P[0]);
+    const float f = s.chainStepped ? 0.5f : 1.0f;
+    for (int i = 1; i < NN; i++)
+        for (int m = 0; m < 3; m++) P[i][m] = c->q[i][m] + (c->p[i][m] - c->q[i][m]) * f;
+}
+
+static float seg_dist_xz(const float a[3], const float b[3], float px, float pz)
+{
+    float ex = b[0] - a[0], ez = b[2] - a[2], l2 = ex * ex + ez * ez;
+    float t = l2 > 1e-6f ? ((px - a[0]) * ex + (pz - a[2]) * ez) / l2 : 0.0f;
+    t = t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
+    float dx = px - a[0] - ex * t, dz = pz - a[2] - ez * t;
+    return sqrtf(dx * dx + dz * dz);
+}
+
+static bool in_tri_xz(const float a[3], const float b[3], const float c[3], float px, float pz)
+{
+    float d1 = (px - b[0]) * (a[2] - b[2]) - (a[0] - b[0]) * (pz - b[2]);
+    float d2 = (px - c[0]) * (b[2] - c[2]) - (b[0] - c[0]) * (pz - c[2]);
+    float d3 = (px - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (pz - a[2]);
+    return !(((d1 < 0) || (d2 < 0) || (d3 < 0)) && ((d1 > 0) || (d2 > 0) || (d3 > 0)));
+}
+
+/** The player's body within reach of the chain where it is now, or swept over since `was` (a
+ *  fast sweep moves its tip ~10 a frame), seen from above: the links below `maxH` over the floor */
+static bool chain_hits_player(const float now[NN][3], const float was[NN][3], float maxH)
+{
+    float px = character.pos[0], pz = character.pos[2], R = LINK_HALF_W + character.capsuleCollider.radius;
+    for (int i = 0; i < NN - 1; i++) {
+        if (fminf(now[i][1], now[i + 1][1]) - s.groundY > maxH) continue;
+        if (seg_dist_xz(now[i], now[i + 1], px, pz) < R) return true;
+        if (was && (in_tri_xz(was[i], was[i + 1], now[i + 1], px, pz) || in_tri_xz(was[i], now[i + 1], now[i], px, pz))) return true;
+    }
+    return was && now[NN - 1][1] - s.groundY <= maxH && seg_dist_xz(was[NN - 1], now[NN - 1], px, pz) < R;     // grazed by the tip on its way
+}
+
 static int nearest_chain(const Boss *b, float dx, float dz)
 {
     // the chain whose root faces the player most (the eye always does, so a side one)
@@ -534,7 +580,7 @@ static void lash_start(Boss *b, int count)
     to_player(b, &dx, &dz);
     s.lashChain = nearest_chain(b, dx, dz);
     s.lashLeft = count;
-    s.hitDone = false;
+    s.hitDone = s.chainHit = false;
     s.ch[s.lashChain].hot = true;
     enter(SB_LASH);
 #ifdef HLE_AUTOPLAY
@@ -547,16 +593,47 @@ static void lash_update(Boss *b, float dt)
     Chain *c = &s.ch[s.lashChain];
     float wind = (s.unshackled ? 0.75f : 0.95f) * (s.lashLeft == 1 && s.unshackled ? 0.7f : 1.0f);
     face_player(b, dt, 2.0f);
+    float root[3];
+    chain_root(b, c, root);
+#ifdef HLE_LOG_HITVOL     // test aid: the drawn chain against its pose, from the strike on
+    if (s.step >= 1) { float P[NN][3]; chain_drawn(b, c, P);
+        debugf("[hitvol] lash step %d t %.2f: node 4 %.0f off its pose at height %.0f, tip %.0f off at height %.0f\n", s.step, (double)s.t,
+               (double)sqrtf((P[4][0]-c->kt[4][0])*(P[4][0]-c->kt[4][0]) + (P[4][2]-c->kt[4][2])*(P[4][2]-c->kt[4][2])), (double)(P[4][1] - s.groundY),
+               (double)sqrtf((P[NN-1][0]-c->kt[NN-1][0])*(P[NN-1][0]-c->kt[NN-1][0]) + (P[NN-1][2]-c->kt[NN-1][2])*(P[NN-1][2]-c->kt[NN-1][2])), (double)(P[NN-1][1] - s.groundY)); }
+#endif
+    // The strike: the drawn chain hurts wherever it comes down below head height (it whips: its
+    // pose is reached a few frames on, the tip ~19 short of it), from the swing over the top
+    // until it lies on the floor
+    static float was[NN][3];
+    if (s.step >= 1 && !s.chainHit && (s.step == 1 || s.t < 0.3f)) {
+        float now[NN][3];
+        chain_drawn(b, c, now);
+        if (s.step == 1 && s.t <= dt) memcpy(was, now, sizeof(was));
+        if (character.pos[1] - s.groundY < 8.0f && chain_hits_player((const float (*)[3])now, (const float (*)[3])was, 20.0f)) {
+            s.chainHit = true;
+            character_apply_damage(hurt(16.0f));
+        }
+        memcpy(was, now, sizeof(was));
+#ifdef HLE_LOG_HITVOL
+        if (s.chainHit || (s.step == 2 && s.t + dt >= 0.3f)) {
+            float px = character.pos[0] - b->pos[0], pz = character.pos[2] - b->pos[2];
+            float along = px * s.strikeDir[0] + pz * s.strikeDir[1], side = fabsf(px * s.strikeDir[1] - pz * s.strikeDir[0]);
+            debugf("[hitvol] lash: player %.0f along the sun's line, %.0f beside it (the old band %s), the drawn chain %s at step %d t %.2f\n", (double)along, (double)side,
+                   along > 0.0f && along < CHAIN_LEN + SUN_R + 4.0f && side < 9.0f ? "hit" : "missed", s.chainHit ? "hits" : "missed", s.step, (double)s.t);
+        }
+#endif
+    }
     if (s.step == 0) {          // wind-up: track the player, the chain rises behind the sun
-        float dx, dz, d = to_player(b, &dx, &dz);
+        // aimed from its root (on the sun's side), so the chain itself comes down on the player
+        float dx = character.pos[0] - root[0], dz = character.pos[2] - root[2], d = sqrtf(dx * dx + dz * dz);
         if (s.t < wind - 0.2f && d > 1e-3f) { s.strikeDir[0] = dx / d; s.strikeDir[1] = dz / d; }
         float k = clamp01(s.t / wind);
         c->kin = true; c->kk = 0.18f;
         chain_pose(b, c, s.strikeDir[0], s.strikeDir[1], T3D_PI * (1.0f + 0.82f * k), false);
         if (s.t >= wind * 0.45f && s.t - dt < wind * 0.45f)     // where it will land
             for (int i = 1; i <= 2; i++)
-                skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + s.strikeDir[0] * CHAIN_LEN * 0.4f * i, s.groundY,
-                                                         b->pos[2] + s.strikeDir[1] * CHAIN_LEN * 0.4f * i }, 0.0f);
+                skill_fx_spawn_burst_hostile((float[3]){ root[0] + s.strikeDir[0] * CHAIN_LEN * 0.4f * i, s.groundY,
+                                                         root[2] + s.strikeDir[1] * CHAIN_LEN * 0.4f * i }, 0.0f);
         if (s.t >= wind) { s.step = 1; s.t = 0.0f; sfx_cast(); sfx_chain(0); }
     } else if (s.step == 1) {   // over the top and down onto the floor
         float k = clamp01(s.t / 0.2f);
@@ -564,20 +641,17 @@ static void lash_update(Boss *b, float dt)
         chain_pose(b, c, s.strikeDir[0], s.strikeDir[1], T3D_PI * (1.82f + 0.72f * k * k), true);
         if (k >= 1.0f && !s.hitDone) {
             s.hitDone = true;
-            // the player within reach of the line, on the ground
-            float px = character.pos[0] - b->pos[0], pz = character.pos[2] - b->pos[2];
-            float along = px * s.strikeDir[0] + pz * s.strikeDir[1], side = fabsf(px * s.strikeDir[1] - pz * s.strikeDir[0]);
 #ifdef HLE_SUN_FORCE
-            { float r[3]; chain_root(b, c, r); const float *tp = c->p[NN - 1];
+            { float px = character.pos[0] - b->pos[0], pz = character.pos[2] - b->pos[2];
+              float along = px * s.strikeDir[0] + pz * s.strikeDir[1], side = fabsf(px * s.strikeDir[1] - pz * s.strikeDir[0]);
+              float r[3]; chain_root(b, c, r); const float *tp = c->p[NN - 1];
               debugf("[sun] strike along %.0f side %.0f | tip from root %.0f,%.0f,%.0f kt %.0f,%.0f,%.0f\n", (double)along, (double)side,
                      (double)(tp[0]-r[0]), (double)(tp[1]-r[1]), (double)(tp[2]-r[2]),
                      (double)(c->kt[NN-1][0]-r[0]), (double)(c->kt[NN-1][1]-r[1]), (double)(c->kt[NN-1][2]-r[2])); }
 #endif
-            if (along > 0.0f && along < CHAIN_LEN + SUN_R + 4.0f && side < 9.0f && character.pos[1] - s.groundY < 8.0f)
-                character_apply_damage(hurt(16.0f));
             for (int i = 1; i <= 3; i++)
-                skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + s.strikeDir[0] * (SUN_R + CHAIN_LEN * 0.3f * i), s.groundY,
-                                                         b->pos[2] + s.strikeDir[1] * (SUN_R + CHAIN_LEN * 0.3f * i) }, i * 0.7f);
+                skill_fx_spawn_burst_hostile((float[3]){ root[0] + s.strikeDir[0] * CHAIN_LEN * 0.3f * i, s.groundY,
+                                                         root[2] + s.strikeDir[1] * CHAIN_LEN * 0.3f * i }, i * 0.7f);
             screen_shake_set_shake_mag(10.0f);
             sfx_boom();
             sfx_chain(1);
@@ -594,7 +668,7 @@ static void lash_update(Boss *b, float dt)
                 s.lashChain = nearest_chain(b, dx, dz);
                 if (s.lashChain == prev) s.lashChain = (prev + 1) % NCH;
                 s.ch[prev].hot = s.ch[prev].kin = false;    // it went on to the next before this one cooled (stayed orange)
-                s.ch[s.lashChain].hot = true; s.hitDone = false;
+                s.ch[s.lashChain].hot = true; s.hitDone = s.chainHit = false;
                 s.state = SB_LASH; s.t = 0.0f; s.step = 0;
             } else enter(SB_HOVER);
         }
@@ -627,11 +701,23 @@ static void sweep_update(Boss *b, float dt)
         float k = clamp01(s.t / SWING), a0 = s.sweepFrom + s.sweepSpan * clamp01((s.t - dt) / SWING), a = s.sweepFrom + s.sweepSpan * k;
         c->kk = 0.5f;
         chain_pose(b, c, sinf(a), cosf(a), T3D_PI * 0.5f, true);
-        // the chain swept past the player this frame
-        float pa = atan2f(dx, dz), dist = sqrtf(dx * dx + dz * dz);
-        float r0 = remainderf(pa - a0, 2.0f * T3D_PI), r1 = remainderf(pa - a, 2.0f * T3D_PI);
-        if (!s.hitDone && (r0 > 0) != (r1 > 0) && fabsf(r0) < 1.0f && dist < SUN_R + CHAIN_LEN + 4.0f
-            && character.pos[1] - s.groundY < 6.0f) {
+        // the chain as drawn swept over the player since the last frame (it trails its pose, the
+        // tip most: hit by what is seen, not by the angle round the sun's middle out to 73)
+        static float was[NN][3];
+        float now[NN][3];
+        chain_drawn(b, c, now);
+        if (s.t <= dt) memcpy(was, now, sizeof(was));
+        bool hit = !s.hitDone && character.pos[1] - s.groundY < 6.0f && chain_hits_player((const float (*)[3])now, (const float (*)[3])was, 1e9f);
+#ifdef HLE_LOG_HITVOL
+        { float pa = atan2f(dx, dz), dist = sqrtf(dx * dx + dz * dz);
+          float r0 = remainderf(pa - a0, 2.0f * T3D_PI), r1 = remainderf(pa - a, 2.0f * T3D_PI);
+          bool old = (r0 > 0) != (r1 > 0) && fabsf(r0) < 1.0f && dist < SUN_R + CHAIN_LEN + 4.0f && character.pos[1] - s.groundY < 6.0f;
+          if ((old || hit) && !s.hitDone) debugf("[hitvol] sweep: player %.0f from the sun, the old angle test %s, the chain %s\n", (double)dist, old ? "hit" : "missed", hit ? "hits" : "misses"); }
+#else
+        (void)a0;
+#endif
+        memcpy(was, now, sizeof(was));
+        if (hit) {
             s.hitDone = true;
             character_apply_damage(hurt(14.0f));
         }

@@ -141,14 +141,16 @@ static void enter(FkState st)
 
 static void swing_sfx(void) { audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_SWING1, 1.0f, 0.0f); }
 
-/** The blade in world space, from the last pose (as the player's sword: 640 units along the hand's -X) */
+/** The drawn blade in world space, from the last pose: guard to tip, as the knight model has it
+ *  in the hand's space. (The player's 640 along the hand's -X follows its sword trail; drawn
+ *  without one, that reached 6 past this tip and ran 5 to the side of it) */
 static bool sword_segment(float base[3], float tip[3])
 {
     if (s.swordBone < 0) return false;
     const T3DMat4FP *B = &s.skel.boneMatricesFP[s.swordBone];
     float m0[3], m1[3];
-    mat4fp_mul_point_f32_row3_colbasis(B, (float[3]){ 0.0f, 0.0f, 0.0f }, m0);
-    mat4fp_mul_point_f32_row3_colbasis(B, (float[3]){ -640.0f, 0.0f, 0.0f }, m1);
+    mat4fp_mul_point_f32_row3_colbasis(B, (float[3]){ -29.0f, 46.0f, -3.0f }, m0);
+    mat4fp_mul_point_f32_row3_colbasis(B, (float[3]){ -522.0f, 69.0f, -68.0f }, m1);
     mat4fp_mul_point_f32_row3_colbasis(s.mat, m0, base);
     mat4fp_mul_point_f32_row3_colbasis(s.mat, m1, tip);
     return true;
@@ -168,7 +170,16 @@ static void melee_check(Boss *b, float t0, float t1, float damage)
     const T3DVec3 *a = &character.capsuleCollider.localCapA, *c = &character.capsuleCollider.localCapB;
     float pa[3] = { p[0] + a->v[0], p[1] + a->v[1], p[2] + a->v[2] };
     float pb[3] = { p[0] + c->v[0], p[1] + c->v[1], p[2] + c->v[2] };
-    if (!scu_capsule_vs_capsule_f(base, tip, 3.0f, pa, pb, character.capsuleCollider.radius)) return;
+    bool hit = scu_capsule_vs_capsule_f(base, tip, 2.0f, pa, pb, character.capsuleCollider.radius);     // the blade's width
+#ifdef HLE_LOG_HITVOL     // test aid: the old segment (640 along the hand's -X, 3 wide) against the drawn blade
+    { const T3DMat4FP *B = &s.skel.boneMatricesFP[s.swordBone]; float m0[3], m1[3], o0[3], o1[3];
+      mat4fp_mul_point_f32_row3_colbasis(B, (float[3]){ 0, 0, 0 }, m0); mat4fp_mul_point_f32_row3_colbasis(B, (float[3]){ -640.0f, 0, 0 }, m1);
+      mat4fp_mul_point_f32_row3_colbasis(s.mat, m0, o0); mat4fp_mul_point_f32_row3_colbasis(s.mat, m1, o1);
+      bool old = scu_capsule_vs_capsule_f(o0, o1, 3.0f, pa, pb, character.capsuleCollider.radius);
+      static int n; if (old != hit && n++ < 40) debugf("[hitvol] fk swing clip %d: the old segment %s, the blade %s (old tip %.1f from the drawn tip)\n", s.anim, old ? "hits" : "misses", hit ? "hits" : "misses",
+          (double)sqrtf((o1[0]-tip[0])*(o1[0]-tip[0]) + (o1[1]-tip[1])*(o1[1]-tip[1]) + (o1[2]-tip[2])*(o1[2]-tip[2]))); }
+#endif
+    if (!hit) return;
     s.hitDone = true;
     character_apply_damage(damage);
 #ifdef HLE_TEST_DUMMY
@@ -307,9 +318,9 @@ void fallen_knight_begin(Boss* boss)
     boss->handAttackColliderActive = false;
     boss->sphereAttackColliderActive = false;
     boss->visible = true;
-    // Knight-sized capsule (1.6x the player's)
+    // Knight-sized capsule (1.6x the player's): its top at the helmet's (31; at 37 the sword met air over it)
     boss->capsuleCollider.localCapA = (T3DVec3){{ 0.0f, 6.0f, 0.0f }};
-    boss->capsuleCollider.localCapB = (T3DVec3){{ 0.0f, 26.0f, 0.0f }};
+    boss->capsuleCollider.localCapB = (T3DVec3){{ 0.0f, 20.0f, 0.0f }};
     boss->capsuleCollider.radius = 11.0f;
 
     s.groundY = character.pos[1];
@@ -757,7 +768,7 @@ void fallen_knight_update(Boss* b, float dt)
     const float rot[3] = { 0.0f, b->rot[1] + FK_YAW_OFFSET, 0.0f };
     t3d_mat4fp_from_srt_euler(s.mat, sc, rot, p);
     {   // The body capsule follows it down: feet to head while it lies staggered, so it's hit where it lies
-        T3DVec3 top = {{ 0.0f, 26.0f, 0.0f }};
+        T3DVec3 top = {{ 0.0f, 20.0f, 0.0f }};
         if (s.state == FK_STAGGER && s.headBone >= 0) {
             float h[3], w[3];
             mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.headBone], (float[3]){ 0.0f, 0.0f, 0.0f }, h);
@@ -795,6 +806,13 @@ bool fallen_knight_bone(const char *name, float out[3])     // test aid: a bone'
     mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[i], (float[3]){ 0.0f, 0.0f, 0.0f }, h);
     mat4fp_mul_point_f32_row3_colbasis(s.mat, h, out);
     return true;
+}
+#endif
+#ifdef HLE_LOG_HITVOL
+bool fallen_knight_hle_pose(const T3DSkeleton **sk, const T3DMat4FP **m)    // test aid: the pose, for its drawn extent
+{
+    *sk = &s.skel; *m = s.mat;
+    return s.ready && s.mat;
 }
 #endif
 void fallen_knight_draw(Boss* b)

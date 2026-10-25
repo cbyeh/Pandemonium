@@ -61,7 +61,7 @@ static const float CEILING_Y = 595.0f;
 
 static const float CEILING_HOLD_SEC = 5.0f;
 
-static const float HAZARD_HEIGHT = 20.0f;
+static const float HAZARD_HEIGHT = 24.0f;     // to the top of the sliding sword's guard
 static const float WALL_HEIGHT = 15.0f;
 
 static float gClusterRadius = 220.0f;
@@ -83,8 +83,10 @@ static const float DESPAWN_Y     = -120.0f;
 
 static const float MSA_MAX_XZ_SPEED = 520.0f;
 
-static const float SWORD_RADIUS = 9.0f;
+static const float SWORD_HALF_LEN = 7.7f, SWORD_HALF_THICK = 2.2f;
 
+// The walls are drawn as sheets, but they block: this thick so a knockdown's shove (~12 a frame
+// at its fastest) can't carry the player through one
 static const float WALL_THICKNESS = 10.0f;
 
 static const float DMG_BODY     = 35.0f;
@@ -211,6 +213,7 @@ static float gAerialStickTimer[MSA_MAX_SWORDS];
 static const float AERIAL_STUCK_TIME = 0.75f;
 static const float AERIAL_SINK_SPEED = 120.0f;
 static const float AERIAL_SINK_DEPTH = 28.0f;
+static const float AERIAL_BLADE_BACK = 35.0f, AERIAL_BLADE_R = 5.0f;    // the stuck sword: point to pommel, and its width (the guard's 15 across at 16-24 back)
 
 // Per-sword start angles (captured when fired from SW_CEILING)
 static float gAerialStartYaw  [MSA_MAX_SWORDS];
@@ -220,6 +223,7 @@ static float gAerialStartRoll [MSA_MAX_SWORDS];
 static float gAerialLandYaw   [MSA_MAX_SWORDS];
 static float gAerialLandPitch [MSA_MAX_SWORDS];
 static float gAerialLandRoll  [MSA_MAX_SWORDS];
+static float gAerialFlyDir    [MSA_MAX_SWORDS][3];     // its way on the last step of its flight
 
 // Short-path lerp between two angles.
 static float aerial_angle_lerp(float a, float b, float t) {
@@ -404,17 +408,17 @@ static void getCharacterCapsuleWorld(float outA[3], float outB[3], float *outR) 
     *outR = character.capsuleCollider.radius;
 }
 
-static void swordBodyAabb(const MsaSword *s, float outMin[3], float outMax[3]) {
-    const float r = SWORD_RADIUS;
-
-    outMin[0] = s->pos[0] - r;
-    outMax[0] = s->pos[0] + r;
-
-    outMin[2] = s->pos[2] - r;
-    outMax[2] = s->pos[2] + r;
-
-    outMin[1] = gFloorY;
-    outMax[1] = gFloorY + HAZARD_HEIGHT;
+// The sliding sword as drawn (boss_back_sword at twice MODEL_SCALE, upright, its guard and flat
+// along its path): 15 long by 4 thick, to the guard's top. A square box 18 across, turned with
+// nothing, struck a player passing 7 clear of its flat
+static void swordBodyObb(const MsaSword *s, SCU_OBB *o) {
+    o->center[0] = s->pos[0];
+    o->center[1] = gFloorY + 0.5f * HAZARD_HEIGHT;
+    o->center[2] = s->pos[2];
+    o->half[0] = SWORD_HALF_LEN;
+    o->half[1] = 0.5f * HAZARD_HEIGHT;
+    o->half[2] = SWORD_HALF_THICK;
+    o->yaw = atan2f(s->dir[1], s->dir[0]);
 }
 
 // ============================================================
@@ -910,12 +914,23 @@ void msa_update(float dt) {
             float d2 = dx*dx + dy*dy + dz*dz;
 
             if (d2 < 1.0f) {
-                float pdx = character.pos[0] - tx;
-                float pdy = character.pos[1] - ty;
-                float pdz = character.pos[2] - tz;
-                float p2 = pdx*pdx + pdy*pdy + pdz*pdz;
+                // Where it sticks, as drawn: tip first into the floor, the blade and guard standing
+                // back along its flight (to the pommel, 35 back). A ball of 32 round the point struck
+                // a player it landed well clear of
+                const float *n = gAerialFlyDir[i];     // (it ends its flight exactly on the point: the last step's way)
+                float ba[3] = { tx + n[0] * 10.0f, ty + n[1] * 10.0f, tz + n[2] * 10.0f };
+                float bb[3] = { tx - n[0] * AERIAL_BLADE_BACK, ty - n[1] * AERIAL_BLADE_BACK, tz - n[2] * AERIAL_BLADE_BACK };
+                float ca[3], cb[3], cr;
+                getCharacterCapsuleWorld(ca, cb, &cr);
+                bool hit = scu_capsule_vs_capsule_f(ba, bb, AERIAL_BLADE_R, ca, cb, cr);
+#ifdef HLE_LOG_HITVOL
+                { float pdx = character.pos[0] - tx, pdy = character.pos[1] - ty, pdz = character.pos[2] - tz;
+                  bool old = pdx*pdx + pdy*pdy + pdz*pdz <= 32.0f * 32.0f;
+                  debugf("[hitvol] aerial sword lands %.0f from the player (%.0f across): the old ball %s, the blade %s\n", (double)sqrtf(pdx*pdx + pdz*pdz),
+                         (double)fabsf(pdx * n[2] - pdz * n[0]) / fmaxf(1e-3f, sqrtf(n[0]*n[0] + n[2]*n[2])), old ? "hit" : "missed", hit ? "hits" : "misses"); }
+#endif
 
-                if (p2 <= (32.0f * 32.0f) && gHitCd <= 0.0f) {
+                if (hit && gHitCd <= 0.0f) {
                     character_apply_damage(DMG_BODY);
                     gHitCd = BODY_HIT_GRACE;
                 }
@@ -954,6 +969,7 @@ void msa_update(float dt) {
             s->pos[0] += nx * step;
             s->pos[1] += ny * step;
             s->pos[2] += nz * step;
+            gAerialFlyDir[i][0] = nx; gAerialFlyDir[i][1] = ny; gAerialFlyDir[i][2] = nz;
 
             float xz2 = nx*nx + nz*nz;
             if (xz2 > 0.0001f) {
@@ -1203,9 +1219,18 @@ void msa_update(float dt) {
         MsaSword *s = &gSwords[i];
         if (s->state != SW_SCURVE) continue;     // only a moving sword hurts, not one standing where it landed
 
-        float swordMin[3], swordMax[3];
-        swordBodyAabb(s, swordMin, swordMax);
-        if (scu_capsule_vs_rect_f(charA, charB, charR, swordMin, swordMax)) {
+        SCU_OBB o;
+        swordBodyObb(s, &o);
+        float push[3], nrm[3];
+        bool hit = scu_capsule_vs_obb_push_xz_f(charA, charB, charR, &o, push, nrm);
+#ifdef HLE_LOG_HITVOL     // test aid: where the square box round the sword (before) and the sword itself disagree
+        { float mn[3] = { s->pos[0] - 9.0f, gFloorY, s->pos[2] - 9.0f }, mx[3] = { s->pos[0] + 9.0f, gFloorY + 20.0f, s->pos[2] + 9.0f };
+          bool old = scu_capsule_vs_rect_f(charA, charB, charR, mn, mx);
+          if (old != hit && gHitCd <= 0.0f) { float dx = character.pos[0] - s->pos[0], dz = character.pos[2] - s->pos[2], dl = sqrtf(s->dir[0] * s->dir[0] + s->dir[1] * s->dir[1]) + 1e-6f;
+              debugf("[hitvol] ground sword: %s, player %.1f along its path, %.1f beside it\n", old ? "the old box hit, the sword misses" : "the sword hits, the old box missed",
+                     (double)((dx * s->dir[0] + dz * s->dir[1]) / dl), (double)(fabsf(dz * s->dir[0] - dx * s->dir[1]) / dl)); } }
+#endif
+        if (hit) {
             hitBody = true;
             break;
         }
