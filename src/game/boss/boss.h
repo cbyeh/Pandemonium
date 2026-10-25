@@ -343,7 +343,7 @@ void boss_apply_damage(Boss* boss, float amount);
 float boss_damage_scale(void);
 /** A hit with its own share of the stagger meter (boss_apply_damage: the damage's, 28 fills it). */
 // The stagger meter, as in Elden Ring: a blow's stance damage, not its damage. This much fills it:
-// 12 plain sword hits (combo finishers and skills count for more)
+// 12 plain sword hits (combo finishers and skills count for more); each boss scales it (boss_poise_scale)
 #define POISE_DAMAGE 48.0f
 #define BOSS_STAGGER_S 3.5f     // every boss stays down this long: the opening is the reward (no damage bonus)
 void boss_apply_hit(Boss* boss, float amount, float poise);

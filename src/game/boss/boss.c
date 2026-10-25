@@ -512,6 +512,17 @@ static inline void boss_update_shadow_mat(Boss* boss)
 // Health per fight, skills or not (the D-pad skills are tuned under the sword). The bonus bosses are
 // sized to the same difficulty as the Guardian's two phases together (measured damage
 // against a dummy + a binomial dodge model): they hit softer but more often.
+// Sword hits to fill the meter by boss (POISE_DAMAGE is 12): set so a player who only strikes
+// between the boss's attacks breaks it about once or twice a fight. The Guardian and the Fallen
+// Warrior leave short openings (fewer hits land), the Sun and Shadowborne long ones
+static float boss_poise_scale(const Boss *b)
+{
+    float hits = b->phaseIndex == FALLEN_KNIGHT_PHASE ? 10.0f
+               : (b->phaseIndex == SUN_BOSS_PHASE || b->phaseIndex == DRAGON_BOSS_PHASE) ? 14.0f
+               : 11.0f;     // the Guardian and Unbound
+    return (POISE_DAMAGE / 4.0f) / hits;
+}
+
 // The stagger meter keeps 2 s unhit, then drains; slower while the boss strikes or is in the air
 // (POISE_DAMAGE: boss.h)
 #define POISE_KEEP_S        2.0f     // no hits this long: it drains
@@ -783,7 +794,7 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
     if (boss->staggerT <= 0.0f) {      // the stagger meter
         // from the blow itself, not the damage: the same hits fill the same share on every floor,
         // whatever the damage boons (Crushing Blows, a stagger boon, is the one that adds)
-        boss->poise = fminf(1.0f, boss->poise + poise * tower_mod_poise());
+        boss->poise = fminf(1.0f, boss->poise + poise * tower_mod_poise() * boss_poise_scale(boss));
         boss->poiseIdleT = 0.0f;
     }
 

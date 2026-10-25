@@ -57,7 +57,7 @@ Each save slot keeps its best floor, Embers, relics, skin and settings (a fresh 
 ### Combat
 - **Hit-stop:** sword hits land with a short freeze; the third hit of a combo lands heaviest.
 - **Perfect dodge:** roll just as a blow lands for a moment of slow motion and stamina back.
-- **Stagger:** land blows to break a boss's stance: the thin gold line under its health. About twelve sword hits fill it; a combo's third hit and the skills count for more (Halfmoon Slash about a third), and it keeps through a dodge or two before draining. Breaking it freezes the moment, then slows time briefly, and the boss stays down for 3.5 s: your opening.
+- **Stagger:** land blows to break a boss's stance: the thin gold line under its health. About ten to fourteen sword hits fill it, depending on the boss; a combo's third hit and the skills count for more (Halfmoon Slash about a third), and it keeps through a dodge or two before draining. Breaking it freezes the moment, then slows time briefly, and the boss stays down for 3.5 s: your opening.
 
 ### Settings
 - **Controls:** three button layouts (Classic, A/B Swapped, Skills on C) and camera speed 1-5. The Controls page shows what each button does.
