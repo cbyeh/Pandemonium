@@ -309,7 +309,21 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
                        (double)(q[0] * sd[0] + q[2] * sd[2]), (double)q[1]); }
 #endif
             if (!hit) return;
-        } else if (!sphere_hits_player(c, r)) return;
+        } else {
+            bool hit = sphere_hits_player(c, r);
+#ifdef HLE_LOG_HITVOL     // test aid: an ember's centre against the player's body (its axis), near it
+            if (f->shape == SKILL_WAVE_ORB) {
+                float a[3], b2[3], q[3];
+                for (int m = 0; m < 3; m++) { a[m] = character.pos[m] + character.capsuleCollider.localCapA.v[m]; b2[m] = character.pos[m] + character.capsuleCollider.localCapB.v[m]; }
+                closest_on_segment(a, b2, c, q);
+                float e = sqrtf((c[0]-q[0])*(c[0]-q[0]) + (c[1]-q[1])*(c[1]-q[1]) + (c[2]-q[2])*(c[2]-q[2]));
+                if (e < r + character.capsuleCollider.radius + 6.0f)
+                    debugf("[hitvol] orb x%.1f age %.2f: centre %.1f from the body's axis (hits within %.1f + %.0f; drawn core %.1f, flame %.1f), %.0f up: %s\n", (double)f->scale, (double)f->age,
+                           (double)e, (double)r, (double)character.capsuleCollider.radius, (double)(3.4f * f->scale), (double)(7.2f * f->scale), (double)(c[1] - character.pos[1]), hit ? "HIT" : "miss");
+            }
+#endif
+            if (!hit) return;
+        }
 #ifdef HLE_FK_TRACE
         debugf("[fxhit] shape %d age %.2f at %.0f,%.0f,%.0f player %.0f,%.0f,%.0f vel %.0f,%.0f\n", f->shape, (double)f->age, (double)c[0], (double)c[1], (double)c[2],
                (double)character.pos[0], (double)character.pos[1], (double)character.pos[2], (double)f->vel[0], (double)f->vel[2]);
@@ -456,6 +470,9 @@ static void draw_arc(const SkillFx *f)
     uint32_t co[N], ci[N];
     float R = arc_radius(f);
     float a = fade(f, 0.0f, 0.4f);
+#ifdef HLE_LOG_HITVOL     // test aid: a ring (the Sun's flare) as drawn this frame
+    if (f->hostile && f->half > 3.0f) debugf("[hitvol] ring drawn: age %.2f, outer edge %.1f, alpha %.2f\n", (double)f->age, (double)R, (double)a);
+#endif
     float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
     float rx = fz, rz = -fx;
     // Layer 0: flat crescent on the slash plane; layer 1: a blade-wall standing on its

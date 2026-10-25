@@ -6,7 +6,9 @@
 // The Shackled Sun: Bonus fight 2 (boss phase 4). The chained sun the King keeps
 // above the hall, a floating eye that glares crossed waves, rains pillars of light,
 // sweeps a corona around itself and dives onto the player (then rests, open to
-// attack). At half health it breaks its shackles and burns hotter and faster.
+// attack); it flares a ring from beneath at a player who stays under it, rams down a lane,
+// and drags a lashed chain on into a sweep. At half health it breaks its shackles, burns
+// hotter and faster, and eclipses: dark and high, it drops flares on marked spots.
 //
 // Like the Fallen Knight it reuses the Boss struct; only update and draw are its own.
 
