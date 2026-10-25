@@ -1061,10 +1061,6 @@ static void beam_update(Boss *b, float dt)
             s.range = fminf(fmaxf(dist + 40.0f, 90.0f), 280.0f);       // just past the player: the beam is at chest height where they stand
             sfx(SCENE1_SFX_SPELL_CAST, 0.8f);
         }
-        if ((int)(s.t * 4.0f) != (int)((s.t - dt) * 4.0f)) {      // the dark gathering at its feet
-            float a = s.life * 2.9f;
-            skill_fx_spawn_burst_hostile((float[3]){ s.chest[0] + sinf(a) * 22.0f, s.groundY, s.chest[2] + cosf(a) * 22.0f }, a);
-        }
         if (s.t >= CHARGE * 0.55f && s.t - dt < CHARGE * 0.55f) {
             float p[3];
             floor_point(b, s.sweepFrom, s.range, p);
@@ -1077,7 +1073,7 @@ static void beam_update(Boss *b, float dt)
         floor_point(b, a, s.range, to);
         s.tJaw = 1.0f; s.tNeckPitch = 0.15f; s.tCrouch = 3.0f; s.tWingRaise = 0.5f; s.poseRate = 6.0f;
         turn_toward(b, a, 1.1f, dt);       // the body swings round behind its head
-        beam_at(to, 4.5f, 21.0f, true, dt);
+        beam_at(to, 3.0f, 21.0f, true, dt);
         screen_shake_set_shake_mag(2.5f);
         if (s.t >= SWEEP) { s.beamOn = false; s.glow = 0.0f; s.step = 2; s.t = 0.0f; }
     } else {
@@ -1121,7 +1117,7 @@ static void skybeam_update(Boss *b, float dt)
         s.tNeckPitch = -0.6f; s.tJaw = 1.0f;
         float u = clamp01(s.t / 1.6f), to[3];
         lerp3(to, s.beamFrom, s.target, u * u * (3.0f - 2.0f * u));
-        beam_at(to, 4.0f, 22.0f, true, dt);
+        beam_at(to, 3.0f, 22.0f, true, dt);
         screen_shake_set_shake_mag(2.0f);
         if (s.t >= 1.6f) { s.beamOn = false; s.glow = 0.0f; s.step = 3; s.t = 0.0f; }
     } else if (s.step == 3) {
@@ -1578,8 +1574,8 @@ void dragon_boss_draw(Boss* b)
         if (s.ball[i].on) {     // the fireball and a fainter one trailing it
             float tr[3];
             mad3(tr, s.ball[i].p, s.ball[i].v, -0.05f);
-            put_glow(&s.flame, s.ball[i].p, 7.0f + 1.5f * sinf(s.life * 14.0f + i));
-            put_glow(&s.flame, tr, 4.5f);
+            put_glow(&s.flame, s.ball[i].p, 5.5f + 1.0f * sinf(s.life * 14.0f + i));
+            put_glow(&s.flame, tr, 3.5f);
         }
     const ProcMesh *light = s.dark ? &s.mOrb : &s.mIce;     // the beams: crystal light, then the dark
     if (s.beamOn) {
