@@ -208,6 +208,16 @@ static bool sphere_hits_player(const float p[3], float r)
     return d[0]*d[0] + d[1]*d[1] + d[2]*d[2] <= (r + character.capsuleCollider.radius) * (r + character.capsuleCollider.radius);
 }
 
+// The crescent rolls along the floor: it reaches what the sword can (the tip comes ~26 above the
+// floor), so a boss up in the air (Unbound's barrage, Shadowborne flying, a leap) is out of it
+#define ARC_REACH 20.0f     // above the wave's centre, which is 10 above the floor
+bool skill_arc_reaches(const Boss *b, float arcY)
+{
+    float a[3], c[3];
+    if (!boss_capsule(b, a, c)) return false;
+    return fminf(a[1], c[1]) - b->capsuleCollider.radius <= arcY + ARC_REACH;
+}
+
 static void update_arc_hit(SkillFx *f, Boss *b)
 {
     // One hit, when the wave front reaches the target
@@ -230,6 +240,7 @@ static void update_arc_hit(SkillFx *f, Boss *b)
     if (dist - b->capsuleCollider.radius > arc_radius(f)) return;
     float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
     if (dist > 1e-3f && (dx*fx + dz*fz) / dist < -0.2f) return;    // behind the player
+    if (!skill_arc_reaches(b, f->pos[1])) return;      // over the wave: it may come down into it while it rolls
     f->hitsLeft = 0;
     float contact[3] = { b->pos[0] - dx / (dist + 1e-3f) * b->capsuleCollider.radius,
                          f->pos[1], b->pos[2] - dz / (dist + 1e-3f) * b->capsuleCollider.radius };

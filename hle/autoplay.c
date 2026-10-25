@@ -54,6 +54,20 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_TEST_T3D_EXACT
     if (frame % 300 == 0) { extern uint32_t hle_exact_calls, hle_exact_strips, hle_exact_bad; debugf("[exact] %lu vertex loads, %lu strips, %lu mismatched\n", (unsigned long)hle_exact_calls, (unsigned long)hle_exact_strips, (unsigned long)hle_exact_bad); }
 #endif
+#ifdef HLE_TEST_ARC_REACH   // test aid: when the boss goes out of Halfmoon's reach and back (its height, its state)
+    {
+        extern bool skill_arc_reaches(const struct Boss *b, float arcY); extern float deltaTime;
+        Boss *bb = boss_get_instance();
+        static int was = -1; static float outT, allT;
+        if (bb && bb->mode == BOSS_MODE_COMBAT && bb->health > 0.0f) {
+            int r = skill_arc_reaches(bb, character.pos[1] + 10.0f);
+            float low = fminf(bb->capsuleCollider.localCapA.v[1], bb->capsuleCollider.localCapB.v[1]) + bb->pos[1] - bb->capsuleCollider.radius - character.pos[1];
+            allT += deltaTime; if (!r) outT += deltaTime;
+            if (r != was) { debugf("[reach] boss %d %s at state %d, lowest point %.0f above the floor\n", bb->phaseIndex, r ? "back in reach" : "OUT of reach", bb->state, (double)low); was = r; }
+            if (frame % 900 == 0) debugf("[reach] out of reach %.0f%% of the fight\n", (double)(outT * 100.0f / fmaxf(allT, 0.01f)));
+        }
+    }
+#endif
 #ifdef HLE_LOG_RELIC    // test aid: the save's relics after boot (does the Shrine's choice survive a reboot?)
     if (frame == 600) { extern int tower_relic_equipped(void); extern bool tower_relic_owned(int); debugf("[relic] after boot: equipped %d, owned%s%s%s%s%s\n", tower_relic_equipped(),
         tower_relic_owned(0) ? " 0" : "", tower_relic_owned(1) ? " 1" : "", tower_relic_owned(2) ? " 2" : "", tower_relic_owned(3) ? " 3" : "", tower_relic_owned(4) ? " 4" : ""); }
@@ -755,8 +769,14 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         } else if (phase == 1) {
             if (t == 60) boss_apply_damage(boss, boss->maxHealth * 2.0f);
             if (t > 60 && boss->phaseIndex == 2 && boss->mode == BOSS_MODE_COMBAT) { phase = 2; t0 = frame; debugf("[ub] fight at %d\n", frame); }
+#ifndef HLE_UB_WATCH     // HLE_UB_WATCH: sit through the phase-2 cutscene (the clear time must leave it out)
             else if (t > 90 && frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
+#endif
         } else if (phase == 2) {
+#ifdef HLE_UB_PAUSE     // the pause menu open for 300 frames mid-fight (left out of the clear time too)
+            if (t == 600 || t == 900) { pressed->start = 1; in->btn.start = 1; debugf("[ub] start pressed at %d ms %lu\n", frame, (unsigned long)get_ticks_ms()); }
+            if (t >= 600 && t < 905) return;
+#endif
             in->stick_x = (int)(80 * cosf(t * 0.02f)); in->stick_y = (int)(80 * sinf(t * 0.02f));   // circle about
             if (t % 300 == 0) debugf("[ub] t %d hp %.0f boss state %d\n", t, (double)character_get_health(), boss->state);
             // the kill lands mid-sweep, with the walls up (the sweep's 3rd cycle, about 14 s in)
@@ -1301,6 +1321,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         if (t == 10) pressed->d_right = 1;
 #else
         if (t == 10) pressed->d_down = 1;
+#endif
+#ifdef HLE_SDMG_RAISE     // the boss held this high in the air (its feet above the floor): out of the wave's reach?
+        { static float y0; if (cyc == 0 && t == 0) y0 = boss->pos[1]; boss->pos[1] = y0 + (float)HLE_SDMG_RAISE; }
 #endif
         static int busyEnd;
         if (t == 11) busyEnd = 0;

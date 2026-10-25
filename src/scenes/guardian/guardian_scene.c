@@ -172,6 +172,7 @@ static bool bossWasDead = false; // Tracks death transition for one-time post-de
 // Per-slot save stats: track one "run" (boss attempt) start time, and record clear time at death transition.
 static bool s_bossRunActive = false;
 static double s_bossRunStartS = 0.0;
+static double s_bossRunPlayS;       // the story's clear time: fighting only (no cutscenes, no pause menu)
 
 // Post-boss interaction distances (XZ)
 static const float POST_BOSS_PROMPT_DIST  = 140.0f;   // show A prompt and allow talk when inside this range
@@ -1039,6 +1040,7 @@ void scene_init_playing(bool skippedCutscene)
     (void)save_controller_increment_run_count();
     s_bossRunActive = true;
     s_bossRunStartS = nowS;
+    s_bossRunPlayS = 0.0;
 
     // ---- Music handoff behavior ----
     // If the cutscene was skipped, slam immediately into looping music.
@@ -1903,12 +1905,22 @@ void scene_update(void) {
 
     // Post-boss cleanup: once the boss becomes dead, clear Z-targeting so the player is untargeted
     // after the fight. The player can still re-target by pressing Z as normal.
+    {   // the clear time counts only fighting: not the phase-2 reveal or other cutscenes, not the pause menu
+        static double last;
+        double d = last > 0.0 ? nowS - last : 0.0; last = nowS;
+        if (d > 0.25) d = 0.25;     // a stall (a load, or the frame after the pause menu): not fighting time
+        if (s_bossRunActive && cutsceneState == CUTSCENE_NONE && gameState == GAME_STATE_PLAYING && !menu_controller_is_active())
+            s_bossRunPlayS += d;
+    }
     if (boss_is_active(g_boss)) {
         bool bossDeadNow = (g_boss->state == BOSS_STATE_DEAD);
         if (bossDeadNow && !bossWasDead) {
             // Record fastest clear time per save slot (once, on death edge).
             if (s_bossRunActive && s_bossRunStartS > 0.0 && !s_bonusFight && !s_tower) {
-                double dt = nowS - s_bossRunStartS;
+                double dt = s_bossRunPlayS;
+#ifdef HLE_AUTOPLAY
+                debugf("[clear] fighting %.1f s of %.1f s since the fight began\n", dt, nowS - s_bossRunStartS);
+#endif
                 if (dt > 0.0) {
                     uint32_t ms = (uint32_t)(dt * 1000.0);
                     (void)save_controller_record_boss_clear_time_ms(ms);
