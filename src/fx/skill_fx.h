@@ -26,6 +26,8 @@ void skill_fx_spawn_arc(const float pos[3], float yaw, float radius, float damag
 void skill_fx_next_poise(float poise);
 /** The next spawned wave's size (1 = normal) and charge time (it holds still, harmless and growing, then flies). */
 void skill_fx_next_shape(float scale, float delay);
+/** How far round the next arc reaches each side of its yaw (radians; by default a half-disc, pi/2). */
+void skill_fx_next_arc_half(float half);
 struct Boss; bool skill_arc_reaches(const struct Boss *b, float arcY);   // Halfmoon's wave reaches the boss (not up in the air)
 
 // Moving wave. It damages the boss every `hitInterval` seconds while touching
