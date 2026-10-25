@@ -71,7 +71,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_LOG_HURTBOX     // test aid: the hit capsule against the model's bones (height span, and how far the body leans out of it)
     {
         Boss *bb = boss_get_instance();
-        if (bb && bb->mode == BOSS_MODE_COMBAT && frame % 10 == 0) {
+        if (bb && bb->mode == BOSS_MODE_COMBAT && bb->phaseIndex <= 3 && frame % 10 == 0) {     // (Shadowborne logs its own: dragon_boss.c)
             static const char *names[] = { "Head", "Waist", "LowerLeg-Left", "LowerLeg-Right" };
             float lo = fminf(bb->capsuleCollider.localCapA.v[1], bb->capsuleCollider.localCapB.v[1]) - bb->capsuleCollider.radius;
             float hi = fmaxf(bb->capsuleCollider.localCapA.v[1], bb->capsuleCollider.localCapB.v[1]) + bb->capsuleCollider.radius;

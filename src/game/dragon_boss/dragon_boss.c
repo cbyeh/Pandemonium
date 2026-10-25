@@ -145,8 +145,14 @@ static bool move_by(Boss *b, float dx, float dz)
     return true;
 }
 
+#ifdef HLE_LOG_HURTBOX
+static void hb_move_end(void);
+#endif
 static void enter(DgState st)
 {
+#ifdef HLE_LOG_HURTBOX
+    hb_move_end();
+#endif
     s.state = st; s.t = 0.0f; s.step = 0; s.hitDone = false;
     // Between attacks a pause; now and then (35%) a longer breather, its head low: an opening
     if (st == DG_IDLE) s.idleWait = (rand_custom_u32() % 100 < 35) ? 3.3f + (rand_custom_u32() % 100) / 100.0f : 1.8f;
@@ -168,6 +174,85 @@ bool dragon_boss_stagger(Boss* b)
 }
 
 static void player_chest(float o[3]) { o[0] = character.pos[0]; o[1] = character.pos[1] + 12.0f; o[2] = character.pos[2]; }
+
+// ---- Contact with the player ----
+// The player's body is its capsule: an axis from feet + 4 to feet + 16, 8 round. A blow lands when
+// what is drawn comes within PLAYER_R of that axis (2 short of touching: a little grace)
+#define PLAYER_R 6.0f
+static float axis_d2(const float q[3])
+{
+    float y0 = character.pos[1] + 4.0f, y1 = character.pos[1] + 16.0f;
+    float dx = q[0] - character.pos[0], dz = q[2] - character.pos[2], dy = q[1] < y0 ? y0 - q[1] : q[1] > y1 ? q[1] - y1 : 0.0f;
+    return dx * dx + dy * dy + dz * dz;
+}
+// From the segment a-b to the player's axis (the distance is convex along a-b: a ternary search)
+static float axis_dist_seg(const float a[3], const float b[3])
+{
+    float lo = 0.0f, hi = 1.0f, q[3];
+    for (int i = 0; i < 16; i++) {
+        float m1 = lo + (hi - lo) * (1.0f / 3.0f), m2 = hi - (hi - lo) * (1.0f / 3.0f), q2[3];
+        lerp3(q, a, b, m1); lerp3(q2, a, b, m2);
+        if (axis_d2(q) < axis_d2(q2)) hi = m2; else lo = m1;
+    }
+    lerp3(q, a, b, (lo + hi) * 0.5f);
+    return sqrtf(axis_d2(q));
+}
+static float axis_dist_pt(const float p[3]) { return sqrtf(axis_d2(p)); }
+
+// What is drawn, as a distance from the player's axis less the drawn shape's own radius
+static float tail_r(int i) { return (14.5f - i * 1.8f) * 0.9f; }     // a tail link's tube (put_link r, tapering to 0.82)
+static void tail_tip(float e[3])        // the end of the crystal blade (dragon_boss_draw)
+{
+    float d[3] = { s.tl[NTAIL][0] - s.tl[NTAIL - 1][0], s.tl[NTAIL][1] - s.tl[NTAIL - 1][1], s.tl[NTAIL][2] - s.tl[NTAIL - 1][2] };
+    norm3(d);
+    mad3(e, s.tl[NTAIL], d, 16.0f);
+}
+static float tail_gap(void)
+{
+    float g = 1e9f, e[3];
+    for (int i = 0; i < NTAIL; i++) g = fminf(g, axis_dist_seg(s.tl[i], s.tl[i + 1]) - tail_r(i));
+    tail_tip(e);
+    return fminf(g, axis_dist_seg(s.tl[NTAIL], e) - 3.4f);
+}
+static float head_gap(void)             // the skull, about 6 round, 26 long
+{
+    float sn[3];
+    mad3(sn, s.head, s.hz, 26.0f);
+    return axis_dist_seg(s.head, sn) - 6.0f;
+}
+static float body_gap(void)             // the torso (18 round), the neck, the head and the legs
+{
+    float g = fminf(axis_dist_seg(s.chest, s.hips) - 17.0f, head_gap());
+    for (int i = 0; i < NNECK; i++) g = fminf(g, axis_dist_seg(s.neck[i], s.neck[i + 1]) - (11.0f - i * 1.2f) * 0.9f);
+    for (int k = 0; k < 4; k++) g = fminf(g, axis_dist_seg(s.shoulder[k], s.foot[k]) - 6.0f);
+    return g;
+}
+static float flame_r(float size, float age, float life)    // as dragon_boss_draw sizes it (the octahedron, ~0.8 of its points' reach)
+{
+    float u = age / life;
+    return 0.8f * size * (0.4f + 0.6f * clamp01(u * 2.0f)) * (1.0f - u * u);
+}
+
+#ifdef HLE_LOG_HURTBOX    // test aid: each blow's gap between what is drawn and the player's body (8 round; < 0: touching)
+enum { HB_BITE, HB_TAIL, HB_WHIP, HB_CHARGE, HB_LAND, HB_FLAME, HB_ORB, HB_BLAST, HB_BALL, HB_BALLBURST, HB_BEAM, HB_STREAM, HB_CONE, HB_N };
+static const char *const hbName[HB_N] = { "bite", "tail", "whip", "charge", "land", "flame", "orb", "blast", "ball", "ballburst", "beam", "stream", "cone" };
+static float hbMin[HB_N] = { [0 ... HB_N - 1] = 1e9f };
+static int hbHits[HB_N];
+static void hb_hit(int src, float gap) { debugf("[hb] hit %s gap %.1f state %d t %.2f\n", hbName[src], (double)gap, s.state, (double)s.t); hbHits[src]++; }
+static void hb_touch(int src, float gap) { if (gap < hbMin[src]) hbMin[src] = gap; }     // a frame its blow could land
+static void hb_move_end(void)     // the move's closest pass of each blow it could deal, and the hits
+{
+    for (int i = 0; i < HB_N; i++) {
+        if (hbMin[i] < 1e8f) debugf("[hb] move %d %s closest %.1f hits %d%s\n", s.state, hbName[i], (double)hbMin[i], hbHits[i], hbMin[i] < 0.0f && !hbHits[i] ? " TOUCHED NOT HIT" : "");
+        hbMin[i] = 1e9f; hbHits[i] = 0;
+    }
+}
+#define HB_HIT(src, gap) hb_hit(src, gap)
+#define HB_TOUCH(src, gap) hb_touch(src, gap)
+#else
+#define HB_HIT(src, gap) ((void)0)
+#define HB_TOUCH(src, gap) ((void)0)
+#endif
 
 static void sfx_boom(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH2, 1.0f, 0.0f); }
 static void sfx_swing(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SWING3, 1.0f, 0.0f); }
@@ -521,7 +606,7 @@ static void hazards_update(float dt)
         }
         float d[3] = { f->p[0] - pc[0], f->p[1] - pc[1], f->p[2] - pc[2] };
         float r = f->size * (0.4f + 0.6f * clamp01(f->age / (f->life * 0.5f)));
-        if (s.fireCd <= 0.0f && len3(d) < r * 0.8f + 6.0f) { character_apply_damage(9.0f); s.fireCd = 0.4f; }
+        if (s.fireCd <= 0.0f && len3(d) < r * 0.8f + 6.0f) { HB_HIT(HB_FLAME, axis_dist_pt(f->p) - flame_r(f->size, f->age, f->life) - 8.0f); character_apply_damage(9.0f); s.fireCd = 0.4f; }
     }
     for (int i = 0; i < ORB_MAX; i++) {
         Orb *o = &s.orb[i];
@@ -537,7 +622,8 @@ static void hazards_update(float dt)
         }
         float d[3] = { o->p[0] - pc[0], o->p[1] - pc[1], o->p[2] - pc[2] };
         bool hit = len3(d) < 8.0f;
-        if (hit) character_apply_damage(12.0f);
+        HB_TOUCH(HB_ORB, axis_dist_pt(o->p) - 4.5f - 8.0f);
+        if (hit) { HB_HIT(HB_ORB, axis_dist_pt(o->p) - 4.5f - 8.0f); character_apply_damage(12.0f); }
         if (hit || o->p[1] < s.groundY + 1.0f || o->age > 7.0f || !room_ok(o->p[0], o->p[2])) {
             o->on = false;
             skill_fx_spawn_burst_hostile((float[3]){ o->p[0], fmaxf(o->p[1], s.groundY), o->p[2] }, 0.0f);
@@ -552,7 +638,8 @@ static void hazards_update(float dt)
         float p[3] = { e->p[0], s.groundY, e->p[1] };
         skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, p, (float[3]){ 0, 0, 0 }, 0.0f, 0, 1.0f, 0.8f, false);
         float dx = character.pos[0] - p[0], dz = character.pos[2] - p[2];
-        if (dx * dx + dz * dz < 13.0f * 13.0f && player_low()) character_apply_damage(12.0f);
+        HB_TOUCH(HB_BLAST, sqrtf(dx * dx + dz * dz) - 2.0f - 8.0f);     // drawn: the blade, 4 wide (its warning burst is long gone)
+        if (dx * dx + dz * dz < 13.0f * 13.0f && player_low()) { HB_HIT(HB_BLAST, sqrtf(dx * dx + dz * dz) - 2.0f - 8.0f); character_apply_damage(12.0f); }
         screen_shake_set_shake_mag(3.0f);
         if (i & 1) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);     // every other one: they come five a second
     }
@@ -566,7 +653,8 @@ static void hazards_update(float dt)
         float p[3] = { o->p[0], s.groundY, o->p[2] };
         skill_fx_spawn_burst_hostile(p, s.life);
         float dx = character.pos[0] - p[0], dz = character.pos[2] - p[2];
-        if (len3(d) <= 10.0f || (dx * dx + dz * dz < 18.0f * 18.0f && player_low())) character_apply_damage(12.0f);
+        HB_TOUCH(HB_BALLBURST, sqrtf(dx * dx + dz * dz) - 14.0f - 8.0f);
+        if (len3(d) <= 10.0f || (dx * dx + dz * dz < 18.0f * 18.0f && player_low())) { HB_HIT(len3(d) <= 10.0f ? HB_BALL : HB_BALLBURST, len3(d) <= 10.0f ? axis_dist_pt(o->p) - 5.5f - 8.0f : sqrtf(dx * dx + dz * dz) - 14.0f - 8.0f); character_apply_damage(12.0f); }
         screen_shake_set_shake_mag(4.0f);
         sfx_boom();
     }
@@ -584,7 +672,11 @@ static void beam_at(const float to[3], float w, float dmg, bool blasts, float dt
     float l2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
     float k = l2 > 1e-3f ? clamp01(((pc[0] - s.mouth[0]) * u[0] + (pc[1] - s.mouth[1]) * u[1] + (pc[2] - s.mouth[2]) * u[2]) / l2) : 0.0f;
     float e[3] = { s.mouth[0] + u[0] * k - pc[0], s.mouth[1] + u[1] * k - pc[1], s.mouth[2] + u[2] * k - pc[2] };
-    if (!s.hitDone && len3(e) < w + 6.0f) { character_apply_damage(dmg); s.hitDone = true; }
+#ifdef HLE_LOG_HURTBOX
+    float bg = fminf(axis_dist_seg(s.mouth, to) - w, axis_dist_pt(to) - 9.0f) - 8.0f;
+    HB_TOUCH(HB_BEAM, bg);
+#endif
+    if (!s.hitDone && len3(e) < w + 6.0f) { HB_HIT(HB_BEAM, bg); character_apply_damage(dmg); s.hitDone = true; }
     if (!blasts) return;
     s.emit -= dt;
     if (s.emit <= 0.0f) { s.emit += 0.2f; blast_spawn(to); }
@@ -735,6 +827,26 @@ static void rig(Boss *b, float dt)
         b->capsuleCollider.localCapA.v[m] = a[m] - b->pos[m];
         b->capsuleCollider.localCapB.v[m] = c[m] - b->pos[m];
     }
+#ifdef HLE_LOG_HURTBOX   // the hit capsule against the drawn body: heights over the floor, reach along its facing, width at sword height
+    {
+        static int n;
+        if (++n % 15 == 0) {
+#define DOTF(p) (((p)[0] - b->pos[0]) * s.F[0] + ((p)[2] - b->pos[2]) * s.F[2])
+#define DOTR(p) fabsf(((p)[0] - b->pos[0]) * s.R[0] + ((p)[2] - b->pos[2]) * s.R[2])
+            float r = b->capsuleCollider.radius, gy = s.groundY;
+            float lowF = fminf(s.chest[1] - 18.0f, fminf(s.foot[0][1], s.foot[1][1])) - gy, lowR = fminf(s.hips[1] - 16.0f, fminf(s.foot[2][1], s.foot[3][1])) - gy;
+            float front = fmaxf(fmaxf(DOTF(s.neck[1]) + 10.0f, DOTF(s.chest) + 7.0f), fmaxf(DOTF(s.foot[0]), DOTF(s.foot[1])) + 8.0f);
+            float side = 0.0f;
+            for (int k = 0; k < 4; k++) side = fmaxf(side, fmaxf(DOTR(s.foot[k]) + 4.0f, DOTR(s.shoulder[k]) + 8.0f) * (s.foot[k][1] - gy < 26.0f));
+            if (fabsf(s.chest[1] - gy - 15.0f) < 18.0f) side = fmaxf(side, sqrtf(18.0f * 18.0f - (s.chest[1] - gy - 15.0f) * (s.chest[1] - gy - 15.0f)));
+            debugf("[hurtbox] st %d alt %.0f | front end %.0f..%.0f over the floor (drawn lowest %.0f), rear %.0f..%.0f (drawn lowest %.0f) | reach %.0f drawn %.0f | half-width %.0f drawn %.0f\n",
+                   s.state, (double)s.alt, (double)(a[1] - r - gy), (double)(a[1] + r - gy), (double)lowF, (double)(c[1] - r - gy), (double)(c[1] + r - gy), (double)lowR,
+                   (double)(DOTF(a) + r), (double)front, (double)r, (double)side);
+#undef DOTF
+#undef DOTR
+        }
+    }
+#endif
 }
 
 // ---- Moves ----
@@ -787,7 +899,8 @@ static void bite_update(Boss *b, float dt)
         memcpy(s.aim, s.target, sizeof(s.aim)); s.tAimK = 1.0f;
         if (s.t >= 0.2f) {
             float mx = character.pos[0] - s.mouth[0], mz = character.pos[2] - s.mouth[2];
-            if (mx * mx + mz * mz < 22.0f * 22.0f && player_low()) character_apply_damage(38.0f);
+            HB_TOUCH(HB_BITE, head_gap() - 8.0f);
+            if (mx * mx + mz * mz < 22.0f * 22.0f && player_low()) { HB_HIT(HB_BITE, head_gap() - 8.0f); character_apply_damage(38.0f); }
             s.tJaw = 0.0f;
             screen_shake_set_shake_mag(6.0f);
             sfx_boom();
@@ -829,10 +942,12 @@ static void tail_update(Boss *b, float dt)
     } else if (s.step == 1) {
         s.tTail = s.sweepFrom + s.sweepSpan; s.poseRate = 11.0f;
         b->rot[1] += (s.sweepSpan > 0.0f ? 1.0f : -1.0f) * 0.7f * dt * (1.0f - s.t / 0.45f) * 2.0f;   // the hips twist with it (~0.3 rad)
+        HB_TOUCH(HB_TAIL, tail_gap() - 8.0f);
         if (!s.hitDone && player_low())
             for (int i = 1; i < NTAIL; i++)
                 if (seg_dist_xz(s.tl[i], s.tl[i + 1], character.pos[0], character.pos[2]) < 10.0f) {
                     s.hitDone = true;
+                    HB_HIT(HB_TAIL, tail_gap() - 8.0f);
                     character_apply_damage(20.0f);
                     break;
                 }
@@ -866,8 +981,10 @@ static void whip_update(Boss *b, float dt)
         s.tCrouch = 5.0f; s.tTail = 0.0f; s.poseRate = 12.0f;
         // the whole warned circle, as the tail and body sweep it
         float dx, dz;
+        HB_TOUCH(HB_WHIP, tail_gap() - 8.0f);
         if (!s.hitDone && player_low() && s.t > SPIN * 0.3f && to_player(b, &dx, &dz) < reach + 6.0f) {
             s.hitDone = true;
+            HB_HIT(HB_WHIP, tail_gap() - 8.0f);
             character_apply_damage(22.0f);
         }
         if (s.t >= SPIN) {
@@ -925,8 +1042,10 @@ static void charge_update(Boss *b, float dt)
     } else if (s.step == 1) {
         s.tNeckPitch = -0.2f; s.tNeckReach = 1.2f; s.tCrouch = 6.0f; s.tJaw = 0.3f;
         bool moved = move_by(b, s.F[0] * 240.0f * dt, s.F[2] * 240.0f * dt);
+        HB_TOUCH(HB_CHARGE, body_gap() - 8.0f);
         if (!s.hitDone && player_low() && seg_dist_xz(s.head, s.hips, character.pos[0], character.pos[2]) < HIT_R + 8.0f) {
             s.hitDone = true;
+            HB_HIT(HB_CHARGE, body_gap() - 8.0f);
             character_apply_damage(28.0f);
         }
         if (!moved || s.t >= 0.6f) { s.step = 2; s.t = 0.0f; screen_shake_set_shake_mag(6.0f); }
@@ -974,7 +1093,12 @@ static void fly_update(Boss *b, float dt)
         if (s.alt < 1.0f) {
             s.alt = 0.0f;
             float dx, dz;
-            if (to_player(b, &dx, &dz) < 40.0f && player_low()) character_apply_damage(20.0f);
+#ifdef HLE_LOG_HURTBOX
+            float lg = body_gap();
+            for (int i = 0; i < 4; i++) lg = fminf(lg, sqrtf((character.pos[0] - s.foot[i][0]) * (character.pos[0] - s.foot[i][0]) + (character.pos[2] - s.foot[i][2]) * (character.pos[2] - s.foot[i][2])) - 14.0f);
+            HB_TOUCH(HB_LAND, lg - 8.0f);
+#endif
+            if (to_player(b, &dx, &dz) < 40.0f && player_low()) { HB_HIT(HB_LAND, lg - 8.0f); character_apply_damage(20.0f); }
             for (int i = 0; i < 4; i++)
                 skill_fx_spawn_burst_hostile((float[3]){ s.foot[i][0], s.groundY, s.foot[i][2] }, i * 1.5f);
             screen_shake_set_shake_mag(12.0f);
@@ -1309,7 +1433,13 @@ static void sweep_update(Boss *b, float dt)
         b->rot[1] = s.sweepFrom + off * 0.15f * clamp01(s.t / 0.4f);
         floor_point(b, s.sweepFrom + off, REACH, to);
         breathe(to, 190.0f, 1.4f, dt);      // the flames spread on the floor and burn on
+#ifdef HLE_LOG_HURTBOX
+        float sg2 = 1e9f;       // the stream as drawn: its flames
+        for (int i = 0; i < FL_MAX; i++) if (s.fl[i].age < s.fl[i].life) sg2 = fminf(sg2, axis_dist_pt(s.fl[i].p) - flame_r(s.fl[i].size, s.fl[i].age, s.fl[i].life) - 8.0f);
+        HB_TOUCH(HB_STREAM, sg2);
+#endif
         if (!s.hitDone && player_low() && seg_dist_xz(s.mouth, to, character.pos[0], character.pos[2]) < 12.0f) {
+            HB_HIT(HB_STREAM, sg2);
             s.hitDone = true;       // caught by the stream itself (once); the burning floor after is the flames'
             character_apply_damage(20.0f);
         }
