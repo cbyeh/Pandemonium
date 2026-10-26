@@ -38,7 +38,9 @@ Toggle in **Settings > Skills** (title screen). In the Tower the setting doesn't
 - **Teal Cloak:** reach floor 10 of the Tower (two full circles).
 - **Nightfarer:** buy him at **Tower > Shrine** for 450 Embers.
 
-<img src="docs/media/skins.png" width="800">
+<img src="docs/media/skins.png" width="960">
+
+*Umber Cloak, Wolf Knight, Black Swordsman, Scarlet Valkyrie*
 
 ### The Tower
 **Title > Tower > Climb**: a boss rush, floor after floor with no cutscenes.
@@ -65,11 +67,13 @@ Each save slot keeps its best floor, Embers, relics, skin and settings (a fresh 
 ### New boss fights
 Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on the title screen.
 
-| Guardian Unbound | Fallen Warrior (Bonus) | The Shackled Sun (Bonus) | Shadowborne (Bonus) |
-|---|---|---|---|
-| <img src="docs/media/boss_guardian_unbound.png" width="280"> | <img src="docs/media/boss_fallen_warrior.png" width="280"> | <img src="docs/media/boss_shackled_sun.png" width="280"> | <img src="docs/media/boss_shadowborn.png" width="280"> |
-
-The Shackled Sun and Shadowborne are built in code (procedural meshes posed by code rigs) and textured: the Sun's eye is a boiling, granulated surface; Shadowborne wears a scale map that wraps round each part of its body (keeled scales down the spine, staggered flank scales, plates under the belly, each scale its own size and shade, some worn or scarred), horn and bone with growth rings, leather wings, and a darker spine fading to a pale belly. The textures cost nothing on the frame: the meshes share more of their vertices than before.
+| Guardian Unbound | Fallen Warrior (Bonus) |
+|---|---|
+| <img src="docs/media/boss_guardian_unbound.png" width="440"> | <img src="docs/media/boss_fallen_warrior.png" width="440"> |
+| The Guardian, risen in gold, his sword floating over him: a barrage from the air. | A crimson knight with your own moves: combos, Halfmoon, Moon Blade, rolls and counters, a leaping plunge. |
+| **The Shackled Sun (Bonus)** | **Shadowborne (Bonus)** |
+| <img src="docs/media/boss_shackled_sun.png" width="440"> | <img src="docs/media/boss_shadowborn.png" width="440"> |
+| A chained, burning eye: its chains lash and sweep, sunbrand crosses fly, and once unshackled it eclipses. | A crystal dragon: claws, tail and bite, fire swept over the floor, strafes from the air, and the dark beam in its second half. |
 
 The ending now plays live in the engine.
 
