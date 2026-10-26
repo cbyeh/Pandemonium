@@ -244,6 +244,7 @@ static void update_arc_hit(SkillFx *f, Boss *b)
     // One hit, when the wave front reaches the target
     if (f->hitsLeft <= 0) return;
     if (f->hostile) {
+        if (f->damage <= 0.0f) return;      // drawn only (its blow already landed)
         float dx = character.pos[0] - f->pos[0], dz = character.pos[2] - f->pos[2];
         float dist = sqrtf(dx*dx + dz*dz);
         float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
@@ -251,8 +252,9 @@ static void update_arc_hit(SkillFx *f, Boss *b)
         float rr = character.capsuleCollider.radius;     // only as far round as it's drawn (with the body's width)
         if (dist > rr && acosf(fmaxf(-1.0f, fminf(1.0f, (dx*fx + dz*fz) / dist))) > f->half + asinf(rr / dist)) return;
         if (character.pos[1] > f->pos[1] + 2.0f) return;     // a wave along the floor: one in the air clears it
-#ifdef HLE_FK_TRACE
-        debugf("[arc] hit: player at %.0f deg, %.0f away, age %.2f\n", (double)(acosf(fmaxf(-1.0f, fminf(1.0f, (dx*fx + dz*fz) / (dist + 1e-3f)))) * 57.3f), (double)dist, (double)f->age);
+#if defined(HLE_FK_TRACE) || defined(HLE_FK_HITLOG)
+        debugf("[arc] hit: player at %.0f deg, %.0f away (its body's edge %.0f), the ring drawn out to %.0f, age %.2f, player %.0f above it\n", (double)(acosf(fmaxf(-1.0f, fminf(1.0f, (dx*fx + dz*fz) / (dist + 1e-3f)))) * 57.3f), (double)dist,
+               (double)(dist - character.capsuleCollider.radius), (double)arc_radius(f), (double)f->age, (double)(character.pos[1] - f->pos[1]));
 #endif
         f->hitsLeft = 0;
         character_apply_damage(f->damage);

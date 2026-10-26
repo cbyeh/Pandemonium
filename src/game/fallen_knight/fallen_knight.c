@@ -46,8 +46,12 @@ static const bool ANIM_LOOP[FKA_COUNT] = { true, true, true, [FKA_BACKSTEP] = tr
 
 typedef enum {
     FK_INTRO, FK_CHASE, FK_COMBO, FK_ROLL, FK_CLEAVE, FK_HALFMOON, FK_MOONBLADE, FK_RECOVER, FK_STAGGER, FK_DEAD,
-    FK_SPLITTER, FK_UPDOWN, FK_TRISLAM, FK_HOLYSLAM,
+    FK_SPLITTER, FK_UPDOWN, FK_TRISLAM, FK_HOLYSLAM, FK_ROLLCUT, FK_PLUNGE,
 } FkState;
+
+// The combo's third blow: the plain overhead, the same held at the top of its rise (a roll
+// on its first motion is tracked and caught), or a lunging thrust
+enum { FIN_SLASH, FIN_DELAY, FIN_THRUST };
 
 // The strike of each swing clip (clip seconds), measured from the blade's speed: the
 // windups before it can't hurt. Attack1-3 (Attack2 rises from low in front: the up-down's
@@ -73,7 +77,10 @@ static struct {
     bool striking;          // inside a swing's damage window this frame
     float groundY, velY;
     float moveX, moveZ;     // roll / jump drift
-    float cdCleave, cdHalfmoon, cdMoonblade, cdRoll, cdSplitter, cdUpdown, cdTri, cdHoly;
+    float cdCleave, cdHalfmoon, cdMoonblade, cdRoll, cdSplitter, cdUpdown, cdTri, cdHoly, cdPlunge;
+    int finisher;           // the combo's third blow (FIN_*)
+    float holdT;            // time held in a finisher's pause
+    bool counter;           // the roll comes up into a rising cut
     float tri[3][2];        // the triangle slam's corners on the floor
     float windK;            // 0..1 through the current swing's windup, 0 once it strikes
     bool enraged;           // the war cry at half health
@@ -84,13 +91,33 @@ static struct {
 
 // ---- Helpers ----
 
+#ifdef HLE_TEST_DUMMY
+int hle_fk_commit, hle_fk_swing;    // test aid: swings begun, and aims committed (the sidestep test reacts to them)
+static bool committed;
+static bool hle_counts(void)    // HLE_SIDESTEP_NEW: only the new moves (the combo's third, the roll's cut, the plunge)
+{
+#ifdef HLE_SIDESTEP_NEW
+    return (s.state == FK_COMBO && s.step == 3) || s.state == FK_ROLLCUT || s.state == FK_PLUNGE;
+#else
+    return true;
+#endif
+}
+static void hle_commit(void) { if (!committed) { committed = true; if (hle_counts()) hle_fk_commit++; } }
+#else
+static inline void hle_commit(void) {}
+#endif
+
 static void play(int a, bool restart)
 {
     if (a == s.anim && !restart) return;
+#ifdef HLE_TEST_DUMMY
+    committed = false;
+    if (a >= FKA_ATTACK1 && a <= FKA_HALFMOON && hle_counts()) hle_fk_swing++;
+#endif
     t3d_skeleton_blend(&s.skelBlend, &s.skel, &s.skel, 0.0f);    // snapshot the current pose
     // swings cut in fast (the blade's hits are read from the pose); going down, dying and
     // moving about ease over longer
-    s.blendDur = (a == FKA_KNOCKDOWN || a == FKA_DEATH) ? 0.35f : (a == FKA_IDLE || a == FKA_WALK || a == FKA_RUN) ? 0.3f : 0.15f;
+    s.blendDur = (a == FKA_KNOCKDOWN || a == FKA_DEATH) ? 0.35f : (a == FKA_IDLE || a == FKA_WALK || a == FKA_RUN || s.anim == FKA_ROLL) ? 0.3f : 0.15f;
     s.blendT = s.blendDur;
     if (s.anim >= 0) t3d_anim_set_playing(&s.anims[s.anim], false);
     s.anim = a;
@@ -134,6 +161,7 @@ static void enter(FkState st)
     s.step = 0;
     s.hitDone = false;
     s.windK = 0.0f;
+    s.holdT = 0.0f;
 #ifdef HLE_FK_LOG   // test aid: each move as it starts
     debugf("[fk] state %d\n", st);
 #endif
@@ -161,6 +189,10 @@ static void melee_check(Boss *b, float t0, float t1, float damage)
 {
     (void)b;
     float clip = t3d_anim_get_time(&s.anims[s.anim]);
+#ifdef HLE_FK_HITLOG    // test aid: each window's closest approach of the drawn blade to the player (a miss), or the hit
+    static bool inWin; static float minGap;
+    if (inWin && (clip > t1 || clip < t0)) { inWin = false; if (minGap < 1e8f) debugf("[fkhit] st %d step %d clip %d MISS, closest gap %.1f\n", s.state, s.step, s.anim, (double)minGap); }
+#endif
     if (clip < t0 || clip > t1) return;
     s.striking = true;
     if (s.hitDone) return;
@@ -171,6 +203,19 @@ static void melee_check(Boss *b, float t0, float t1, float damage)
     float pa[3] = { p[0] + a->v[0], p[1] + a->v[1], p[2] + a->v[2] };
     float pb[3] = { p[0] + c->v[0], p[1] + c->v[1], p[2] + c->v[2] };
     bool hit = scu_capsule_vs_capsule_f(base, tip, 2.0f, pa, pb, character.capsuleCollider.radius);     // the blade's width
+#ifdef HLE_FK_HITLOG
+    {   float lo = 0.0f, hi = 120.0f;       // the gap between the blade's surface and the player's capsule
+        for (int i = 0; i < 14; i++) { float m = (lo + hi) * 0.5f; if (scu_capsule_vs_capsule_f(base, tip, m, pa, pb, character.capsuleCollider.radius)) hi = m; else lo = m; }
+        float gap = hi - 2.0f;
+        if (!inWin) { inWin = true; minGap = 1e9f; }
+        if (gap < minGap) minGap = gap;
+        float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]), tx = tip[0] - b->pos[0], tz = tip[2] - b->pos[2], px = p[0] - b->pos[0], pz = p[2] - b->pos[2];
+        if (hit) { inWin = false;
+            debugf("[fkhit] st %d step %d clip %d HIT at %.2f: gap %.1f | blade base y %.0f tip y %.0f (boss y %.0f), tip fwd %.0f side %.0f | player fwd %.0f side %.0f y %.0f..%.0f r %.0f\n", s.state, s.step, s.anim, (double)clip, (double)gap,
+                   (double)(base[1] - s.groundY), (double)(tip[1] - s.groundY), (double)(b->pos[1] - s.groundY), (double)(tx * fx + tz * fz), (double)(tx * fz - tz * fx), (double)(px * fx + pz * fz), (double)(px * fz - pz * fx),
+                   (double)(pa[1] - s.groundY), (double)(pb[1] - s.groundY), (double)character.capsuleCollider.radius); }
+    }
+#endif
 #ifdef HLE_LOG_HITVOL     // test aid: the old segment (640 along the hand's -X, 3 wide) against the drawn blade
     { const T3DMat4FP *B = &s.skel.boneMatricesFP[s.swordBone]; float m0[3], m1[3], o0[3], o1[3];
       mat4fp_mul_point_f32_row3_colbasis(B, (float[3]){ 0, 0, 0 }, m0); mat4fp_mul_point_f32_row3_colbasis(B, (float[3]){ -640.0f, 0, 0 }, m1);
@@ -208,6 +253,7 @@ static void swing_pace(float from, float strike, float wind)
 static bool swing_tracks(float lockK)
 {
     if (s.windK < lockK) return true;
+    hle_commit();
     return false;
 }
 
@@ -326,7 +372,7 @@ void fallen_knight_begin(Boss* boss)
     s.groundY = character.pos[1];
     boss->pos[1] = s.groundY + FK_DROP_HEIGHT;
     s.velY = 0.0f;
-    s.cdCleave = 5.0f; s.cdHalfmoon = 12.0f; s.cdMoonblade = 9.0f; s.cdRoll = 0.0f; s.cdSplitter = 6.0f; s.cdUpdown = 3.0f; s.cdTri = 14.0f; s.cdHoly = 20.0f;
+    s.cdCleave = 5.0f; s.cdHalfmoon = 12.0f; s.cdMoonblade = 9.0f; s.cdRoll = 0.0f; s.cdSplitter = 6.0f; s.cdUpdown = 3.0f; s.cdTri = 14.0f; s.cdHoly = 20.0f; s.cdPlunge = 8.0f;
     s.enraged = false;
     s.bladeW = 0.0f;
     enter(FK_INTRO);
@@ -349,6 +395,7 @@ bool fallen_knight_stagger(Boss* b)
 {
     // Knocked down where it stands; not in the air (the leap) or already down
     if (!s.ready || s.state == FK_INTRO || s.state == FK_MOONBLADE || s.state == FK_STAGGER || s.state == FK_DEAD) return false;
+    if (s.state == FK_PLUNGE && s.step == 1) return false;
     b->pos[1] = s.groundY;
     enter(FK_STAGGER);
     play(FKA_KNOCKDOWN, true);
@@ -610,6 +657,115 @@ static void holyslam_update(Boss *b, float dt)
     } else if (s.t >= 0.8f) enter(FK_RECOVER);     // spent a moment: the opening
 }
 
+static inline float smooth01(float x) { x = clamp01f(x); return x * x * (3.0f - 2.0f * x); }
+
+/** Sets the clip's speed so it reaches `target` (clip seconds) this frame: a pose driven along a curve */
+static void clip_to(float target, float dt)
+{
+    if (dt > 0.0f) t3d_anim_set_speed(&s.anims[s.anim], fmaxf(0.0f, (target - clip_time()) / dt));
+}
+
+#define DELAY_FROM 0.40f    // Attack3 rising, the blade going up behind its head
+#define DELAY_HOLD 0.75f    // held there, still turning to the player, before it comes on
+
+/** The delayed third: the overhead's rise eases to a near stop at the top and holds, then goes on */
+static void delay_hold(float dt)
+{
+    if (clip_time() < DELAY_FROM || s.holdT >= DELAY_HOLD) return;
+    s.holdT += dt;
+    float k = s.holdT / DELAY_HOLD, e = smooth01(fminf(k, 1.0f - k) / 0.2f);
+    t3d_anim_set_speed(&s.anims[s.anim], 1.0f - 0.94f * e);
+}
+
+/** How far ahead of the boss the player is (along its facing), or far if off to its side or behind */
+static float dist_ahead(const Boss *b)
+{
+    float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
+    float px = character.pos[0] - b->pos[0], pz = character.pos[2] - b->pos[2], ahead = px * fx + pz * fz;
+    return (ahead > 0.0f && fabsf(px * fz - pz * fx) < 12.0f) ? ahead : 1e9f;
+}
+
+static void thrust_update(Boss *b, float dt)
+{
+    // The thrust: Attack1's draw (the hand back at its hip) held with the blade levelled at the
+    // player, still turning, then it commits and drives the hand forward with a lunge, the blade
+    // held level all the way: sidestep it
+    const float COIL = 0.27f, HOLD = 0.6f, LUNGE = 95.0f;
+    static const float W_TH[2] = { 0.48f, 0.76f };
+    float clip = clip_time();
+    if (clip < COIL) t3d_anim_set_speed(&s.anims[s.anim], 1.0f);
+    else if (s.holdT < HOLD) {          // eased to a stop and away again
+        s.holdT += dt;
+        float k = s.holdT / HOLD;
+        t3d_anim_set_speed(&s.anims[s.anim], 1.0f - 0.99f * smooth01(fminf(k, 1.0f - k) / 0.15f));
+    } else t3d_anim_set_speed(&s.anims[s.anim], 1.15f);
+    if (clip > 0.12f && clip < 0.86f) hold_blade(1.0f, -0.12f, -0.04f);
+    if (s.holdT < HOLD * 0.5f) face_player(b, dt, 3.0f);
+    else hle_commit();
+    if (clip >= W_TH[0] - 0.06f && clip < W_TH[1]) {      // the lunge, along its committed aim, not through the player
+        if (dist_ahead(b) > 18.0f) move(b, -fm_sinf(b->rot[1]) * LUNGE, fm_cosf(b->rot[1]) * LUNGE, dt);
+    }
+    melee_check(b, W_TH[0], W_TH[1], 13.0f);
+    if (clip_done()) enter(FK_RECOVER);
+}
+
+static void rollcut_update(Boss *b, float dt)
+{
+    // Out of its roll it comes up into the rising cut, turning to the player on the way and
+    // stepping in as it strikes (the roll's drift carried on); it commits late in the rise
+    const float *w = WIN[1];
+    float clip = clip_time();
+    swing_pace(0.0f, w[0], 0.6f);
+    if (clip < w[0] && swing_tracks(FK_LOCK_K)) face_player(b, dt, 5.0f);
+    if (clip >= w[0] - 0.15f && clip < w[1] && dist_ahead(b) > 20.0f) move(b, -fm_sinf(b->rot[1]) * 60.0f, fm_cosf(b->rot[1]) * 60.0f, dt);
+    melee_check(b, w[0], w[1], 14.0f);
+    if (clip_done()) enter(FK_CHASE);       // a counter: it keeps the pressure on (no breather after it)
+}
+
+static void plunge_update(Boss *b, float dt)
+{
+    // Leaping plunge: AttackCharged's crouch (the sword drawn back low), a leap at where the player
+    // stood as it left (the aim held: step aside), the sword raised overhead at the top, then
+    // driven down as it lands: a ring of force where it bites, and a moment wrenching it free
+    const float CROUCH = 0.7f, VY = 95.0f, G = 190.0f, FLIGHT = 2.0f * VY / G, DOWN = 0.16f;
+    float clip = clip_time();
+    if (s.step == 0) {
+        face_player(b, dt, 4.0f);
+        clip_to(0.3f + 0.95f * smooth01((s.t + dt) / CROUCH), dt);
+        if (s.t >= CROUCH) {
+            float dx, dz, d = to_player(b, &dx, &dz);
+            float go = fmaxf(0.0f, d - 16.0f) / FLIGHT;     // its blade bites ~22 in front: it lands short of the player
+            if (d > 1e-3f) { s.moveX = dx / d * go; s.moveZ = dz / d * go; } else s.moveX = s.moveZ = 0.0f;
+            b->rot[1] = atan2f(-dx, dz);
+            s.velY = VY; s.step = 1; s.t = 0.0f;
+            hle_commit();
+            audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_SWING1, 0.8f, 0.0f);
+        }
+    } else if (s.step == 1) {
+        s.striking = true;          // in the air: the stagger meter keeps (as mid-strike)
+        move(b, s.moveX, s.moveZ, dt);
+        s.velY -= G * dt;
+        b->pos[1] = fmaxf(s.groundY, b->pos[1] + s.velY * dt);
+        float u = s.t + dt;     // where the clip should be at this frame's end
+        clip_to(u < FLIGHT - DOWN ? 1.25f + 0.6f * smooth01(u / 0.6f) : 1.86f + (u - (FLIGHT - DOWN)), dt);
+        melee_check(b, W_DN[0], W_DN[1], 18.0f);
+        if (b->pos[1] <= s.groundY && s.velY < 0.0f) {
+            float base[3], tip[3], o[3] = { b->pos[0], s.groundY + 4.0f, b->pos[2] };
+            if (sword_segment(base, tip)) { o[0] = tip[0]; o[2] = tip[2]; }     // where the blade bites
+            skill_fx_spawn_burst_hostile((float[3]){ o[0], s.groundY, o[2] }, b->rot[1]);
+            float dmg = s.hitDone ? 0.0f : 10.0f;       // the blade itself already struck: the ring doesn't again
+            skill_fx_spawn_arc_hostile(o, b->rot[1], 20.0f, dmg);
+            skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 20.0f, dmg);
+            screen_shake_set_shake_mag(10.0f);
+            audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_LAND1, 1.0f, 0.0f);
+            s.step = 2; s.t = 0.0f;
+        }
+    } else {
+        clip_to(fminf(2.35f, clip + dt * (clip < 2.12f ? 0.8f : 0.45f)), dt);    // slow to pull it free
+        if (s.t > 0.95f) enter(FK_RECOVER);
+    }
+}
+
 // ---- Decisions ----
 
 static void choose(Boss *b, float dist)
@@ -624,6 +780,7 @@ static void choose(Boss *b, float dist)
     if (HLE_FK_FORCE == 3) { enter(FK_SPLITTER); debugf("[fk] splitter\n"); return; }      // 3 = splitter, 4 = up-down, 5 = combo
     if (HLE_FK_FORCE == 7) { enter(FK_HOLYSLAM); play(FKA_ATTACK1, true); swing_sfx(); debugf("[fk] holyslam\n"); return; }
     if (HLE_FK_FORCE == 6) { enter(FK_TRISLAM); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); debugf("[fk] trislam\n"); return; }
+    if (HLE_FK_FORCE == 8) { if (dist < 40.0f) return; s.cdPlunge = 0.0f; enter(FK_PLUNGE); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], 0.3f); debugf("[fk] plunge\n"); return; }
     if (HLE_FK_FORCE >= 4 && dist > FK_MELEE_RANGE - 4.0f) return;     // the melee ones: in reach first
     if (HLE_FK_FORCE == 4) { enter(FK_UPDOWN); play(FKA_ATTACK2, true); swing_sfx(); debugf("[fk] updown\n"); return; }
     if (HLE_FK_FORCE == 5) { enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); swing_sfx(); debugf("[fk] combo\n"); return; }
@@ -633,6 +790,9 @@ static void choose(Boss *b, float dist)
     if (s.enraged && s.cdHoly <= 0.0f && dist < 50.0f) { s.cdHoly = 20.0f; enter(FK_HOLYSLAM); play(FKA_ATTACK1, true); swing_sfx(); return; }
     if (s.cdTri <= 0.0f && dist > 40.0f && dist < 140.0f) {
         s.cdTri = 14.0f; enter(FK_TRISLAM); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); swing_sfx(); return;
+    }
+    if (s.cdPlunge <= 0.0f && dist > 50.0f && dist < 120.0f) {
+        s.cdPlunge = 14.0f; enter(FK_PLUNGE); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], 0.3f); return;
     }
     if (s.cdSplitter <= 0.0f && dist > 35.0f && dist < 130.0f) { s.cdSplitter = 11.0f; enter(FK_SPLITTER); return; }
     if (s.cdCleave <= 0.0f && dist < 60.0f) { s.cdCleave = 9.0f; enter(FK_CLEAVE); return; }
@@ -645,7 +805,7 @@ void fallen_knight_update(Boss* b, float dt)
     if (!s.ready) return;
     if (b->damageFlashTimer > 0.0f) b->damageFlashTimer -= dt;
     s.t += dt;
-    s.cdCleave -= dt; s.cdHalfmoon -= dt; s.cdMoonblade -= dt; s.cdRoll -= dt; s.cdSplitter -= dt; s.cdUpdown -= dt; s.cdTri -= dt; s.cdHoly -= dt;
+    s.cdCleave -= dt; s.cdHalfmoon -= dt; s.cdMoonblade -= dt; s.cdRoll -= dt; s.cdSplitter -= dt; s.cdUpdown -= dt; s.cdTri -= dt; s.cdHoly -= dt; s.cdPlunge -= dt;
     s.bladeTgt = 0.0f;      // a move that holds the blade asks again each frame (hold_blade)
 
     float dx, dz, dist = to_player(b, &dx, &dz);
@@ -695,8 +855,13 @@ void fallen_knight_update(Boss* b, float dt)
             s.cdRoll = 2.5f;
             if ((rand_custom_u32() % 100) < 40) {
                 float side = (rand_custom_u32() & 1) ? 1.0f : -1.0f;
-                s.moveX = (-dx / dist * 0.6f + dz / dist * side) * 70.0f;
-                s.moveZ = (-dz / dist * 0.6f - dx / dist * side) * 70.0f;
+                s.counter = (rand_custom_u32() % 100) < 50;    // half the time it comes up cutting: then it rolls round, not away
+#ifdef HLE_FK_COUNTER
+                s.counter = true;
+#endif
+                float back = s.counter ? 0.15f : 0.6f;
+                s.moveX = (-dx / dist * back + dz / dist * side) * 70.0f;
+                s.moveZ = (-dz / dist * back - dx / dist * side) * 70.0f;
                 enter(FK_ROLL);
                 play(FKA_ROLL, true);
                 break;
@@ -707,17 +872,31 @@ void fallen_knight_update(Boss* b, float dt)
     }
 
     case FK_COMBO:
+        if (s.step == 3 && s.finisher == FIN_THRUST) { thrust_update(b, dt); break; }
         {   // each swing wound up, tracking the player until it commits, just before the strike
             const float *w = WIN[s.anim == FKA_ATTACK2 ? 1 : s.anim == FKA_ATTACK3 ? 2 : 0];
-                swing_pace(0.0f, w[0], FK_WIND);
-            if (clip_time() < w[0] && swing_tracks(FK_LOCK_K)) face_player(b, dt, 2.5f);
-            melee_check(b, w[0], w[1], FK_MELEE_DAMAGE);
+            swing_pace(0.0f, w[0], FK_WIND);
+            bool delay = s.step == 3 && s.finisher == FIN_DELAY;
+            if (delay) delay_hold(dt);
+            if (clip_time() < w[0] && ((s.holdT > 0.0f && s.holdT < DELAY_HOLD) || swing_tracks(FK_LOCK_K))) face_player(b, dt, 2.5f);
+            melee_check(b, w[0], w[1], delay ? 13.0f : FK_MELEE_DAMAGE);
         }
         if (clip_done()) {
             if (s.step < 3 && dist < FK_MELEE_RANGE + 6.0f) {
                 s.step++;
                 s.hitDone = false;
-                play(s.step == 2 ? FKA_ATTACK2 : FKA_ATTACK3, true);
+                if (s.step == 3) {      // the third: as before, held at its top, or the thrust
+                    uint32_t r = rand_custom_u32() % 100;
+                    s.finisher = r < 35 ? FIN_DELAY : r < 70 ? FIN_THRUST : FIN_SLASH;
+#ifdef HLE_FK_FIN
+                    s.finisher = HLE_FK_FIN;
+#endif
+                    s.holdT = 0.0f;
+#ifdef HLE_FK_LOG
+                    debugf("[fk] combo finisher %d\n", s.finisher);
+#endif
+                }
+                play(s.step == 2 ? FKA_ATTACK2 : s.finisher == FIN_THRUST ? FKA_ATTACK1 : FKA_ATTACK3, true);
                 swing_sfx();
             } else {
                 enter(FK_RECOVER);
@@ -727,8 +906,14 @@ void fallen_knight_update(Boss* b, float dt)
 
     case FK_ROLL:
         move(b, s.moveX, s.moveZ, dt);
-        if (s.t > 0.55f) enter(FK_CHASE);
+        if (s.t > 0.55f) {
+            if (s.counter) { enter(FK_ROLLCUT); play(FKA_ATTACK2, true); swing_sfx(); }
+            else enter(FK_CHASE);
+        }
         break;
+
+    case FK_ROLLCUT:   rollcut_update(b, dt); break;
+    case FK_PLUNGE:    plunge_update(b, dt);  break;
 
     case FK_CLEAVE:    cleave_update(b, dt);   break;
     case FK_HALFMOON:  halfmoon_update(b, dt); break;
