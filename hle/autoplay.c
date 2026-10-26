@@ -1060,6 +1060,25 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                                             (double)boss->pos[0], (double)boss->pos[2], in->stick_x, in->stick_y, (double)ya);
             }
 #endif
+#ifdef HLE_DUMMY_SIDESTEP   // the Fallen Warrior: step sideways for this many frames the moment a swing commits its aim
+            if (boss) {          // (HLE_SIDESTEP_EARLY: as the swing begins, before it commits: it should turn and follow)
+#ifdef HLE_SIDESTEP_EARLY
+                extern int hle_fk_swing; int now = hle_fk_swing;
+#else
+                extern int hle_fk_commit; int now = hle_fk_commit;
+#endif
+                static int seen, left, side = 1;
+                if (now != seen) { seen = now; left = HLE_DUMMY_SIDESTEP; side = -side; }
+                if (left > 0) {
+                    left--;
+                    float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz) + 1e-3f;
+                    float wx = -dz / d * side, wz = dx / d * side, ya = cameraAngleX;     // square to the boss (the stick from world as in HLE_DUMMY_ORBIT)
+                    in->stick_y = (int)(80 * (wx * -fm_sinf(ya) + wz * -fm_cosf(ya)));
+                    in->stick_x = (int)(80 * (wx * fm_cosf(ya) + wz * -fm_sinf(ya)));
+                    if (cameraLockOnActive) { in->stick_x = 80 * side; in->stick_y = 0; }     // locked on, the stick is already square to it
+                }
+            }
+#endif
 #ifdef HLE_TEST_STAGGER   // the stagger meter filled in steps: a full stagger every other second, and again
             if (boss && (frame % 60) == 0 && boss->staggerT <= 0.0f) { boss->poise = fminf(1.0f, boss->poise + 0.55f); boss->poiseIdleT = 0.0f;
                 debugf("[stagtest] f%d poise %.2f\n", frame, (double)boss->poise); }
@@ -1076,7 +1095,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
               in->btn.z = 1;
               float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
               in->stick_y = d < HLE_DUMMY_KEEP - 15.0f ? -70 : d > HLE_DUMMY_KEEP + 15.0f ? 70 : 0;
-              in->stick_x = 45; }
+#ifndef HLE_DUMMY_KEEP_STILL    // (or only in and out while the boss isn't attacking: no strafe)
+              in->stick_x = 45;
+#else
+              { extern bool hle_open_now; if (!hle_open_now) in->stick_y = 0; }
+#endif
+            }
 #endif
 #ifdef HLE_DUMMY_STRIKE   // and fight back: locked on, walk in, swing (the stagger meter, hit-stop)
             if (boss) { static int k; k++;     // (no boss once the run is back at the title)
@@ -1103,7 +1127,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             static int heapMin = 1 << 30;     // the lowest free heap, sampled each second
             if ((int)tm != (int)prev) { heap_stats_t h; sys_get_heap_stats(&h); if (h.total - h.used < heapMin) heapMin = h.total - h.used; }
             if ((int)(tm / 30.0f) != (int)(prev / 30.0f))
-                debugf("[dummy] boss %d t %.0f s damage %.0f hits %d | open %.0f%% of the time, %d gaps of %.2f s | %.1f fps, heap min %d KB free\n", HLE_DUMMY_BOSS, (double)tm,
+                debugf("[dummy] boss %d t %.0f s damage %.0f hits %d | open %.1f%% of the time, %d gaps of %.2f s | %.1f fps, heap min %d KB free\n", HLE_DUMMY_BOSS, (double)tm,
                        (double)hle_dummy_damage, hle_dummy_hits, (double)(100.0f * hle_open_time / (tm > 0 ? tm : 1)), hle_open_gaps,
                        (double)(hle_open_gaps ? hle_open_time / hle_open_gaps : 0.0f), (double)display_get_fps(), heapMin / 1024);
         }
