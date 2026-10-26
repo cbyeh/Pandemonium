@@ -686,8 +686,14 @@ static inline void strong_knockback_update(float dt)
 
 static inline void character_update_shadow_mat(void);
 
+// A hit that doesn't knock the knight down: he flinches back for a moment. Drawn only: the
+// collision, the blade and the state are as if nothing moved
+#define FLINCH_S 0.32f
+static float s_flinchT;
+
 static void character_finalize_frame(bool updateCamera)
 {
+    if (s_flinchT > 0.0f) s_flinchT = fmaxf(0.0f, s_flinchT - deltaTime);
     if (updateCamera) {
         character_update_camera();
     }
@@ -2227,8 +2233,8 @@ static void switch_to_locomotion_animation(int targetAnim)
         int prevClip = -1;
         if (prevState == CHAR_STATE_ROLLING) prevClip = ANIM_ROLL;
         else if (prevState == CHAR_STATE_KNOCKDOWN) prevClip = ANIM_KNOCKDOWN;
-        else if (prevState == CHAR_STATE_ATTACKING)
-            prevClip = character.previousAnimation;
+        else if (prevState == CHAR_STATE_ATTACKING || prevState == CHAR_STATE_SKILL)
+            prevClip = character.previousAnimation;     // a skill broken off by a hit eases out, like a swing
 
         if (prevClip >= 0 && prevClip < character.animationCount &&
             character.animations[prevClip] && character.skeleton && character.skeletonBlend)
@@ -3269,6 +3275,14 @@ void character_draw(void)
     rdpq_set_prim_color(RGBA32(cr, cg, cb, ca));
 
     const T3DMat4FP *modelMat = gpu_mat(character.modelMat);
+    if (s_flinchT > 0.0f) {     // the flinch: tipped back quickly, upright again more slowly
+        float u = 1.0f - s_flinchT / FLINCH_S, w = u < 0.2f ? u / 0.2f : 1.0f - (u - 0.2f) / 0.8f;
+        w = w * w * (3.0f - 2.0f * w);
+        T3DMat4FP m;
+        t3d_mat4fp_from_srt_euler(&m, character.scale,
+            (float[3]){ character.rot[0] - 0.16f * w, character.rot[1] + MODEL_YAW_OFFSET, character.rot[2] }, character.pos);
+        modelMat = gpu_mat(&m);
+    }
     T3DMat4FP *bones = character.skeleton ? gpu_skeleton_begin(character.skeleton) : NULL;
     t3d_matrix_set(modelMat, true);
     rspq_block_run(character.dpl_model);
@@ -3337,6 +3351,7 @@ void character_apply_damage(float amount)
     }
 
     // Only knockdown if the hit is strong enough (>= 20 dmg)
+    if (amount < 20.0f) s_flinchT = FLINCH_S;      // knocked down below: that is its own reaction
     if (amount >= 20.0f) {
         // Prevent re-triggering knockdown if we are already rolling (invuln) or similar
         if (characterState != CHAR_STATE_ROLLING) {

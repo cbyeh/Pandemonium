@@ -159,7 +159,10 @@ static void enter(DgState st)
 #endif
     s.state = st; s.t = 0.0f; s.step = 0; s.hitDone = false; tailPrevOk = false;
     // Between attacks a pause; now and then (35%) a longer breather, its head low: an opening
-    if (st == DG_IDLE) s.idleWait = (rand_custom_u32() % 100 < 35) ? 3.3f + (rand_custom_u32() % 100) / 100.0f : 1.8f;
+#ifndef HLE_DG_PAUSE
+#define HLE_DG_PAUSE 0.2f   // the recovery added to every pause (a longer opening: about 70% cost, not ~80%)
+#endif
+    if (st == DG_IDLE) s.idleWait = ((rand_custom_u32() % 100 < 35) ? 3.3f + (rand_custom_u32() % 100) / 100.0f : 1.8f) + HLE_DG_PAUSE;
 #ifdef HLE_AUTOPLAY
     debugf("[dragon] state %d\n", st);
 #endif
