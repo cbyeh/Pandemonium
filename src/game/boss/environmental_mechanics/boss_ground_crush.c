@@ -50,6 +50,11 @@ void boss_ground_crush_reset(void)
 
 void boss_ground_crush_spawn(float x, float y, float z)
 {
+    boss_ground_crush_spawn_sized(x, y, z, 1.0f);
+}
+
+void boss_ground_crush_spawn_sized(float x, float y, float z, float size)
+{
     groundCrush.active = true;
 
     groundCrush.pos[0] = x;
@@ -58,7 +63,7 @@ void boss_ground_crush_spawn(float x, float y, float z)
 
     groundCrush.age = 0.0f;
     groundCrush.life = 3.0f;
-    groundCrush.scale = MODEL_SCALE;
+    groundCrush.scale = MODEL_SCALE * size;
 }
 
 void boss_ground_crush_update(float dt)

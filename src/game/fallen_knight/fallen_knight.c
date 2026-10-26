@@ -13,6 +13,7 @@
 #include "globals.h"
 #include "fx/skill_fx.h"
 #include "fx/screen_shake.h"
+#include "../boss/environmental_mechanics/boss_ground_crush.h"
 #include "controllers/audio_controller.h"
 #include "../../scenes/guardian/guardian_scene_sfx.h"
 #include "../../scenes/guardian/guardian_scene_bounds.h"
@@ -24,6 +25,7 @@ extern T3DModel* characterModel;       // the player's knight model (character.c
 
 // ---- Tuning ----
 #define FK_SCALE          (MODEL_SCALE * 0.8f)     // 1.6x the player knight
+#define FK_CRACK          0.6f                     // its slams' floor cracks, against the Guardian's
 #define FK_YAW_OFFSET     (T3D_PI * -0.5f)         // same model as the player
 #define FK_RUN_SPEED      46.0f
 #define FK_WALK_SPEED     18.0f
@@ -594,6 +596,7 @@ static void trislam_update(Boss *b, float dt)
             float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + fx * 22.0f, s.groundY, b->pos[2] + fz * 22.0f }, b->rot[1]);
             screen_shake_set_shake_mag(8.0f);
+            boss_ground_crush_spawn_sized(b->pos[0] + fx * 22.0f, s.groundY + 0.25f, b->pos[2] + fz * 22.0f, FK_CRACK);
             float a0 = (rand_custom_u32() % 628) / 100.0f;
             for (int i = 0; i < 3; i++) {
                 float a = a0 + i * 2.0944f;
@@ -654,6 +657,11 @@ static void holyslam_update(Boss *b, float dt)
             skill_fx_spawn_arc_hostile(o, b->rot[1], 105.0f, 26.0f);
             skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 105.0f, 26.0f);
             skill_fx_spawn_pillar_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
+            {   // where the blade bites
+                float base[3], tip[3], cx = b->pos[0] - fm_sinf(b->rot[1]) * 22.0f, cz = b->pos[2] + fm_cosf(b->rot[1]) * 22.0f;
+                if (sword_segment(base, tip)) { cx = tip[0]; cz = tip[2]; }
+                boss_ground_crush_spawn_sized(cx, s.groundY + 0.25f, cz, FK_CRACK);
+            }
             screen_shake_set_shake_mag(16.0f);
             sfx(SCENE1_SFX_ROCK_BLAST, 1.0f);
             s.step = 2; s.t = 0.0f;
@@ -757,6 +765,7 @@ static void plunge_update(Boss *b, float dt)
             float base[3], tip[3], o[3] = { b->pos[0], s.groundY + 4.0f, b->pos[2] };
             if (sword_segment(base, tip)) { o[0] = tip[0]; o[2] = tip[2]; }     // where the blade bites
             skill_fx_spawn_burst_hostile((float[3]){ o[0], s.groundY, o[2] }, b->rot[1]);
+            boss_ground_crush_spawn_sized(o[0], s.groundY + 0.25f, o[2], FK_CRACK);
             float dmg = s.hitDone ? 0.0f : 10.0f;       // the blade itself already struck: the ring doesn't again
             skill_fx_spawn_arc_hostile(o, b->rot[1], 20.0f, dmg);
             skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 20.0f, dmg);

@@ -8,5 +8,7 @@ void boss_ground_crush_draw(void);
 void boss_ground_crush_cleanup(void);
 
 void boss_ground_crush_spawn(float x, float y, float z);
+// `size` scales the decal (1 = the Guardian's slam)
+void boss_ground_crush_spawn_sized(float x, float y, float z, float size);
 
 #endif
