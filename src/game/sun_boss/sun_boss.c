@@ -58,6 +58,7 @@ typedef struct {
 static struct {
     bool ready;
     ProcMesh eye, eyeHot;
+    sprite_t *texSurface;       // its granulation (tools/boss_textures.py)
     ProcMesh weight;
     ProcMesh corona[2], coronaHot[2];   // two rings of flames, turning opposite ways
     T3DMat4FP *chainMat;           // MAT_RING * (1 + NCH): the links' origin, then the weights
@@ -146,6 +147,7 @@ void sun_boss_free(void)
     gpu_wait();
     proc_mesh_free(&s.eye);
     proc_mesh_free(&s.eyeHot);
+    sprite_free(s.texSurface);
     for (int i = 0; i < MAT_RING; i++) { rspq_block_free(s.linkBlock[i]); free_uncached(s.linkVB[i]); }
     proc_mesh_free(&s.weight);
     for (int i = 0; i < 2; i++) { proc_mesh_free(&s.corona[i]); proc_mesh_free(&s.coronaHot[i]); }
@@ -156,8 +158,9 @@ void sun_boss_free(void)
 void sun_boss_begin(Boss* boss)
 {
     if (!s.ready) {
-        proc_mesh_begin(); proc_mesh_eye_sphere(MESH_R, true, false); proc_mesh_end(&s.eye);
-        proc_mesh_begin(); proc_mesh_eye_sphere(MESH_R, true, true);  proc_mesh_end(&s.eyeHot);
+        proc_mesh_begin(); proc_mesh_uv(96.0f, 48.0f); proc_mesh_eye_sphere(MESH_R, true, false); proc_mesh_end(&s.eye);
+        proc_mesh_begin(); proc_mesh_uv(96.0f, 48.0f); proc_mesh_eye_sphere(MESH_R, true, true);  proc_mesh_end(&s.eyeHot);
+        s.texSurface = sprite_load("rom:/shackled_sun/surface.i8.sprite");
         links_init();
         for (int i = 0; i < MAT_RING; i++) {
             s.linkVB[i] = malloc_uncached(sizeof(T3DVertPacked) * NLINKS * LK_V / 2);
@@ -1306,6 +1309,6 @@ void sun_boss_draw(Boss* b)
 #ifdef HLE_LOG_CLOTH
     { static uint32_t sum; static int n; sum += TICKS_READ() - t0; if (++n == 120) { debugf("[chains] draw %lu us a frame\n", (unsigned long)(TICKS_TO_US(sum) / n)); sum = 0; n = 0; } }
 #endif
-    proc_mesh_draw_tinted(s.unshackled ? &s.eyeHot : &s.eye, false, eyeTint);
+    proc_mesh_draw_textured(s.unshackled ? &s.eyeHot : &s.eye, s.texSurface, eyeTint);
     if (dying < 1.0f) for (int i = 0; i < 2; i++) proc_mesh_draw_tinted(&cor[i], true, tint);
 }

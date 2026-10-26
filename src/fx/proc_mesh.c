@@ -10,15 +10,30 @@
 #define PM_MAX_TRIS   1500
 #define PM_UNIT       8.0f          // stored at 1/8 unit precision (int16 positions)
 
-typedef struct { int16_t p[3][3]; uint32_t c[3]; } PmTri;     // a colour per corner (smooth shading)
+typedef struct { int16_t p[3][3]; uint32_t c[3]; int16_t st[3][2]; } PmTri;     // a colour and UV per corner
 
 static PmTri *s_tris;
 static int s_ntris;
+static float s_uvAround, s_uvAlong;     // proc_mesh_uv (0: no UVs)
+#define PM_FLAT_ST (2 * 32)             // unlit faces sample texel (2, 2): proc_mesh_uv's bright corner
 
 void proc_mesh_begin(void)
 {
     if (!s_tris) s_tris = malloc(sizeof(PmTri) * PM_MAX_TRIS);
     s_ntris = 0;
+    s_uvAround = s_uvAlong = 0.0f;
+}
+
+void proc_mesh_uv(float around, float along) { s_uvAround = around; s_uvAlong = along; }
+
+static int16_t st_px(float px) { return (int16_t)lrintf(fminf(fmaxf(px, -1000.0f), 1000.0f) * 32.0f); }    // 10.5 fixed
+
+// Planar UVs for a flat face: its two axes that the normal turns least to (a box face, a membrane)
+static void planar_st(PmTri *t, const float *v[3], const float n[3])
+{
+    float ax = fabsf(n[0]), ay = fabsf(n[1]), az = fabsf(n[2]);
+    int iu = ax >= ay && ax >= az ? 2 : 0, iv = ay >= ax && ay >= az ? 2 : 1;
+    for (int i = 0; i < 3; i++) { t->st[i][0] = st_px(v[i][iu] * s_uvAlong); t->st[i][1] = st_px(v[i][iv] * s_uvAlong); }
 }
 
 static uint32_t shade(uint32_t rgba, float k)
@@ -39,11 +54,13 @@ void proc_mesh_tri(const float a[3], const float b[3], const float c[3], uint32_
     if (unlit) {
         int r = rgba >> 24, g = (rgba >> 16) & 0xFF, b = (rgba >> 8) & 0xFF, m = r > g ? (r > b ? r : b) : (g > b ? g : b);
         t->c[0] = t->c[1] = t->c[2] = (rgba & ~0xFFu) | (uint32_t)m;
+        for (int i = 0; i < 3; i++) t->st[i][0] = t->st[i][1] = s_uvAlong > 0.0f ? PM_FLAT_ST : 0;     // glows: untextured
         return;
     }
     // Two-sided flat shading: a key light from above-front plus ambient
     float e1[3] = { b[0]-a[0], b[1]-a[1], b[2]-a[2] }, e2[3] = { c[0]-a[0], c[1]-a[1], c[2]-a[2] };
     float n[3] = { e1[1]*e2[2]-e1[2]*e2[1], e1[2]*e2[0]-e1[0]*e2[2], e1[0]*e2[1]-e1[1]*e2[0] };
+    planar_st(t, v, n);
     float len = sqrtf(n[0]*n[0] + n[1]*n[1] + n[2]*n[2]);
     float d = len > 1e-6f ? fabsf(n[0] * -0.45f + n[1] * 0.8f + n[2] * 0.4f) / len : 0.5f;
     t->c[0] = t->c[1] = t->c[2] = shade(rgba, 0.4f + 0.75f * d);
@@ -57,8 +74,9 @@ static float smooth_light(const float n[3])
     return 0.42f + 0.72f * (d > 0.0f ? d : 0.0f) + 0.14f * (d < 0.0f ? -d : 0.0f);
 }
 
-void proc_mesh_tri_smooth(const float a[3], const float b[3], const float c[3],
-                          const float na[3], const float nb[3], const float nc[3], uint32_t rgba)
+// uv: each corner's UV in pixels (NULL: none)
+static void tri_smooth_uv(const float a[3], const float b[3], const float c[3],
+                          const float na[3], const float nb[3], const float nc[3], uint32_t rgba, const float uv[3][2])
 {
     if (s_ntris >= PM_MAX_TRIS) return;
     PmTri *t = &s_tris[s_ntris++];
@@ -66,11 +84,24 @@ void proc_mesh_tri_smooth(const float a[3], const float b[3], const float c[3],
     for (int i = 0; i < 3; i++) {
         for (int k = 0; k < 3; k++) t->p[i][k] = (int16_t)lrintf(v[i][k] * PM_UNIT);
         t->c[i] = shade(rgba, smooth_light(n[i]));
+        t->st[i][0] = uv ? st_px(uv[i][0]) : 0; t->st[i][1] = uv ? st_px(uv[i][1]) : 0;
     }
+}
+
+void proc_mesh_tri_smooth(const float a[3], const float b[3], const float c[3],
+                          const float na[3], const float nb[3], const float nc[3], uint32_t rgba)
+{
+    tri_smooth_uv(a, b, c, na, nb, nc, rgba, NULL);
 }
 
 void proc_mesh_loft(const float *pts, int rings, int sides, const uint32_t *cols, uint32_t rgba, bool capEnd)
 {
+    bool shut[rings];       // the rings closed on a point
+    for (int r = 0; r < rings; r++) {
+        shut[r] = true;
+        for (int i = 1; i < sides; i++)
+            for (int k = 0; k < 3; k++) if (fabsf(pts[(r * sides + i) * 3 + k] - pts[r * sides * 3 + k]) > 1e-3f) shut[r] = false;
+    }
     // Normals point out from each ring's centre: a smooth tube
     for (int r = 0; r + 1 < rings; r++) {
         float c0[3] = { 0 }, c1[3] = { 0 };
@@ -83,8 +114,13 @@ void proc_mesh_loft(const float *pts, int rings, int sides, const uint32_t *cols
             float n00[3], n01[3], n10[3], n11[3];
             for (int k = 0; k < 3; k++) { n00[k] = p00[k] - c0[k]; n01[k] = p01[k] - c0[k]; n10[k] = p10[k] - c1[k]; n11[k] = p11[k] - c1[k]; }
             uint32_t col = cols ? cols[r * sides + i] : rgba;
-            proc_mesh_tri_smooth(p00, p01, p11, n00, n01, n11, col);
-            proc_mesh_tri_smooth(p00, p11, p10, n00, n11, n10, col);
+            // UVs: round the ring (i / sides of `around`), along by the rings' z (the tubes run along +z);
+            // a ring closed on a point (a dome's tip) one UV, so its corners stay shared
+            float u0 = s_uvAround * i / sides, u1 = s_uvAround * (i + 1) / sides, v0 = c0[2] * s_uvAlong, v1 = c1[2] * s_uvAlong;
+            float a0 = shut[r] ? 0.0f : u0, a1 = shut[r] ? 0.0f : u1, b0 = shut[r + 1] ? 0.0f : u0, b1 = shut[r + 1] ? 0.0f : u1;
+            bool uv = s_uvAlong > 0.0f;
+            tri_smooth_uv(p00, p01, p11, n00, n01, n11, col, uv ? (const float[3][2]){ { a0, v0 }, { a1, v0 }, { b1, v1 } } : NULL);
+            tri_smooth_uv(p00, p11, p10, n00, n11, n10, col, uv ? (const float[3][2]){ { a0, v0 }, { b1, v1 }, { b0, v1 } } : NULL);
         }
     }
     if (capEnd && rings > 0) {     // a fan to the last ring's centre
@@ -96,7 +132,9 @@ void proc_mesh_loft(const float *pts, int rings, int sides, const uint32_t *cols
                          for (int k = 0; k < 3; k++) axis[k] = c[k] - p[k]; }
         for (int i = 0; i < sides; i++) {
             int j = (i + 1) % sides;
-            proc_mesh_tri_smooth(&pts[(r * sides + i) * 3], &pts[(r * sides + j) * 3], c, axis, axis, axis, cols ? cols[(r > 0 ? r - 1 : 0) * sides + i] : rgba);
+            float u0 = s_uvAround * i / sides, u1 = s_uvAround * (i + 1) / sides, v = c[2] * s_uvAlong;
+            tri_smooth_uv(&pts[(r * sides + i) * 3], &pts[(r * sides + j) * 3], c, axis, axis, axis, cols ? cols[(r > 0 ? r - 1 : 0) * sides + i] : rgba,
+                          s_uvAlong > 0.0f ? (const float[3][2]){ { u0, v }, { u1, v }, { (u0 + u1) * 0.5f, v } } : NULL);
         }
     }
 }
@@ -140,7 +178,14 @@ void proc_mesh_spike(const float base[3], const float tip[3], float radius, int 
             p0[k] = base[k] + (s[k] * cosf(a0) + u[k] * sinf(a0)) * radius;
             p1[k] = base[k] + (s[k] * cosf(a1) + u[k] * sinf(a1)) * radius;
         }
+        int n0 = s_ntris;
         proc_mesh_tri(p0, p1, tip, rgba, false);
+        if (s_uvAlong > 0.0f && s_ntris > n0) {     // round it and along it, as a tube (not planar)
+            PmTri *t = &s_tris[s_ntris - 1];
+            float u0 = s_uvAround * i / sides, u1 = s_uvAround * (i + 1) / sides;
+            t->st[0][0] = st_px(u0); t->st[1][0] = st_px(u1); t->st[2][0] = st_px((u0 + u1) * 0.5f);
+            t->st[0][1] = t->st[1][1] = 0; t->st[2][1] = st_px(len * s_uvAlong);
+        }
     }
 }
 
@@ -175,6 +220,20 @@ static uint32_t mix_rgb(const int a[3], const int b[3], float t, float k)
     return proc_rgb(c[0], c[1], c[2]);
 }
 
+// An unlit triangle with a colour and a UV (pixels) per corner
+static void tri_unlit_uv(const float a[3], const float b[3], const float c[3], const uint32_t col[3], const float uv[3][2])
+{
+    if (s_ntris >= PM_MAX_TRIS) return;
+    PmTri *t = &s_tris[s_ntris++];
+    const float *v[3] = { a, b, c };
+    for (int i = 0; i < 3; i++) {
+        for (int k = 0; k < 3; k++) t->p[i][k] = (int16_t)lrintf(v[i][k] * PM_UNIT);
+        int r = col[i] >> 24, g = (col[i] >> 16) & 0xFF, bl = (col[i] >> 8) & 0xFF, m = r > g ? (r > bl ? r : bl) : (g > bl ? g : bl);
+        t->c[i] = (col[i] & ~0xFFu) | (uint32_t)m;      // alpha follows brightness, as proc_mesh_tri's unlit faces
+        t->st[i][0] = st_px(uv[i][0]); t->st[i][1] = st_px(uv[i][1]);
+    }
+}
+
 // Built looking down +z, then turned to -y unless facingZ
 static void eye_point(float x, float y, float z, float r, bool facingZ, float out[3])
 {
@@ -197,22 +256,28 @@ void proc_mesh_eye_sphere(float radius, bool facingZ, bool hot)
     enum { LAT = 14, LON = 20 };
     static const int RIM[3] = { 170, 34, 10 }, MID[3] = { 240, 100, 25 }, CORE[3] = { 255, 232, 165 };
     static const int RIM_H[3] = { 170, 14, 26 }, MID_H[3] = { 235, 45, 40 }, CORE_H[3] = { 255, 236, 220 };
+    // Each corner coloured by its own latitude (shared by the quads round it); the granulation is
+    // the texture's (proc_mesh_uv: `around` pixels round it, `along` down from the eye to the back)
     for (int i = 0; i < LAT; i++) {
-        float a0 = T3D_PI * powf((float)i / LAT, 1.3f), a1 = T3D_PI * powf((float)(i + 1) / LAT, 1.3f);
+        float a[2] = { T3D_PI * powf((float)i / LAT, 1.3f), T3D_PI * powf((float)(i + 1) / LAT, 1.3f) };
+        uint32_t c[2];
+        float lift = s_uvAlong > 0.0f ? 1.06f : 1.0f;      // textured: the granulation (mean ~0.87) darkens it (more and it pales)
+        for (int e = 0; e < 2; e++) {
+            float k = (cosf(a[e]) + 0.7f) / 1.7f;   // the back still glows (seen from above)
+            k = k < 0 ? 0 : k > 1 ? 1 : k;
+            c[e] = k < 0.55f ? mix_rgb(hot ? RIM_H : RIM, hot ? MID_H : MID, k / 0.55f, lift)
+                             : mix_rgb(hot ? MID_H : MID, hot ? CORE_H : CORE, (k - 0.55f) / 0.45f, lift);
+        }
         for (int j = 0; j < LON; j++) {
             float b0 = 2.0f * T3D_PI * j / LON, b1 = 2.0f * T3D_PI * (j + 1) / LON;
             float p[4][3];
-            eye_point(sinf(a0) * cosf(b0), sinf(a0) * sinf(b0), cosf(a0), radius, facingZ, p[0]);
-            eye_point(sinf(a1) * cosf(b0), sinf(a1) * sinf(b0), cosf(a1), radius, facingZ, p[1]);
-            eye_point(sinf(a1) * cosf(b1), sinf(a1) * sinf(b1), cosf(a1), radius, facingZ, p[2]);
-            eye_point(sinf(a0) * cosf(b1), sinf(a0) * sinf(b1), cosf(a0), radius, facingZ, p[3]);
-            float k = (cosf((a0 + a1) * 0.5f) + 0.7f) / 1.7f;   // the back still glows (seen from above)
-            k = k < 0 ? 0 : k > 1 ? 1 : k;
-            float g = 0.93f + 0.12f * hash01(i, j);
-            if (hash01(j + 31, i + 7) < 0.035f && k < 0.8f) g *= 0.6f;       // sunspot
-            uint32_t c = k < 0.55f ? mix_rgb(hot ? RIM_H : RIM, hot ? MID_H : MID, k / 0.55f, g)
-                                   : mix_rgb(hot ? MID_H : MID, hot ? CORE_H : CORE, (k - 0.55f) / 0.45f, g);
-            proc_mesh_quad(p[0], p[1], p[2], p[3], c, true);
+            eye_point(sinf(a[0]) * cosf(b0), sinf(a[0]) * sinf(b0), cosf(a[0]), radius, facingZ, p[0]);
+            eye_point(sinf(a[1]) * cosf(b0), sinf(a[1]) * sinf(b0), cosf(a[1]), radius, facingZ, p[1]);
+            eye_point(sinf(a[1]) * cosf(b1), sinf(a[1]) * sinf(b1), cosf(a[1]), radius, facingZ, p[2]);
+            eye_point(sinf(a[0]) * cosf(b1), sinf(a[0]) * sinf(b1), cosf(a[0]), radius, facingZ, p[3]);
+            float u0 = s_uvAround * j / LON, u1 = s_uvAround * (j + 1) / LON, v0 = s_uvAlong * a[0] / T3D_PI, v1 = s_uvAlong * a[1] / T3D_PI;
+            tri_unlit_uv(p[0], p[1], p[2], (uint32_t[3]){ c[0], c[1], c[1] }, (const float[3][2]){ { u0, v0 }, { u0, v1 }, { u1, v1 } });
+            tri_unlit_uv(p[0], p[2], p[3], (uint32_t[3]){ c[0], c[1], c[0] }, (const float[3][2]){ { u0, v0 }, { u1, v1 }, { u1, v0 } });
         }
     }
     // Iris: rings of fire round a slit pupil, just above the surface
@@ -317,7 +382,7 @@ void proc_mesh_end(ProcMesh *out)
             slot[i] = -1;
             for (int k = 0; k < nv && slot[i] < 0; k++) {
                 int r = ref[nref - nv + k];
-                if (!memcmp(s_tris[r / 3].p[r % 3], s_tris[t].p[i], 6) && s_tris[r / 3].c[r % 3] == s_tris[t].c[i]) slot[i] = k;
+                if (!memcmp(s_tris[r / 3].p[r % 3], s_tris[t].p[i], 6) && s_tris[r / 3].c[r % 3] == s_tris[t].c[i] && !memcmp(s_tris[r / 3].st[r % 3], s_tris[t].st[i], 4)) slot[i] = k;
             }
             if (slot[i] < 0) fresh++;
         }
@@ -350,8 +415,8 @@ void proc_mesh_end(ProcMesh *out)
             int r = ref[batchRef[b] + k];
             T3DVertPacked *v = &out->verts[base + k / 2];
             const int16_t *p = s_tris[r / 3].p[r % 3];
-            if (k & 1) { memcpy(v->posB, p, 6); v->normB = norm; v->rgbaB = s_tris[r / 3].c[r % 3]; }
-            else       { memcpy(v->posA, p, 6); v->normA = norm; v->rgbaA = s_tris[r / 3].c[r % 3]; }
+            if (k & 1) { memcpy(v->posB, p, 6); v->normB = norm; v->rgbaB = s_tris[r / 3].c[r % 3]; memcpy(v->stB, s_tris[r / 3].st[r % 3], 4); }
+            else       { memcpy(v->posA, p, 6); v->normA = norm; v->rgbaA = s_tris[r / 3].c[r % 3]; memcpy(v->stA, s_tris[r / 3].st[r % 3], 4); }
         }
         t3d_vert_load(&out->verts[base], 0, (uint32_t)((n + 1) & ~1));
         int16_t *ix = &out->idx[ib];
@@ -372,6 +437,7 @@ void proc_mesh_end(ProcMesh *out)
 #endif
     out->block = gpu_block_end();
     free(ref); free(idx); free(batchTri); free(batchRef);
+    free(s_tris); s_tris = NULL;    // the scratch (72 KB) only while building: it was held for good
     out->mat = malloc_uncached(sizeof(T3DMat4FP));
     proc_mesh_set_transform(out, 1.0f, (float[3]){ 0, 0, 0 }, (float[3]){ 0, 0, 0 });
 #ifdef HLE_LOG_HITCH
@@ -386,28 +452,44 @@ void proc_mesh_set_transform(ProcMesh *m, const float scale, const float rot[3],
     t3d_mat4fp_from_srt_euler(m->mat, (float[3]){ s, s, s }, rot, pos);
 }
 
+void proc_mesh_tex_begin(sprite_t *tex)
+{
+    rdpq_mode_combiner(RDPQ_COMBINER_TEX_SHADE);
+    rdpq_mode_filter(FILTER_BILINEAR);
+    rdpq_mode_persp(true);
+    rdpq_sprite_upload(TILE0, tex, &(rdpq_texparms_t){ .s.repeats = REPEAT_INFINITE, .t.repeats = REPEAT_INFINITE });
+}
+
 // tint multiplies the vertex colours (white: as built), e.g. a boss glowing red before a strike
-static void draw(const ProcMesh *m, bool glow, color_t tint)
+static void draw(const ProcMesh *m, bool glow, color_t tint, sprite_t *tex)
 {
     if (!m->block) return;
+    bool tinted = color_to_packed32(tint) != 0xFFFFFFFF;
     rdpq_sync_pipe();
     rdpq_mode_push();       // restored at the end: the caller's fog and modes stay
     rdpq_set_mode_standard();
     rdpq_mode_zbuf(true, !glow);
-    if (color_to_packed32(tint) == 0xFFFFFFFF) rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
+    if (tex) proc_mesh_tex_begin(tex);
+    else if (!tinted) rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
     else { rdpq_mode_combiner(RDPQ_COMBINER1((SHADE, 0, PRIM, 0), (0, 0, 0, SHADE))); rdpq_set_prim_color(tint); }
     // Glow is blended by brightness, not added: the real RDP wraps an overflowing sum (the Sun's
     // corona tips speckled green on hardware; HLE renderers clamp, so it never showed there)
     if (glow) rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-    t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
+    // Textured, the combiner has no room for the tint: the ambient light carries it (the scene has
+    // no other lights), lighting only while tinted
+    bool lit = tex && tinted;
+    if (lit) t3d_light_set_ambient((uint8_t[4]){ tint.r, tint.g, tint.b, 255 });
+    t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | (tex ? T3D_FLAG_TEXTURED : 0) | (lit ? 0 : T3D_FLAG_NO_LIGHT));
     t3d_matrix_set(gpu_mat(m->mat), true);     // proc_mesh_set_transform may change it next frame
     rspq_block_run(m->block);
+    if (lit) t3d_light_set_ambient((uint8_t[4]){ 255, 255, 255, 255 });
     rdpq_mode_pop();
 }
 
-void proc_mesh_draw(const ProcMesh *m) { draw(m, false, RGBA32(255, 255, 255, 255)); }
-void proc_mesh_draw_glow(const ProcMesh *m) { draw(m, true, RGBA32(255, 255, 255, 255)); }
-void proc_mesh_draw_tinted(const ProcMesh *m, bool glow, color_t tint) { draw(m, glow, tint); }
+void proc_mesh_draw(const ProcMesh *m) { draw(m, false, RGBA32(255, 255, 255, 255), NULL); }
+void proc_mesh_draw_glow(const ProcMesh *m) { draw(m, true, RGBA32(255, 255, 255, 255), NULL); }
+void proc_mesh_draw_tinted(const ProcMesh *m, bool glow, color_t tint) { draw(m, glow, tint, NULL); }
+void proc_mesh_draw_textured(const ProcMesh *m, sprite_t *tex, color_t tint) { draw(m, false, tint, tex); }
 
 void proc_mesh_free(ProcMesh *m)
 {

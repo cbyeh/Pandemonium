@@ -34,6 +34,7 @@ static bool s_ready;
 static float s_t;
 static int s_line;
 static ProcMesh s_throne, s_king, s_arms, s_gold, s_sun, s_dog;
+static sprite_t *s_sunTex;      // the Shackled Sun's granulation
 static T3DModel *s_raysModel;
 static T3DMat4FP *s_raysMat;
 static ScrollParams s_raysScroll = { .xSpeed = 30.0f, .ySpeed = 0.0f, .scale = 64 };
@@ -193,8 +194,10 @@ static void build_dog(void)
 static void build_sun(void)
 {
     proc_mesh_begin();
+    proc_mesh_uv(96.0f, 48.0f);
     proc_mesh_eye_sphere(SUN_R, false, false);
     proc_mesh_end(&s_sun);
+    s_sunTex = sprite_load("rom:/shackled_sun/surface.i8.sprite");
 }
 
 void ending_free(void)
@@ -206,6 +209,8 @@ void ending_free(void)
     proc_mesh_free(&s_arms);
     proc_mesh_free(&s_gold);
     proc_mesh_free(&s_sun);
+    sprite_free(s_sunTex);
+    s_sunTex = NULL;
     proc_mesh_free(&s_dog);
     character.visible = true;
     if (s_raysModel) t3d_model_free(s_raysModel);
@@ -410,7 +415,7 @@ static void draw_sun(const float pos[3], float scale, bool lookUp)
     t3d_matrix_push_pos(1);
         t3d_matrix_set(gpu_mat(s_raysMat), true);
         t3d_model_draw_custom(s_raysModel, (T3DModelDrawConf){ .userData = &s_raysScroll, .tileCb = tile_scroll });
-        proc_mesh_draw(&s_sun);
+        proc_mesh_draw_textured(&s_sun, s_sunTex, RGBA32(255, 255, 255, 255));
     t3d_matrix_pop(1);
 }
 

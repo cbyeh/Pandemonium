@@ -37,10 +37,11 @@
 #define MAT_MAX  (40 + FL_MAX + ORB_MAX + 2 * BALL_MAX + 6)
 #define MAT_RING 3              // frames the RSP may still be reading
 
-#define COL_BACK   proc_rgb(46, 42, 54)
-#define COL_BELLY  proc_rgb(82, 74, 78)
-#define COL_BONE   proc_rgb(126, 118, 122)
-#define COL_MEMB   proc_rgb(40, 32, 48)
+// A little brighter than they read: the scale and membrane textures multiply them (mean ~0.75)
+#define COL_BACK   proc_rgb(58, 52, 68)
+#define COL_BELLY  proc_rgb(104, 92, 98)
+#define COL_BONE   proc_rgb(150, 140, 146)
+#define COL_MEMB   proc_rgb(52, 42, 62)
 #define COL_IVORY  proc_rgb(232, 226, 210)
 
 typedef enum { DG_INTRO, DG_IDLE, DG_CLAW, DG_BITE, DG_TAIL, DG_BREATH, DG_CHARGE, DG_FLY,
@@ -56,6 +57,7 @@ typedef struct { float p[3], v[3]; bool on; } Ball;
 static struct {
     bool ready;
     ProcMesh seg, segDark, tseg, tsegDark, limb, mFoot, mHead, mHeadDark, mJaw, wing, wingDark, wingMemb, tip, tipDark, flame, mOrb, mIce, mCone;
+    sprite_t *texScales, *texMemb;      // tools/boss_textures.py
     T3DMat4FP *mats;
     int matRing, mi;
     DgState state;
@@ -324,14 +326,15 @@ static void ring(float *out, int n, float z, float w, float h, float yc, float f
     }
 }
 
-// Scale colours round a ring: the back in two shades (scales), the underside in plates
-static void scale_cols(uint32_t *cols, int rings, int n, uint32_t back, uint32_t back2, uint32_t belly, int bellyQuads)
+// Colours round a ring: the back one colour (its scales are the texture's, so neighbouring quads
+// share their corners), the underside paler, banded in plates
+static void scale_cols(uint32_t *cols, int rings, int n, uint32_t back, uint32_t belly, int bellyQuads)
 {
     for (int r = 0; r < rings; r++)
         for (int i = 0; i < n; i++) {
             // quad i spans angles i..i+1 from the right side, going up first; the belly is the last ones
             bool under = i >= n - bellyQuads - n / 4 && i < n - n / 4 + bellyQuads / 2 + 1 && sinf(2.0f * T3D_PI * (i + 0.5f) / n) < -0.35f;
-            cols[r * n + i] = under ? ((r & 1) ? belly : (belly & 0xF0F0F0FFu)) : (((i + r) & 1) ? back : back2);
+            cols[r * n + i] = under ? ((r & 1) ? belly : (belly & 0xF0F0F0FFu)) : back;
         }
 }
 
@@ -347,8 +350,9 @@ static void build_seg(ProcMesh *out, bool dark)
     for (int r = 0; r < R; r++)
         ring(&pts[r * N * 3], N, MESH * Z[r], MESH * K[r], MESH * K[r] * 0.92f, 0.0f, 99.0f);
     uint32_t cols[(R - 1) * N];
-    scale_cols(cols, R - 1, N, COL_BACK, proc_rgb(42, 38, 50), COL_BELLY, 2);
+    scale_cols(cols, R - 1, N, COL_BACK, COL_BELLY, 2);
     proc_mesh_begin();
+    proc_mesh_uv(96.0f, 1.0f);     // about 12 scales round the torso
     proc_mesh_loft(pts, R, N, cols, COL_BACK, false);
     uint32_t cr = crystal_col(dark);
     crystal((float[3]){ 0, MESH * 0.88f, 3.0f }, (float[3]){ 0, MESH * 1.95f, -5.0f }, 4.0f, cr);
@@ -366,8 +370,9 @@ static void build_tail_seg(ProcMesh *out, bool dark)
     float pts[R * N * 3];
     for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, MESH * Z[r], MESH * K[r], MESH * K[r] * 0.9f, 0.0f, 99.0f);
     uint32_t cols[(R - 1) * N];
-    scale_cols(cols, R - 1, N, COL_BACK, proc_rgb(42, 38, 50), COL_BELLY, 2);
+    scale_cols(cols, R - 1, N, COL_BACK, COL_BELLY, 2);
     proc_mesh_begin();
+    proc_mesh_uv(80.0f, 1.0f);
     proc_mesh_loft(pts, R, N, cols, COL_BACK, false);
     crystal((float[3]){ 0, MESH * 0.85f, 6.0f }, (float[3]){ 0, MESH * 1.8f, -2.0f }, 3.5f, crystal_col(dark));
     proc_mesh_end(out);
@@ -383,6 +388,7 @@ static void build_limb(void)
     float pts[R * N * 3];
     for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, MESH * Z[r], MESH * K[r], MESH * K[r], 0.0f, 99.0f);
     proc_mesh_begin();
+    proc_mesh_uv(48.0f, 1.0f);
     proc_mesh_loft(pts, R, N, NULL, COL_BACK, false);
     proc_mesh_end(&s.limb);
 }
@@ -391,6 +397,7 @@ static void build_limb(void)
 static void build_foot(void)
 {
     proc_mesh_begin();
+    proc_mesh_uv(12.0f, 1.6f);      // the claws: ridged round and along
     proc_mesh_box((float[3]){ 0, 1.5f, 1.5f }, (float[3]){ 3.4f, 1.6f, 3.6f }, COL_BACK);
     for (int k = -1; k <= 1; k++) {
         float x = k * 2.4f;
@@ -415,10 +422,11 @@ static void build_head(ProcMesh *out, bool dark)
     for (int r = 0; r < R - 1; r++)
         for (int i = 0; i < N; i++) {
             float sn = sinf(2.0f * T3D_PI * (i + 0.5f) / N);
-            cols[r * N + i] = sn < -0.3f ? proc_rgb(70, 30, 34) : (((i + r) & 1) ? COL_BACK : proc_rgb(42, 38, 50));   // the mouth line
+            cols[r * N + i] = sn < -0.3f ? proc_rgb(84, 36, 40) : COL_BACK;   // the mouth line
         }
     uint32_t cr = crystal_col(dark), eye = dark ? proc_rgb(240, 90, 255) : proc_rgb(255, 130, 40);
     proc_mesh_begin();
+    proc_mesh_uv(48.0f, 1.1f);      // smaller scales than the body's; the horns ridged by them
     proc_mesh_loft(pts, R, N, cols, COL_BACK, true);
     for (int sd = -1; sd <= 1; sd += 2) {
         proc_mesh_box((float[3]){ sd * 4.1f, 6.0f, 11.0f }, (float[3]){ 1.6f, 0.9f, 3.2f }, COL_BACK);                     // brow
@@ -447,8 +455,9 @@ static void build_jaw(void)
     for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, Z[r], W[r], H[r], -1.6f, 99.0f);
     uint32_t cols[(R - 1) * N];
     for (int r = 0; r < R - 1; r++)
-        for (int i = 0; i < N; i++) cols[r * N + i] = sinf(2.0f * T3D_PI * (i + 0.5f) / N) > 0.3f ? proc_rgb(110, 40, 44) : COL_BELLY;
+        for (int i = 0; i < N; i++) cols[r * N + i] = sinf(2.0f * T3D_PI * (i + 0.5f) / N) > 0.3f ? proc_rgb(130, 48, 52) : COL_BELLY;
     proc_mesh_begin();
+    proc_mesh_uv(36.0f, 1.1f);
     proc_mesh_loft(pts, R, N, cols, COL_BELLY, true);
     for (int sd = -1; sd <= 1; sd += 2)
         for (int k = 0; k < 4; k++)
@@ -465,6 +474,7 @@ static void build_wing(ProcMesh *out, ProcMesh *memb, bool dark)
     const float root[3] = { 0, 0, 0 }, elbow[3] = { 30, 6, 4 }, wrist[3] = { 58, 10, -6 }, back[3] = { 2, -2, -32 };
     const float tip[5][3] = { { 88, 5, -14 }, { 80, 2, -32 }, { 66, 0, -46 }, { 48, -2, -54 }, { 28, -3, -48 } };
     proc_mesh_begin();
+    proc_mesh_uv(16.0f, 0.9f);      // scales, ridged along the bones
     proc_mesh_spike(root, elbow, 2.6f, 4, COL_BONE);
     proc_mesh_spike(elbow, wrist, 2.1f, 4, COL_BONE);
     proc_mesh_spike(wrist, (float[3]){ wrist[0] + 6, wrist[1] + 3, wrist[2] + 6 }, 1.0f, 3, COL_IVORY);    // wrist claw
@@ -476,7 +486,8 @@ static void build_wing(ProcMesh *out, ProcMesh *memb, bool dark)
     proc_mesh_end(out);
     if (!memb) return;
     proc_mesh_begin();
-    const uint32_t membC = COL_MEMB, memb2 = proc_rgb(52, 36, 58);
+    proc_mesh_uv(0.0f, 0.55f);      // the membrane texture across it, about 1.5 times over a wing
+    const uint32_t membC = COL_MEMB, memb2 = proc_rgb(64, 46, 72);
     for (int i = 0; i < 4; i++) {
         // the edge between two fingertips sags in toward the wrist
         float mid[3];
@@ -498,6 +509,7 @@ static void build_tail_tip(ProcMesh *out, bool dark)
 {
     uint32_t cr = crystal_col(dark);
     proc_mesh_begin();
+    proc_mesh_uv(1.0f, 1.0f);       // (crystals only: texel (2, 2), drawn with the scales)
     crystal((float[3]){ 0, 0, 0 }, (float[3]){ 0, 0, 16.0f }, 3.4f, cr);
     for (int sd = -1; sd <= 1; sd += 2)
         crystal((float[3]){ 0, 0, 3.0f }, (float[3]){ sd * 6.0f, 1.0f, 8.0f }, 1.6f, cr);
@@ -546,6 +558,7 @@ void dragon_boss_free(void)
     gpu_wait();
     ProcMesh *all[] = { &s.seg, &s.segDark, &s.tseg, &s.tsegDark, &s.limb, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.wing, &s.wingDark, &s.wingMemb, &s.tip, &s.tipDark, &s.flame, &s.mOrb, &s.mIce, &s.mCone };
     for (unsigned i = 0; i < sizeof(all) / sizeof(all[0]); i++) proc_mesh_free(all[i]);
+    sprite_free(s.texScales); sprite_free(s.texMemb);
     free_uncached(s.mats);
     memset(&s, 0, sizeof(s));
 }
@@ -576,6 +589,8 @@ void dragon_boss_begin(Boss* boss)
         build_glow(&s.mOrb, proc_rgb(150, 50, 255), proc_rgb(230, 170, 255));
         build_glow(&s.mIce, proc_rgb(110, 170, 255), proc_rgb(225, 240, 255));     // the crystal beam, before the dark
         build_cone();
+        s.texScales = sprite_load("rom:/dragon_boss/scales.i8.sprite");
+        s.texMemb = sprite_load("rom:/dragon_boss/membrane.i8.sprite");
         s.mats = malloc_uncached(sizeof(T3DMat4FP) * MAT_RING * MAT_MAX);
         s.ready = true;
     }
@@ -599,6 +614,9 @@ void dragon_boss_begin(Boss* boss)
     s.groundY = character.pos[1];
     s.alt = DROP_H;
     s.dark = false;
+#ifdef HLE_DRAGON_DARK      // test aid: its dark half from the start (looks, with HLE_TEST_FREEZE_BOSS)
+    s.dark = true;
+#endif
     s.life = 0.0f;
     s.feetReady = false;
     s.neckReach = s.tNeckReach = 1.0f;
@@ -1952,7 +1970,7 @@ static void knee(const float a[3], const float c[3], const float bend[3], float 
 #ifndef HLE_DRAGON_CULL      // test aid: the face culled on the closed parts (0: none)
 #define HLE_DRAGON_CULL T3D_FLAG_CULL_BACK
 #endif
-#define DRAW_OPEN   (T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT)
+#define DRAW_OPEN   (T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT | T3D_FLAG_TEXTURED)
 #define DRAW_CLOSED (DRAW_OPEN | HLE_DRAGON_CULL)
 #ifdef HLE_PROF_DRAGON   // test aid: RSP+RDP time of each part (body, legs, head, wings, glows), each run alone
 static uint32_t s_dp[5], s_dpN;
@@ -1976,7 +1994,7 @@ void dragon_boss_draw(Boss* b)
     rdpq_mode_push();       // restored at the end: the caller's fog and modes stay
     rdpq_set_mode_standard();
     rdpq_mode_zbuf(true, true);
-    rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
+    proc_mesh_tex_begin(s.texScales);
     // Its body is closed meshes wound outward: their far sides culled (the RSP's triangle setup is
     // most of this boss's cost). The wings stay two-sided
     t3d_state_set_drawflags(DRAW_CLOSED);
@@ -2019,7 +2037,7 @@ void dragon_boss_draw(Boss* b)
         static const float Y[3] = { 0, 1, 0 };
         float fx[3]; cross3(fx, Y, s.F);
         put(&s.mFoot, s.foot[k], fx, Y, s.F, 1.0f, 1.0f, 1.0f);     // the foot, flat, facing forward
-        if (hot) rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
+        if (hot) rdpq_mode_combiner(RDPQ_COMBINER_TEX_SHADE);
     }
 
 #ifdef HLE_PROF_DRAGON
@@ -2035,24 +2053,28 @@ void dragon_boss_draw(Boss* b)
 #ifdef HLE_PROF_DRAGON
     DPROF(2);
 #endif
-    // Four wings: the great pair at the shoulders, a smaller pair behind
+    // Four wings: the great pair at the shoulders, a smaller pair behind. Their bones first (the
+    // scales), then the membranes (their own texture: one upload)
     const ProcMesh *wing = s.dark ? &s.wingDark : &s.wing;
-    for (int pair = 0; pair < 2; pair++)
-        for (int sd = -1; sd <= 1; sd += 2) {
-            float th = s.wingRaise + (pair ? -0.2f : 0.0f), c = cosf(th), sn = sinf(th), x[3], y[3], root[3];
-            for (int m = 0; m < 3; m++) { x[m] = sd * s.R[m] * c + UP[m] * sn; y[m] = -sd * s.R[m] * sn + UP[m] * c; }
-            mad3(root, s.chest, UP, pair ? 6.0f : 10.0f);
-            mad3(root, root, s.R, sd * (pair ? 7.0f : 9.0f));
-            mad3(root, root, s.F, pair ? -16.0f : 2.0f);
-            float k = pair ? 0.6f : 1.0f;
-            // a left wing is the right one mirrored: its triangles turn the other way
-            float xy[3]; cross3(xy, x, y);
-            bool mirrored = xy[0] * s.F[0] + xy[1] * s.F[1] + xy[2] * s.F[2] < 0.0f;
-            t3d_state_set_drawflags(HLE_DRAGON_CULL ? DRAW_OPEN | (mirrored ? T3D_FLAG_CULL_FRONT : T3D_FLAG_CULL_BACK) : DRAW_OPEN);
-            put(wing, root, x, y, s.F, k * s.wingSpan, k, k);
-            t3d_state_set_drawflags(DRAW_OPEN);
-            put(&s.wingMemb, root, x, y, s.F, k * s.wingSpan, k, k);
-        }
+    float wx[4][3], wy[4][3], wroot[4][3], wk[4];
+    for (int w = 0; w < 4; w++) {
+        int pair = w >> 1;
+        float sd = (w & 1) ? 1.0f : -1.0f;
+        float th = s.wingRaise + (pair ? -0.2f : 0.0f), c = cosf(th), sn = sinf(th);
+        for (int m = 0; m < 3; m++) { wx[w][m] = sd * s.R[m] * c + UP[m] * sn; wy[w][m] = -sd * s.R[m] * sn + UP[m] * c; }
+        mad3(wroot[w], s.chest, UP, pair ? 6.0f : 10.0f);
+        mad3(wroot[w], wroot[w], s.R, sd * (pair ? 7.0f : 9.0f));
+        mad3(wroot[w], wroot[w], s.F, pair ? -16.0f : 2.0f);
+        wk[w] = pair ? 0.6f : 1.0f;
+        // a left wing is the right one mirrored: its triangles turn the other way
+        float xy[3]; cross3(xy, wx[w], wy[w]);
+        bool mirrored = xy[0] * s.F[0] + xy[1] * s.F[1] + xy[2] * s.F[2] < 0.0f;
+        t3d_state_set_drawflags(HLE_DRAGON_CULL ? DRAW_OPEN | (mirrored ? T3D_FLAG_CULL_FRONT : T3D_FLAG_CULL_BACK) : DRAW_OPEN);
+        put(wing, wroot[w], wx[w], wy[w], s.F, wk[w] * s.wingSpan, wk[w], wk[w]);
+    }
+    t3d_state_set_drawflags(DRAW_OPEN);
+    rdpq_sprite_upload(TILE0, s.texMemb, &(rdpq_texparms_t){ .s.repeats = REPEAT_INFINITE, .t.repeats = REPEAT_INFINITE });
+    for (int w = 0; w < 4; w++) put(&s.wingMemb, wroot[w], wx[w], wy[w], s.F, wk[w] * s.wingSpan, wk[w], wk[w]);
 
 #ifdef HLE_PROF_DRAGON
     DPROF(3);
@@ -2060,6 +2082,7 @@ void dragon_boss_draw(Boss* b)
     // Glows: fire, dark orbs, the beam, the light in its mouth. Alpha-blended, not
     // additive: the real RDP wraps an overflowing sum (overlapping flames turned rainbow)
     rdpq_sync_pipe();
+    t3d_state_set_drawflags(DRAW_OPEN & ~T3D_FLAG_TEXTURED);
     rdpq_mode_zbuf(true, false);
     rdpq_mode_combiner(RDPQ_COMBINER1((0, 0, 0, SHADE), (0, 0, 0, PRIM)));
     rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);

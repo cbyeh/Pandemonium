@@ -19,6 +19,10 @@ typedef struct {
 } ProcMesh;
 
 void proc_mesh_begin(void);
+// UVs for what follows (pixels; 0, 0: none): `around` across a whole tube, spike or sphere,
+// `along` per unit along it (and per unit across a flat face, mapped on its two flattest axes).
+// Unlit faces (glows, crystals) all sample texel (2, 2): a texture keeps its corner bright for them
+void proc_mesh_uv(float around, float along);
 // Shaded by how the face turns to the light; `unlit` keeps the colour as is (glows).
 void proc_mesh_tri(const float a[3], const float b[3], const float c[3], uint32_t rgba, bool unlit);
 void proc_mesh_quad(const float a[3], const float b[3], const float c[3], const float d[3], uint32_t rgba, bool unlit);
@@ -49,6 +53,10 @@ void proc_mesh_draw(const ProcMesh *m);
 void proc_mesh_draw_glow(const ProcMesh *m);
 // Either, with the vertex colours multiplied by tint
 void proc_mesh_draw_tinted(const ProcMesh *m, bool glow, color_t tint);
+// Opaque, the vertex colours multiplied by `tex` (repeating, filtered) and tint
+void proc_mesh_draw_textured(const ProcMesh *m, sprite_t *tex, color_t tint);
+// The texture and combiner for textured proc meshes drawn by hand (T3D_FLAG_TEXTURED)
+void proc_mesh_tex_begin(sprite_t *tex);
 void proc_mesh_free(ProcMesh *m);
 
 static inline uint32_t proc_rgb(int r, int g, int b) { return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xFF; }
