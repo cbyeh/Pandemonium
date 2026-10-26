@@ -3,7 +3,7 @@
 <img width="1000" alt="Pandemonium cover art" src="metadata/cover.jpg">
 
 ## Story
-A century long darkness has been cast on the land by the Demon King. The king is guarded by knights, tormented and broken. You are one of them, cast into setvitude, forced to bend to the kings will. Pandemonium is an original dark-fantasy souls game inspired by Elden Ring.
+A century long darkness has been cast on the land by the Demon King. The king is guarded by knights, tormented and broken. You are one of them, cast into servitude, forced to bend to the king's will. Pandemonium is an original dark-fantasy souls game inspired by Elden Ring.
 
 ## Controls
 Stick: Move
@@ -26,18 +26,17 @@ Hold Z trigger + left/right on Cpad: Change z target
 **Download:** [Releases](https://github.com/cbyeh/Pandemonium/releases). `Pandemonium.z64` for hardware and accurate emulators (Ares, flashcarts), `The.Pandemonium.z64` for Delta and Mupen64Plus.
 
 ### Skills (D-pad)
-Toggle in **Settings > Skills** (title screen). Bosses have double health with skills on. In the Tower the setting doesn't apply: skills are learned during the climb.
+Toggle in **Settings > Skills** (title screen). In the Tower the setting doesn't apply: skills are learned during the climb.
 
 | Moon Blade Dance (D-Up) | Halfmoon Slash (D-Right) | Crescent Cleave (D-Down) |
 |---|---|---|
 | <img src="docs/media/skill_moon_blade_dance.gif" width="320"> | <img src="docs/media/skill_halfmoon_slash.gif" width="320"> | <img src="docs/media/skill_crescent_cleave.gif" width="320"> |
 
 ### Skins
-**Settings > Skin**: the Knight, the Umber Cloak, Wolf Knight, Black Swordsman and Scarlet Valkyrie from the start. Three more unlock:
-- **Crimson Cloak:** beat the story (the Guardian, then Guardian Unbound).
+**Settings > Skin** lists every skin: the Knight, the Umber Cloak, Wolf Knight, Black Swordsman and Scarlet Valkyrie from the start. Three more unlock:
+- **Crimson Cloak:** beat the story and all three Bonus bosses.
 - **Teal Cloak:** reach floor 10 of the Tower (two full circles).
-- **Nightfarer:** buy him at **Tower > Shrine** for 80 Embers.
- up.
+- **Nightfarer:** buy him at **Tower > Shrine** for 450 Embers.
 
 <img src="docs/media/skins.png" width="800">
 
@@ -46,10 +45,11 @@ Toggle in **Settings > Skills** (title screen). Bosses have double health with s
 - **Circles:** each one is five floors. The Guardian comes first, then the three Bonus bosses in a random order, and Guardian Unbound last.
 - **Difficulty:** the climb starts well below the story fights, and the bosses grow stronger every circle.
 - **Your start:** you begin as the original game did, with 3 potions and the sword only.
-- **Between floors:** you get a third of your health and a potion back, and you choose one of three **Boons**. One of the three is always a skill card: learn a D-pad skill, or upgrade one you've learned.
+- **Between floors:** a beaten boss gives a potion back (no health), and you choose one of three cards, or Skip for 5 Embers. The first is a skill card while any are left: learn a D-pad skill, or upgrade one you've learned.
+- **Pacts:** now and then a card is a Pact, a blessing with a curse that stacks without limit; once the boons run out, every card is one.
 - **Boons** come in Common, Rare and Legendary (bronze, blue and gold cards). Legendaries get likelier every circle. Some change how you play: Phantom Step and Riposte reward perfect dodges, Crushing Blows and Executioner reward staggers, Storm Blade calls lightning on every fourth hit, Blood Pact trades potion strength for damage.
 - **Nights:** from the second circle, each circle draws a night: Blood Moon, Iron Night or Starfall. Each is a trade-off that pays more Embers, announced before the circle starts.
-- **Relics:** clearing a circle finds a relic with two random effects. You keep three; choose one to carry at **Tower > Shrine**.
+- **Relics:** buy them at **Tower > Shrine > Relics** (200 Embers each) and equip one to carry into the climb.
 - **Embers:** cleared floors earn Embers, kept when you die. Spend them at **Tower > Shrine** on permanent upgrades, which only apply in the Tower, and on the Nightfarer skin.
 
 Each save slot keeps its best floor, Embers, relics, skin and settings (a fresh cart uses Save 1). **Load Game** switches to a slot without starting a fight, and the game reopens on the slot used last. It shows a slot's progress: story clear time, best Tower floor, Bonus bosses beaten and skins earned (of the three that unlock).
@@ -72,8 +72,8 @@ Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on th
 The ending now plays live in the engine.
 
 ## 2025 N64brew Game Jam - Pandemonium
-- December 1st - Feburary 1st
-- Theme Annonced on December 8th
+- December 1st - February 1st
+- Theme Announced on December 8th
 - Theme: Repair (or synonym)
 - We are going for a fully fleshed out boss battle. Aesthetic and mechanics of Elden Ring. Weaving in the theme of repair into the boss. 
 
@@ -91,7 +91,7 @@ The ending now plays live in the engine.
 - Assets & Music from scratch for the jam. (or heavily modified)
 - Scrolling textures on a skinned mesh.
 
-## Jam Gam Requirements (simplified version)
+## Jam Game Requirements (simplified version)
 - 1 project submission only
 - Must work on PAL/NTSC system. Optionally tested on emulator
 - Max 5 members to a team
@@ -142,14 +142,11 @@ Deploy to a [SummerCart64](https://github.com/Polprzewodnikowy/SummerCart64) ove
 - `SC64_SD_DEST` — destination path on SD for `upload-sd` (default: `Games/Homebrew/Pandemonium.z64`).
 
 ## Creating a release (GitHub)
-- **Bump version**: update `VERSION`, commit, and push.
-- **Build the versioned ROM**:
-  - `make clean && make versioned`
-  - Produces: `Pandemonium-$(cat VERSION).z64`
-- **Tag the release**:
-  - `git tag -a "v$(cat VERSION)" -m "v$(cat VERSION)"`
-  - `git push && git push --tags`
-- **Publish on GitHub**: GitHub → *Releases* → *Draft a new release* → select tag `vX.Y.Z` → attach `Pandemonium-X.Y.Z.z64` → *Publish release*.
+- **Version**: `VERSION` holds it (1.0); the tag is `v$(cat VERSION)`.
+- **Build both ROMs** (name the target: a plain `make` can leave an old ROM behind):
+  - `make pandemonium.z64` (hardware, accurate emulators)
+  - `make pandemonium-hle.z64 HLE=1` (Delta, Mupen64Plus)
+- **Publish**: attach them as `Pandemonium.z64` and `The Pandemonium.z64`, e.g. `gh release create v1.0 Pandemonium.z64 "The Pandemonium.z64"`.
 
 ## Team Members 
 BoxingBruin:
