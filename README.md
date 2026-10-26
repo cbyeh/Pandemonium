@@ -82,7 +82,6 @@ The ending now plays live in the engine.
 - A character controller with many different animation states, with lock-on mechanism.
 - A weapon collision system that can use a mix of different types of colliders.
 - A real-time cinematic cutscene.
-- Another cutscene that plays as a video.
 - Uses 32 bit framebuffer for cleaner graphics.
 - A distance-based SFX system.
 - Weapon streaks & a few different feedback systems.
