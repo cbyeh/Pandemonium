@@ -982,8 +982,8 @@ static void choose(Boss *b, float dist)
         debugf("[sun] eclipse\n");
 #endif
         return; }
-    // Kept close under it (3 s against its body since the last): the flare
-    if (s.cdFlare <= 0.0f && s.hugT >= 3.0f && dist < 30.0f) { s.cdFlare = s.unshackled ? 12.0f : 14.0f; s.hugT = 0.0f; enter(SB_FLARE);
+    // Kept close under it (5 s against its body since the last): the flare, a punish for camping there
+    if (s.cdFlare <= 0.0f && s.hugT >= 5.0f && dist < 30.0f) { s.cdFlare = s.unshackled ? 16.0f : 18.0f; s.hugT = 0.0f; enter(SB_FLARE);
 #ifdef HLE_AUTOPLAY
         debugf("[sun] flare at %.0f\n", (double)dist);
 #endif

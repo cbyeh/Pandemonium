@@ -133,6 +133,16 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
     }
 #endif
+#ifdef HLE_LOG_JUMPS     // test aid: any frame the boss moves further than it could in one step (a teleport)
+    {
+        Boss *bb = boss_get_instance(); static float last[3]; static bool have;
+        if (bb && bb->mode == BOSS_MODE_COMBAT) {
+            float dx = bb->pos[0] - last[0], dy = bb->pos[1] - last[1], dz = bb->pos[2] - last[2], d = sqrtf(dx * dx + dy * dy + dz * dz);
+            if (have && d > 8.0f) debugf("[jump] boss moved %.1f in one frame (to %.0f %.0f %.0f)\n", (double)d, (double)bb->pos[0], (double)bb->pos[1], (double)bb->pos[2]);
+            last[0] = bb->pos[0]; last[1] = bb->pos[1]; last[2] = bb->pos[2]; have = true;
+        } else have = false;
+    }
+#endif
 #ifdef HLE_LOG_RELIC    // test aid: the save's relics after boot (does the Shrine's choice survive a reboot?)
     if (frame == 600) { extern int tower_relic_equipped(void); extern bool tower_relic_owned(int); debugf("[relic] after boot: equipped %d, owned%s%s%s%s%s\n", tower_relic_equipped(),
         tower_relic_owned(0) ? " 0" : "", tower_relic_owned(1) ? " 1" : "", tower_relic_owned(2) ? " 2" : "", tower_relic_owned(3) ? " 3" : "", tower_relic_owned(4) ? " 4" : ""); }
