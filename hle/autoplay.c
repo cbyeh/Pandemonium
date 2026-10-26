@@ -775,7 +775,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             return;
         }
         static const char *const music[] = { "rom:/audio/music/shadowborn_pursuit-22k.wav64", "rom:/audio/music/shackled_sun_metal-22k.wav64" };
-        const int nsfx = SCENE1_SFX_CHAIN2 - SCENE1_SFX_DRAGON_ROAR + 1, total = nsfx + 2;
+        const int nsfx = SCENE1_SFX_SWING_BOSS - SCENE1_SFX_DRAGON_ROAR + 1, total = nsfx + 2;
         int t = frame - start;
         // One at a time, 3.5 s apart. A sound counts as silent only if three tries in a row
         // start no channel (another sound ending in the same frame can hide one try)
@@ -1096,6 +1096,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_DUMMY_MOVE   // keep running in a wide circle (the cloth in motion)
             in->stick_x = (int)(70 * cosf(tm * 0.8f)); in->stick_y = (int)(70 * sinf(tm * 0.8f));
 #endif
+#ifdef HLE_DUMMY_CENTER   // held in the middle of the hall, facing the boss (moves that travel, away from the walls)
+            if (boss) { character.pos[0] = 0.0f; character.pos[2] = 0.0f; }
+#endif
 #ifdef HLE_DUMMY_PIN      // held where it started: a blow's knockback can't shove it out past a wall (Shadowborne then stood stuck at the wall)
             { static float pin[2]; static bool set; if (!set) { pin[0] = character.pos[0]; pin[1] = character.pos[2]; set = true; }
               character.pos[0] = pin[0]; character.pos[2] = pin[1]; }
@@ -1261,6 +1264,25 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                     debugf("[strike] boss %d: %d hits, %.0f of %.0f health in 60 s\n", boss->phaseIndex, hits, (double)lost, (double)boss->maxHealth);
                     boss_apply_damage(boss, boss->maxHealth * 2.0f); phase = 4; t0 = frame;
                 }
+            }
+#elif defined(HLE_DRAGON_FACE)
+            // Its head up close: in front of the snout (level, below, above), at its side (the
+            // jaw against the neck), from the front at 3/4 and from behind it; 40 frames a view
+            {
+                extern void dragon_boss_hle_head(float p[3], float z[3], float y[3]);
+                cameraLockOnActive = false;
+                if (t == 1) { character.pos[0] = boss->pos[0] - 260.0f; character.pos[2] = boss->pos[2] + 200.0f; }
+                float hp[3], hz[3], hy[3];
+                dragon_boss_hle_head(hp, hz, hy);
+                float hx[3] = { hy[1] * hz[2] - hy[2] * hz[1], hy[2] * hz[0] - hy[0] * hz[2], hy[0] * hz[1] - hy[1] * hz[0] };
+                static const float FZ[6] = { 60, 55, 55, 12, 45, -28 }, FY[6] = { 4, -22, 26, -2, 8, 30 }, FX[6] = { 0, 0, 0, 45, 32, 6 };
+                int v = (t / 40) % 6;      // (5: from behind and above, onto the back of the skull)
+                float c[3], g[3];
+                for (int m = 0; m < 3; m++) { c[m] = hp[m] + hz[m] * FZ[v] + hy[m] * FY[v] + hx[m] * FX[v]; g[m] = hp[m] + hz[m] * (v == 3 ? 4.0f : 12.0f); }
+                customCamPos = (T3DVec3){{ c[0], c[1], c[2] }};
+                customCamTarget = (T3DVec3){{ g[0], g[1], g[2] }};
+                camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+                if (t == 1200) { boss_apply_damage(boss, boss->maxHealth * 2.0f); phase = 4; t0 = frame; }
             }
 #elif defined(HLE_DRAGON_SHOWCASE)
             // Model check: the camera orbits Shadowborne (front, 3/4, side, back, then the head

@@ -23,6 +23,10 @@ void proc_mesh_begin(void);
 // `along` per unit along it (and per unit across a flat face, mapped on its two flattest axes).
 // Unlit faces (glows, crystals) all sample texel (2, 2): a texture keeps its corner bright for them
 void proc_mesh_uv(float around, float along);
+// Shifts the UVs of the smooth faces that follow (pixels): copies of a mesh that don't repeat one another
+void proc_mesh_uv_shift(float du, float dv);
+// Loft quads of this colour sample the flat texel (untextured: a mouth's flesh in a scaled head)
+void proc_mesh_uv_flat_color(uint32_t rgba);
 // Shaded by how the face turns to the light; `unlit` keeps the colour as is (glows).
 void proc_mesh_tri(const float a[3], const float b[3], const float c[3], uint32_t rgba, bool unlit);
 void proc_mesh_quad(const float a[3], const float b[3], const float c[3], const float d[3], uint32_t rgba, bool unlit);
@@ -32,6 +36,8 @@ void proc_mesh_tri_smooth(const float a[3], const float b[3], const float c[3],
 // A smooth tube through `rings` rings of `sides` points (pts[ring][side][xyz]); `cols` gives
 // each quad's colour (ring-major, NULL: all `rgba`); `capEnd` closes the last ring with a fan.
 void proc_mesh_loft(const float *pts, int rings, int sides, const uint32_t *cols, uint32_t rgba, bool capEnd);
+// The same, a colour per point (ring-major): smooth gradients, the corners still shared
+void proc_mesh_loft_vcol(const float *pts, int rings, int sides, const uint32_t *vcols, bool capEnd);
 void proc_mesh_box(const float center[3], const float half[3], uint32_t rgba);
 // Cone from a ring around `base` (perpendicular to base->tip) to `tip`.
 void proc_mesh_spike(const float base[3], const float tip[3], float radius, int sides, uint32_t rgba);

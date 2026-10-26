@@ -34,6 +34,12 @@ typedef enum Scene1Sfx
     SCENE1_SFX_ROCK_BLAST,
     SCENE1_SFX_CHAIN1,
     SCENE1_SFX_CHAIN2,
+    // The Bonus bosses' copies of the knight's skill sounds, at the Guardian's level (hostile/)
+    SCENE1_SFX_SPELL_WAVE_BOSS,
+    SCENE1_SFX_SPELL_CAST_BOSS,
+    SCENE1_SFX_BLADE_SLASH_BOSS,
+    SCENE1_SFX_HEAL_BOSS,
+    SCENE1_SFX_SWING_BOSS,      // the knight's swing, for the Fallen Warrior
 
     // Character SFX
     SCENE1_SFX_CHAR_SWING1,
@@ -61,6 +67,12 @@ typedef enum Scene1Sfx
     SCENE1_SFX_WAR_CRY,         // the grunt, deeper, with an echo
 
     SCENE1_SFX_COUNT
-} Scene1Sfx; // TODO: Change this from scene to a entity specific later.
+} Scene1Sfx;
+
+// Every Bonus boss sound plays at this (times its own mix): the Guardian's level at a fight's
+// usual range. The Guardian's sounds fall off with distance (0.72 near, ~0.6 at 40 away); the
+// Bonus bosses' play as if near (their bodies are big), and their spell, fire, beam and chain
+// sounds are the hostile/ copies (tools/boss_sfx_levels.py), as loud as the Guardian's own
+#define BONUS_SFX_VOL 0.85f // TODO: Change this from scene to a entity specific later.
 
 #endif

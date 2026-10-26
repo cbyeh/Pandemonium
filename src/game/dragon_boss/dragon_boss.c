@@ -38,11 +38,14 @@
 #define MAT_RING 3              // frames the RSP may still be reading
 
 // A little brighter than they read: the scale and membrane textures multiply them (mean ~0.75)
+#define SEG_VARIANTS 2          // copies of the body and tail segments, alternating down the body (each ~6 KB)
 #define COL_BACK   proc_rgb(58, 52, 68)
 #define COL_BELLY  proc_rgb(104, 92, 98)
 #define COL_BONE   proc_rgb(150, 140, 146)
 #define COL_MEMB   proc_rgb(52, 42, 62)
 #define COL_IVORY  proc_rgb(232, 226, 210)
+#define MOUTH_TOP  proc_rgb(84, 36, 40)     // the mouth's flesh (untextured)
+#define MOUTH_JAW  proc_rgb(130, 48, 52)
 
 typedef enum { DG_INTRO, DG_IDLE, DG_CLAW, DG_BITE, DG_TAIL, DG_BREATH, DG_CHARGE, DG_FLY,
                DG_ROAR, DG_NOVA, DG_ORBS, DG_BEAM, DG_DEAD = 13, DG_WHIP, DG_DOWN,
@@ -56,7 +59,7 @@ typedef struct { float p[3], v[3]; bool on; } Ball;
 
 static struct {
     bool ready;
-    ProcMesh seg, segDark, tseg, tsegDark, limb, mFoot, mHead, mHeadDark, mJaw, wing, wingDark, wingMemb, tip, tipDark, flame, mOrb, mIce, mCone;
+    ProcMesh seg[SEG_VARIANTS], segDark[SEG_VARIANTS], tseg[SEG_VARIANTS], tsegDark[SEG_VARIANTS], limb, mThroat, mFoot, mHead, mHeadDark, mJaw, wing, wingDark, wingMemb, tip, tipDark, flame, mOrb, mIce, mCone;
     sprite_t *texScales, *texMemb;      // tools/boss_textures.py
     T3DMat4FP *mats;
     int matRing, mi;
@@ -156,6 +159,9 @@ static void hb_move_end(void);
 #endif
 static void enter(DgState st)
 {
+#ifdef HLE_LOG_MOVES     // test aid: each move as it starts (the hits after it are its: [hit])
+    debugf("[move] %d\n", st);
+#endif
 #ifdef HLE_LOG_HURTBOX
     hb_move_end();
 #endif
@@ -262,18 +268,18 @@ static void hb_move_end(void)     // the move's closest pass of each blow it cou
 #define HB_TOUCH(src, gap) ((void)sizeof(gap))
 #endif
 
-static void sfx_boom(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH2, 1.0f, 0.0f); }
-static void sfx_swing(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SWING3, 1.0f, 0.0f); }
-static void sfx_lunge(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_LUNGE, 1.0f, 0.0f); }
+static void sfx(int id, float vol) { audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, 0.0f); }
+static void sfx_boom(void) { sfx(SCENE1_SFX_BOSS_SMASH2, 1.0f); }
+static void sfx_swing(void) { sfx(SCENE1_SFX_BOSS_SWING3, 1.0f); }
+static void sfx_lunge(void) { sfx(SCENE1_SFX_BOSS_LUNGE, 1.0f); }
 static void sfx_roar(void)
 {
 #ifdef HLE_AUTOPLAY
     debugf("[dragon] roar\n");
 #endif
-    audio_play_scene_sfx_dist(SCENE1_SFX_DRAGON_ROAR, 1.0f, 0.0f);
+    sfx(SCENE1_SFX_DRAGON_ROAR, 1.0f);
 }
-static void sfx(int id, float vol) { audio_play_scene_sfx_dist(id, vol, 0.0f); }
-static void sfx_step(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_STEP1, 0.6f, 0.0f); }
+static void sfx_step(void) { sfx(SCENE1_SFX_BOSS_STEP1, 0.8f); }
 
 // A fire cone (DG_CONE): from a point on the floor out along `yaw`, CONE_L long, CONE_HALF each side;
 // it rolls out over CONE_GROW, burns CONE_HOLD, then dies down over CONE_FADE (harmless). Its height
@@ -326,21 +332,30 @@ static void ring(float *out, int n, float z, float w, float h, float yc, float f
     }
 }
 
-// Colours round a ring: the back one colour (its scales are the texture's, so neighbouring quads
-// share their corners), the underside paler, banded in plates
-static void scale_cols(uint32_t *cols, int rings, int n, uint32_t back, uint32_t belly, int bellyQuads)
+// A colour for each point of a ring of `n` (from the right side, going up first): the spine dark
+// and cold, the flanks the back's colour, warming to the pale belly (the scales and plates are
+// the texture's). A closed ring (a dome's tip) all the back's, so its point stays one vertex
+static void scale_vcols(uint32_t *out, const float *K, int rings, int n)
 {
+    static const int SPINE[3] = { 40, 36, 58 }, BACK[3] = { 58, 52, 68 }, BELLY[3] = { 112, 98, 100 };
     for (int r = 0; r < rings; r++)
         for (int i = 0; i < n; i++) {
-            // quad i spans angles i..i+1 from the right side, going up first; the belly is the last ones
-            bool under = i >= n - bellyQuads - n / 4 && i < n - n / 4 + bellyQuads / 2 + 1 && sinf(2.0f * T3D_PI * (i + 0.5f) / n) < -0.35f;
-            cols[r * n + i] = under ? ((r & 1) ? belly : (belly & 0xF0F0F0FFu)) : back;
+            float sn = K[r] > 0.0f ? sinf(2.0f * T3D_PI * i / n) : 0.0f;
+            float up = clamp01((sn - 0.45f) / 0.55f), down = smooth01((-sn - 0.05f) / 0.75f);
+            int c[3];
+            for (int m = 0; m < 3; m++) c[m] = (int)(BACK[m] + (SPINE[m] - BACK[m]) * up + (BELLY[m] - BACK[m]) * down);
+            out[r * n + i] = proc_rgb(c[0], c[1], c[2]);
         }
 }
 
+// The scale map (tools/boss_textures.py) wraps once round a tube: 128 pixels round it (and
+// repeats every 32 down it). The UV densities below keep its texels about square on each mesh
+#define SCALES_AROUND 128.0f
+
 // A body or neck segment along +z: a smooth ten-sided tube tapering to 0.82, scaled back,
-// banded belly plates, crystals down the spine and a ridge of small ones on each flank
-static void build_seg(ProcMesh *out, bool dark)
+// belly plates, crystals down the spine and a ridge of small ones on each flank. `variant`
+// starts it further down the scale map, so the segments in a row don't repeat one another
+static void build_seg(ProcMesh *out, bool dark, int variant)
 {
     // Starts with a closed dome behind z = 0: where the chain of segments bends, the next one's
     // dome fills the gap on the outside of the bend (an open tube showed the hall through it)
@@ -349,11 +364,12 @@ static void build_seg(ProcMesh *out, bool dark)
     float pts[R * N * 3];
     for (int r = 0; r < R; r++)
         ring(&pts[r * N * 3], N, MESH * Z[r], MESH * K[r], MESH * K[r] * 0.92f, 0.0f, 99.0f);
-    uint32_t cols[(R - 1) * N];
-    scale_cols(cols, R - 1, N, COL_BACK, COL_BELLY, 2);
+    uint32_t vcols[R * N];
+    scale_vcols(vcols, K, R, N);
     proc_mesh_begin();
-    proc_mesh_uv(96.0f, 1.0f);     // about 12 scales round the torso
-    proc_mesh_loft(pts, R, N, cols, COL_BACK, false);
+    proc_mesh_uv(SCALES_AROUND, 1.7f);     // about 13 flank scales round the torso
+    proc_mesh_uv_shift(0.0f, 16.0f * variant);     // half the map's repeat further down
+    proc_mesh_loft_vcol(pts, R, N, vcols, false);
     uint32_t cr = crystal_col(dark);
     crystal((float[3]){ 0, MESH * 0.88f, 3.0f }, (float[3]){ 0, MESH * 1.95f, -5.0f }, 4.0f, cr);
     crystal((float[3]){ 0, MESH * 0.8f, 11.0f }, (float[3]){ 0, MESH * 1.55f, 6.0f }, 3.0f, cr);
@@ -363,23 +379,24 @@ static void build_seg(ProcMesh *out, bool dark)
 }
 
 // A tail segment: the same, lighter (eight sides, one crystal)
-static void build_tail_seg(ProcMesh *out, bool dark)
+static void build_tail_seg(ProcMesh *out, bool dark, int variant)
 {
     enum { N = 8, R = 4 };      // with a closed dome at its start, as the body's
     static const float Z[R] = { -0.3f, -0.18f, 0.0f, 1.0f }, K[R] = { 0.0f, 0.75f, 1.0f, 0.82f };
     float pts[R * N * 3];
     for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, MESH * Z[r], MESH * K[r], MESH * K[r] * 0.9f, 0.0f, 99.0f);
-    uint32_t cols[(R - 1) * N];
-    scale_cols(cols, R - 1, N, COL_BACK, COL_BELLY, 2);
+    uint32_t vcols[R * N];
+    scale_vcols(vcols, K, R, N);
     proc_mesh_begin();
-    proc_mesh_uv(80.0f, 1.0f);
-    proc_mesh_loft(pts, R, N, cols, COL_BACK, false);
+    proc_mesh_uv(SCALES_AROUND, 2.0f);
+    proc_mesh_uv_shift(0.0f, 16.0f * variant);
+    proc_mesh_loft_vcol(pts, R, N, vcols, false);
     crystal((float[3]){ 0, MESH * 0.85f, 6.0f }, (float[3]){ 0, MESH * 1.8f, -2.0f }, 3.5f, crystal_col(dark));
     proc_mesh_end(out);
 }
 
 // A leg bone along +z: a smooth six-sided tube
-static void build_limb(void)
+static void build_limb(ProcMesh *out, uint32_t col)
 {
     // A leg bone: rounded and closed at both ends, the domes reaching past the joints, so the
     // upper and lower bones overlap at the knee like a ball joint (open tubes showed through)
@@ -388,17 +405,22 @@ static void build_limb(void)
     float pts[R * N * 3];
     for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, MESH * Z[r], MESH * K[r], MESH * K[r], 0.0f, 99.0f);
     proc_mesh_begin();
-    proc_mesh_uv(48.0f, 1.0f);
-    proc_mesh_loft(pts, R, N, NULL, COL_BACK, false);
-    proc_mesh_end(&s.limb);
+    proc_mesh_uv(SCALES_AROUND, 3.2f);
+    proc_mesh_loft(pts, R, N, NULL, col, false);
+    proc_mesh_end(out);
 }
+
+// Horn, bone and claw (spikes) take the belly plates' band of the scale map, along their length:
+// growth rings, not scales
+static void bone_uv(float along) { proc_mesh_uv(8.0f, along); proc_mesh_uv_shift(92.0f, 0.0f); }
 
 // A foot, +z forward, sole on y = 0: a pad and three hooked claws
 static void build_foot(void)
 {
     proc_mesh_begin();
-    proc_mesh_uv(12.0f, 1.6f);      // the claws: ridged round and along
+    proc_mesh_uv(12.0f, 1.6f);
     proc_mesh_box((float[3]){ 0, 1.5f, 1.5f }, (float[3]){ 3.4f, 1.6f, 3.6f }, COL_BACK);
+    bone_uv(2.4f);
     for (int k = -1; k <= 1; k++) {
         float x = k * 2.4f;
         proc_mesh_spike((float[3]){ x, 1.6f, 4.6f }, (float[3]){ x * 1.2f, 0.0f, 8.2f }, 1.0f, 3, COL_IVORY);
@@ -408,33 +430,38 @@ static void build_foot(void)
 }
 
 // The head, +z forward from the top of the neck: a lofted skull tapering to the snout, a flat
-// jaw line, brows over glowing eyes, swept horns, cheek spikes, nostrils, the upper teeth
+// jaw line, brows over glowing eyes, swept horns, cheek spikes, nostrils, the upper teeth. Closed
+// behind (a point at its back): the neck doesn't fill it, and a head tipped toward the camera
+// showed the hall through its open back
 static void build_head(ProcMesh *out, bool dark)
 {
-    enum { N = 8, R = 8 };
-    static const float Z[R] = { -2, 2, 7, 11, 15, 19, 23, 26.5f };
-    static const float W[R] = { 5.6f, 6.8f, 6.7f, 5.7f, 4.7f, 4.0f, 3.4f, 1.9f };
-    static const float H[R] = { 5.0f, 5.6f, 5.4f, 4.2f, 3.3f, 2.8f, 2.3f, 1.3f };
-    static const float Y[R] = { 2.0f, 2.6f, 2.9f, 2.4f, 1.6f, 1.0f, 0.6f, 0.3f };
+    enum { N = 8, R = 9 };
+    static const float Z[R] = { -3.6f, -2, 2, 7, 11, 15, 19, 23, 26.5f };
+    static const float W[R] = { 0.0f, 5.6f, 6.8f, 6.7f, 5.7f, 4.7f, 4.0f, 3.4f, 1.9f };
+    static const float H[R] = { 0.0f, 5.0f, 5.6f, 5.4f, 4.2f, 3.3f, 2.8f, 2.3f, 1.3f };
+    static const float Y[R] = { 2.0f, 2.0f, 2.6f, 2.9f, 2.4f, 1.6f, 1.0f, 0.6f, 0.3f };
     float pts[R * N * 3];
     for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, Z[r], W[r], H[r], Y[r], H[r] * 0.45f);
     uint32_t cols[(R - 1) * N];
     for (int r = 0; r < R - 1; r++)
         for (int i = 0; i < N; i++) {
             float sn = sinf(2.0f * T3D_PI * (i + 0.5f) / N);
-            cols[r * N + i] = sn < -0.3f ? proc_rgb(84, 36, 40) : COL_BACK;   // the mouth line
+            cols[r * N + i] = sn < -0.3f && r > 0 ? MOUTH_TOP : COL_BACK;   // the mouth line
         }
     uint32_t cr = crystal_col(dark), eye = dark ? proc_rgb(240, 90, 255) : proc_rgb(255, 130, 40);
     proc_mesh_begin();
-    proc_mesh_uv(48.0f, 1.1f);      // smaller scales than the body's; the horns ridged by them
+    proc_mesh_uv(SCALES_AROUND, 3.4f);     // smaller scales than the body's; the mouth flesh, untextured
+    proc_mesh_uv_flat_color(MOUTH_TOP);
     proc_mesh_loft(pts, R, N, cols, COL_BACK, true);
     for (int sd = -1; sd <= 1; sd += 2) {
         proc_mesh_box((float[3]){ sd * 4.1f, 6.0f, 11.0f }, (float[3]){ 1.6f, 0.9f, 3.2f }, COL_BACK);                     // brow
         crystal((float[3]){ sd * 4.9f, 4.4f, 13.5f }, (float[3]){ sd * 5.9f, 4.7f, 9.5f }, 1.1f, eye);                        // eye
+        bone_uv(1.6f);
         proc_mesh_spike((float[3]){ sd * 4.0f, 6.4f, 4.0f }, (float[3]){ sd * 8.5f, 13.5f, -15.0f }, 2.3f, 4, COL_BONE);   // horns
         proc_mesh_spike((float[3]){ sd * 6.0f, 3.0f, 1.0f }, (float[3]){ sd * 12.5f, 3.5f, -9.0f }, 1.6f, 4, COL_BONE);
         proc_mesh_spike((float[3]){ sd * 5.6f, 0.8f, 7.0f }, (float[3]){ sd * 9.0f, -0.5f, 2.0f }, 1.0f, 3, COL_BONE);     // cheek
         proc_mesh_box((float[3]){ sd * 1.4f, 1.4f, 25.6f }, (float[3]){ 0.5f, 0.4f, 0.6f }, proc_rgb(20, 14, 16));        // nostril
+        proc_mesh_uv(SCALES_AROUND, 3.4f); proc_mesh_uv_shift(0.0f, 0.0f);
         for (int k = 0; k < 4; k++)
             crystal((float[3]){ sd * (3.6f - k * 0.4f), -0.4f, 12.0f + k * 3.6f }, (float[3]){ sd * (3.4f - k * 0.4f), -2.8f, 12.6f + k * 3.6f }, 0.7f, COL_IVORY);
     }
@@ -444,20 +471,21 @@ static void build_head(ProcMesh *out, bool dark)
     proc_mesh_end(out);
 }
 
-// The lower jaw, +z forward from its hinge: lofted, the mouth inside on top, teeth up
+// The lower jaw, +z forward from its hinge: lofted, closed behind, the mouth inside on top, teeth up
 static void build_jaw(void)
 {
-    enum { N = 6, R = 5 };
-    static const float Z[R] = { 0, 6, 12, 18, 22.5f };
-    static const float W[R] = { 4.6f, 4.4f, 3.8f, 3.0f, 1.6f };
-    static const float H[R] = { 2.2f, 2.0f, 1.8f, 1.4f, 0.8f };
+    enum { N = 6, R = 6 };
+    static const float Z[R] = { -1.8f, 0, 6, 12, 18, 22.5f };
+    static const float W[R] = { 0.0f, 4.6f, 4.4f, 3.8f, 3.0f, 1.6f };
+    static const float H[R] = { 0.0f, 2.2f, 2.0f, 1.8f, 1.4f, 0.8f };
     float pts[R * N * 3];
     for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, Z[r], W[r], H[r], -1.6f, 99.0f);
     uint32_t cols[(R - 1) * N];
     for (int r = 0; r < R - 1; r++)
-        for (int i = 0; i < N; i++) cols[r * N + i] = sinf(2.0f * T3D_PI * (i + 0.5f) / N) > 0.3f ? proc_rgb(130, 48, 52) : COL_BELLY;
+        for (int i = 0; i < N; i++) cols[r * N + i] = sinf(2.0f * T3D_PI * (i + 0.5f) / N) > 0.3f && r > 0 ? MOUTH_JAW : COL_BELLY;
     proc_mesh_begin();
-    proc_mesh_uv(36.0f, 1.1f);
+    proc_mesh_uv(SCALES_AROUND, 4.8f);
+    proc_mesh_uv_flat_color(MOUTH_JAW);
     proc_mesh_loft(pts, R, N, cols, COL_BELLY, true);
     for (int sd = -1; sd <= 1; sd += 2)
         for (int k = 0; k < 4; k++)
@@ -474,7 +502,7 @@ static void build_wing(ProcMesh *out, ProcMesh *memb, bool dark)
     const float root[3] = { 0, 0, 0 }, elbow[3] = { 30, 6, 4 }, wrist[3] = { 58, 10, -6 }, back[3] = { 2, -2, -32 };
     const float tip[5][3] = { { 88, 5, -14 }, { 80, 2, -32 }, { 66, 0, -46 }, { 48, -2, -54 }, { 28, -3, -48 } };
     proc_mesh_begin();
-    proc_mesh_uv(16.0f, 0.9f);      // scales, ridged along the bones
+    bone_uv(0.9f);
     proc_mesh_spike(root, elbow, 2.6f, 4, COL_BONE);
     proc_mesh_spike(elbow, wrist, 2.1f, 4, COL_BONE);
     proc_mesh_spike(wrist, (float[3]){ wrist[0] + 6, wrist[1] + 3, wrist[2] + 6 }, 1.0f, 3, COL_IVORY);    // wrist claw
@@ -556,7 +584,8 @@ void dragon_boss_free(void)
 {
     if (!s.ready) return;
     gpu_wait();
-    ProcMesh *all[] = { &s.seg, &s.segDark, &s.tseg, &s.tsegDark, &s.limb, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.wing, &s.wingDark, &s.wingMemb, &s.tip, &s.tipDark, &s.flame, &s.mOrb, &s.mIce, &s.mCone };
+    for (int v = 0; v < SEG_VARIANTS; v++) { proc_mesh_free(&s.seg[v]); proc_mesh_free(&s.segDark[v]); proc_mesh_free(&s.tseg[v]); proc_mesh_free(&s.tsegDark[v]); }
+    ProcMesh *all[] = { &s.limb, &s.mThroat, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.wing, &s.wingDark, &s.wingMemb, &s.tip, &s.tipDark, &s.flame, &s.mOrb, &s.mIce, &s.mCone };
     for (unsigned i = 0; i < sizeof(all) / sizeof(all[0]); i++) proc_mesh_free(all[i]);
     sprite_free(s.texScales); sprite_free(s.texMemb);
     free_uncached(s.mats);
@@ -577,10 +606,13 @@ static void clear_hazards(void)
 void dragon_boss_begin(Boss* boss)
 {
     if (!s.ready) {
-        build_seg(&s.seg, false); build_seg(&s.segDark, true);
-        build_tail_seg(&s.tseg, false); build_tail_seg(&s.tsegDark, true);
+        for (int v = 0; v < SEG_VARIANTS; v++) {
+            build_seg(&s.seg[v], false, v); build_seg(&s.segDark[v], true, v);
+            build_tail_seg(&s.tseg[v], false, v); build_tail_seg(&s.tsegDark[v], true, v);
+        }
         build_tail_tip(&s.tip, false); build_tail_tip(&s.tipDark, true);
-        build_limb();
+        build_limb(&s.limb, COL_BACK);
+        build_limb(&s.mThroat, COL_BELLY);
         build_foot();
         build_head(&s.mHead, false); build_head(&s.mHeadDark, true);
         build_jaw();
@@ -685,8 +717,11 @@ static void hazards_update(float dt)
         if (!f->harm || s.fireCd > 0.0f || gap >= PLAYER_R) continue;
         bool stream = s.state == DG_SWEEP && s.step == 1 && !s.hitDone && f->age < 0.6f;
         HB_HIT(stream ? HB_STREAM : HB_FLAME, gap - 8.0f);
-        character_apply_damage(stream ? 20.0f : 9.0f);
-        s.fireCd = 0.4f;
+        // the rain from the air: a heavier hit, then a breath before the next (one standing under
+        // a pass took ~60 at 9 every 0.4 s)
+        bool rain = s.state == DG_FLY;
+        character_apply_damage(stream ? 20.0f : rain ? 12.0f : 9.0f);
+        s.fireCd = rain ? 1.2f : 0.4f;
         if (stream) s.hitDone = true;
     }
     for (int i = 0; i < ORB_MAX; i++) {
@@ -770,8 +805,12 @@ static void breathe(const float to[3], float speed, float life, float dt)
     while (s.emit <= 0.0f) {
         s.emit += 0.03f;
         float v[3] = { to[0] - s.mouth[0], to[1] - s.mouth[1], to[2] - s.mouth[2] };
+        // at least fast enough to get there: a flame slows (hazards_update, 1.5 a second) and
+        // goes no further than speed / 1.5 * (1 - e^(-1.5 life)); too slow, the fire stalled short
+        // of what it was aimed at (the breath at range, the rain from the air)
+        float need = 1.5f * len3(v) / (1.0f - expf(-1.5f * life)) * 1.05f;
         norm3(v);
-        for (int m = 0; m < 3; m++) v[m] = v[m] * speed + frand() * 12.0f;
+        for (int m = 0; m < 3; m++) v[m] = v[m] * fmaxf(speed, need) + frand() * 12.0f;
         flame_spawn(s.mouth, v, life, 16.0f + 4.0f * frand(), true);
     }
 }
@@ -1154,7 +1193,7 @@ static void breath_update(Boss *b, float dt)
         if (s.t < dt * 1.5f) {
             float sg = (rand_custom_u32() & 1) ? 1.0f : -1.0f;
             s.sweepFrom = atan2f(dx, dz) - 0.75f * sg; s.sweepSpan = 1.5f * sg;
-            s.range = fminf(fmaxf(dist, 50.0f), 130.0f);
+            s.range = fminf(fmaxf(dist, 50.0f), 190.0f);     // out to where the player is (it's chosen to 200)
         }
         if (s.t >= 0.9f / (s.dark ? 1.2f : 1.0f)) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; sfx_lunge(); }
     } else if (s.step == 1) {
@@ -1211,6 +1250,11 @@ static void fly_update(Boss *b, float dt)
         s.flapRate = 9.0f;
         s.alt = ease(s.alt, 95.0f, 2.2f, dt);
         face_player(b, dt, 2.0f);
+        {   // close, it backs off as it climbs: the strafe starts with its jaws short of the player
+            // (taking off near them, its mouth was already past them: the rain fell behind them)
+            float dx, dz, d = to_player(b, &dx, &dz);
+            if (d < 150.0f) move_by(b, -s.F[0] * 60.0f * dt, -s.F[2] * 60.0f * dt);
+        }
         if (s.t >= 1.1f) {
             // Over the player and on past it, as far as the hall allows
             float dx, dz, d = to_player(b, &dx, &dz);
@@ -1227,15 +1271,24 @@ static void fly_update(Boss *b, float dt)
         float dx = s.flyTo[0] - b->pos[0], dz = s.flyTo[1] - b->pos[2], d = sqrtf(dx * dx + dz * dz);
         turn_toward(b, atan2f(dx, dz), 3.0f, dt);
         float st = fminf(d, 150.0f * dt);
+        float px = character.pos[0] - s.mouth[0], pz = character.pos[2] - s.mouth[2];
+        bool over = px * px + pz * pz < 95.0f * 95.0f;     // the mouth near the player (the root trailed it by ~90)
         if (d > 1e-3f && inside(b->pos[0] + dx / d * st, b->pos[2] + dz / d * st, 40.0f)) { b->pos[0] += dx / d * st; b->pos[2] += dz / d * st; }
-        else s.t = 9.0f;     // the wall: land here
-        float px = character.pos[0] - b->pos[0], pz = character.pos[2] - b->pos[2];
-        if (px * px + pz * pz < 95.0f * 95.0f) {   // over the player: fire rains down
+        // the wall: over the player it hangs there a moment, still breathing, then lands (it landed at
+        // once: by a wall, where the player often is, it took off and came straight down, no fire)
+        else { s.t = over ? fmaxf(s.t, 2.3f) : 9.0f; s.hitDone = true; }     // (hitDone: hanging there)
+        if (over) {     // over the player: fire rains down
+            // down under its jaws, a little ahead: the rain sweeps across the floor under its path
+            // (aimed 25 ahead of the mouth, it landed past a player it was over)
+            // Hanging at a wall, short of them, it breathes at the player instead
             float to[3];
-            mad3(to, s.mouth, s.F, 25.0f);
+            mad3(to, s.mouth, s.F, 10.0f);
+            if (s.hitDone) { to[0] = character.pos[0]; to[2] = character.pos[2]; }
             to[1] = s.groundY;
             memcpy(s.aim, to, sizeof(s.aim)); s.tAimK = 0.8f; s.tJaw = 0.9f;
-            breathe(to, 110.0f, 1.5f, dt);
+            // fast enough to reach the floor (at 110 they stalled ~60 up, over the knight's head:
+            // the rain never hit) and long-lived enough to burn there a moment along its path
+            breathe(to, 300.0f, 1.2f, dt);
         }
         if (d < 6.0f || s.t > 3.5f) { s.step = 2; s.t = 0.0f; }
     } else if (s.step == 2) {
@@ -1302,10 +1355,20 @@ static void orbs_update(Boss *b, float dt)
         o->v[0] = o->v[1] = o->v[2] = 0.0f;
         o->age = -0.1f * s.step;
         o->on = true;
-        sfx(SCENE1_SFX_SPELL_CAST, 0.7f);
+        sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.7f);
         s.step++;
     }
     if (s.t >= 1.6f) enter(DG_IDLE);
+}
+
+// How far from the root to aim the beam at the floor so that it crosses chest height (12 up) at
+// `dist` (the player's distance from the root): from the mouth's height now, by similar triangles.
+// (It was aimed 40 past the player: from a mouth ~60 up that passed over the head at mid range)
+static float beam_reach(const Boss *b, float dist)
+{
+    float mo = (s.mouth[0] - b->pos[0]) * s.F[0] + (s.mouth[2] - b->pos[2]) * s.F[2];     // the mouth, ahead of the root
+    float h = s.mouth[1] - s.groundY, dp = fmaxf(dist - mo, 10.0f);
+    return fminf(mo + dp * h / fmaxf(h - 12.0f, 4.0f), 280.0f);
 }
 
 static void beam_update(Boss *b, float dt)
@@ -1329,19 +1392,19 @@ static void beam_update(Boss *b, float dt)
             debugf("[dragon] beam: %d sweeps, the first %s\n", s.sweeps, sg > 0.0f ? "left to right" : "right to left");
 #endif
             s.sweepFrom = atan2f(dx, dz) - 1.2f * sg; s.sweepSpan = 2.4f * sg;
-            s.range = fminf(fmaxf(dist + 40.0f, 90.0f), 280.0f);       // just past the player: the beam is at chest height where they stand
-            sfx(SCENE1_SFX_SPELL_CAST, 0.8f);
+            s.range = dist;     // where the player is: beam_reach aims it through their chest
+            sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.8f);
         }
         if (s.t >= CHARGE * 0.55f && s.t - dt < CHARGE * 0.55f) {
             float p[3];
-            floor_point(b, s.sweepFrom, s.range, p);
+            floor_point(b, s.sweepFrom, beam_reach(b, s.range), p);
             skill_fx_spawn_burst_hostile(p, 0.0f);     // where it will begin
         }
         if (s.t >= CHARGE) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(6.0f); }
     } else if (s.step == 1) {
         float u = clamp01(s.t / SWEEP), a = s.sweepFrom + s.sweepSpan * u * u * (3.0f - 2.0f * u);   // eased in and out
         float to[3];
-        floor_point(b, a, s.range, to);
+        floor_point(b, a, beam_reach(b, s.range), to);
         s.tJaw = 1.0f; s.tNeckPitch = 0.15f; s.tCrouch = 3.0f; s.tWingRaise = 0.5f; s.poseRate = 6.0f;
         turn_toward(b, a, 1.1f, dt);       // the body swings round behind its head
         beam_at(to, 3.0f, 21.0f, true, dt);
@@ -1351,17 +1414,17 @@ static void beam_update(Boss *b, float dt)
             if (--s.sweeps > 0) {       // again, from where this one ended, back across where you are now
                 float sg = s.sweepSpan > 0.0f ? 1.0f : -1.0f, p[3];
                 s.sweepFrom = atan2f(dx, dz) + 1.2f * sg; s.sweepSpan = -2.4f * sg;
-                s.range = fminf(fmaxf(dist + 40.0f, 90.0f), 280.0f);
-                floor_point(b, s.sweepFrom, s.range, p);
+                s.range = dist;
+                floor_point(b, s.sweepFrom, beam_reach(b, s.range), p);
                 skill_fx_spawn_burst_hostile(p, 0.0f);
-                sfx(SCENE1_SFX_SPELL_CAST, 0.7f);
+                sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.7f);
                 s.glow = 0.45f; s.step = 2;
             } else { s.glow = 0.0f; s.step = 3; }
         }
     } else if (s.step == 2) {
         // Gathers again: the head swings to the new start, the light swelling and flickering
         float p[3];
-        floor_point(b, s.sweepFrom, s.range, p);
+        floor_point(b, s.sweepFrom, beam_reach(b, s.range), p);
         lerp3(s.aim, s.beamP, p, smooth01(s.t / (RECHARGE * 0.8f))); s.tAimK = 1.0f;    // from where the last ended
         s.tJaw = 0.7f; s.tNeckPitch = 0.5f; s.tCrouch = 4.0f; s.tWingRaise = 0.65f; s.poseRate = 5.0f;
         turn_toward(b, s.sweepFrom, 0.8f, dt);
@@ -1399,7 +1462,7 @@ static void skybeam_update(Boss *b, float dt)
             }
             if (!ok) { enter(DG_FLY); return; }      // no room for a line here: the fire strafe instead
             P0[0] = b->pos[0]; P0[2] = b->pos[2];
-            sfx(SCENE1_SFX_SPELL_CAST, 0.8f);
+            sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.8f);
         }
         s.flapRate = 9.0f;
         float u = smooth01(s.t / RISE);         // up, sliding out to the line's start
@@ -1467,7 +1530,7 @@ static void snipe_update(Boss *b, float dt)
         s.tNeckPitch = 0.1f; s.tNeckReach = 1.15f; s.tJaw = 0.5f; s.tCrouch = 3.0f;
         player_chest(s.aim); s.tAimK = 1.0f;
         s.glow = clamp01(s.t / 1.1f);
-        if (s.t < dt * 1.5f) sfx(SCENE1_SFX_SPELL_CAST, 0.8f);
+        if (s.t < dt * 1.5f) sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.8f);
         if (s.t >= 1.1f / sm) {
             // The line from its mouth through the player's chest, on to the floor behind them
             float c[3], drop = s.mouth[1] - s.groundY;
@@ -1581,7 +1644,7 @@ static void sweep_update(Boss *b, float dt)
     float sm = s.dark ? 1.15f : 1.0f, to[3];
     s.tCrouch = 8.0f; s.tNeckReach = 1.1f;
     if (s.step == 0) {
-        if (s.t < dt * 1.5f) { s.sg = (rand_custom_u32() & 1) ? 1.0f : -1.0f; sfx(SCENE1_SFX_SPELL_CAST, 0.6f); }
+        if (s.t < dt * 1.5f) { s.sg = (rand_custom_u32() & 1) ? 1.0f : -1.0f; sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.6f); }
         face_player(b, dt, 1.5f);
         float u = smooth01(s.t / (WIND * 0.6f));
         s.tNeckPitch = -0.6f; s.tNeckYaw = -s.sg * HALF * 0.7f * u; s.tJaw = 0.35f; s.poseRate = 4.0f;
@@ -1685,7 +1748,7 @@ static void hover_update(Boss *b, float dt)
     s.tWingSpan = 1.0f;
     float bob = 3.0f * sinf(s.life * 2.2f), to[3];
     if (s.step == 0) {          // up, then the charge
-        if (s.t < dt * 1.5f) sfx(SCENE1_SFX_SPELL_CAST, 0.8f);
+        if (s.t < dt * 1.5f) sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.8f);
         float u = smooth01(s.t / RISE);
         s.alt = (ALT + bob) * u;
         s.flapRate = s.t < RISE ? 9.0f : 7.0f;
@@ -1719,7 +1782,7 @@ static void hover_update(Boss *b, float dt)
                 s.range = fminf(fmaxf(to_player(b, &dx, &dz), 50.0f), 230.0f);
                 floor_point(b, s.sweepFrom + s.sweepSpan, s.range, to);
                 skill_fx_spawn_burst_hostile(to, 0.0f);
-                sfx(SCENE1_SFX_SPELL_CAST, 0.7f);
+                sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.7f);
             } else s.sg = s.alt;    // the height it sinks from
         }
     } else if (s.step == 2) {   // gathers again
@@ -1737,6 +1800,14 @@ static void hover_update(Boss *b, float dt)
     } else if (s.t >= 0.7f) enter(DG_IDLE);
 }
 
+// Room to rush this far ahead (move_by's test at the end of it): by a wall the charge roared
+// and went nowhere
+static bool room_ahead(const Boss *b, float d)
+{
+    float x = b->pos[0] + s.F[0] * d, z = b->pos[2] + s.F[2] * d;
+    return inside(x, z, 40.0f) && inside(x + s.F[0] * 70.0f, z + s.F[2] * 70.0f, 5.0f);
+}
+
 static void choose(Boss *b, float dist, float rel)
 {
 #ifdef HLE_DRAGON_FORCE   // test aid: one move over and over (a DgState)
@@ -1748,7 +1819,8 @@ static void choose(Boss *b, float dist, float rel)
     if (behind && dist < 150.0f && s.cdTail <= 0.0f) { s.cdTail = 3.5f; enter(DG_TAIL); return; }
     if (s.dark) {
         if (s.cdNova <= 0.0f && dist < 110.0f) { s.cdNova = 16.0f; enter(DG_NOVA); return; }
-        if (s.cdBeam <= 0.0f && front && dist > 60.0f) { s.cdBeam = 18.0f; enter(DG_BEAM); return; }
+        // (closer, the player is under its chin, where the beam can't reach: it raked over them)
+        if (s.cdBeam <= 0.0f && front && dist > 110.0f) { s.cdBeam = 18.0f; enter(DG_BEAM); return; }
         if (s.cdOrbs <= 0.0f) { s.cdOrbs = 13.0f; enter(DG_ORBS); return; }
     }
     if (s.cdFly <= 0.0f && dist > 70.0f) {      // in the dark half: half the time a sky beam instead, gliding or hovering
@@ -1762,7 +1834,7 @@ static void choose(Boss *b, float dist, float rel)
     if (front && dist < 100.0f && s.cdBite <= 0.0f) { s.cdBite = 5.0f; enter(DG_BITE); return; }
     if (front && dist > 110.0f && dist < 260.0f && s.cdTriple <= 0.0f) { s.cdTriple = 13.0f; enter(DG_TRIPLE); return; }
     if (front && dist > 70.0f && dist < 200.0f && s.cdBreath <= 0.0f) { s.cdBreath = 9.0f; enter(DG_BREATH); return; }
-    if (front && dist > 140.0f && s.cdCharge <= 0.0f) { s.cdCharge = 8.0f; enter(DG_CHARGE); return; }
+    if (front && dist > 140.0f && s.cdCharge <= 0.0f && room_ahead(b, 100.0f)) { s.cdCharge = 8.0f; enter(DG_CHARGE); return; }
 }
 
 void dragon_boss_update(Boss* b, float dt)
@@ -1976,6 +2048,9 @@ static void knee(const float a[3], const float c[3], const float bend[3], float 
 static uint32_t s_dp[5], s_dpN;
 #define DPROF(i) { s_dp[i] += gpu_prof_end(); if (i < 4) gpu_prof_begin(); }
 #endif
+#ifdef HLE_DRAGON_FACE      // test aid: where the head is and which way it looks (the camera aid)
+void dragon_boss_hle_head(float p[3], float z[3], float y[3]) { memcpy(p, s.head, 12); memcpy(z, s.hz, 12); memcpy(y, s.hy, 12); }
+#endif
 void dragon_boss_draw(Boss* b)
 {
 #ifdef HLE_PROF_DRAGON
@@ -1999,16 +2074,16 @@ void dragon_boss_draw(Boss* b)
     // most of this boss's cost). The wings stay two-sided
     t3d_state_set_drawflags(DRAW_CLOSED);
 
-    const ProcMesh *seg = s.dark ? &s.segDark : &s.seg;
+    const ProcMesh *seg = s.dark ? s.segDark : s.seg;      // [link % SEG_VARIANTS]
     float m1[3], m2[3];
     lerp3(m1, s.chest, s.hips, 1.0f / 3.0f);
     lerp3(m2, s.chest, s.hips, 2.0f / 3.0f);
-    put_link(seg, s.chest, m1, 18.0f, 1.2f);
-    put_link(seg, m1, m2, 17.5f, 1.2f);
-    put_link(seg, m2, s.hips, 16.0f, 1.25f);
-    for (int i = 0; i < NNECK; i++) put_link(seg, s.neck[i], s.neck[i + 1], 11.0f - i * 1.2f, 1.25f);
-    const ProcMesh *tseg = s.dark ? &s.tsegDark : &s.tseg;
-    for (int i = 0; i < NTAIL; i++) put_link(i < 2 ? seg : tseg, s.tl[i], s.tl[i + 1], 14.5f - i * 1.8f, 1.2f);
+    put_link(&seg[0], s.chest, m1, 18.0f, 1.2f);
+    put_link(&seg[1 % SEG_VARIANTS], m1, m2, 17.5f, 1.2f);
+    put_link(&seg[2 % SEG_VARIANTS], m2, s.hips, 16.0f, 1.25f);
+    for (int i = 0; i < NNECK; i++) put_link(&seg[(i + 1) % SEG_VARIANTS], s.neck[i], s.neck[i + 1], 11.0f - i * 1.2f, 1.25f);
+    const ProcMesh *tseg = s.dark ? s.tsegDark : s.tseg;
+    for (int i = 0; i < NTAIL; i++) put_link(i < 2 ? &seg[(i + 1) % SEG_VARIANTS] : &tseg[i % SEG_VARIANTS], s.tl[i], s.tl[i + 1], 14.5f - i * 1.8f, 1.2f);
     {   // the crystal blade at its tip, along the last segment
         float d[3] = { s.tl[NTAIL][0] - s.tl[NTAIL - 1][0], s.tl[NTAIL][1] - s.tl[NTAIL - 1][1], s.tl[NTAIL][2] - s.tl[NTAIL - 1][2] }, e[3];
         norm3(d);
@@ -2049,6 +2124,13 @@ void dragon_boss_draw(Boss* b)
     mad3(hinge, hinge, s.hy, -2.5f);
     for (int m = 0; m < 3; m++) { jz[m] = s.hz[m] * ca - s.hy[m] * sa; jy[m] = s.hy[m] * ca + s.hz[m] * sa; }
     put(&s.mJaw, hinge, s.hx, jy, jz, 1.0f, 1.0f, 1.0f);
+    {   // the throat: from under the back of the skull to the jaw's underside, stretched as it opens
+        // (open, the hall showed between the jaw and the neck)
+        float ta[3], tb[3];
+        mad3(ta, s.head, s.hy, -3.0f); mad3(ta, ta, s.hz, -1.0f);
+        mad3(tb, hinge, jz, 7.0f); mad3(tb, tb, jy, -2.8f);     // under the tongue, not through it
+        put_link(&s.mThroat, ta, tb, 3.0f, 1.0f);
+    }
 
 #ifdef HLE_PROF_DRAGON
     DPROF(2);

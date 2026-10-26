@@ -257,6 +257,9 @@ static void update_arc_hit(SkillFx *f, Boss *b)
                (double)(dist - character.capsuleCollider.radius), (double)arc_radius(f), (double)f->age, (double)(character.pos[1] - f->pos[1]));
 #endif
         f->hitsLeft = 0;
+#ifdef HLE_LOG_MOVES     // test aid: a hostile wave's hit (the [hit] after it is this one)
+        debugf("[fxhit] wave\n");
+#endif
         character_apply_damage(f->damage);
         return;
     }
@@ -329,6 +332,9 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
 #ifdef HLE_FK_TRACE
         debugf("[fxhit] shape %d age %.2f at %.0f,%.0f,%.0f player %.0f,%.0f,%.0f vel %.0f,%.0f\n", f->shape, (double)f->age, (double)c[0], (double)c[1], (double)c[2],
                (double)character.pos[0], (double)character.pos[1], (double)character.pos[2], (double)f->vel[0], (double)f->vel[2]);
+#endif
+#ifdef HLE_LOG_MOVES     // test aid: a hostile shot's hit (the [hit] after it is this one)
+        debugf("[fxhit] shape %d\n", f->shape);
 #endif
         character_apply_damage(f->damage);
     } else {

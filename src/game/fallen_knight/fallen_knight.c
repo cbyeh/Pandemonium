@@ -156,6 +156,9 @@ static inline float clamp01f(float x) { return x < 0.0f ? 0.0f : x > 1.0f ? 1.0f
 
 static void enter(FkState st)
 {
+#ifdef HLE_LOG_MOVES     // test aid: each move as it starts (the hits after it are its: [hit])
+    debugf("[move] %d\n", st);
+#endif
     s.state = st;
     s.t = 0.0f;
     s.step = 0;
@@ -167,7 +170,8 @@ static void enter(FkState st)
 #endif
 }
 
-static void swing_sfx(void) { audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_SWING1, 1.0f, 0.0f); }
+static void sfx(int id, float vol) { audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, 0.0f); }
+static void swing_sfx(void) { sfx(SCENE1_SFX_SWING_BOSS, 1.0f); }
 
 /** The drawn blade in world space, from the last pose: guard to tip, as the knight model has it
  *  in the hand's space. (The player's 640 along the hand's -X follows its sword trail; drawn
@@ -430,7 +434,7 @@ static void cleave_update(Boss *b, float dt)
             float base[3], tip[3];
             if (sword_segment(base, tip)) skill_fx_spawn_burst_hostile((float[3]){ tip[0], s.groundY, tip[2] }, 0.0f);
             for (int i = 0; i < 5; i += 2) { float o[3], dx, dz; cleave_point(b, i, o, &dx, &dz); skill_fx_spawn_burst_hostile(o, b->rot[1] + i); }
-            audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_LAND1, 0.6f, 0.0f);
+            sfx(SCENE1_SFX_BOSS_LAND1, 0.8f);
             screen_shake_set_shake_mag(2.0f);
         }
     }
@@ -453,7 +457,7 @@ static void halfmoon_update(Boss *b, float dt)
     if (s.step == 0) {
         t3d_anim_set_speed(&s.anims[s.anim], 2.0f / CHARGE);   // the clip's sweep (~2.0 s in) as the crescent leaves
         if (s.t < LOCK) face_player(b, dt, 4.0f);
-        else if (s.t - dt < LOCK) audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_CAST, 0.8f, 0.0f);
+        else if (s.t - dt < LOCK) sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.8f);
         if (clip_time() > 0.3f) hold_blade(-0.45f, -0.89f, 0.0f);
         if (s.t >= LOCK && (int)(s.t / 0.3f) != (int)((s.t - dt) / 0.3f)) {      // its edges and middle, then between
             bool odd = (int)(s.t / 0.3f) & 1;
@@ -466,7 +470,7 @@ static void halfmoon_update(Boss *b, float dt)
             skill_fx_next_arc_half(HALF);
             skill_fx_spawn_arc_hostile((float[3]){ b->pos[0], b->pos[1] + 12.0f, b->pos[2] }, b->rot[1], 90.0f, 30.0f);
             screen_shake_set_shake_mag(12.0f);
-            audio_play_scene_sfx_dist(SCENE1_SFX_BLADE_SLASH, 1.0f, 0.0f);
+            sfx(SCENE1_SFX_BLADE_SLASH_BOSS, 1.0f);
             s.step = 1;
         }
     }
@@ -525,7 +529,7 @@ static void splitter_update(Boss *b, float dt)
             play(FKA_BACKSTEP, false);
             move(b, fm_sinf(b->rot[1]) * 22.0f, -fm_cosf(b->rot[1]) * 22.0f, dt);
         } else play(FKA_IDLE, false);
-        if (s.t <= dt) audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_WAVE, 0.7f, 0.0f);
+        if (s.t <= dt) sfx(SCENE1_SFX_SPELL_WAVE_BOSS, 0.8f);
         s.windK = clamp01f(s.t / 0.5f);
         if (s.t >= 0.6f) { s.step = 1; play(clips[0], true); swing_sfx(); }
         return;
@@ -617,7 +621,7 @@ static void trislam_update(Boss *b, float dt)
             }
             if (in && character.pos[1] - s.groundY < 6.0f) character_apply_damage(20.0f);
             screen_shake_set_shake_mag(10.0f);
-            audio_play_scene_sfx_dist(SCENE1_SFX_ROCK_BLAST, 1.0f, 0.0f);
+            sfx(SCENE1_SFX_ROCK_BLAST, 1.0f);
             s.step = 2; s.t = 0.0f;
         }
     } else if (s.t >= 0.5f) enter(FK_RECOVER);
@@ -635,7 +639,7 @@ static void holyslam_update(Boss *b, float dt)
         if (clip >= WIN[0][1] || clip_done()) {
             s.step = 1; s.t = 0.0f; s.hitDone = false;
             play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.05f);
-            audio_play_scene_sfx_dist(SCENE1_SFX_HEAL, 0.8f, 0.0f);     // the light called down: gold
+            sfx(SCENE1_SFX_HEAL_BOSS, 0.8f);     // the light called down: gold
         }
     } else if (s.step == 1) {   // the gathering
         face_player(b, dt, 1.5f);
@@ -651,7 +655,7 @@ static void holyslam_update(Boss *b, float dt)
             skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 105.0f, 26.0f);
             skill_fx_spawn_pillar_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
             screen_shake_set_shake_mag(16.0f);
-            audio_play_scene_sfx_dist(SCENE1_SFX_ROCK_BLAST, 1.0f, 0.0f);
+            sfx(SCENE1_SFX_ROCK_BLAST, 1.0f);
             s.step = 2; s.t = 0.0f;
         }
     } else if (s.t >= 0.8f) enter(FK_RECOVER);     // spent a moment: the opening
@@ -739,7 +743,7 @@ static void plunge_update(Boss *b, float dt)
             b->rot[1] = atan2f(-dx, dz);
             s.velY = VY; s.step = 1; s.t = 0.0f;
             hle_commit();
-            audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_SWING1, 0.8f, 0.0f);
+            sfx(SCENE1_SFX_SWING_BOSS, 0.8f);
         }
     } else if (s.step == 1) {
         s.striking = true;          // in the air: the stagger meter keeps (as mid-strike)
@@ -757,7 +761,7 @@ static void plunge_update(Boss *b, float dt)
             skill_fx_spawn_arc_hostile(o, b->rot[1], 20.0f, dmg);
             skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 20.0f, dmg);
             screen_shake_set_shake_mag(10.0f);
-            audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_LAND1, 1.0f, 0.0f);
+            sfx(SCENE1_SFX_BOSS_LAND1, 1.0f);
             s.step = 2; s.t = 0.0f;
         }
     } else {
@@ -820,7 +824,7 @@ void fallen_knight_update(Boss* b, float dt)
     // Half health: a war cry and a crimson burst (the fight's turn, like the others' breaks)
     if (!s.enraged && b->mode == BOSS_MODE_COMBAT && b->health > 0.0f && b->health <= b->maxHealth * 0.5f) {
         s.enraged = true;
-        audio_play_scene_sfx_dist(SCENE1_SFX_WAR_CRY, 1.0f, 0.0f);
+        sfx(SCENE1_SFX_WAR_CRY, 1.0f);
         skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, b->rot[1]);
         screen_shake_set_shake_mag(6.0f);
     }

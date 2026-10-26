@@ -612,6 +612,9 @@ void boss_update(Boss* boss)
     if (!boss) return;
     boss_sync_max_health(boss);
     boss_poise_update(boss, deltaTime);
+#ifdef HLE_LOG_MOVES     // test aid: the Guardian's and Unbound's moves as they start ([hit]: the hits after)
+    { static int last = -1; if (boss->phaseIndex <= 2 && (int)boss->state != last) { last = boss->state; debugf("[move] %d\n", last); } }
+#endif
     if (boss->phaseIndex <= 2)      // the Guardian's and Unbound's: a blow's live part, or the barrage in the air
         boss->striking = boss->handAttackColliderActive || boss->sphereAttackColliderActive || boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE;
 #ifdef HLE_TEST_DUMMY   // test aid: the Guardian's and Unbound's openings (time not attacking), like the Bonus bosses'
@@ -769,7 +772,9 @@ float boss_damage_scale(void)
     Boss *b = boss_get_instance();
     if (!b) return 1.0f;
     return b->phaseIndex == FALLEN_KNIGHT_PHASE ? 1.25f : b->phaseIndex == SUN_BOSS_PHASE ? 1.55f :
-           b->phaseIndex == DRAGON_BOSS_PHASE ? 1.75f : 1.0f;     // the Guardian's two phases as they were
+           b->phaseIndex == DRAGON_BOSS_PHASE ? 1.5f : 1.0f;      // the Guardian's two phases as they were
+    // (Shadowborne 1.75 -> 1.5 when its flight's fire, its beam at mid range and its breath at range
+    // were made to reach the player: ~14% more damage on the passive dummy, its cost as approved)
 }
 
 void boss_apply_damage(Boss* boss, float amount)

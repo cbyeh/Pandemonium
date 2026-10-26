@@ -317,12 +317,18 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_SPELL_CAST]  = "rom:/audio/sfx/fx/spell_cast_22k.wav64",
     [SCENE1_SFX_BLADE_SLASH] = "rom:/audio/sfx/fx/blade_slash_22k.wav64",
     [SCENE1_SFX_HEAL]        = "rom:/audio/sfx/fx/heal_chime_22k.wav64",
-    [SCENE1_SFX_FIRE]        = "rom:/audio/sfx/fx/fire_breath_22k.wav64",
-    [SCENE1_SFX_DARK_BEAM]   = "rom:/audio/sfx/fx/dark_beam_22k.wav64",
-    [SCENE1_SFX_DARK_NOVA]   = "rom:/audio/sfx/fx/dark_nova_22k.wav64",
-    [SCENE1_SFX_ROCK_BLAST]  = "rom:/audio/sfx/fx/rock_blast_22k.wav64",
-    [SCENE1_SFX_CHAIN1]      = "rom:/audio/sfx/fx/chain1_22k.wav64",
-    [SCENE1_SFX_CHAIN2]      = "rom:/audio/sfx/fx/chain2_22k.wav64",
+    // the Bonus bosses' own, at the Guardian's level (tools/boss_sfx_levels.py)
+    [SCENE1_SFX_FIRE]        = "rom:/audio/sfx/hostile/fire_breath_22k.wav64",
+    [SCENE1_SFX_DARK_BEAM]   = "rom:/audio/sfx/hostile/dark_beam_22k.wav64",
+    [SCENE1_SFX_DARK_NOVA]   = "rom:/audio/sfx/hostile/dark_nova_22k.wav64",
+    [SCENE1_SFX_ROCK_BLAST]  = "rom:/audio/sfx/hostile/rock_blast_22k.wav64",
+    [SCENE1_SFX_CHAIN1]      = "rom:/audio/sfx/hostile/chain1_22k.wav64",
+    [SCENE1_SFX_CHAIN2]      = "rom:/audio/sfx/hostile/chain2_22k.wav64",
+    [SCENE1_SFX_SPELL_WAVE_BOSS]  = "rom:/audio/sfx/hostile/spell_wave_22k.wav64",
+    [SCENE1_SFX_SPELL_CAST_BOSS]  = "rom:/audio/sfx/hostile/spell_cast_22k.wav64",
+    [SCENE1_SFX_BLADE_SLASH_BOSS] = "rom:/audio/sfx/hostile/blade_slash_22k.wav64",
+    [SCENE1_SFX_HEAL_BOSS]        = "rom:/audio/sfx/hostile/heal_chime_22k.wav64",
+    [SCENE1_SFX_SWING_BOSS]       = "rom:/audio/sfx/hostile/char_swing1_22k.wav64",
 
     // Character SFX
     [SCENE1_SFX_CHAR_SWING1]         = "rom:/audio/sfx/character/char_swing1_22k.wav64",
@@ -344,7 +350,7 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_CHAR_UMPH] = "rom:/audio/sfx/character/umph_22k.wav64",
     [SCENE1_SFX_ROLL_SWISH] = "rom:/audio/sfx/character/roll_swish_22k.wav64",
     [SCENE1_SFX_ARMOR_CLANK] = "rom:/audio/sfx/character/armor_clank_22k.wav64",
-    [SCENE1_SFX_WAR_CRY] = "rom:/audio/sfx/boss/war_cry_22k.wav64",
+    [SCENE1_SFX_WAR_CRY] = "rom:/audio/sfx/hostile/war_cry_22k.wav64",
 };
 
 // The sounds heard all through a fight, held in memory (about 230 KB): the bosses' step, the

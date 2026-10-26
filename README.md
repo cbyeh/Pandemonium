@@ -69,6 +69,8 @@ Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on th
 |---|---|---|---|
 | <img src="docs/media/boss_guardian_unbound.png" width="280"> | <img src="docs/media/boss_fallen_warrior.png" width="280"> | <img src="docs/media/boss_shackled_sun.png" width="280"> | <img src="docs/media/boss_shadowborn.png" width="280"> |
 
+The Shackled Sun and Shadowborne are built in code (procedural meshes posed by code rigs) and textured: the Sun's eye is a boiling, granulated surface; Shadowborne wears a scale map that wraps round each part of its body (keeled scales down the spine, staggered flank scales, plates under the belly, each scale its own size and shade, some worn or scarred), horn and bone with growth rings, leather wings, and a darker spine fading to a pale belly. The textures cost nothing on the frame: the meshes share more of their vertices than before.
+
 The ending now plays live in the engine.
 
 ## 2025 N64brew Game Jam - Pandemonium
@@ -87,6 +89,7 @@ The ending now plays live in the engine.
 - Weapon streaks & a few different feedback systems.
 - Dialog system.
 - Almost entirely 64x64 textures with vertex colors for higher res.
+- Procedural boss meshes with tiling greyscale textures painted by script (tools/boss_textures.py), multiplied by their vertex colours.
 - Assets & Music from scratch for the jam. (or heavily modified)
 - Scrolling textures on a skinned mesh.
 

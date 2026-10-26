@@ -7,24 +7,31 @@
 
 #include "proc_mesh.h"
 
-#define PM_MAX_TRIS   1500
+// The build scratch (43 KB), static: not on the heap. Freed after each build it left a hole in
+// the middle of the heap that a fight's later buffers fell into wherever it happened to be, and
+// Shadowborne's frame took up to 2.6 ms more RSP time in some layouts (Ares)
+#define PM_MAX_TRIS   900           // the largest, the Shackled Sun's eye: ~720 before its degenerate ones go
 #define PM_UNIT       8.0f          // stored at 1/8 unit precision (int16 positions)
 
 typedef struct { int16_t p[3][3]; uint32_t c[3]; int16_t st[3][2]; } PmTri;     // a colour and UV per corner
 
-static PmTri *s_tris;
+static PmTri s_tris[PM_MAX_TRIS];
 static int s_ntris;
 static float s_uvAround, s_uvAlong;     // proc_mesh_uv (0: no UVs)
+static float s_uvShift[2];              // proc_mesh_uv_shift
+static uint32_t s_uvFlatCol;            // proc_mesh_uv_flat_color (0: none)
 #define PM_FLAT_ST (2 * 32)             // unlit faces sample texel (2, 2): proc_mesh_uv's bright corner
 
 void proc_mesh_begin(void)
 {
-    if (!s_tris) s_tris = malloc(sizeof(PmTri) * PM_MAX_TRIS);
     s_ntris = 0;
-    s_uvAround = s_uvAlong = 0.0f;
+    s_uvAround = s_uvAlong = s_uvShift[0] = s_uvShift[1] = 0.0f;
+    s_uvFlatCol = 0;
 }
 
 void proc_mesh_uv(float around, float along) { s_uvAround = around; s_uvAlong = along; }
+void proc_mesh_uv_shift(float du, float dv) { s_uvShift[0] = du; s_uvShift[1] = dv; }
+void proc_mesh_uv_flat_color(uint32_t rgba) { s_uvFlatCol = rgba; }
 
 static int16_t st_px(float px) { return (int16_t)lrintf(fminf(fmaxf(px, -1000.0f), 1000.0f) * 32.0f); }    // 10.5 fixed
 
@@ -45,6 +52,7 @@ static uint32_t shade(uint32_t rgba, float k)
 
 void proc_mesh_tri(const float a[3], const float b[3], const float c[3], uint32_t rgba, bool unlit)
 {
+    assertf(s_ntris < PM_MAX_TRIS, "proc_mesh: more than %d triangles", PM_MAX_TRIS);
     if (s_ntris >= PM_MAX_TRIS) return;
     PmTri *t = &s_tris[s_ntris++];
     const float *v[3] = { a, b, c };
@@ -74,27 +82,29 @@ static float smooth_light(const float n[3])
     return 0.42f + 0.72f * (d > 0.0f ? d : 0.0f) + 0.14f * (d < 0.0f ? -d : 0.0f);
 }
 
-// uv: each corner's UV in pixels (NULL: none)
+// col: each corner's colour; uv: its UV in pixels (NULL: none)
 static void tri_smooth_uv(const float a[3], const float b[3], const float c[3],
-                          const float na[3], const float nb[3], const float nc[3], uint32_t rgba, const float uv[3][2])
+                          const float na[3], const float nb[3], const float nc[3], const uint32_t col[3], const float uv[3][2])
 {
+    assertf(s_ntris < PM_MAX_TRIS, "proc_mesh: more than %d triangles", PM_MAX_TRIS);
     if (s_ntris >= PM_MAX_TRIS) return;
     PmTri *t = &s_tris[s_ntris++];
     const float *v[3] = { a, b, c }, *n[3] = { na, nb, nc };
     for (int i = 0; i < 3; i++) {
         for (int k = 0; k < 3; k++) t->p[i][k] = (int16_t)lrintf(v[i][k] * PM_UNIT);
-        t->c[i] = shade(rgba, smooth_light(n[i]));
-        t->st[i][0] = uv ? st_px(uv[i][0]) : 0; t->st[i][1] = uv ? st_px(uv[i][1]) : 0;
+        t->c[i] = shade(col[i], smooth_light(n[i]));
+        t->st[i][0] = uv ? st_px(uv[i][0] + s_uvShift[0]) : 0; t->st[i][1] = uv ? st_px(uv[i][1] + s_uvShift[1]) : 0;
     }
 }
 
 void proc_mesh_tri_smooth(const float a[3], const float b[3], const float c[3],
                           const float na[3], const float nb[3], const float nc[3], uint32_t rgba)
 {
-    tri_smooth_uv(a, b, c, na, nb, nc, rgba, NULL);
+    tri_smooth_uv(a, b, c, na, nb, nc, (uint32_t[3]){ rgba, rgba, rgba }, NULL);
 }
 
-void proc_mesh_loft(const float *pts, int rings, int sides, const uint32_t *cols, uint32_t rgba, bool capEnd)
+// vcols: a colour per point (ring-major), else cols: per quad, else rgba
+static void loft(const float *pts, int rings, int sides, const uint32_t *cols, const uint32_t *vcols, uint32_t rgba, bool capEnd)
 {
     bool shut[rings];       // the rings closed on a point
     for (int r = 0; r < rings; r++) {
@@ -114,13 +124,19 @@ void proc_mesh_loft(const float *pts, int rings, int sides, const uint32_t *cols
             float n00[3], n01[3], n10[3], n11[3];
             for (int k = 0; k < 3; k++) { n00[k] = p00[k] - c0[k]; n01[k] = p01[k] - c0[k]; n10[k] = p10[k] - c1[k]; n11[k] = p11[k] - c1[k]; }
             uint32_t col = cols ? cols[r * sides + i] : rgba;
+            uint32_t c00 = vcols ? vcols[r * sides + i] : col, c01 = vcols ? vcols[r * sides + j] : col;
+            uint32_t c10 = vcols ? vcols[(r + 1) * sides + i] : col, c11 = vcols ? vcols[(r + 1) * sides + j] : col;
             // UVs: round the ring (i / sides of `around`), along by the rings' z (the tubes run along +z);
             // a ring closed on a point (a dome's tip) one UV, so its corners stay shared
             float u0 = s_uvAround * i / sides, u1 = s_uvAround * (i + 1) / sides, v0 = c0[2] * s_uvAlong, v1 = c1[2] * s_uvAlong;
             float a0 = shut[r] ? 0.0f : u0, a1 = shut[r] ? 0.0f : u1, b0 = shut[r + 1] ? 0.0f : u0, b1 = shut[r + 1] ? 0.0f : u1;
             bool uv = s_uvAlong > 0.0f;
-            tri_smooth_uv(p00, p01, p11, n00, n01, n11, col, uv ? (const float[3][2]){ { a0, v0 }, { a1, v0 }, { b1, v1 } } : NULL);
-            tri_smooth_uv(p00, p11, p10, n00, n11, n10, col, uv ? (const float[3][2]){ { a0, v0 }, { b1, v1 }, { b0, v1 } } : NULL);
+            if (uv && s_uvFlatCol && col == s_uvFlatCol) {      // untextured: the flat texel
+                const float f = PM_FLAT_ST / 32.0f - s_uvShift[0], g = PM_FLAT_ST / 32.0f - s_uvShift[1];
+                a0 = a1 = b0 = b1 = f; v0 = v1 = g;
+            }
+            tri_smooth_uv(p00, p01, p11, n00, n01, n11, (uint32_t[3]){ c00, c01, c11 }, uv ? (const float[3][2]){ { a0, v0 }, { a1, v0 }, { b1, v1 } } : NULL);
+            tri_smooth_uv(p00, p11, p10, n00, n11, n10, (uint32_t[3]){ c00, c11, c10 }, uv ? (const float[3][2]){ { a0, v0 }, { b1, v1 }, { b0, v1 } } : NULL);
         }
     }
     if (capEnd && rings > 0) {     // a fan to the last ring's centre
@@ -133,11 +149,16 @@ void proc_mesh_loft(const float *pts, int rings, int sides, const uint32_t *cols
         for (int i = 0; i < sides; i++) {
             int j = (i + 1) % sides;
             float u0 = s_uvAround * i / sides, u1 = s_uvAround * (i + 1) / sides, v = c[2] * s_uvAlong;
-            tri_smooth_uv(&pts[(r * sides + i) * 3], &pts[(r * sides + j) * 3], c, axis, axis, axis, cols ? cols[(r > 0 ? r - 1 : 0) * sides + i] : rgba,
+            uint32_t cq = cols ? cols[(r > 0 ? r - 1 : 0) * sides + i] : rgba;
+            uint32_t ci = vcols ? vcols[r * sides + i] : cq, cj = vcols ? vcols[r * sides + j] : cq;
+            tri_smooth_uv(&pts[(r * sides + i) * 3], &pts[(r * sides + j) * 3], c, axis, axis, axis, (uint32_t[3]){ ci, cj, vcols ? vcols[r * sides] : cq },
                           s_uvAlong > 0.0f ? (const float[3][2]){ { u0, v }, { u1, v }, { (u0 + u1) * 0.5f, v } } : NULL);
         }
     }
 }
+
+void proc_mesh_loft(const float *pts, int rings, int sides, const uint32_t *cols, uint32_t rgba, bool capEnd) { loft(pts, rings, sides, cols, NULL, rgba, capEnd); }
+void proc_mesh_loft_vcol(const float *pts, int rings, int sides, const uint32_t *vcols, bool capEnd) { loft(pts, rings, sides, NULL, vcols, 0, capEnd); }
 
 void proc_mesh_quad(const float a[3], const float b[3], const float c[3], const float d[3], uint32_t rgba, bool unlit)
 {
@@ -182,9 +203,9 @@ void proc_mesh_spike(const float base[3], const float tip[3], float radius, int 
         proc_mesh_tri(p0, p1, tip, rgba, false);
         if (s_uvAlong > 0.0f && s_ntris > n0) {     // round it and along it, as a tube (not planar)
             PmTri *t = &s_tris[s_ntris - 1];
-            float u0 = s_uvAround * i / sides, u1 = s_uvAround * (i + 1) / sides;
+            float u0 = s_uvShift[0] + s_uvAround * i / sides, u1 = s_uvShift[0] + s_uvAround * (i + 1) / sides;
             t->st[0][0] = st_px(u0); t->st[1][0] = st_px(u1); t->st[2][0] = st_px((u0 + u1) * 0.5f);
-            t->st[0][1] = t->st[1][1] = 0; t->st[2][1] = st_px(len * s_uvAlong);
+            t->st[0][1] = t->st[1][1] = st_px(s_uvShift[1]); t->st[2][1] = st_px(s_uvShift[1] + len * s_uvAlong);
         }
     }
 }
@@ -223,6 +244,7 @@ static uint32_t mix_rgb(const int a[3], const int b[3], float t, float k)
 // An unlit triangle with a colour and a UV (pixels) per corner
 static void tri_unlit_uv(const float a[3], const float b[3], const float c[3], const uint32_t col[3], const float uv[3][2])
 {
+    assertf(s_ntris < PM_MAX_TRIS, "proc_mesh: more than %d triangles", PM_MAX_TRIS);
     if (s_ntris >= PM_MAX_TRIS) return;
     PmTri *t = &s_tris[s_ntris++];
     const float *v[3] = { a, b, c };
@@ -437,7 +459,6 @@ void proc_mesh_end(ProcMesh *out)
 #endif
     out->block = gpu_block_end();
     free(ref); free(idx); free(batchTri); free(batchRef);
-    free(s_tris); s_tris = NULL;    // the scratch (72 KB) only while building: it was held for good
     out->mat = malloc_uncached(sizeof(T3DMat4FP));
     proc_mesh_set_transform(out, 1.0f, (float[3]){ 0, 0, 0 }, (float[3]){ 0, 0, 0 });
 #ifdef HLE_LOG_HITCH

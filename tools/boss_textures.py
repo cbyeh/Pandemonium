@@ -1,11 +1,11 @@
-"""Paints the Bonus bosses' tiling textures (32x32 greyscale, I8), multiplied in-game by the
-procedural meshes' vertex colours:
+"""Paints the Bonus bosses' tiling textures (greyscale, I8), multiplied in-game by the procedural
+meshes' vertex colours:
 
-  assets/dragon_boss/scales.i8.png    Shadowborne's overlapping keeled scales (body, legs, head, horns)
+  assets/dragon_boss/scales.i8.png    Shadowborne's scale map, 128x32, once round each tube (scales())
   assets/dragon_boss/membrane.i8.png  its wing membranes: creased leather with veins
   assets/shackled_sun/surface.i8.png  the Shackled Sun's granulation: boiling cells, dark lanes
 
-Every texture tiles both ways and is rolled so its brightest spot is at texels 1..3 x 1..3: unlit faces (crystals, eyes,
+The others are 32x32. Every texture tiles both ways and is rolled so its brightest spot is at texels 1..3 x 1..3: unlit faces (crystals, eyes,
 the sun's iris) all sample texel (2, 2), so they keep their colour (proc_mesh_uv).
 
 Needs numpy (Blender's bundled Python has it):
@@ -82,33 +82,86 @@ def wrapped(d):
     return (d + N / 2) % N - N / 2
 
 
+MU, MV = 128, 32    # the scale map: texels round a tube, and down it before it repeats (4 KB: TMEM)
+
+
 def scales():
-    # Overlapping scales, rows 4 texels apart down the body (y runs from the chest toward the
-    # tail), 8 across, each row shifted half a scale. A row lies over the root of the next, so
-    # each scale shows the crescent of its free edge: in shadow under the scale before it, lit
-    # toward its rounded edge, a dark rim, a faint keel down its middle
-    X, Y = grid()
-    W, H, R = 8.0, 4.0, 5.2
-    out = np.full_like(X, 0.22)
-    top = np.full_like(X, -1e9)
-    for row in range(-3, int(N / H) + 3):
-        for col in range(-2, int(N / W) + 2):
-            cx = col * W + (W / 2 if row & 1 else 0.0)
-            cy = row * H
-            dx, dy = wrapped(X - cx), wrapped(Y - cy)
-            r = np.hypot(dx, dy * 1.05) / R
-            inside = (r < 1.0) & (dy > -R * 0.35)
-            lit = np.clip((dy + R * 0.3) / (R * 1.0), 0, 1)
-            v = 0.42 + 0.58 * lit ** 0.8                                # shadow at the root, lit toward the edge
-            v *= 1.0 - 0.18 * (np.abs(dx) / R) ** 2                     # rounded across
-            v += 0.04 * np.exp(-(dx / 0.8) ** 2) * (dy > 0)             # the keel
-            v = np.where(r > 0.8, v * (1.0 - (r - 0.8) / 0.2 * 0.7), v)    # its rim
-            v *= 0.9 + 0.14 * hash01(row % 8, col % 4)
-            take = inside & (dy > top)      # the row before (the pixel furthest past its centre) on top
-            out = np.where(take, v, out)
-            top = np.where(take, dy, top)
-    img = down(out) * noise(7, 0.04)
-    return bright_corner(np.clip(img, 0, 1))
+    # Shadowborne's scale map, 128x32, wrapping once round a tube (u: from its right side going
+    # up first, so the spine is at 32 and the belly at 96; v: down the body toward the tail):
+    # rows of flank scales, a row of larger keeled scales down the spine, broad plates under the
+    # belly. Each scale painted with its own size, lean, shade and outline; a few old and dark,
+    # a few chipped, a few raked by scars. Under its neighbour toward the head, each shows the
+    # crescent of its free edge: in shadow at the root, lit toward a crisp dark rim
+    rng = np.random.default_rng(1983)
+    X, Y = np.meshgrid((np.arange(MU * SS) + 0.5) / SS, (np.arange(MV * SS) + 0.5) / SS)
+    wrapu = lambda d: (d + MU / 2) % MU - MU / 2
+    wrapv = lambda d: (d + MV / 2) % MV - MV / 2
+    out = np.full_like(X, 0.28)
+    best = np.full_like(X, -1e9)        # the layer and how far past its centre: who's on top
+    els = []
+    COLS, ROWS = 13, 8
+    for r in range(ROWS):           # flanks
+        for k in range(COLS):
+            u = (k + (0.5 if r & 1 else 0.0)) * MU / COLS + rng.uniform(-0.8, 0.8)
+            if 80.0 < u < 112.0:
+                continue
+            els.append(dict(u=u, v=r * MV / ROWS + rng.uniform(-0.3, 0.3), rx=6.6 * rng.uniform(0.86, 1.12), ry=3.4 * rng.uniform(0.9, 1.1),
+                            lean=rng.uniform(-0.12, 0.12), layer=1, keel=0.03))
+    for r in range(4):              # the spine
+        els.append(dict(u=32 + rng.uniform(-1.0, 1.0), v=r * 8 + rng.uniform(-0.3, 0.3), rx=10.0 * rng.uniform(0.94, 1.06), ry=6.4 * rng.uniform(0.95, 1.05),
+                        lean=rng.uniform(-0.04, 0.04), layer=2, keel=0.12))
+    for r in range(4):              # the belly
+        els.append(dict(u=96 + rng.uniform(-0.8, 0.8), v=r * 8 + rng.uniform(-0.2, 0.2), rx=20.0 * rng.uniform(0.98, 1.02), ry=6.6 * rng.uniform(0.96, 1.04),
+                        lean=rng.uniform(-0.015, 0.015), layer=0, keel=0.0, plate=True))
+    for e in els:
+        worn, chip = rng.random() < 0.09, rng.random() < 0.07
+        shade = rng.uniform(0.8, 1.0) * (0.72 if worn else 1.0)
+        ca, sa = np.cos(e["lean"]), np.sin(e["lean"])
+        dx0, dy0 = wrapu(X - e["u"]), wrapv(Y - e["v"])
+        dx, dy = dx0 * ca - dy0 * sa, dx0 * sa + dy0 * ca
+        plate = e.get("plate", False)
+        p = 4.0 if plate else 2.0         # plates: squarer sides
+        r = ((np.abs(dx) / e["rx"]) ** p + (np.abs(dy) / e["ry"]) ** p) ** (1.0 / p)
+        inside = (r < 1.0) & (dy > -e["ry"] * 0.35)
+        if chip:            # a notch out of its free edge: the scale under it shows
+            a = rng.uniform(-0.9, 0.9)
+            inside &= np.hypot((dx - np.sin(a) * e["rx"] * 0.85) * 0.5, dy - np.cos(a) * e["ry"] * 0.85) > 1.2
+        lit = np.clip((dy + e["ry"] * 0.3) / (e["ry"] * 1.0), 0, 1)
+        v = 0.58 + 0.42 * lit ** 0.8
+        v *= 1.0 - 0.2 * np.clip(np.abs(dx) / e["rx"], 0, 1) ** 2
+        v += e["keel"] * np.exp(-(dx / 1.3) ** 2) * (dy > -1.0)
+        rim = 0.78 if not worn else 0.7
+        v = np.where(r > rim, v * (1.0 - (r - rim) / (1.0 - rim) * 0.58), v)
+        if plate:           # fine growth lines across a plate
+            v *= 1.0 - 0.06 * (np.sin(dy * 2.6) > 0.6)
+        v *= shade
+        key = e["layer"] * 1000.0 + dy
+        take = inside & (key > best)
+        out = np.where(take, v, out)
+        best = np.where(take, key, best)
+    for k in range(5):              # scars raked across the flanks and the spine
+        u0, v0 = rng.uniform(0, MU), rng.uniform(0, MV)
+        while 76 < u0 < 116:
+            u0 = rng.uniform(0, MU)
+        a, L = rng.uniform(0.15, 0.6) * (1 if k & 1 else -1), rng.uniform(10, 18)
+        dx, dy = wrapu(X - u0), wrapv(Y - v0)
+        t = np.clip(dx * np.cos(a) + dy * np.sin(a), -L / 2, L / 2)
+        d = np.hypot(dx - t * np.cos(a), dy - t * np.sin(a))
+        out = np.where(d < 0.45, out * 0.5, np.where(d < 0.9, out * (1.0 + 0.12 * (d - 0.45) / 0.45), out))   # a gouge, its lip catching light
+    img = out.reshape(MV, SS, MU, SS).mean(axis=(1, 3))
+    img *= 1.0 + 0.04 * (np.random.default_rng(7).random((MV, MU)) * 2 - 1)
+    img = np.clip(img, 0, 1)
+    # rolled down the tile (along the body: free) so a bright spot in columns 1..3 lands on texels
+    # (1..3, 1..3), lifted to white: unlit faces (crystals, eyes, teeth) sample texel (2, 2)
+    bestw, at = -1.0, 0
+    for y in range(MV):
+        w = np.roll(img, -y, 0)[:3, 1:4].min()
+        if w > bestw:
+            bestw, at = w, y
+    img = np.roll(img, 1 - at, 0)
+    img[1:4, 1:4] = np.maximum(img[1:4, 1:4], 0.92)
+    print(f"  texel (2, 2) area: {bestw:.2f}, lifted to 0.92")
+    return img
 
 
 def cells(seed, n, jitter=0.8):

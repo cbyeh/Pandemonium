@@ -3322,6 +3322,9 @@ void character_apply_damage(float amount)
 #ifdef HLE_DUMMY_REAL      // the bot playtest: counted, and it hurts
     { extern float hle_dummy_damage; extern int hle_dummy_hits; hle_dummy_damage += amount * tower_mod_damage_taken(); hle_dummy_hits++; }
 #else
+#ifdef HLE_LOG_MOVES     // test aid: each hit, after the move that dealt it ([move])
+    debugf("[hit] %.1f\n", (double)amount);
+#endif
     { extern float hle_dummy_damage; extern int hle_dummy_hits; hle_dummy_damage += amount; hle_dummy_hits++; return; }   // test aid: count hits, never hurt
 #endif
 #endif

@@ -127,14 +127,18 @@ static void move_toward(Boss *b, float x, float z, float speed, float dt)
 }
 
 static void enter(SbState st) {
+#ifdef HLE_LOG_MOVES     // test aid: each move as it starts (the hits after it are its: [hit])
+    debugf("[move] %d\n", st);
+#endif
 #ifdef HLE_SUN_TRACE
     debugf("[sun] %.1f s: state %d -> %d\n", (double)s.life, s.state, st);
 #endif
     s.state = st; s.t = 0.0f; s.step = 0; }
 
-static void sfx_boom(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH1, 1.0f, 0.0f); }
-static void sfx_cast(void) { audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SWING2, 1.0f, 0.0f); }
-static void sfx_chain(int k) { audio_play_scene_sfx_dist(k ? SCENE1_SFX_CHAIN2 : SCENE1_SFX_CHAIN1, 1.0f, 0.0f); }
+static void sfx(int id, float vol) { audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, 0.0f); }
+static void sfx_boom(void) { sfx(SCENE1_SFX_BOSS_SMASH1, 1.0f); }
+static void sfx_cast(void) { sfx(SCENE1_SFX_BOSS_SWING2, 1.0f); }
+static void sfx_chain(int k) { sfx(k ? SCENE1_SFX_CHAIN2 : SCENE1_SFX_CHAIN1, 1.0f); }
 
 static float speed_mult(void) { return s.unshackled ? 1.35f : 1.0f; }
 static float hurt(float d) { return s.unshackled ? d * 1.2f : d; }     // unshackled, it hits 20% harder
@@ -273,7 +277,7 @@ static void glare_update(Boss *b, float dt)
         for (int i = 1; i <= 4; i++)    // the middle lane, on the floor, out to the player
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(s.aim) * d * 0.25f * i, s.groundY,
                                                      b->pos[2] + cosf(s.aim) * d * 0.25f * i }, s.aim + i);
-        audio_play_scene_sfx_dist(SCENE1_SFX_DARK_BEAM, 0.8f, 0.0f);
+        sfx(SCENE1_SFX_DARK_BEAM, 0.8f);
 #ifdef HLE_AUTOPLAY
         debugf("[sun] cross volley %d at %.0f\n", s.step + 1, (double)d);
 #endif
@@ -301,7 +305,7 @@ static void spiral_update(Boss *b, float dt)
             float a = b->rot[1] + k * (T3D_PI / 3.0f);
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * 22.0f, s.groundY, b->pos[2] + cosf(a) * 22.0f }, a);
         }
-        if (s.t - dt <= 0.0f) audio_play_scene_sfx_dist(SCENE1_SFX_FIRE, 0.9f, 0.0f);
+        if (s.t - dt <= 0.0f) sfx(SCENE1_SFX_FIRE, 0.9f);
         s.aim = b->rot[1];
         return;
     }
@@ -340,7 +344,7 @@ static void ember_update(Boss *b, float dt)
         float v[3] = { sinf(a) * 38.0f + cosf(a) * side * 1.5f, 20.0f, cosf(a) * 38.0f - sinf(a) * side * 1.5f };
         skill_fx_next_shape(1.9f, CHARGE);
         skill_fx_spawn_orb_hostile(o, v, hurt(20.0f), fmaxf(3.6f, d / 40.0f + 1.5f), 2.4f);
-        audio_play_scene_sfx_dist(SCENE1_SFX_FIRE, 0.8f, 0.0f);
+        sfx(SCENE1_SFX_FIRE, 0.8f);
 #ifdef HLE_AUTOPLAY
         debugf("[sun] ember %d at %.0f\n", s.step + 1, (double)d);
 #endif
@@ -449,7 +453,7 @@ static void flare_update(Boss *b, float dt)
             float a = b->rot[1] + k * (T3D_PI / 4.0f);
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * FLARE_R, s.groundY, b->pos[2] + cosf(a) * FLARE_R }, a);
         }
-        if (s.t <= dt) audio_play_scene_sfx_dist(SCENE1_SFX_FIRE, 1.0f, 0.0f);
+        if (s.t <= dt) sfx(SCENE1_SFX_FIRE, 1.0f);
         if (s.t >= WIND) {
             s.flarePos[0] = b->pos[0]; s.flarePos[1] = s.groundY + 4.0f; s.flarePos[2] = b->pos[2];
             s.flareYaw = b->rot[1]; s.flareAge = 0.0f; s.flareHit = false;
@@ -586,7 +590,7 @@ static void eclipse_update(Boss *b, float dt)
     float hy = s.t < spent ? s.groundY + 70.0f : s.groundY + REST_H;
     b->pos[1] += (hy - b->pos[1]) * fminf(1.0f, dt * (s.t < spent ? 2.5f : 4.0f));
     s.raysSpin = fmaxf(s.raysSpin, s.t < spent ? 7.0f : 1.0f);
-    if (s.t <= dt) { audio_play_scene_sfx_dist(SCENE1_SFX_DARK_BEAM, 1.0f, 0.0f); screen_shake_set_shake_mag(4.0f); }
+    if (s.t <= dt) { sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(4.0f); }
     if (s.step < 3 && s.t >= EC_RISE + s.step * EC_GAP) {
         int w = s.step, n = EC_N[w];
         float cx = w == 2 ? character.pos[0] : b->pos[0], cz = w == 2 ? character.pos[2] : b->pos[2];
