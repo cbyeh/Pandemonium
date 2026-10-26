@@ -14,6 +14,7 @@
 #include "fx/proc_mesh.h"
 #include "fx/skill_fx.h"
 #include "fx/screen_shake.h"
+#include "../boss/environmental_mechanics/boss_ground_crush.h"
 #include "simple_collision_utility.h"
 #include "controllers/audio_controller.h"
 #include "../../scenes/guardian/guardian_scene_sfx.h"
@@ -428,6 +429,7 @@ static void dive_update(Boss *b, float dt)
                 float a = i * (T3D_PI / 4.0f) + b->rot[1];
                 skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * 24.0f, s.groundY, b->pos[2] + cosf(a) * 24.0f }, a);
             }
+            boss_ground_crush_spawn(b->pos[0], s.groundY + 0.25f, b->pos[2]);
             screen_shake_set_shake_mag(14.0f);
             sfx_boom();
             enter(SB_REST);
@@ -865,6 +867,8 @@ static void lash_update(Boss *b, float dt)
             for (int i = 1; i <= 3; i++)
                 skill_fx_spawn_burst_hostile((float[3]){ root[0] + s.strikeDir[0] * CHAIN_LEN * 0.3f * i, s.groundY,
                                                          root[2] + s.strikeDir[1] * CHAIN_LEN * 0.3f * i }, i * 0.7f);
+            boss_ground_crush_spawn(root[0] + s.strikeDir[0] * CHAIN_LEN * 0.6f, s.groundY + 0.25f,
+                                    root[2] + s.strikeDir[1] * CHAIN_LEN * 0.6f);
             screen_shake_set_shake_mag(10.0f);
             sfx_boom();
             sfx_chain(1);

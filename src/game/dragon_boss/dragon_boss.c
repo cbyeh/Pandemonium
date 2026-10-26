@@ -13,6 +13,7 @@
 #include "fx/proc_mesh.h"
 #include "fx/skill_fx.h"
 #include "fx/screen_shake.h"
+#include "../boss/environmental_mechanics/boss_ground_crush.h"
 #include "controllers/audio_controller.h"
 #include "../../scenes/guardian/guardian_scene_sfx.h"
 #include "../../scenes/guardian/guardian_scene_bounds.h"
@@ -1238,6 +1239,8 @@ static void land_slam(float shake)
     }
     HB_TOUCH(HB_LAND, lg - 8.0f);
     if (hit) { HB_HIT(HB_LAND, lg - 8.0f); character_apply_damage(20.0f); }
+    boss_ground_crush_spawn((s.foot[0][0] + s.foot[1][0] + s.foot[2][0] + s.foot[3][0]) * 0.25f, s.groundY + 0.25f,
+                            (s.foot[0][2] + s.foot[1][2] + s.foot[2][2] + s.foot[3][2]) * 0.25f);
     screen_shake_set_shake_mag(shake);
     sfx_boom();
 }

@@ -182,6 +182,8 @@ $(ROM): N64_ROM_TITLE="$(ROM_TITLE)"
 $(ROM): N64_ROM_SAVETYPE=eeprom4k
 $(ROM): $(BUILD_DIR)/$(TARGET).dfs $(BUILD_DIR)/$(TARGET).elf
 $(ROM): N64_ROM_METADATA=metadata/metadata.ini
+# Pad to whole MiB so both ROMs (HLE code is ~24 KB bigger) show one size on the release page
+$(ROM): N64_METADATAFLAGS += --padding 1048576
 
 deploy: pandemonium.z64
 	./scripts/deploy.sh --no-build
