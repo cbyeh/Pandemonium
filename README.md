@@ -30,7 +30,7 @@ Toggle in **Settings > Skills** (title screen). In the Tower the setting doesn't
 
 | Moon Blade Dance (D-Up) | Halfmoon Slash (D-Right) | Crescent Cleave (D-Down) |
 |---|---|---|
-| <img src="docs/media/skill_moon_blade_dance.gif" width="320"> | <img src="docs/media/skill_halfmoon_slash.gif" width="320"> | <img src="docs/media/skill_crescent_cleave.gif" width="320"> |
+| <img src="docs/media/skill_moon_blade_dance.gif" width="250"> | <img src="docs/media/skill_halfmoon_slash.gif" width="250"> | <img src="docs/media/skill_crescent_cleave.gif" width="250"> |
 
 ### Skins
 **Settings > Skin** lists every skin: the Knight, the Umber Cloak, Wolf Knight, Black Swordsman and Scarlet Valkyrie from the start. Three more unlock:
@@ -38,7 +38,7 @@ Toggle in **Settings > Skills** (title screen). In the Tower the setting doesn't
 - **Teal Cloak:** reach floor 10 of the Tower (two full circles).
 - **Nightfarer:** buy him at **Tower > Shrine** for 450 Embers.
 
-<img src="docs/media/skins.png" width="960">
+<img src="docs/media/skins.png" width="800">
 
 *Umber Cloak, Wolf Knight, Black Swordsman, Scarlet Valkyrie*
 
@@ -69,10 +69,10 @@ Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on th
 
 | Guardian Unbound | Fallen Warrior (Bonus) |
 |---|---|
-| <img src="docs/media/boss_guardian_unbound.png" width="440"> | <img src="docs/media/boss_fallen_warrior.png" width="440"> |
+| <img src="docs/media/boss_guardian_unbound.png" width="400"> | <img src="docs/media/boss_fallen_warrior.png" width="400"> |
 | The Guardian, risen in gold, his sword floating over him: a barrage from the air. | A crimson knight with your own moves: combos, Halfmoon, Moon Blade, rolls and counters, a leaping plunge. |
 | **The Shackled Sun (Bonus)** | **Shadowborne (Bonus)** |
-| <img src="docs/media/boss_shackled_sun.png" width="440"> | <img src="docs/media/boss_shadowborn.png" width="440"> |
+| <img src="docs/media/boss_shackled_sun.png" width="400"> | <img src="docs/media/boss_shadowborn.png" width="400"> |
 | A chained, burning eye: its chains lash and sweep, sunbrand crosses fly, and once unshackled it eclipses. | A crystal dragon: claws, tail and bite, fire swept over the floor, strafes from the air, and the dark beam in its second half. |
 
 The ending now plays live in the engine.

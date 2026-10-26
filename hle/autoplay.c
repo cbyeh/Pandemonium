@@ -21,6 +21,7 @@
 #include "game/boss/boss.h"
 #include "controllers/menu_controller.h"
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
+#include "scenes/guardian/guardian_scene_bounds.h"
 #endif
 #if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH)
 #include "utilities/save_controller.h"
@@ -206,6 +207,13 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         return;
     }
 #endif
+#ifndef HLE_SKIN_DIST       // the skin check's camera: distance, height, where it looks (README shots: closer)
+#define HLE_SKIN_DIST 70.0f
+#endif
+#ifndef HLE_SKIN_CAM_Y
+#define HLE_SKIN_CAM_Y 30.0f
+#define HLE_SKIN_LOOK_Y 20.0f
+#endif
 #ifdef HLE_TEST_SKIN
     // Skin check: HLE_TEST_SKIN=<id>. Title, then the knight
     // runs a circle and stands while the camera orbits: back, side, front every 60 frames.
@@ -235,6 +243,20 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
         cameraLockOnActive = false;
         if (t == 1) { character.pos[0] = boss->pos[0] - 400.0f; character.pos[2] = boss->pos[2]; character_skin_reset_cloth(); }
+#ifndef HLE_SKIN_GATE_ROT
+#define HLE_SKIN_GATE_ROT 5.06f   // three-quarter front
+#endif
+#ifdef HLE_SKIN_GATE      // README shots: on the fog gate's landing (x ~ -700), turned HLE_SKIN_GATE_ROT, the camera along +x
+        {
+            character.pos[0] = HLE_SKIN_GATE; character.pos[1] = 49.0f; character.pos[2] = 0.0f; character.rot[1] = HLE_SKIN_GATE_ROT;
+            if (t == 2) character_skin_reset_cloth();
+            float *p = character.pos;
+            customCamPos = (T3DVec3){{ p[0] + HLE_SKIN_DIST, p[1] + HLE_SKIN_CAM_Y, p[2] }};
+            customCamTarget = (T3DVec3){{ p[0], p[1] + HLE_SKIN_LOOK_Y, p[2] }};
+            camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+            return;
+        }
+#endif
 #ifdef HLE_SKIN_ACTION
         // run, a combo, two rolls; the camera steps round every 20 frames
         const int period = 20; const float dist = 50.0f;
@@ -242,14 +264,14 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         if (t >= 120 && t < 260 && t % 30 == 0) { pressed->b = 1; in->btn.b = 1; }
         if (t == 280 || t == 330) { in->stick_y = 80; pressed->a = 1; in->btn.a = 1; }
 #else
-        const int period = 60; const float dist = 70.0f;
+        const int period = 60; const float dist = HLE_SKIN_DIST;
         if (t < 180) { in->stick_x = (int)(75 * cosf(t * 0.05f)); in->stick_y = (int)(75 * sinf(t * 0.05f)); }
 #endif
         float yaw = character.rot[1];
         float a = -yaw + (float)(t / period % 3) * 1.5708f;   // facing direction rotated by 0/90/180
         float *p = character.pos;
-        customCamPos = (T3DVec3){{ p[0] + dist * sinf(a), p[1] + 30.0f, p[2] + dist * cosf(a) }};
-        customCamTarget = (T3DVec3){{ p[0], p[1] + 20.0f, p[2] }};
+        customCamPos = (T3DVec3){{ p[0] + dist * sinf(a), p[1] + HLE_SKIN_CAM_Y, p[2] + dist * cosf(a) }};
+        customCamTarget = (T3DVec3){{ p[0], p[1] + HLE_SKIN_LOOK_Y, p[2] }};
         camera_mode_smooth(CAMERA_CUSTOM, 0.01f);   // also ends the fight-intro transition
         if (t % period == 0) debugf("[skin] view %d at frame %d\n", t / period % 3, frame);
         return;
@@ -1043,6 +1065,32 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 float a = boss->rot[1] + 0.9f;
                 customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * 80.0f, boss->pos[1] + 28.0f, boss->pos[2] + cosf(a) * 80.0f }};
                 customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + 18.0f, boss->pos[2] }};
+                camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+            }
+#endif
+#ifdef HLE_DUMMY_CAM_PORTRAIT  // the boss alone, centred, from its front (turned until the camera is inside the hall): README shots
+            if (boss) {
+                cameraLockOnActive = false;
+#ifndef HLE_PORTRAIT_D
+#define HLE_PORTRAIT_D 110.0f
+#endif
+#ifndef HLE_PORTRAIT_H
+#define HLE_PORTRAIT_H 30.0f
+#endif
+#ifndef HLE_PORTRAIT_LOOK
+#define HLE_PORTRAIT_LOOK 30.0f
+#endif
+#ifndef HLE_PORTRAIT_TURN
+#define HLE_PORTRAIT_TURN 0.5f
+#endif
+                float a = boss->rot[1] + HLE_PORTRAIT_TURN, cx = 0, cz = 0;
+                for (int i = 0; i < 16; i++, a += 0.39f) {
+                    cx = boss->pos[0] - sinf(a) * HLE_PORTRAIT_D; cz = boss->pos[2] + cosf(a) * HLE_PORTRAIT_D;
+                    float hx = (cx + boss->pos[0]) * 0.5f, hz = (cz + boss->pos[2]) * 0.5f;
+                    if (scene_bounds_check_room(cx, character.pos[1], cz) && scene_bounds_check_room(hx, character.pos[1], hz)) break;
+                }
+                customCamPos = (T3DVec3){{ cx, boss->pos[1] + HLE_PORTRAIT_H, cz }};
+                customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + HLE_PORTRAIT_LOOK, boss->pos[2] }};
                 camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
             }
 #endif
