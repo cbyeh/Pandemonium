@@ -1224,23 +1224,10 @@ static void charge_update(Boss *b, float dt)
     } else if (s.t >= 0.6f) enter(DG_IDLE);
 }
 
-// Touching down: bursts at its feet and a quake; under its body or in a burst, a blow (the strafe's
-// landing hit everyone within 40 of the root, wider than the body and short of its feet; the
-// sky beam's landing drew the same bursts and was harmless)
+// Touching down: bursts at its feet and a quake, harmless (only its moves hit)
 static void land_slam(float shake)
 {
-    bool hit = body_gap() < PLAYER_R;
-    float lg = body_gap();
-    for (int i = 0; i < 4; i++) {
-        float p[3] = { s.foot[i][0], s.groundY, s.foot[i][2] };
-        skill_fx_spawn_burst_hostile(p, i * 1.5f);
-        hit |= burst_hits(p);
-        lg = fminf(lg, sqrtf((character.pos[0] - p[0]) * (character.pos[0] - p[0]) + (character.pos[2] - p[2]) * (character.pos[2] - p[2])) - BURST_R);
-    }
-    HB_TOUCH(HB_LAND, lg - 8.0f);
-    if (hit) { HB_HIT(HB_LAND, lg - 8.0f); character_apply_damage(20.0f); }
-    boss_ground_crush_spawn((s.foot[0][0] + s.foot[1][0] + s.foot[2][0] + s.foot[3][0]) * 0.25f, s.groundY + 0.25f,
-                            (s.foot[0][2] + s.foot[1][2] + s.foot[2][2] + s.foot[3][2]) * 0.25f);
+    for (int i = 0; i < 4; i++) skill_fx_spawn_burst_hostile((float[3]){ s.foot[i][0], s.groundY, s.foot[i][2] }, i * 1.5f);
     screen_shake_set_shake_mag(shake);
     sfx_boom();
 }
