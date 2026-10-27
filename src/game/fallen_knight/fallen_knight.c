@@ -477,8 +477,7 @@ static void cleave_point(const Boss *b, int i, float o[3], float *dx, float *dz)
 
 static void cleave_update(Boss *b, float dt)
 {
-    // Stands and plants its sword point-down (sparks where it bites and where the blades
-    // will rise), sinks into a crouch with it, then rips it up: five crimson blades rise one
+    // Stands and plants its sword point-down (sparks where it bites), sinks into a crouch with it, then rips it up: five crimson blades rise one
     // by one, fanned along where it faced (it doesn't turn)
     const float PLANT = 0.3f, CROUCH = 0.5f, FROM = 0.25f, SINK = 1.5f, RELEASE = CROUCH + (0.85f - FROM) / SINK + 0.05f, GAP = 0.12f;
     if (s.anim == FKA_CLEAVE) t3d_anim_set_speed(&s.anims[s.anim], clip_time() < 0.85f ? SINK : 1.0f);
@@ -490,7 +489,6 @@ static void cleave_update(Boss *b, float dt)
         if (s.t >= PLANT && s.t - dt < PLANT) {
             float base[3], tip[3];
             if (sword_segment(base, tip)) skill_fx_spawn_burst_hostile((float[3]){ tip[0], s.groundY, tip[2] }, 0.0f);
-            for (int i = 0; i < 5; i += 2) { float o[3], dx, dz; cleave_point(b, i, o, &dx, &dz); skill_fx_spawn_burst_hostile(o, b->rot[1] + i); }
             screen_shake_set_shake_mag(2.0f);
         }
     }
@@ -507,22 +505,14 @@ static void cleave_update(Boss *b, float dt)
 
 static void halfmoon_update(Boss *b, float dt)
 {
-    // Crouches with its sword held level and out to the side, settles its aim and holds it
-    // (marks on the floor show the crescent's reach), throbbing crimson, a flash, then the
-    // wide rolling slash where it faced: get round its side, or roll through it
+    // Crouches with its sword held level and out to the side, settles its aim and holds it,
+    // then the wide rolling slash where it faced: get round its side, or roll through it
     const float LOCK = 0.35f, CHARGE = 1.6f, HALF = 1.0f;      // the crescent reaches 57 degrees each side
     if (s.step == 0) {
         t3d_anim_set_speed(&s.anims[s.anim], 2.0f / CHARGE);   // the clip's sweep (~2.0 s in) as the crescent leaves
         if (s.t < LOCK) face_player(b, dt, 4.0f);
         else if (s.t - dt < LOCK) sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.8f);
         if (clip_time() > 0.3f) hold_blade(-0.45f, -0.89f, 0.0f);
-        if (s.t >= LOCK && (s.t - dt < LOCK || (int)(s.t / 0.3f) != (int)((s.t - dt) / 0.3f))) {      // its edges and middle, then between
-            bool odd = (int)(s.t / 0.3f) & 1;
-            for (int k = odd ? -1 : -2; k <= 2; k += 2) {
-                float a = b->rot[1] + k * HALF * 0.5f;
-                skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] - fm_sinf(a) * 34.0f, s.groundY, b->pos[2] + fm_cosf(a) * 34.0f }, a);
-            }
-        }
         if (s.t >= CHARGE) {
             skill_fx_next_arc_half(HALF);
             skill_fx_spawn_arc_hostile((float[3]){ b->pos[0], b->pos[1] + 12.0f, b->pos[2] }, b->rot[1], 90.0f, 30.0f);

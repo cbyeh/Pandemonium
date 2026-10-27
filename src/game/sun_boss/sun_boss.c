@@ -499,8 +499,7 @@ static void flare_tick(float dt)
     if (s.flareAge > 0.55f) s.flareAge = -1.0f;
 }
 
-// Solar Ram: it pulls back and rears, glowing red, turning on the player; dips and locks (a lane of sparks
-// on the floor), then hurls itself down the lane and skids to a stop. Unshackled, it turns and
+// Solar Ram: it pulls back and rears, glowing red, turning on the player; dips and locks, then hurls itself down the lane and skids to a stop. Unshackled, it turns and
 // rams again. The eye itself is what hits (its drawn radius), swept along the frame's path
 static void ram_start(Boss *b, int count)
 {
@@ -525,13 +524,10 @@ static void ram_update(Boss *b, float dt)
             float k = clamp01(s.t / ((WIND - LOCK) * 0.7f)), back = 26.0f * (1.0f - (1.0f - k) * (1.0f - k));
             if (d > 1e-3f) move_toward(b, s.ramFrom[0] - dx / d * back, s.ramFrom[1] - dz / d * back, 200.0f, dt);
         } else {
-            if (s.t - dt < WIND - LOCK) {   // locks: the lane, out past the player
+            if (s.t - dt < WIND - LOCK) {   // locks its lane, out past the player
                 s.aim = atan2f(dx, dz);
                 s.strikeDir[0] = sinf(s.aim); s.strikeDir[1] = cosf(s.aim);
                 s.ramLen = fminf(130.0f, fmaxf(50.0f, d + 30.0f));
-                for (int i = 1; i <= 4; i++)
-                    skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + s.strikeDir[0] * s.ramLen * 0.25f * i, s.groundY,
-                                                             b->pos[2] + s.strikeDir[1] * s.ramLen * 0.25f * i }, s.aim + i);
                 sfx_chain(0);
             }
             b->rot[1] += remainderf(s.aim - b->rot[1], 2.0f * T3D_PI) * fminf(1.0f, dt * 12.0f);
@@ -855,10 +851,6 @@ static void lash_update(Boss *b, float dt)
         float k = clamp01(s.t / wind);
         c->kin = true; c->kk = 0.18f;
         chain_pose(b, c, s.strikeDir[0], s.strikeDir[1], T3D_PI * (1.0f + 0.82f * k), false);
-        if (s.t >= wind * 0.45f && s.t - dt < wind * 0.45f)     // where it will land
-            for (int i = 1; i <= 2; i++)
-                skill_fx_spawn_burst_hostile((float[3]){ root[0] + s.strikeDir[0] * CHAIN_LEN * 0.4f * i, s.groundY,
-                                                         root[2] + s.strikeDir[1] * CHAIN_LEN * 0.4f * i }, 0.0f);
         if (s.t >= wind) { s.step = 1; s.t = 0.0f; sfx_cast(); sfx_chain(0); }
     } else if (s.step == 1) {   // over the top and down onto the floor
         float k = clamp01(s.t / 0.2f);
@@ -934,11 +926,6 @@ static void sweep_update(Boss *b, float dt)
         b->rot[1] = s.aim - (s.sweepSpan > 0.0f ? 1.0f : -1.0f) * 0.3f * k * k * (3.0f - 2.0f * k);
         c->kin = true; c->kk = 0.15f; c->hot = true;
         chain_pose(b, c, sinf(s.sweepFrom), cosf(s.sweepFrom), T3D_PI * 0.5f, true);
-        if ((int)(s.t * 5.0f) != (int)((s.t - dt) * 5.0f)) {   // a ring of warnings at its reach
-            float a = s.sweepFrom + s.sweepSpan * s.t / WIND;
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * CHAIN_LEN * 0.8f, s.groundY,
-                                                     b->pos[2] + cosf(a) * CHAIN_LEN * 0.8f }, a);
-        }
         if (s.t >= WIND) { s.step = 1; s.t = 0.0f; s.hitDone = false; sfx_cast(); sfx_chain(1); }
     } else if (s.step == 1) {
         float k = clamp01(s.t / SWING), a0 = s.sweepFrom + s.sweepSpan * clamp01((s.t - dt) / SWING), a = s.sweepFrom + s.sweepSpan * k;

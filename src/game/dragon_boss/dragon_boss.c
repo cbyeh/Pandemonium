@@ -1154,17 +1154,10 @@ static void tail_update(Boss *b, float dt)
 static void whip_update(Boss *b, float dt)
 {
     // Spins a full turn with its tail out, a scything whip all round it: jump it, roll
-    // through, or be out of the tail's reach. Warned by bursts on the floor at that reach.
+    // through, or be out of the tail's reach. Told by its crouch, the tail held out and its blade glowing.
     const float WIND = 0.8f / (s.dark ? 1.2f : 1.0f), SPIN = 0.6f;
-    float e[3];
-    tail_tip(e);        // the warnings at the blade's reach (it hits that far: hits_after_rig)
-    float rx = e[0] - b->pos[0], rz = e[2] - b->pos[2], reach = sqrtf(rx * rx + rz * rz);
     if (s.step == 0) {      // it doesn't turn to face you: the spin reaches all round
         s.tCrouch = 7.0f; s.tNeckPitch = -0.4f; s.tTail = 0.0f; s.poseRate = 5.0f;
-        if ((int)(s.t * 6.0f) != (int)((s.t - dt) * 6.0f)) {     // a ring of warnings at the tail's reach
-            float a = b->rot[1] + s.t * 7.0f;     // round the way it will spin
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * reach, s.groundY, b->pos[2] + cosf(a) * reach }, a);
-        }
         if (s.t >= WIND) { s.step = 1; s.t = 0.0f; sfx_swing(); }
     } else if (s.step == 1) {
         b->rot[1] = remainderf(b->rot[1] + 2.0f * T3D_PI * dt / SPIN, 2.0f * T3D_PI);     // counter-clockwise on screen
