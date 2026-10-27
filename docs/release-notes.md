@@ -1,4 +1,5 @@
 **Which ROM:** `Pandemonium.z64` for real hardware, flashcarts and Ares. `The.Pandemonium.z64` for Delta and Mupen.
+Smaller download? **v1.0-mono** is the same game with the music in mono (10.8 MB).
 
 A dark-fantasy souls-like boss rush for the N64, inspired by Elden Ring.
 
