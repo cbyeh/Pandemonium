@@ -766,6 +766,10 @@ void character_reset(void)
     character.maxHealth = tower_mod_max_health();     // 150, more in a Tower run with Vigor
     character.health = character.maxHealth;
     character.healthPotions = tower_mod_max_potions(); // 3, and the Tower's own count in a run
+    if (character.healthPotions > POTION_CAP) character.healthPotions = POTION_CAP;
+#ifdef HLE_POTIONS_START    // test aid: start holding this many (the HUD's count, the cap)
+    character.healthPotions = HLE_POTIONS_START;
+#endif
     character.stamina = character.maxStamina;
     character.staminaRegenDelay = 0.0f;
     character.damageFlashTimer = 0.0f;

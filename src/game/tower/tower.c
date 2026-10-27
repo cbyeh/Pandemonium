@@ -475,7 +475,7 @@ void tower_draft_pick(int index)
     } else if (index >= 0 && index < s.nChoices) {
         BoonId b = (BoonId)s.choices[index];
         s.stacks[b]++;
-        if (b == BOON_DEEP_FLASK) character.healthPotions = character.healthPotions + 3 > 9 ? 9 : character.healthPotions + 3;
+        if (b == BOON_DEEP_FLASK) character.healthPotions = character.healthPotions + 3 > POTION_CAP ? POTION_CAP : character.healthPotions + 3;
         if (b == BOON_LEARN_MOONBLADE) s.skills |= 1 << SKILL_MOON_BLADE_DANCE;
         if (b == BOON_LEARN_HALFMOON)  s.skills |= 1 << SKILL_HALFMOON_SLASH;
         if (b == BOON_LEARN_CLEAVE)    s.skills |= 1 << SKILL_CRESCENT_CLEAVE;
@@ -863,5 +863,8 @@ void tower_floor_restore(void)
 {
     // One potion a fallen boss, no health: the potions are the run's healing
     if (s.potionDebt > 0) s.potionDebt--;      // Thirst taken with no potion: this one is owed
-    else if (character.healthPotions < 9) character.healthPotions++;    // a potion every fallen boss, even past the run's maximum (9: the HUD's one digit)
+    else if (character.healthPotions < POTION_CAP) character.healthPotions++;    // a potion every fallen boss, even past the run's maximum
+#ifdef HLE_AUTOPLAY
+    debugf("[potions] floor %d: %d (max %d, owed %d)\n", s.floor, character.healthPotions, tower_mod_max_potions(), s.potionDebt);
+#endif
 }

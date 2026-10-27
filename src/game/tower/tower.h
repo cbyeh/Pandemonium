@@ -97,6 +97,7 @@ float tower_mod_damage_vs(float bossHealthFrac, bool staggered);   // pacts agai
 bool  tower_hit_impaired(void);         // the Impaired curse: this hit does nothing
 void  tower_on_roll(void);              // a roll started (the Exposed curse)
 int   tower_mod_max_potions(void);
+#define POTION_CAP 15                   // potions held at most, in any run (two digits on the HUD)
 float tower_mod_potion_heal(void);      // fraction of max health
 float tower_mod_max_health(void);
 float tower_mod_roll_cost(void);

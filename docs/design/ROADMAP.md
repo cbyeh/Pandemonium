@@ -32,7 +32,7 @@ A run climbs floors, one fight each:
 - **Skills:** learned from Learn cards in the draft. Boss health rises 8% for each skill offered (taken or passed over), so skipping skills never keeps bosses weak.
 - **The baseline:** each circle cleared gives the player +10% damage and 6% less damage taken, through circle 5 (at most +40% and x0.78).
 - **Nights** (from circle 2, one at random a circle): Blood Moon (bosses hit 20% harder, x1.5 Embers), Iron Night (bosses +25% health, x1.3), Starfall (skills recharge 30% faster, bosses hit 10% harder, x1.2).
-- **After each boss:** one potion (no health), then the draft: three cards and a Skip button (+5 Embers; Down to it, Up back).
+- **After each boss:** one potion (no health; at most 15 held), then the draft: three cards and a Skip button (+5 Embers; Down to it, Up back).
 - **Embers** per floor: (8 x circle + 3 x the floor's place in its circle) x the night's bonus; +25 for a cleared circle. Kept when the run ends.
 - The pause menu's **Run** page lists the run: relic, damage and damage taken, health and potions, boons, blessings and curses.
 
