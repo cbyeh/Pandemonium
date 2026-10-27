@@ -141,6 +141,9 @@ $(FILESYSTEMDIR)/%.sprite: $(ASSDIR)/%.png
 	@mkdir -p $(dir $@)
 	@echo "    [SPRITE] $@"
 	$(N64_MKSPRITE) $(MKSPRITE_FLAGS) -o $(dir $@) "$<"
+# The Fallen Warrior's extra cracks stay uncompressed: ~10 KB that tips the hardware ROM into
+# the HLE one's size bracket, so the release page shows both at 18.1 MB
+$(FILESYSTEMDIR)/boss/ground_crushed_%.sprite: MKSPRITE_FLAGS += -c 0
 
 $(FILESYSTEMDIR)/%.font64: $(ASSDIR)/%.ttf
 	@mkdir -p $(dir $@)
@@ -182,8 +185,6 @@ $(ROM): N64_ROM_TITLE="$(ROM_TITLE)"
 $(ROM): N64_ROM_SAVETYPE=eeprom4k
 $(ROM): $(BUILD_DIR)/$(TARGET).dfs $(BUILD_DIR)/$(TARGET).elf
 $(ROM): N64_ROM_METADATA=metadata/metadata.ini
-# Pad to whole MiB so both ROMs (HLE code is ~24 KB bigger) show one size on the release page
-$(ROM): N64_METADATAFLAGS += --padding 1048576
 
 deploy: pandemonium.z64
 	./scripts/deploy.sh --no-build
