@@ -26,6 +26,8 @@
 #include "../../fx/screen_shake.h"
 
 #include "environmental_mechanics/multi_sword_attacks.h"
+#include "../../utilities/game_time.h"
+#include "../../controllers/audio_controller.h"
 
 // Access global character instance
 extern Character character;
@@ -98,9 +100,11 @@ static void boss_attacks_handle_lunge_starter(Boss* boss, float dt);
 static void boss_attacks_handle_stomp(Boss* boss, float dt);
 static void boss_attacks_handle_attack1(Boss* boss, float dt);
 static void boss_attacks_handle_aerial_sword_barrage(Boss* boss, float dt);
+static void boss_attacks_tick_sword_throw(Boss* boss, float dt);
 
 void boss_attacks_update(Boss* boss, float dt) {
     if (!boss) return;
+    if (boss->swordThrowT >= 0.0f && boss->state != BOSS_STATE_DEAD) boss_attacks_tick_sword_throw(boss, dt);
     
     // Check if boss is in an attack state and update hand collider
     bool isAttackState = (boss->state == BOSS_STATE_POWER_JUMP ||
@@ -477,70 +481,38 @@ static void boss_attacks_handle_combo(Boss* boss, float dt)
     boss_multi_attack_sfx(boss, bossComboAttack1Sfx, 3);
 }
 
-static void boss_attacks_handle_throw(Boss* boss, float dt) // TODO: add after the jam
+// Sword Throw (Unbound), passive: a sword comes down from the ceiling, as the ground sweep's
+// do, and slows to a stop over its head, keeping up with it; it turns to aim at the player
+// (where they stand at that moment), then flies and sticks in the floor, as the barrage's do
+// (MSA draws it and deals its hit). Moving off the spot during the aim dodges it. The boss
+// attacks meanwhile, so the two land together
+#define THROW_CEILING_Y 595.0f      // MSA's ceiling, where the sweep's swords start
+static void boss_attacks_tick_sword_throw(Boss* boss, float dt)
 {
-    // Keep boss facing the target during the entire attack
-    float dx = boss->comboStarterTargetPos[0] - boss->pos[0];
-    float dz = boss->comboStarterTargetPos[2] - boss->pos[2];
-    // Use same rotation formula as strafe/chase for consistency
-    boss_turn_towards_player(boss, dt, 0.5f); 
-    
-    // Phase 1: Throw sword (0.0 - 0.5s)
-    if (!boss->swordThrown && boss->stateTimer < 0.5f) {
-        // Animation trigger would be handled by animation system
+    const float DESCEND = 0.6f, FIRE = DESCEND, DONE = 2.2f;     // + its 0.55 s aim; DONE: stuck and sunk away
+    float t = boss->swordThrowT;
+    float k = fminf(1.0f, t / DESCEND), rest = boss->pos[1] + boss->swordRingHeight;
+    float y = THROW_CEILING_Y + (rest - THROW_CEILING_Y) * (1.0f - (1.0f - k) * (1.0f - k));
+    if (t <= 0.0f) {
+        msa_set_enabled(true);
+        msa_spawn_summoned_sword(boss->pos[0], y, boss->pos[2], rest);
+        float dx = character.pos[0] - boss->pos[0], dz = character.pos[2] - boss->pos[2];
+        audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_CAST_BOSS, 1.0f, sqrtf(dx * dx + dz * dz));
     }
-    else if (!boss->swordThrown && boss->stateTimer >= 0.5f) {
-        // Launch projectile
-        boss->swordThrown = true;
-        boss->swordProjectilePos[0] = boss->pos[0];
-        boss->swordProjectilePos[1] = boss->pos[1] + 2.0f;
-        boss->swordProjectilePos[2] = boss->pos[2];
-        // boss_debug_sound("boss_combo_starter_throw");
+#ifdef HLE_FREEZE_THROW    // test aid: hold the frame this far into the first summon (s), for screenshots
+    { static bool done; if (!done && t >= HLE_FREEZE_THROW) { done = true; game_time_slowmo(9999.0f, 0.0005f); debugf("[freeze] throw at %.2f\n", (double)t); } }
+#endif
+    if (k >= 1.0f) msa_hide_glow(0);     // the sword has come to its ghost
+    if (t < FIRE) {
+        msa_update_aerial_ring_pose(boss->pos[0], y, boss->pos[2], 0.0f, character.pos[0], character.pos[1], character.pos[2]);
+    } else if (t - dt < FIRE) {
+        msa_fire_aerial_sword(0, character.pos[0], character.pos[1] + 10.0f, character.pos[2]);
     }
-    
-    // Phase 2: Sword flight (0.5 - 1.0s)
-    if (boss->swordThrown && boss->stateTimer < 1.0f && !boss->comboStarterSlamHasHit) {
-        // Move sword toward target
-        float t = (boss->stateTimer - 0.5f) / 0.5f; // 0 to 1 over 0.5s
-        boss->swordProjectilePos[0] = boss->pos[0] + (boss->comboStarterTargetPos[0] - boss->pos[0]) * t;
-        boss->swordProjectilePos[2] = boss->pos[2] + (boss->comboStarterTargetPos[2] - boss->pos[2]) * t;
-        boss->swordProjectilePos[1] = boss->pos[1] + 2.0f + sinf(t * T3D_PI) * 5.0f; // Arc
-        
-        // Check for hit
-        float hitDx = character.pos[0] - boss->swordProjectilePos[0];
-        float hitDz = character.pos[2] - boss->swordProjectilePos[2];
-        float hitDy = character.pos[1] - boss->swordProjectilePos[1];
-        float hitDist = sqrtf(hitDx*hitDx + hitDy*hitDy + hitDz*hitDz);
-        if (hitDist < 3.0f && !boss->currentAttackHasHit) {
-            character_apply_damage(15.0f);
-            boss_attacks_on_player_hit(20.0f);
-            //boss_play_attack_sfx(boss, SCENE1_SFX_BOSS_SMASH2, 0.0f);
-            boss->currentAttackHasHit = true;
-            boss->comboStarterSlamHasHit = true;
-        }
+    if (t >= FIRE + 0.5f && t - dt < FIRE + 0.5f) {      // a whoosh as it leaves
+        float dx = character.pos[0] - boss->pos[0], dz = character.pos[2] - boss->pos[2];
+        audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SWING2, 1.0f, sqrtf(dx * dx + dz * dz));
     }
-    
-    // Phase 3: Sword slam (1.0s+)
-    if (boss->stateTimer >= 1.0f && !boss->comboStarterSlamHasHit) {
-        boss->comboStarterSlamHasHit = true;
-        // boss_debug_sound("boss_combo_starter_impact");
-        // Sword hits ground at target
-        boss->swordProjectilePos[0] = boss->comboStarterTargetPos[0];
-        boss->swordProjectilePos[1] = boss->comboStarterTargetPos[1];
-        boss->swordProjectilePos[2] = boss->comboStarterTargetPos[2];
-        
-        // Ground impact damage
-        float impactDx = character.pos[0] - boss->swordProjectilePos[0];
-        float impactDz = character.pos[2] - boss->swordProjectilePos[2];
-        float impactDist = sqrtf(impactDx*impactDx + impactDz*impactDz);
-        
-        if (impactDist < 5.0f && !boss->currentAttackHasHit) {
-            character_apply_damage(15.0f);
-            boss_attacks_on_player_hit(15.0f);
-            // boss_debug_sound("boss_attack_success");
-            boss->currentAttackHasHit = true;
-        }
-    }
+    boss->swordThrowT = t + dt >= DONE ? -1.0f : t + dt;
 }
 
 static void boss_attacks_handle_combo_starter(Boss* boss, float dt) {

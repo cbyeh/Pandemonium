@@ -40,6 +40,10 @@ void msa_update_aerial_ring_pose(float centerX, float centerY, float centerZ, fl
                                  float targetX, float targetY, float targetZ);
 void msa_fire_aerial_sword(int index, float targetX, float targetY, float targetZ);
 bool msa_has_active_aerial_swords(void);
+// A single summoned sword (Unbound's throw): its glow is the sword's own shape, at its rest
+// point; msa_hide_glow drops it once the sword arrives there
+void msa_spawn_summoned_sword(float x, float y, float z, float restY);
+void msa_hide_glow(int index);
 void msa_cleanup_aerial_swords(void);
 
 // Ground sweep attack support (single-cycle, boss-driven)

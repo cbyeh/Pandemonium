@@ -53,6 +53,8 @@ void boss_ai_init(Boss* boss) {
     boss->trackingSlamCooldown = 0.0f;
     boss->flipAttackCooldown = 0.0f;
     boss->swordBarrageCooldown = 0.0f;
+    boss->swordThrowCooldown = 6.0f;
+    boss->swordThrowT = -1.0f;
     boss->groundSweepCooldown = 0.0f;
     boss->groundSweepStarted = false;
     
@@ -209,6 +211,7 @@ static void boss_ai_update_cooldowns(Boss* boss, float dt) {
     if (boss->stompCooldown > 0.0f)   boss->stompCooldown -= dt;
     if (boss->attack1Cooldown > 0.0f) boss->attack1Cooldown -= dt;
     if (boss->swordBarrageCooldown > 0.0f) boss->swordBarrageCooldown -= dt;
+    if (boss->swordThrowCooldown > 0.0f) boss->swordThrowCooldown -= dt;
     if (boss->groundSweepCooldown > 0.0f)  boss->groundSweepCooldown  -= dt;
 }
 
@@ -322,12 +325,27 @@ static void boss_ai_select_attack(Boss* boss, float dist) {
     // selection below issues `return` for almost every branch.
     // ------------------------------------------------------------
     if (boss->phaseIndex == 2) {
+#ifdef HLE_THROW_FORCE   // test aid: the throw as often as it comes round (no sweep or barrage to take its swords)
+        boss->swordThrowCooldown = 0.0f; boss->groundSweepCooldown = 99.0f; boss->swordBarrageCooldown = 99.0f; boss->comboLungeCooldown = 99.0f;
+#endif
+        // Sword Throw: passive, like the ground sweep: a sword is called down over its head and
+        // flies at the player a moment later, while the boss goes on to its next attack (so it
+        // lands with that one). Not while other swords are out (they share MSA)
+        if (dist <= 260.0f && boss->swordThrowCooldown <= 0.0f && boss->swordThrowT < 0.0f
+            && !msa_ground_sweep_is_active() && !msa_has_active_aerial_swords()) {
+            boss->swordThrowT = 0.0f;
+            boss->swordThrowCooldown = 9.0f;
+#ifdef HLE_AUTOPLAY
+            debugf("[throw] at %.1f s, %.0f away\n", (double)gameTime, (double)dist);
+#endif
+        }
+
         // Ground Sweep: passive — kick off the MSA cycle and let the boss
         // keep choosing other attacks while swords drop. Aerial Sword Barrage
         // shares the MSA system, so it's gated below when ground sweep is active.
         if (dist >= 100.0f && dist <= 350.0f
             && boss->groundSweepCooldown <= 0.0f
-            && !msa_ground_sweep_is_active()) {
+            && !msa_ground_sweep_is_active() && boss->swordThrowT < 0.0f) {
             msa_set_floor_y(boss->pos[1]);
             msa_set_sword_count(5);
             msa_ground_sweep_start();
@@ -341,10 +359,11 @@ static void boss_ai_select_attack(Boss* boss, float dist) {
         // there's no minimum-distance requirement.
         if (boss->swordBarrageCooldown <= 0.0f
             && boss->consecutiveSwordRingUses < 2
-            && !msa_ground_sweep_is_active()) {
+            && !msa_ground_sweep_is_active() && boss->swordThrowT < 0.0f) {
             boss_ai_start_aerial_sword_barrage(boss);
             return;
         }
+
     }
 
     // ------------------------------------------------------------

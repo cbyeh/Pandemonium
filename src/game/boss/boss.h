@@ -185,6 +185,8 @@ typedef struct Boss {
 
     // Aerial sword barrage attack
     float swordBarrageCooldown;
+    float swordThrowCooldown;
+    float swordThrowT;          // Unbound's summoned sword: time since it was called (< 0: none)
 
     // Ground sweep (MSA ceiling drop) attack
     float groundSweepCooldown;

@@ -199,6 +199,7 @@ static float gLoopDelay = 0.0f;
 static uint8_t gDidSpawnThisCycle = 0;
 
 static bool gAerialMode = false;
+static bool gGlowSwordShape = false;     // the glow is drawn as the sword (msa_spawn_summoned_sword)
 static float gAerialTargets[MSA_MAX_SWORDS][3];
 
 // Ground-sweep single-cycle mode: set true while the boss is running the attack;
@@ -1376,6 +1377,21 @@ void msa_draw_visuals(T3DViewport *viewport) {
 
         if (!isfinite(s->spawnX) || !isfinite(s->spawnZ) || !isfinite(gFloorY)) continue;
 
+        if (gGlowSwordShape) {
+            // A ghost of the sword where it will come to rest, as the sword hangs there (point
+            // down), in the glow's shimmer: the sword's shape, not a flat flame
+            const float scale[3] = { MODEL_SCALE*2.0f, MODEL_SCALE*2.0f, MODEL_SCALE*2.0f };
+            const float rot[3] = { 0.0f, 0.0f, 0.0f };
+            const float trans[3] = { s->spawnX, gFloorY, s->spawnZ };
+            t3d_mat4fp_from_srt_euler(&floorGlowMatrix[i], scale, rot, trans);
+            t3d_matrix_set(gpu_mat(&floorGlowMatrix[i]), true);
+            T3DModelIter g = t3d_model_iter_create(floorGlowModel, T3D_CHUNK_TYPE_OBJECT);
+            if (t3d_model_iter_next(&g) && g.object->material) t3d_model_draw_material(g.object->material, &glowState);
+            T3DModelIter it = t3d_model_iter_create(swordModel, T3D_CHUNK_TYPE_OBJECT);
+            while (t3d_model_iter_next(&it)) t3d_model_draw_object(it.object, NULL);
+            continue;
+        }
+
         float dx = character.pos[0] - s->spawnX;
         float dz = character.pos[2] - s->spawnZ;
         float glowYaw = atan2f(dz, dx) + MSA_MODEL_YAW_OFFSET;
@@ -1483,6 +1499,7 @@ void msa_spawn_aerial_ring(float centerX, float centerY, float centerZ, float ra
 
     gEnabled = true;
     gAerialMode = true;
+    gGlowSwordShape = false;
     gCount = count;
 
     for (int i = 0; i < MSA_MAX_SWORDS; i++) {
@@ -1604,6 +1621,16 @@ void msa_fire_aerial_sword(int index, float targetX, float targetY, float target
     s->fallT = 0.0f;
     s->t = 0.0f;
     s->glowVisible = 0;
+}
+
+void msa_spawn_summoned_sword(float x, float y, float z, float restY) {
+    gFloorY = restY;
+    msa_spawn_aerial_ring(x, y, z, 0.0f, 1);
+    gGlowSwordShape = true;
+}
+
+void msa_hide_glow(int index) {
+    if (index >= 0 && index < gCount) gSwords[index].glowVisible = 0;
 }
 
 bool msa_has_active_aerial_swords(void) {
