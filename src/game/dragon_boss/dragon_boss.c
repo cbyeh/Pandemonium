@@ -1070,7 +1070,9 @@ static void claw_update(Boss *b, float dt)
     float wind = (k ? 0.48f : 0.66f) / (s.dark ? 1.2f : 1.0f);     // the raised leg's windup (20% longer: easier to read)
     if (s.step == 0 || s.step == 2) {
         s.tClaw[k] = s.t < wind - 0.07f ? 1.0f : 0.0f;     // raised, then slammed down onto the strike
-        if (s.t >= wind - 0.2f && s.t - dt < wind - 0.2f) sfx_swing();     // swing3 peaks 0.22 s in
+        // Both swipes: the Guardian's unused swing1 (at his level), peaking 0.36 s in, on the strike
+        float lead = wind - 0.34f;
+        if (s.t >= lead && s.t - dt < lead) sfx(SCENE1_SFX_BOSS_SWING1, 1.0f);
         if (s.t >= wind) { claw_strike(b, k); s.step++; s.t = 0.0f; }
     } else if (s.step == 1) {
         s.tClaw[0] = 0.0f;
