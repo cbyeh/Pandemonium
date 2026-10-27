@@ -1911,8 +1911,10 @@ void dragon_boss_update(Boss* b, float dt)
         float d = turn_toward(b, atan2f(dx, dz), 0.7f * sm, dt);
         if (dist > 75.0f && fabsf(d) < 0.8f) move_by(b, s.F[0] * 30.0f * sm * dt, s.F[2] * 30.0f * sm * dt);
         else if (dist < 50.0f && fabsf(d) < 1.0f) move_by(b, -s.F[0] * 18.0f * dt, -s.F[2] * 18.0f * dt);
-        if (s.idleWait > 2.0f && s.t > 0.3f && s.t < s.idleWait / sm - 0.3f) {   // the breather: head down, panting
-            s.tCrouch = 6.0f; s.tNeckPitch = -0.55f + 0.08f * sinf(s.life * 5.0f); s.tJaw = 0.45f; s.poseRate = 3.0f;
+        if (s.t > 0.3f && s.t < s.idleWait / sm - 0.3f) {   // every pause a breather: heaving, head low, panting, wings sagging (a long one, deeper)
+            float k = s.idleWait > 2.5f ? 1.0f : 0.6f, br = sinf(s.life * 3.3f);
+            s.tCrouch = k * (6.0f + 2.5f * br); s.tNeckPitch = k * (-0.55f + 0.12f * br); s.tJaw = k * (0.35f + 0.15f * br);
+            s.tWingRaise = 0.25f - 0.4f * k; s.poseRate = 3.0f;
         }
         if (s.t > s.idleWait / sm) choose(b, dist, rel);     // a pause between attacks: the opening
         break;

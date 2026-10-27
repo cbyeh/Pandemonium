@@ -771,10 +771,11 @@ float boss_damage_scale(void)
 {
     Boss *b = boss_get_instance();
     if (!b) return 1.0f;
-    return b->phaseIndex == FALLEN_KNIGHT_PHASE ? 1.25f : b->phaseIndex == SUN_BOSS_PHASE ? 1.55f :
+    return b->phaseIndex == FALLEN_KNIGHT_PHASE ? 1.125f : b->phaseIndex == SUN_BOSS_PHASE ? 1.55f :
            b->phaseIndex == DRAGON_BOSS_PHASE ? 1.5f : 1.0f;      // the Guardian's two phases as they were
     // (Shadowborne 1.75 -> 1.5 when its flight's fire, its beam at mid range and its breath at range
-    // were made to reach the player: ~14% more damage on the passive dummy, its cost as approved)
+    // were made to reach the player: ~14% more damage on the passive dummy, its cost as approved;
+    // the Fallen Warrior 1.25 -> 1.125 when its breathers after quick moves were cut 1.4 -> 1.2 s: ~53%)
 }
 
 void boss_apply_damage(Boss* boss, float amount)

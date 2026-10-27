@@ -1070,8 +1070,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_DUMMY_CAM_NEAR  // close on the boss from its front-left (past the player): its poses
             if (boss) {
                 cameraLockOnActive = false;
-                float a = boss->rot[1] + 0.9f;
-                customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * 80.0f, boss->pos[1] + 28.0f, boss->pos[2] + cosf(a) * 80.0f }};
+#ifndef HLE_CAM_NEAR_A      // its angle off the boss's front (1.57: its side) and distance
+#define HLE_CAM_NEAR_A 0.9f
+#define HLE_CAM_NEAR_D 80.0f
+#endif
+                float a = boss->rot[1] + HLE_CAM_NEAR_A;
+                customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * HLE_CAM_NEAR_D, boss->pos[1] + 28.0f, boss->pos[2] + cosf(a) * HLE_CAM_NEAR_D }};
                 customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + 18.0f, boss->pos[2] }};
                 camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
             }
