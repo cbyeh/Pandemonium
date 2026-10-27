@@ -90,10 +90,11 @@ static struct {
     float bladeDir[3];      // its direction: forward, side, up (the boss's frame)
     T3DQuat handBase, handPosed;
     float recT;             // this recovery's length
+    float stareT;           // from here on in it, a longer pause: it stares the player down (recT if none)
+    float pickJit;          // this chase's offset to when it picks its next move (+-0.2 s: no metronome)
     bool heavy;             // spent (after Holy Slam): hunched, sword down; else just breathing
     float tiredW, breathPh; // the breathing pose's current weight, and its phase
-    T3DQuat spineR[2], headR[2];    // a bone's rotation as the clip left it, and as we posed it
-    T3DVec3 spineP[2];
+    T3DBone spineKeep, headKeep;    // the clip's own pose of the bones posed this frame (bone_pose)
     int spineBone;
 } s;
 
@@ -169,6 +170,7 @@ static void enter(FkState st)
 #endif
     s.state = st;
     s.t = 0.0f;
+    if (st == FK_CHASE) s.pickJit = ((int)(rand_custom_u32() % 41) - 20) * 0.01f;
     s.step = 0;
     s.hitDone = false;
     s.windK = 0.0f;
@@ -270,9 +272,17 @@ static void swing_pace(float from, float strike, float wind)
 /** The breather after a move, as long as the move was big; `heavy`: spent, not just breathing */
 static void recover(float t, bool heavy)
 {
+    // Now and then (15% each) a quick move runs straight into the next (don't get greedy), or a
+    // breather runs on a second, it staring you down
+    uint32_t r = rand_custom_u32() % 100;
+#ifdef HLE_FK_PACE      // test aid: 1 always the chain, 2 always the stare
+    r = HLE_FK_PACE == 1 ? 0 : 99;
+#endif
+    if (!heavy && t <= FK_QUICK_REC && r < 15) { enter(FK_CHASE); return; }
     enter(FK_RECOVER);
-    s.recT = t;
+    s.recT = s.stareT = t;
     s.heavy = heavy;
+    if (!heavy && r >= 85) s.recT += 1.0f;
 }
 
 #define FK_LOCK_K 0.7f      // a swing stops turning this far through its windup: it commits
@@ -301,18 +311,17 @@ static void quat_rotate(const T3DQuat *q, const float v[3], float out[3])
     out[2] = v[2] + x[3] * t[2] + (x[0] * t[1] - x[1] * t[0]);
 }
 
-/** Poses a bone after the clip: turned by `ang` round the boss's side axis (+ leans it forward) and
- *  raised `rise` (its parent's units). R/Pp hold the clip's pose and ours: a channel the clip doesn't
- *  write is put back first, so nothing builds up frame to frame */
-static void bone_pose(int bone, float ang, float rise, T3DQuat R[2], T3DVec3 *Pp)
+/** Poses a bone after the clip, for this frame's matrices only: turned by `ang` round the boss's side
+ *  axis (+ leans it forward) and raised `rise` (its parent's units). `keep` saves the clip's own pose,
+ *  put back by bone_unpose right after t3d_skeleton_update: left in the bone, it leaked into the next
+ *  frame and the crossfades (the knight's clips don't write Spine1's forward offset: it crept 20 units) */
+static void bone_pose(int bone, float ang, float rise, T3DBone *keep)
 {
+    keep->parentIdx = 0xFFFF;       // nothing to put back
     if (bone < 0) return;
     T3DBone *h = &s.skel.bones[bone];
-    if (h->parentIdx == 0xFFFF) return;
-    if (memcmp(&h->rotation, &R[1], sizeof(T3DQuat)) == 0) h->rotation = R[0];
-    if (Pp && memcmp(&h->position, &Pp[1], sizeof(T3DVec3)) == 0) h->position = Pp[0];
-    R[0] = h->rotation;
-    if (Pp) Pp[0] = h->position;
+    if (h->parentIdx == 0xFFFF || (fabsf(ang) < 1e-4f && fabsf(rise) < 1e-4f)) return;
+    *keep = *h;
     const T3DMat4x3 *P = &s.skel.bones[h->parentIdx].matrix;     // last frame's, as blade_pose
     float side[3], up[3], ls = 0.0f, lu = 0.0f;
     for (int i = 0; i < 3; i++) { side[i] = P->m[i][2]; up[i] = P->m[i][1]; ls += side[i] * side[i]; lu += up[i] * up[i]; }    // model space: side +Z, up +Y
@@ -326,10 +335,16 @@ static void bone_pose(int bone, float ang, float rise, T3DQuat R[2], T3DVec3 *Pp
         t3d_quat_normalize(&q);
         h->rotation = q;
     }
-    if (Pp) for (int i = 0; i < 3; i++) h->position.v[i] += up[i] * lu * rise;
-    R[1] = h->rotation;
-    if (Pp) Pp[1] = h->position;
+    for (int i = 0; i < 3; i++) h->position.v[i] += up[i] * lu * rise;
     h->hasChanged = true;
+}
+
+static void bone_unpose(int bone, const T3DBone *keep)
+{
+    if (bone < 0 || keep->parentIdx == 0xFFFF) return;
+    T3DBone *h = &s.skel.bones[bone];
+    h->rotation = keep->rotation; h->position = keep->position;
+    h->hasChanged = true;       // next frame's matrix from the clip's own pose
 }
 
 #ifndef FK_BREATH_RISE
@@ -343,12 +358,13 @@ static void tired_pose(float dt)
     float want = (s.state == FK_RECOVER && s.t < s.recT - 0.3f) ? 1.0f : 0.0f;
     float rate = want > s.tiredW ? 3.0f : 3.5f;
     s.tiredW += fmaxf(-rate * dt, fminf(rate * dt, want - s.tiredW));
-    if (s.tiredW <= 0.0f) { bone_pose(s.spineBone, 0.0f, 0.0f, s.spineR, s.spineP); bone_pose(s.headBone, 0.0f, 0.0f, s.headR, NULL); return; }
+    s.spineKeep.parentIdx = s.headKeep.parentIdx = 0xFFFF;
+    if (s.tiredW <= 0.0f) return;
     s.breathPh += dt * 2.0f * T3D_PI * (s.heavy ? 1.3f : 0.55f);      // spent ~80 breaths a minute, else ~33
     float w = s.tiredW * s.tiredW * (3.0f - 2.0f * s.tiredW), br = 0.5f + 0.5f * sinf(s.breathPh), hv = s.heavy ? 1.0f : 0.0f;
-    float h = s.spineBone >= 0 ? t3d_vec3_len(&s.spineP[0]) : 0.0f;    // the spine's height above the waist
-    bone_pose(s.spineBone, w * hv * (0.42f + 0.1f * br), w * h * FK_BREATH_RISE * (1.0f + hv) * br, s.spineR, s.spineP);
-    bone_pose(s.headBone, w * (hv * 0.2f - 0.05f * br), 0.0f, s.headR, NULL);
+    float h = s.spineBone >= 0 ? t3d_vec3_len(&s.skel.bones[s.spineBone].position) : 0.0f;     // the spine's height above the waist
+    bone_pose(s.spineBone, w * hv * (0.42f + 0.1f * br), w * h * FK_BREATH_RISE * br, &s.spineKeep);
+    bone_pose(s.headBone, w * (hv * 0.2f - 0.05f * br), 0.0f, &s.headKeep);
 }
 
 /** Turns the sword hand (after the clip and its crossfade) so the blade points along bladeDir, by bladeW */
@@ -519,7 +535,7 @@ static void cleave_update(Boss *b, float dt)
         if (s.step == 0) screen_shake_set_shake_mag(5.0f);
         s.step++;
     }
-    if (s.t > RELEASE + 0.95f) recover(1.2f, false);
+    if (s.t > RELEASE + 0.95f) recover(1.3f, false);
 }
 
 static void halfmoon_update(Boss *b, float dt)
@@ -581,7 +597,7 @@ static void moonblade_update(Boss *b, float dt)
         skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, b->rot[1]);
         screen_shake_set_shake_mag(6.0f);
         sfx(SCENE1_SFX_BOSS_LAND1, 0.8f);
-        recover(1.2f, false);
+        recover(1.3f, false);
     }
 }
 
@@ -951,7 +967,7 @@ void fallen_knight_update(Boss* b, float dt)
                 break;
             }
         }
-        if (s.t > (dist < FK_MELEE_RANGE + 8.0f ? FK_REACH_PICK : 0.7f)) choose(b, dist);     // in reach, it comes on sooner
+        if (s.t > (dist < FK_MELEE_RANGE + 8.0f ? FK_REACH_PICK : 0.7f) + s.pickJit) choose(b, dist);     // in reach, it comes on sooner
         break;
     }
 
@@ -1015,6 +1031,7 @@ void fallen_knight_update(Boss* b, float dt)
         // A breather after every move: the opening to hit back
         play(FKA_IDLE, false);
         if (s.heavy && s.t < s.recT - 0.3f) hold_blade(0.3f, 0.25f, -0.92f);     // spent: its sword point-down, lifted again as it comes on
+        if (s.t > s.stareT) face_player(b, dt, 2.0f);
         if (s.t > s.recT) enter(FK_CHASE);
         break;
 
@@ -1032,6 +1049,8 @@ void fallen_knight_update(Boss* b, float dt)
     tired_pose(dt);
     blade_pose(dt);
     t3d_skeleton_update(&s.skel);
+    bone_unpose(s.headBone, &s.headKeep);
+    bone_unpose(s.spineBone, &s.spineKeep);
 
     float p[3] = { b->pos[0], b->pos[1], b->pos[2] };
     const float sc[3] = { FK_SCALE, FK_SCALE, FK_SCALE };

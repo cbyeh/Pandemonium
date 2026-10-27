@@ -1381,6 +1381,9 @@ static void beam_update(Boss *b, float dt)
         if (s.t < dt * 1.5f) {
             float sg = (rand_custom_u32() & 1) ? 1.0f : -1.0f;
             s.sweeps = 1 + (int)(rand_custom_u32() % 3);
+#ifdef HLE_DG_SWEEPS    // test aid: always this many sweeps
+            s.sweeps = HLE_DG_SWEEPS;
+#endif
             s.heavyRest = s.sweeps == 3;
 #ifdef HLE_AUTOPLAY
             debugf("[dragon] beam: %d sweeps, the first %s\n", s.sweeps, sg > 0.0f ? "left to right" : "right to left");
