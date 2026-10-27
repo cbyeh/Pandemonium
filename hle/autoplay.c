@@ -248,8 +248,13 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
 #ifdef HLE_SKIN_GATE      // README shots: on the fog gate's landing (x ~ -700), turned HLE_SKIN_GATE_ROT, the camera along +x
         {
-            character.pos[0] = HLE_SKIN_GATE; character.pos[1] = 49.0f; character.pos[2] = 0.0f; character.rot[1] = HLE_SKIN_GATE_ROT;
-            if (t == 2) character_skin_reset_cloth();
+            // the height only placed once: pinned every frame, he falls and is put back, and the cape is dragged down past his feet
+            character.pos[0] = HLE_SKIN_GATE; character.pos[2] = 0.0f; character.rot[1] = HLE_SKIN_GATE_ROT;
+#ifdef HLE_SKIN_GATE_Y
+            if (t == 1) character.pos[1] = HLE_SKIN_GATE_Y;
+#endif
+            if (t == 60) character_skin_reset_cloth();
+            if (t % 60 == 0) debugf("[skin] f%d knight y %.1f state %d\n", frame, (double)character.pos[1], (int)character_get_state());
             float *p = character.pos;
             customCamPos = (T3DVec3){{ p[0] + HLE_SKIN_DIST, p[1] + HLE_SKIN_CAM_Y, p[2] }};
             customCamTarget = (T3DVec3){{ p[0], p[1] + HLE_SKIN_LOOK_Y, p[2] }};
@@ -1092,6 +1097,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 customCamPos = (T3DVec3){{ cx, boss->pos[1] + HLE_PORTRAIT_H, cz }};
                 customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + HLE_PORTRAIT_LOOK, boss->pos[2] }};
                 camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+                if (frame % 10 == 0) debugf("[portrait] f%d state %d y %.0f\n", frame, (int)boss->state, (double)boss->pos[1]);
             }
 #endif
 #ifdef HLE_DUMMY_CAM_HIGH  // a wide view from high up, fixed in the world, on the boss and the player (aim and turning)
