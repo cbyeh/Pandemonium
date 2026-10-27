@@ -34,9 +34,9 @@ Toggle in **Settings > Skills** (title screen). In the Tower the setting doesn't
 
 ### Skins
 **Settings > Skin** lists every skin: the Knight, the Umber Cloak, Wolf Knight, Black Swordsman and Scarlet Valkyrie from the start. Three more unlock:
-- **Crimson Cloak:** beat the story and all three Bonus bosses.
-- **Teal Cloak:** reach floor 10 of the Tower (two full circles).
-- **Nightfarer:** buy him at **Tower > Shrine** for 450 Embers.
+- **Crimson Cloak:** beat every challenge.
+- **Teal Cloak:** get deep into the Tower.
+- **Nightfarer:** spend your rewards from the Tower.
 
 <img src="docs/media/skins.png" width="800">
 
@@ -59,7 +59,7 @@ Each save slot keeps its best floor, Embers, relics, skin and settings (a fresh 
 ### Combat
 - **Hit-stop:** sword hits land with a short freeze; the third hit of a combo lands heaviest.
 - **Perfect dodge:** roll just as a blow lands for a moment of slow motion and stamina back.
-- **Stagger:** land blows to break a boss's stance: the thin gold line under its health. About ten to fourteen sword hits fill it, depending on the boss; a combo's third hit and the skills count for more (Halfmoon Slash about a third), and it keeps through a dodge or two before draining. Breaking it freezes the moment, then slows time briefly, and the boss stays down for 3.5 s: your opening.
+- **Stagger:** land blows to break a boss's stance: the thin gold line under its health.
 
 ### Settings
 - **Controls:** three button layouts (Classic, A/B Swapped, Skills on C) and camera speed 1-5. The Controls page shows what each button does.
@@ -165,6 +165,8 @@ HelloNewman:
 - Discord: HelloNewman
 
 Aethrone
+- Github: Cbyeh
+- DIscord: Absinthefather
 
 ### Credits
 Third-party audio added in this fork. Everything here is CC0 (public domain), so no attribution is required, but it's given anyway.
