@@ -351,7 +351,8 @@ static void ember_update(Boss *b, float dt)
 #endif
         s.step++;
     }
-    if (s.t >= CHARGE && s.t - dt < CHARGE) sfx_cast();
+    for (int i = 0; i < n; i++)     // each ember as it's loosed
+        if (s.t >= CHARGE + i * 0.5f && s.t - dt < CHARGE + i * 0.5f) sfx_cast();
     if (s.t > CHARGE + (n - 1) * 0.5f + 0.6f) enter(SB_HOVER);
 }
 
@@ -376,7 +377,9 @@ static void rain_tick(float dt)
 {
     for (int i = 0; i < RAIN_MAX; i++) {
         if (s.rainT[i] < 0.0f) continue;
+        float was = s.rainT[i];
         s.rainT[i] -= dt;
+        if (!(i & 1) && was >= 0.2f && s.rainT[i] < 0.2f) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);     // loud 0.2 s on, as it erupts (every other: they come 0.12 s apart)
         if (s.rainT[i] < 0.0f) {
             float p[3] = { s.rainPos[i][0], s.groundY, s.rainPos[i][1] };
             skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, p, (float[3]){ 0, 0, 0 }, hurt(14.0f), 1, 0.0f, 0.9f, false);
@@ -621,6 +624,8 @@ static void eclipse_update(Boss *b, float dt)
         s.step++;
     }
     for (int w = 0; w < s.step; w++) {      // the marks spark again halfway down
+        float tl = EC_RISE + w * EC_GAP + EC_FLY;
+        if (s.t >= tl && s.t - dt < tl) sfx_boom();     // the flares landing
         float tw = EC_RISE + w * EC_GAP + EC_FLY * 0.5f;
         if (s.t >= tw && s.t - dt < tw)
             for (int i = 0; i < EC_N[w]; i++)

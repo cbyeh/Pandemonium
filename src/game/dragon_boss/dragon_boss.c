@@ -748,7 +748,9 @@ static void hazards_update(float dt)
     for (int i = 0; i < BL_MAX; i++) {
         Blast *e = &s.bl[i];
         if (!e->on) continue;
+        float was = e->t;
         e->t -= dt;
+        if (was > 0.2f && e->t <= 0.2f && ((i & 1) || s.state == DG_SNIPE)) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);    // every other one: they come five a second
         if (e->t > 0.0f) continue;
         e->on = false;
         float p[3] = { e->p[0], s.groundY, e->p[1] };
@@ -760,7 +762,6 @@ static void hazards_update(float dt)
         HB_TOUCH(HB_BLAST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f);
         if (burst_hits(p)) { HB_HIT(HB_BLAST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage(12.0f); }
         screen_shake_set_shake_mag(3.0f);
-        if (i & 1) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);     // every other one: they come five a second
     }
     for (int i = 0; i < BALL_MAX; i++) {
         Ball *o = &s.ball[i];
@@ -801,7 +802,7 @@ static void breathe(const float to[3], float speed, float life, float dt)
 {
     static float roarT;
     roarT -= dt;
-    if (roarT <= 0.0f) { sfx(SCENE1_SFX_FIRE, 0.9f); roarT = 0.45f; }     // the torrent crackles on
+    if (roarT <= 0.0f || s.emit == 0.0f) { sfx(SCENE1_SFX_FIRE, 0.9f); roarT = 0.45f; }     // the torrent crackles on, from its first flames
     s.emit -= dt;
     while (s.emit <= 0.0f) {
         s.emit += 0.03f;
@@ -853,11 +854,13 @@ static void feet_update(float dt)
             lerp3(f->p, f->p, hang, fminf(1.0f, dt * 6.0f));
             f->moving = false;
         } else if (f->moving) {
+            float was = f->t;
             f->t += dt / 0.3f;
+            if (k < 2 && was < 0.75f && f->t >= 0.75f) sfx_step();     // loud 0.07 s on: as the paw lands
             float u = clamp01(f->t);
             lerp3(f->p, f->from, rest, u);
             f->p[1] = s.groundY + sinf(u * T3D_PI) * 7.0f;
-            if (u >= 1.0f) { f->moving = false; if (k < 2) sfx_step(); }
+            if (u >= 1.0f) f->moving = false;
         } else {
             f->p[1] = fmaxf(s.groundY, f->p[1] - 90.0f * dt);
             float dx = f->p[0] - rest[0], dz = f->p[2] - rest[2];
@@ -1056,7 +1059,6 @@ static void claw_strike(Boss *b, int k)
     float yaw = b->rot[1] + (k ? 0.35f : -0.35f);
     skill_fx_spawn_arc_hostile(c, -yaw, 46.0f, 16.0f);      // the arc faces (-sin, cos) of its yaw
     screen_shake_set_shake_mag(5.0f);
-    sfx_swing();
 }
 
 static void claw_update(Boss *b, float dt)
@@ -1067,7 +1069,8 @@ static void claw_update(Boss *b, float dt)
     s.tCrouch = 3.0f; s.tNeckPitch = -0.15f;
     float wind = (k ? 0.48f : 0.66f) / (s.dark ? 1.2f : 1.0f);     // the raised leg's windup (20% longer: easier to read)
     if (s.step == 0 || s.step == 2) {
-        s.tClaw[k] = 1.0f;
+        s.tClaw[k] = s.t < wind - 0.07f ? 1.0f : 0.0f;     // raised, then slammed down onto the strike
+        if (s.t >= wind - 0.2f && s.t - dt < wind - 0.2f) sfx_swing();     // swing3 peaks 0.22 s in
         if (s.t >= wind) { claw_strike(b, k); s.step++; s.t = 0.0f; }
     } else if (s.step == 1) {
         s.tClaw[0] = 0.0f;
@@ -1129,7 +1132,8 @@ static void tail_update(Boss *b, float dt)
         float rel = remainderf(atan2f(dx, dz) - b->rot[1], 2.0f * T3D_PI);
         s.tNeckYaw = rel > 0.0f ? 1.1f : -1.1f; s.tNeckPitch = 0.2f;    // a look back at you
         s.tTail = s.sweepFrom; s.tCrouch = 3.0f; s.poseRate = 4.0f;
-        if (s.t >= 0.7f) { s.step = 1; s.t = 0.0f; sfx_swing(); }
+        if (s.t >= 0.55f && s.t - dt < 0.55f) sfx_swing();
+        if (s.t >= 0.7f) { s.step = 1; s.t = 0.0f; }
     } else if (s.step == 1) {
         s.tTail = s.sweepFrom + s.sweepSpan; s.poseRate = 11.0f;
         b->rot[1] += (s.sweepSpan > 0.0f ? 1.0f : -1.0f) * 0.7f * dt * (1.0f - s.t / 0.45f) * 2.0f;   // the hips twist with it (~0.3 rad)
@@ -1215,12 +1219,13 @@ static void charge_update(Boss *b, float dt)
     if (s.step == 0) {
         face_player(b, dt, 2.5f);
         s.tNeckPitch = 0.7f; s.tJaw = 1.0f; s.tCrouch = 4.0f;
-        if (s.t < dt * 1.5f) { screen_shake_set_shake_mag(4.0f); sfx_roar(); }
+        if (s.t < dt * 1.5f) sfx_roar();
+        if (s.t >= 0.28f && s.t - dt < 0.28f) screen_shake_set_shake_mag(4.0f);     // as the roar comes in
         if (s.t >= 0.9f / (s.dark ? 1.2f : 1.0f)) { s.step = 1; s.t = 0.0f; sfx_lunge(); }
     } else if (s.step == 1) {
         s.tNeckPitch = -0.2f; s.tNeckReach = 1.2f; s.tCrouch = 6.0f; s.tJaw = 0.3f;
         bool moved = move_by(b, s.F[0] * 240.0f * dt, s.F[2] * 240.0f * dt);     // (the hit: hits_after_rig)
-        if (!moved || s.t >= 0.6f) { s.step = 2; s.t = 0.0f; screen_shake_set_shake_mag(6.0f); }
+        if (!moved || s.t >= 0.6f) { s.step = 2; s.t = 0.0f; screen_shake_set_shake_mag(6.0f); sfx_step(); }
     } else if (s.t >= 0.6f) enter(DG_IDLE);
 }
 
@@ -1310,11 +1315,11 @@ static void roar_update(Boss *b, float dt)
     // Half health: the dark takes it. A long roar; its crystals turn violet
     s.alt = ease(s.alt, 0.0f, 3.0f, dt);
     s.tNeckPitch = 0.8f; s.tJaw = 1.0f; s.tWingSpan = 1.0f; s.tWingRaise = 0.7f; s.tCrouch = 2.0f;
-    if (s.step < 8 && s.t >= 0.3f * s.step) {
+    if (s.t <= dt) sfx_roar();      // loud 0.28 s in: the bursts from then
+    if (s.step < 8 && s.t >= 0.25f + 0.3f * s.step) {
         float a = s.step * 0.8f;
         skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * 45.0f, s.groundY, b->pos[2] + cosf(a) * 45.0f }, a);
         screen_shake_set_shake_mag(8.0f);
-        if (s.step == 0) sfx_roar();
         s.step++;
     }
     if (s.t >= 2.4f) { s.alt = 0.0f; b->mode = BOSS_MODE_COMBAT; s.cdNova = 1.0f; enter(DG_IDLE); }
@@ -1330,13 +1335,13 @@ static void nova_update(Boss *b, float dt)
             float a = s.life * 2.3f;
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * 30.0f, s.groundY, b->pos[2] + cosf(a) * 30.0f }, a);
         }
+        if (s.t >= 1.42f && s.t - dt < 1.42f) sfx(SCENE1_SFX_DARK_NOVA, 1.0f);    // loud 0.28 s on: the burst
         if (s.t >= 1.7f) {
             float c[3] = { b->pos[0], s.groundY + 6.0f, b->pos[2] };
             skill_fx_spawn_arc_hostile(c, b->rot[1], 120.0f, 24.0f);
             skill_fx_spawn_arc_hostile(c, b->rot[1] + T3D_PI, 120.0f, 24.0f);
             screen_shake_set_shake_mag(14.0f);
             sfx_boom();
-            sfx(SCENE1_SFX_DARK_NOVA, 1.0f);
             s.glow = 0.0f;
             s.step = 1; s.t = 0.0f;
         }
@@ -1892,7 +1897,8 @@ void dragon_boss_update(Boss* b, float dt)
             }
         } else {
             s.tNeckPitch = 0.7f; s.tJaw = 0.8f; s.tWingRaise = 0.6f;    // a roar at the player
-            if (s.step == 1 && s.t > 0.4f) { s.step = 2; sfx_roar(); screen_shake_set_shake_mag(5.0f); }
+            if (s.step == 1 && s.t > 0.12f) { s.step = 2; sfx_roar(); }      // loud 0.28 s on
+            if (s.step == 2 && s.t >= 0.4f && s.t - dt < 0.4f) screen_shake_set_shake_mag(5.0f);
         }
         face_player(b, dt, 2.0f);
         break;
@@ -1937,7 +1943,7 @@ void dragon_boss_update(Boss* b, float dt)
         float t = s.t, up = clamp01((t - (BOSS_STAGGER_S - 0.8f)) / 0.8f);     // it heaves itself up over the last 0.8 s
         if (t < 0.25f) { s.tNeckPitch = 0.8f; s.tCrouch = -3.0f; s.tJaw = 0.9f; s.tWingRaise = 0.8f; s.poseRate = 9.0f; }
         else {
-            if (t - dt < 0.25f) { screen_shake_set_shake_mag(10.0f); sfx_boom();
+            if (t >= 0.47f && t - dt < 0.47f) { screen_shake_set_shake_mag(10.0f); sfx_boom();     // the belly on the floor
                 for (int i = 0; i < 2; i++) skill_fx_spawn_burst_hostile((float[3]){ s.chest[0] + s.R[0] * (i ? 14.0f : -14.0f), s.groundY, s.chest[2] + s.R[2] * (i ? 14.0f : -14.0f) }, i * 1.5f); }
             s.tCrouch = (BODY_H - 12.0f) * (1.0f - up); s.tNeckPitch = -0.95f + 0.6f * up; s.tNeckReach = 1.15f;
             s.tNeckYaw = 0.45f * sinf(t * 2.4f) * (1.0f - up); s.tJaw = 0.5f * (1.0f - up);
@@ -1968,7 +1974,7 @@ void dragon_boss_update(Boss* b, float dt)
     s.crouch = ease(s.crouch, s.tCrouch, s.state == DG_DOWN ? 7.0f : 5.0f, dt);     // it drops when its legs give
     s.aimK = ease(s.aimK, s.tAimK, 8.0f, dt);
     s.rear = ease(s.rear, s.tRear, 4.0f, dt);
-    for (int k = 0; k < 2; k++) s.claw[k] = ease(s.claw[k], s.tClaw[k], 9.0f, dt);
+    for (int k = 0; k < 2; k++) s.claw[k] = ease(s.claw[k], s.tClaw[k], s.state == DG_CLAW && s.tClaw[k] < s.claw[k] ? 30.0f : 9.0f, dt);
     if (s.flapRate > 0.0f) {
         s.flapPh += dt * s.flapRate;
         s.wingRaise = 0.25f + 0.6f * sinf(s.flapPh);

@@ -38,7 +38,8 @@ typedef enum Scene1Sfx
     SCENE1_SFX_SPELL_WAVE_BOSS,
     SCENE1_SFX_SPELL_CAST_BOSS,
     SCENE1_SFX_BLADE_SLASH_BOSS,
-    SCENE1_SFX_HEAL_BOSS,
+    SCENE1_SFX_HOLY_BOSS,
+    SCENE1_SFX_SLAM_BOSS,       // the Fallen Warrior's Holy Slam and triangle slam eruption
     SCENE1_SFX_SWING_BOSS,      // the knight's swing, for the Fallen Warrior
 
     // Character SFX

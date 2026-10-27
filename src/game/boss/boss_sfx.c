@@ -11,25 +11,25 @@ static bool bossAttackSfxPlayed = false;
 static float audioTimer = 0.0f;
 
 MultiSfx bossComboAttack1Sfx[] = {
-    { SCENE1_SFX_BOSS_SWING4, 0.0f, false },
-    { SCENE1_SFX_BOSS_SWING4, 1.6f, false },
-    { SCENE1_SFX_BOSS_LAND1, 3.2f, false },
+    { SCENE1_SFX_BOSS_SWING4, 0.1f, false },     // trigger times put each sound on its frame of the clip (24 fps)
+    { SCENE1_SFX_BOSS_SWING4, 1.8f, false },
+    { SCENE1_SFX_BOSS_LAND1, 3.36f, false },
 };
 
 MultiSfx bossFlipAttackSfx[] = { // Remove 2 seconds because of idle preparation being outside attack function loop.
     { SCENE1_SFX_BOSS_SWING4, 2.0f, false },
-    { SCENE1_SFX_BOSS_SMASH2, 2.8f, false },
-    { SCENE1_SFX_BOSS_LAND2, 3.5f, false },
+    { SCENE1_SFX_BOSS_SMASH2, 3.03f, false },     // smash2 has no lead-in silence now: its hit on the strike (3.07)
+    { SCENE1_SFX_BOSS_LAND2, 3.7f, false },
 };
 
 MultiSfx bossJumpForwardSfx[] = {
-    { SCENE1_SFX_BOSS_LAND2, 0.0f, false },
-    { SCENE1_SFX_BOSS_SMASH3, 1.0f, false },
+    { SCENE1_SFX_BOSS_LAND2, 0.1f, false },
+    { SCENE1_SFX_BOSS_SMASH3, 1.2f, false },
 };
 
 MultiSfx bossSlowAttackSfx[] = { // also called TrackingSlam
-    { SCENE1_SFX_BOSS_STEP1, 0.8f, false },
-    { SCENE1_SFX_BOSS_SMASH1, 2.5f, false },
+    { SCENE1_SFX_BOSS_STEP1, 1.0f, false },
+    { SCENE1_SFX_BOSS_SMASH1, 2.8f, false },      // smash1 has no lead-in silence now: its hit on the sword (2.83)
 };
 
 static float get_distance_to_player(Boss *boss)

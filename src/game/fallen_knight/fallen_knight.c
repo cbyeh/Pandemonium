@@ -249,6 +249,7 @@ static float clip_time(void) { return t3d_anim_get_time(&s.anims[s.anim]); }
 static void swing_pace(float from, float strike, float wind)
 {
     float pre = strike - 0.08f, clip = clip_time();     // the blade starts moving a little before the strike
+    if (clip >= pre && s.windK > 0.0f) swing_sfx();     // its whoosh then: it peaks ~0.09 s on, at the strike
     t3d_anim_set_speed(&s.anims[s.anim], clip < pre ? fminf(1.0f, (pre - from) / wind) : 1.0f);
     s.windK = clip < pre ? clamp01f((clip - from) / (pre - from)) : 0.0f;
 }
@@ -432,19 +433,20 @@ static void cleave_update(Boss *b, float dt)
         if (s.t < CROUCH) play(FKA_IDLE, false);
         else if (s.anim != FKA_CLEAVE) { play(FKA_CLEAVE, true); t3d_anim_set_time(&s.anims[s.anim], FROM); }
         if (s.t < RELEASE - 0.12f) hold_blade(0.3f, 0.0f, -0.95f);
+        if (s.t >= PLANT - 0.07f && s.t - dt < PLANT - 0.07f) sfx(SCENE1_SFX_BOSS_LAND1, 0.8f);    // its onset on the bite
         if (s.t >= PLANT && s.t - dt < PLANT) {
             float base[3], tip[3];
             if (sword_segment(base, tip)) skill_fx_spawn_burst_hostile((float[3]){ tip[0], s.groundY, tip[2] }, 0.0f);
             for (int i = 0; i < 5; i += 2) { float o[3], dx, dz; cleave_point(b, i, o, &dx, &dz); skill_fx_spawn_burst_hostile(o, b->rot[1] + i); }
-            sfx(SCENE1_SFX_BOSS_LAND1, 0.8f);
             screen_shake_set_shake_mag(2.0f);
         }
     }
+    if (s.t >= RELEASE - 0.06f && s.t - dt < RELEASE - 0.06f) swing_sfx();     // peaking as it rips up
     if (s.step < 5 && s.t >= RELEASE + s.step * GAP) {
         float o[3], dx, dz;
         cleave_point(b, s.step, o, &dx, &dz);
         skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, o, (float[3]){ dx * 6.0f, 0.0f, dz * 6.0f }, 5.0f, 2, 0.4f, 1.5f, false);
-        if (s.step == 0) { swing_sfx(); screen_shake_set_shake_mag(5.0f); }
+        if (s.step == 0) screen_shake_set_shake_mag(5.0f);
         s.step++;
     }
     if (s.t > RELEASE + 0.95f) enter(FK_RECOVER);
@@ -461,7 +463,7 @@ static void halfmoon_update(Boss *b, float dt)
         if (s.t < LOCK) face_player(b, dt, 4.0f);
         else if (s.t - dt < LOCK) sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.8f);
         if (clip_time() > 0.3f) hold_blade(-0.45f, -0.89f, 0.0f);
-        if (s.t >= LOCK && (int)(s.t / 0.3f) != (int)((s.t - dt) / 0.3f)) {      // its edges and middle, then between
+        if (s.t >= LOCK && (s.t - dt < LOCK || (int)(s.t / 0.3f) != (int)((s.t - dt) / 0.3f))) {      // its edges and middle, then between
             bool odd = (int)(s.t / 0.3f) & 1;
             for (int k = odd ? -1 : -2; k <= 2; k += 2) {
                 float a = b->rot[1] + k * HALF * 0.5f;
@@ -508,6 +510,7 @@ static void moonblade_update(Boss *b, float dt)
         // to fit the gap between waves
         static const int swings[3] = { FKA_ATTACK1, FKA_ATTACK2, FKA_ATTACK3 };
         play(swings[(s.step - 1) % 3], true);
+        t3d_anim_set_time(&s.anims[s.anim], WIN[(s.step - 1) % 3][0] - 0.1f);     // the strike with the wave (the gap cut the clip short)
         t3d_anim_set_speed(&s.anims[s.anim], 1.2f);
         s.step++;
     }
@@ -515,6 +518,7 @@ static void moonblade_update(Boss *b, float dt)
         b->pos[1] = s.groundY;
         skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, b->rot[1]);
         screen_shake_set_shake_mag(6.0f);
+        sfx(SCENE1_SFX_BOSS_LAND1, 0.8f);
         enter(FK_RECOVER);
     }
 }
@@ -533,7 +537,7 @@ static void splitter_update(Boss *b, float dt)
         } else play(FKA_IDLE, false);
         if (s.t <= dt) sfx(SCENE1_SFX_SPELL_WAVE_BOSS, 0.8f);
         s.windK = clamp01f(s.t / 0.5f);
-        if (s.t >= 0.6f) { s.step = 1; play(clips[0], true); swing_sfx(); }
+        if (s.t >= 0.6f) { s.step = 1; play(clips[0], true); }
         return;
     }
     const float *w = WIN[s.step - 1];
@@ -549,7 +553,7 @@ static void splitter_update(Boss *b, float dt)
         screen_shake_set_shake_mag(3.0f);
     }
     if (s.hitDone && (clip >= w[1] || clip_done())) {
-        if (s.step < 3) { s.step++; s.hitDone = false; play(clips[s.step - 1], true); swing_sfx(); }
+        if (s.step < 3) { s.step++; s.hitDone = false; play(clips[s.step - 1], true); }
         else enter(FK_RECOVER);
     }
 }
@@ -565,8 +569,9 @@ static void updown_update(Boss *b, float dt)
     melee_check(b, w[0], w[1], s.step == 0 ? 14.0f : 18.0f);
     if (s.step == 0) {
         if (clip >= w[1] || clip_done()) { s.step = 1; s.hitDone = false; play(FKA_CHARGED, true);
-                                             t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.1f); swing_sfx(); }
+                                             t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.1f); }
     } else {
+        if (s.step == 1 && clip >= 1.95f && clip - dt < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.7f);
         if (s.step == 1 && clip >= 2.02f) {    // the blade meets the floor
             float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + fx * 22.0f, s.groundY, b->pos[2] + fz * 22.0f }, b->rot[1]);
@@ -592,6 +597,7 @@ static void trislam_update(Boss *b, float dt)
     if (s.step == 0) {
         face_player(b, dt, 3.0f);
         swing_pace(DN_FROM, W_DN[0], 0.75f);
+        if (clip >= 1.95f && clip - dt < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.8f);     // its onset on the bite
         if (clip >= 2.02f) {    // the blade meets the floor: mark the triangle where the player stands
             float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + fx * 22.0f, s.groundY, b->pos[2] + fz * 22.0f }, b->rot[1]);
@@ -624,7 +630,7 @@ static void trislam_update(Boss *b, float dt)
             }
             if (in && character.pos[1] - s.groundY < 6.0f) character_apply_damage(20.0f);
             screen_shake_set_shake_mag(10.0f);
-            sfx(SCENE1_SFX_ROCK_BLAST, 1.0f);
+            sfx(SCENE1_SFX_SLAM_BOSS, 1.0f);     // its thump as the blades erupt
             s.step = 2; s.t = 0.0f;
         }
     } else if (s.t >= 0.5f) enter(FK_RECOVER);
@@ -642,7 +648,7 @@ static void holyslam_update(Boss *b, float dt)
         if (clip >= WIN[0][1] || clip_done()) {
             s.step = 1; s.t = 0.0f; s.hitDone = false;
             play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.05f);
-            sfx(SCENE1_SFX_HEAL_BOSS, 0.8f);     // the light called down: gold
+            sfx(SCENE1_SFX_HOLY_BOSS, 1.0f);     // the light called down, swelling to the slam
         }
     } else if (s.step == 1) {   // the gathering
         face_player(b, dt, 1.5f);
@@ -663,7 +669,7 @@ static void holyslam_update(Boss *b, float dt)
                 boss_ground_crush_spawn_varied(cx, s.groundY + 0.25f, cz, FK_CRACK, b->rot[1]);
             }
             screen_shake_set_shake_mag(16.0f);
-            sfx(SCENE1_SFX_ROCK_BLAST, 1.0f);
+            sfx(SCENE1_SFX_SLAM_BOSS, 1.0f);     // its thump on this frame
             s.step = 2; s.t = 0.0f;
         }
     } else if (s.t >= 0.8f) enter(FK_RECOVER);     // spent a moment: the opening
@@ -708,6 +714,7 @@ static void thrust_update(Boss *b, float dt)
     if (clip < COIL) t3d_anim_set_speed(&s.anims[s.anim], 1.0f);
     else if (s.holdT < HOLD) {          // eased to a stop and away again
         s.holdT += dt;
+        if (s.holdT >= HOLD) swing_sfx();      // the lunge's whoosh, peaking on the strike
         float k = s.holdT / HOLD;
         t3d_anim_set_speed(&s.anims[s.anim], 1.0f - 0.99f * smooth01(fminf(k, 1.0f - k) / 0.15f));
     } else t3d_anim_set_speed(&s.anims[s.anim], 1.15f);
@@ -758,6 +765,7 @@ static void plunge_update(Boss *b, float dt)
         move(b, s.moveX, s.moveZ, dt);
         s.velY -= G * dt;
         b->pos[1] = fmaxf(s.groundY, b->pos[1] + s.velY * dt);
+        if (s.t >= FLIGHT - DOWN - 0.09f && s.t - dt < FLIGHT - DOWN - 0.09f) swing_sfx();     // the blade driven down
         float u = s.t + dt;     // where the clip should be at this frame's end
         clip_to(u < FLIGHT - DOWN ? 1.25f + 0.6f * smooth01(u / 0.6f) : 1.86f + (u - (FLIGHT - DOWN)), dt);
         melee_check(b, W_DN[0], W_DN[1], 18.0f);
@@ -791,26 +799,26 @@ static void choose(Boss *b, float dist)
     if (HLE_FK_FORCE == 1) { enter(FK_HALFMOON); play(FKA_HALFMOON, true); debugf("[fk] halfmoon\n"); return; }
     if (HLE_FK_FORCE == 2) { enter(FK_CLEAVE); debugf("[fk] cleave\n"); return; }
     if (HLE_FK_FORCE == 3) { enter(FK_SPLITTER); debugf("[fk] splitter\n"); return; }      // 3 = splitter, 4 = up-down, 5 = combo
-    if (HLE_FK_FORCE == 7) { enter(FK_HOLYSLAM); play(FKA_ATTACK1, true); swing_sfx(); debugf("[fk] holyslam\n"); return; }
-    if (HLE_FK_FORCE == 6) { enter(FK_TRISLAM); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); debugf("[fk] trislam\n"); return; }
+    if (HLE_FK_FORCE == 7) { enter(FK_HOLYSLAM); play(FKA_ATTACK1, true); debugf("[fk] holyslam\n"); return; }
+    if (HLE_FK_FORCE == 6) { enter(FK_TRISLAM); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.1f); debugf("[fk] trislam\n"); return; }
     if (HLE_FK_FORCE == 8) { if (dist < 40.0f) return; s.cdPlunge = 0.0f; enter(FK_PLUNGE); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], 0.3f); debugf("[fk] plunge\n"); return; }
     if (HLE_FK_FORCE >= 4 && dist > FK_MELEE_RANGE - 4.0f) return;     // the melee ones: in reach first
-    if (HLE_FK_FORCE == 4) { enter(FK_UPDOWN); play(FKA_ATTACK2, true); swing_sfx(); debugf("[fk] updown\n"); return; }
-    if (HLE_FK_FORCE == 5) { enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); swing_sfx(); debugf("[fk] combo\n"); return; }
+    if (HLE_FK_FORCE == 4) { enter(FK_UPDOWN); play(FKA_ATTACK2, true); debugf("[fk] updown\n"); return; }
+    if (HLE_FK_FORCE == 5) { enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); debugf("[fk] combo\n"); return; }
 #endif
     if (s.cdHalfmoon <= 0.0f && dist < 70.0f) { s.cdHalfmoon = 16.0f; enter(FK_HALFMOON); play(FKA_HALFMOON, true); return; }
     if (s.cdMoonblade <= 0.0f && dist > 40.0f) { s.cdMoonblade = 12.0f; enter(FK_MOONBLADE); return; }
-    if (s.enraged && s.cdHoly <= 0.0f && dist < 50.0f) { s.cdHoly = 20.0f; enter(FK_HOLYSLAM); play(FKA_ATTACK1, true); swing_sfx(); return; }
+    if (s.enraged && s.cdHoly <= 0.0f && dist < 50.0f) { s.cdHoly = 20.0f; enter(FK_HOLYSLAM); play(FKA_ATTACK1, true); return; }
     if (s.cdTri <= 0.0f && dist > 40.0f && dist < 140.0f) {
-        s.cdTri = 14.0f; enter(FK_TRISLAM); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); swing_sfx(); return;
+        s.cdTri = 14.0f; enter(FK_TRISLAM); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.1f); return;
     }
     if (s.cdPlunge <= 0.0f && dist > 50.0f && dist < 120.0f) {
         s.cdPlunge = 14.0f; enter(FK_PLUNGE); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], 0.3f); return;
     }
     if (s.cdSplitter <= 0.0f && dist > 35.0f && dist < 130.0f) { s.cdSplitter = 11.0f; enter(FK_SPLITTER); return; }
     if (s.cdCleave <= 0.0f && dist < 60.0f) { s.cdCleave = 9.0f; enter(FK_CLEAVE); return; }
-    if (s.cdUpdown <= 0.0f && dist < FK_MELEE_RANGE + 8.0f) { s.cdUpdown = 7.0f; enter(FK_UPDOWN); play(FKA_ATTACK2, true); swing_sfx(); return; }
-    if (dist < FK_MELEE_RANGE - 4.0f) { enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); swing_sfx(); return; }
+    if (s.cdUpdown <= 0.0f && dist < FK_MELEE_RANGE + 8.0f) { s.cdUpdown = 7.0f; enter(FK_UPDOWN); play(FKA_ATTACK2, true); return; }
+    if (dist < FK_MELEE_RANGE - 4.0f) { enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); return; }
 }
 
 void fallen_knight_update(Boss* b, float dt)
@@ -848,6 +856,7 @@ void fallen_knight_update(Boss* b, float dt)
         // Falls from above in a crimson light, lands with a burst, then fights
         b->pos[1] = s.groundY + FK_DROP_HEIGHT * fmaxf(0.0f, 1.0f - s.t / (FK_INTRO_TIME * 0.6f));
         face_player(b, dt, 10.0f);
+        if (s.t >= FK_INTRO_TIME * 0.6f - 0.07f && s.t - dt < FK_INTRO_TIME * 0.6f - 0.07f) sfx(SCENE1_SFX_BOSS_LAND1, 1.0f);   // onset on the landing
         if (s.step == 0 && b->pos[1] <= s.groundY) {
             float p[3] = { b->pos[0], s.groundY, b->pos[2] };
             skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, p, (float[3]){ 0, 0, 0 }, 0.0f, 0, 1.0f, 1.0f, false);
@@ -910,7 +919,6 @@ void fallen_knight_update(Boss* b, float dt)
 #endif
                 }
                 play(s.step == 2 ? FKA_ATTACK2 : s.finisher == FIN_THRUST ? FKA_ATTACK1 : FKA_ATTACK3, true);
-                swing_sfx();
             } else {
                 enter(FK_RECOVER);
             }
@@ -920,7 +928,7 @@ void fallen_knight_update(Boss* b, float dt)
     case FK_ROLL:
         move(b, s.moveX, s.moveZ, dt);
         if (s.t > 0.55f) {
-            if (s.counter) { enter(FK_ROLLCUT); play(FKA_ATTACK2, true); swing_sfx(); }
+            if (s.counter) { enter(FK_ROLLCUT); play(FKA_ATTACK2, true); }
             else enter(FK_CHASE);
         }
         break;

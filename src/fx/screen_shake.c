@@ -1,3 +1,4 @@
+#include <libdragon.h>
 #include "screen_shake.h"
 #include "../utilities/general_utility.h"
 #include "../utilities/game_time.h"
@@ -43,6 +44,9 @@ void screen_shake_update(void)
 void screen_shake_set_shake_mag(float magnitude)
 {
     // Treat this as an impulse/trigger: only increase magnitude, decay handles fade-out.
+#ifdef HLE_LOG_SFX
+    debugf("[shake] %lu %.0f\n", (unsigned long)get_ticks_ms(), (double)magnitude);
+#endif
     if (magnitude > shake_magnitude) {
         shake_magnitude = magnitude;
     }

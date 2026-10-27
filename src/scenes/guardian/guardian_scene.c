@@ -315,7 +315,7 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_DRAGON_ROAR] = "rom:/audio/sfx/boss/dragon_roar_22k.wav64",
     [SCENE1_SFX_SPELL_WAVE]  = "rom:/audio/sfx/fx/spell_wave_22k.wav64",
     [SCENE1_SFX_SPELL_CAST]  = "rom:/audio/sfx/fx/spell_cast_22k.wav64",
-    [SCENE1_SFX_BLADE_SLASH] = "rom:/audio/sfx/fx/blade_slash_22k.wav64",
+    [SCENE1_SFX_BLADE_SLASH] = "rom:/audio/sfx/fx/halfmoon_slash_22k.wav64",    // Halfmoon Slash (tools/halfmoon_sfx.py)
     [SCENE1_SFX_HEAL]        = "rom:/audio/sfx/fx/heal_chime_22k.wav64",
     // the Bonus bosses' own, at the Guardian's level (tools/boss_sfx_levels.py)
     [SCENE1_SFX_FIRE]        = "rom:/audio/sfx/hostile/fire_breath_22k.wav64",
@@ -326,8 +326,9 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_CHAIN2]      = "rom:/audio/sfx/hostile/chain2_22k.wav64",
     [SCENE1_SFX_SPELL_WAVE_BOSS]  = "rom:/audio/sfx/hostile/spell_wave_22k.wav64",
     [SCENE1_SFX_SPELL_CAST_BOSS]  = "rom:/audio/sfx/hostile/spell_cast_22k.wav64",
-    [SCENE1_SFX_BLADE_SLASH_BOSS] = "rom:/audio/sfx/hostile/blade_slash_22k.wav64",
-    [SCENE1_SFX_HEAL_BOSS]        = "rom:/audio/sfx/hostile/heal_chime_22k.wav64",
+    [SCENE1_SFX_BLADE_SLASH_BOSS] = "rom:/audio/sfx/hostile/halfmoon_slash_22k.wav64",
+    [SCENE1_SFX_HOLY_BOSS]        = "rom:/audio/sfx/hostile/holy_charge_22k.wav64",    // tools/holy_slam_sfx.py
+    [SCENE1_SFX_SLAM_BOSS]        = "rom:/audio/sfx/hostile/slam_impact_22k.wav64",
     [SCENE1_SFX_SWING_BOSS]       = "rom:/audio/sfx/hostile/char_swing1_22k.wav64",
 
     // Character SFX

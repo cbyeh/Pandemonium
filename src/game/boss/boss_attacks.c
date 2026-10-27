@@ -561,7 +561,7 @@ static void boss_attacks_handle_combo_starter(Boss* boss, float dt) {
         boss->handAttackColliderActive  = false;
     }
 
-    boss_play_attack_sfx(boss, SCENE1_SFX_BOSS_SWING2, 1.0f);
+    boss_play_attack_sfx(boss, SCENE1_SFX_BOSS_SWING2, 1.1f);     // its whoosh loudest on the cut (1.30-1.53)
 
     // Track player yaw during the whole windup
     float dx = character.pos[0] - boss->pos[0];
@@ -826,7 +826,7 @@ static void boss_attacks_handle_stomp(Boss* boss, float dt)
 
     boss->isAttacking = true;
 
-    boss_play_attack_sfx(boss, SCENE1_SFX_BOSS_LAND2, 2.0f);
+    boss_play_attack_sfx(boss, SCENE1_SFX_BOSS_LAND2, 1.9f);      // its hit on the sword and foot coming down (1.97-2.00)
 
     // Visual: dust at stomp impact (one-shot edge)
     const float DUST_LATE_S = 0.20f;
@@ -892,7 +892,7 @@ static void boss_attacks_handle_attack1(Boss* boss, float dt)
         boss_turn_towards_player(boss, dt, 0.5f); 
     }
 
-    boss_play_attack_sfx(boss, SCENE1_SFX_BOSS_SWING4, 1.0f);
+    boss_play_attack_sfx(boss, SCENE1_SFX_BOSS_SWING4, 0.7f);     // swing4 swells 0.4 s: loudest on the cut (0.90-1.23)
 
 
 }
