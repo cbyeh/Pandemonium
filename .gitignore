@@ -35,7 +35,8 @@ Thumbs.db
 # Asset source files
 # Showing blend files as they can be helpful
 # assets/**/*.blend
-# assets/**/*.blend1
+# Blender backup copies (saved next to every .blend)
+*.blend1
 assets/**/*.psd
 assets/**/*.txt
 assets/**/*.log

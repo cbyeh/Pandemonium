@@ -9,7 +9,7 @@ N64 souls-like boss rush built with libdragon + tiny3d. Design numbers (balance,
 - Other Claude sessions may share this checkout: do work in a `git worktree`.
 
 ## Hard rules
-- **Guardian and Guardian Unbound stay pure:** never change their attack patterns or timing. Tune only the Bonus bosses (`src/game/fallen_knight`, `src/game/sun_boss`, `src/game/dragon_boss`). Shared fixes (hazards, stagger, player feel) are fine; say so explicitly. Looks changes only on request.
+- **Guardian and Guardian Unbound stay pure:** never change their attack patterns or timing. Tune only the Bonus bosses (`src/game/fallen_knight`, `src/game/sun_boss`, `src/game/dragon_boss`). Shared fixes (hazards, stagger, player feel) are fine; say so explicitly. Looks changes only on request. The one approved addition: Unbound's Sword Throw (a passive summon).
 - **Bonus bosses telegraph with their bodies,** like the Guardian: no extra glows, rings, sparks or floor warnings.
 - **Never lock or cap the frame rate** (no `display_set_fps_limit`, no cadence lock), on any build. Smooth uneven frames another way (dt-independent easing, per-refresh interpolation).
 - **4 MB, no Expansion Pak.** Keep 400-500 KB heap free at the lowest point. Measure in Ares with `--setting Nintendo64/ExpansionPak=false`.

@@ -160,6 +160,10 @@ $(COLLISION_STAMP): $(COLLISION_DEPS)
 	@$(COLLISION_PY) -m pip install -r $(COLLISION_DEPS)
 	@touch $(COLLISION_STAMP)
 
+# MUSIC_MONO=1: the music in mono (half its ROM space and mixing; the mono pre-release)
+ifeq ($(MUSIC_MONO),1)
+$(FILESYSTEMDIR)/audio/music/%.wav64: WAV64_FLAGS += --wav-mono
+endif
 $(FILESYSTEMDIR)/%.wav64: $(ASSDIR)/%.wav
 	@mkdir -p $(dir $@)
 	@echo "    [AUDIO] $@"

@@ -27,4 +27,6 @@ description: Rebuild both Pandemonium ROMs from main, check them, and publish th
    Asset names carry no version so saves import/export cleanly (GitHub shows the space as a dot).
 6. Notes ([docs/release-notes.md](../../../docs/release-notes.md)) stay short selling copy: the which-ROM line, then four bullets (bosses, Tower, combat, N64). A notable feature gets a line in a bullet, not a changelog. No spoilers: no numbers, unlock conditions or mechanic math.
 
+**Mono release** (`v1.0-mono`, a full release beside v1.0, never Latest): the same two ROMs built with `MUSIC_MONO=1` (the music in mono, ~10.8 MiB), same asset names so saves carry over; replace it whenever v1.0 is replaced: `gh release create v1.0-mono --latest=false ...`. Clear `filesystem/` between the stereo and mono hardware builds.
+
 Feature branches get pre-releases instead (`--prerelease --target <branch>`); main's v1.0 stays put until the user approves a merge. Never release on upstream.

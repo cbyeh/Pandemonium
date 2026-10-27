@@ -31,6 +31,7 @@ make pandemonium.z64 BUILD_DIR=/tmp/th_NAME N64_INST=$HOME/n64/toolchain T3D_INS
 ## Rules
 - **Emulators run behind the user's windows:** launch only through `run.sh` / `run_lle.sh` (they hand focus back to the app that was in front) and `run_ares.sh` (`open -g`). Never start `mupen64plus` or Ares directly.
 - **Never `screencapture` the whole screen** (it grabs the user's other work); window id only, as run_ares.sh does. Another session's Ares may be running: `ares_winid`/`pgrep -n` can grab the wrong one.
-- Fresh `BUILD_DIR` per flag set; one build at a time per checkout.
+- Fresh `BUILD_DIR` per flag set; one build at a time per checkout. Hardware builds convert assets into the repo-root `filesystem/` (not BUILD_DIR): `rm -rf filesystem` when assets or audio flags changed, or the ROM reuses stale files.
+- Before deleting an asset that looks unused, boot-test every fight: models load textures by name, and the built models are compressed (grep finds nothing).
 - Baseline: `git worktree add /tmp/base_wt <rev>` and build the same flags there.
 - Report numbers from the log, and show the screenshots to the user.
