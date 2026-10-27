@@ -19,7 +19,7 @@ What shipped in 1.0, the numbers it is tuned to, and the ideas still open. Sizes
 | Guardian | 100 | 438 | 1.38 s | 27% |
 | Unbound | 100 | 583 | 1.97 s | 32% |
 | Story (both) | 200 | | | 58% |
-| Fallen Warrior | 180, blows x1.125 | 393 | 1.86 s | ~51% |
+| Fallen Warrior | 180, blows x1.125 | 385 | 1.93 s | ~48% |
 | Shackled Sun | 240, blows x1.55 | 880 | 2.49 s | ~52% |
 | Shadowborne | 275, blows x1.75 | 984 | 2.84 s | ~60% |
 

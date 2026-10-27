@@ -272,17 +272,17 @@ static void swing_pace(float from, float strike, float wind)
 /** The breather after a move, as long as the move was big; `heavy`: spent, not just breathing */
 static void recover(float t, bool heavy)
 {
-    // Now and then (15% each) a quick move runs straight into the next (don't get greedy), or a
+    // Now and then (20% each) a quick move runs straight into the next (don't get greedy), or a
     // breather runs on a second, it staring you down
     uint32_t r = rand_custom_u32() % 100;
 #ifdef HLE_FK_PACE      // test aid: 1 always the chain, 2 always the stare
     r = HLE_FK_PACE == 1 ? 0 : 99;
 #endif
-    if (!heavy && t <= FK_QUICK_REC && r < 15) { enter(FK_CHASE); return; }
+    if (!heavy && t <= FK_QUICK_REC && r < 20) { enter(FK_CHASE); return; }
     enter(FK_RECOVER);
     s.recT = s.stareT = t;
     s.heavy = heavy;
-    if (!heavy && r >= 85) s.recT += 1.0f;
+    if (!heavy && r >= 80) s.recT += 1.0f;
 }
 
 #define FK_LOCK_K 0.7f      // a swing stops turning this far through its windup: it commits
