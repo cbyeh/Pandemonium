@@ -82,6 +82,7 @@ static struct {
     // Moves
     float cdClaw, cdBite, cdTail, cdBreath, cdCharge, cdFly, cdNova, cdOrbs, cdBeam, cdWhip, cdTriple, cdSnipe, cdSweep, cdCone;
     int sweeps;                 // the ground beam's sweeps still to come
+    bool heavyRest;             // the next pause a spent one (after a landing or three beam sweeps)
     float idleWait;
     float sweepFrom, sweepSpan, range, sg, target[3], beamFrom[3], flyTo[2], emit, fireCd, glow, beamW;
     bool hitDone;
@@ -167,6 +168,7 @@ static void enter(DgState st)
     hb_move_end();
 #endif
     s.state = st; s.t = 0.0f; s.step = 0; s.hitDone = false; tailPrevOk = false;
+    if (st != DG_IDLE) s.heavyRest = false;
     // Between attacks a pause; now and then (35%) a longer breather, its head low: an opening
 #ifndef HLE_DG_PAUSE
 #define HLE_DG_PAUSE 0.2f   // the recovery added to every pause (a longer opening: about 70% cost, not ~80%)
@@ -280,7 +282,7 @@ static void sfx_roar(void)
 #endif
     sfx(SCENE1_SFX_DRAGON_ROAR, 1.0f);
 }
-static void sfx_step(void) { sfx(SCENE1_SFX_BOSS_STEP1, 0.8f); }
+static void sfx_step(void) { sfx(SCENE1_SFX_BOSS_STEP1, 1.0f); }      // the Guardian's footfall, at his level
 
 // A fire cone (DG_CONE): from a point on the floor out along `yaw`, CONE_L long, CONE_HALF each side;
 // it rolls out over CONE_GROW, burns CONE_HOLD, then dies down over CONE_FADE (harmless). Its height
@@ -1227,6 +1229,7 @@ static void charge_update(Boss *b, float dt)
 // Touching down: bursts at its feet and a quake, harmless (only its moves hit)
 static void land_slam(float shake)
 {
+    s.heavyRest = true;
     for (int i = 0; i < 4; i++) skill_fx_spawn_burst_hostile((float[3]){ s.foot[i][0], s.groundY, s.foot[i][2] }, i * 1.5f);
     screen_shake_set_shake_mag(shake);
     sfx_boom();
@@ -1378,6 +1381,7 @@ static void beam_update(Boss *b, float dt)
         if (s.t < dt * 1.5f) {
             float sg = (rand_custom_u32() & 1) ? 1.0f : -1.0f;
             s.sweeps = 1 + (int)(rand_custom_u32() % 3);
+            s.heavyRest = s.sweeps == 3;
 #ifdef HLE_AUTOPLAY
             debugf("[dragon] beam: %d sweeps, the first %s\n", s.sweeps, sg > 0.0f ? "left to right" : "right to left");
 #endif
@@ -1893,10 +1897,15 @@ void dragon_boss_update(Boss* b, float dt)
         float d = turn_toward(b, atan2f(dx, dz), 0.7f * sm, dt);
         if (dist > 75.0f && fabsf(d) < 0.8f) move_by(b, s.F[0] * 30.0f * sm * dt, s.F[2] * 30.0f * sm * dt);
         else if (dist < 50.0f && fabsf(d) < 1.0f) move_by(b, -s.F[0] * 18.0f * dt, -s.F[2] * 18.0f * dt);
-        if (s.t > 0.3f && s.t < s.idleWait / sm - 0.3f) {   // every pause a breather: heaving, head low, panting, wings sagging (a long one, deeper)
-            float k = s.idleWait > 2.5f ? 1.0f : 0.6f, br = sinf(s.life * 3.3f);
-            s.tCrouch = k * (6.0f + 2.5f * br); s.tNeckPitch = k * (-0.55f + 0.12f * br); s.tJaw = k * (0.35f + 0.15f * br);
-            s.tWingRaise = 0.25f - 0.4f * k; s.poseRate = 3.0f;
+        if (s.t > 0.3f && s.t < s.idleWait / sm - 0.3f) {   // every pause it breathes, its body rising and sinking
+            if (s.heavyRest) {      // spent (after landing, or three beam sweeps): heaving, head low, panting, wings sagging
+                float br = sinf(s.life * 3.3f);
+                s.tCrouch = 6.0f + 2.5f * br; s.tNeckPitch = -0.55f + 0.12f * br; s.tJaw = 0.35f + 0.15f * br;
+                s.tWingRaise = -0.15f; s.poseRate = 3.0f;
+            } else {
+                float br = sinf(s.life * 2.0f);
+                s.tCrouch = 1.5f + 1.5f * br; s.tNeckPitch = 0.04f * br; s.poseRate = 3.0f;
+            }
         }
         if (s.t > s.idleWait / sm) choose(b, dist, rel);     // a pause between attacks: the opening
         break;
