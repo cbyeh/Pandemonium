@@ -831,6 +831,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #define HLE_CX_DIST 120.0f      // the camera's distance and height
 #define HLE_CX_Y 20.0f
 #endif
+#ifndef HLE_CX_LOOK_Y      // where it looks (below the camera: from above)
+#define HLE_CX_LOOK_Y HLE_CX_Y
+#endif
     // Guardian Unbound's hanging pose (forced on by boss_anim.c): reach phase 2, the player
     // stands off 300 units, the camera between them looking at the boss (front, then side)
     {
@@ -854,7 +857,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             const char *side = v == 0 ? "" : "side";
             cameraLockOnActive = false;
             customCamPos = (T3DVec3){{ boss->pos[0] + cx * HLE_CX_DIST, boss->pos[1] + HLE_CX_Y, boss->pos[2] + cz * HLE_CX_DIST }};
-            customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + HLE_CX_Y, boss->pos[2] }};
+            customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + HLE_CX_LOOK_Y, boss->pos[2] }};
             camera_mode(CAMERA_CUSTOM);
             if (t % 90 == 0) debugf("[cx] t %d view %d %s\n", t, v, side);
         }
