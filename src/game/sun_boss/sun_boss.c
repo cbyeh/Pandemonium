@@ -496,7 +496,7 @@ static void flare_tick(float dt)
     if (s.flareAge > 0.55f) s.flareAge = -1.0f;
 }
 
-// Solar Ram: it draws back and dips, glowing red, turning on the player; locks (a lane of sparks
+// Solar Ram: it pulls back and rears, glowing red, turning on the player; dips and locks (a lane of sparks
 // on the floor), then hurls itself down the lane and skids to a stop. Unshackled, it turns and
 // rams again. The eye itself is what hits (its drawn radius), swept along the frame's path
 static void ram_start(Boss *b, int count)
@@ -514,9 +514,13 @@ static void ram_update(Boss *b, float dt)
     const float sm = speed_mult(), WIND = (s.ramLeft > 1 || !s.unshackled ? 0.9f : 0.6f) / sm, LOCK = 0.3f, SPEED = 125.0f;
     float dx, dz, d = to_player(b, &dx, &dz);
     if (s.step == 0) {
+        if (s.t - dt <= 0.0f) { s.ramFrom[0] = b->pos[0]; s.ramFrom[1] = b->pos[2]; }   // where the pull-back starts
         if (s.t < WIND - LOCK) {
+            // pulls back for leverage: a quick 26 away from the player, easing into a coiled hold
+            // (its flares and novas never back off first, so the tackle reads apart from them)
             face_player(b, dt, 4.0f);
-            if (d > 1e-3f) move_toward(b, b->pos[0] - dx / d * 12.0f, b->pos[2] - dz / d * 12.0f, 18.0f, dt);  // draws back
+            float k = clamp01(s.t / ((WIND - LOCK) * 0.7f)), back = 26.0f * (1.0f - (1.0f - k) * (1.0f - k));
+            if (d > 1e-3f) move_toward(b, s.ramFrom[0] - dx / d * back, s.ramFrom[1] - dz / d * back, 200.0f, dt);
         } else {
             if (s.t - dt < WIND - LOCK) {   // locks: the lane, out past the player
                 s.aim = atan2f(dx, dz);
@@ -529,7 +533,8 @@ static void ram_update(Boss *b, float dt)
             }
             b->rot[1] += remainderf(s.aim - b->rot[1], 2.0f * T3D_PI) * fminf(1.0f, dt * 12.0f);
         }
-        b->pos[1] += (s.groundY + HOVER_H - 6.0f - b->pos[1]) * fminf(1.0f, dt * 4.0f);     // dips: the eye at the player's height
+        float hy = s.t < WIND - LOCK ? HOVER_H + 4.0f : HOVER_H - 6.0f;    // rears as it pulls back, then dips: the eye at the player's height
+        b->pos[1] += (s.groundY + hy - b->pos[1]) * fminf(1.0f, dt * 4.0f);
         if (s.t >= WIND) { s.step = 1; s.t = 0.0f; s.hitDone = false; s.ramFrom[0] = b->pos[0]; s.ramFrom[1] = b->pos[2];
                            sfx_cast(); screen_shake_set_shake_mag(5.0f);
                            // charging, its body shoves the player where the eye meets it (not 4 out
