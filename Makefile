@@ -141,9 +141,6 @@ $(FILESYSTEMDIR)/%.sprite: $(ASSDIR)/%.png
 	@mkdir -p $(dir $@)
 	@echo "    [SPRITE] $@"
 	$(N64_MKSPRITE) $(MKSPRITE_FLAGS) -o $(dir $@) "$<"
-# The Fallen Warrior's extra cracks stay uncompressed: ~10 KB that tips the hardware ROM into
-# the HLE one's size bracket, so the release page shows both at 18.1 MB
-$(FILESYSTEMDIR)/boss/ground_crushed_%.sprite: MKSPRITE_FLAGS += -c 0
 
 $(FILESYSTEMDIR)/%.font64: $(ASSDIR)/%.ttf
 	@mkdir -p $(dir $@)
