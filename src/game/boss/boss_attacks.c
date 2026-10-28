@@ -482,29 +482,38 @@ static void boss_attacks_handle_combo(Boss* boss, float dt)
 }
 
 // Sword Throw (Unbound), passive: a sword comes down from the ceiling, as the ground sweep's
-// do, and slows to a stop over its head, keeping up with it; it turns to aim at the player
-// (where they stand at that moment), then flies and sticks in the floor, as the barrage's do
-// (MSA draws it and deals its hit). Moving off the spot during the aim dodges it. The boss
-// attacks meanwhile, so the two land together
+// do, to a sword-shaped ghost beside it at shoulder height, a little toward the player (in
+// the player's view even up close: over its head it was off the top of the screen), keeping
+// up with it; it turns to aim at the player (where they stand at that moment), then flies,
+// slower than the barrage's, and sticks in the floor (MSA draws it and deals its hit). Moving
+// off the spot during the aim, or rolling as it comes, dodges it. The boss attacks meanwhile
 #define THROW_CEILING_Y 595.0f      // MSA's ceiling, where the sweep's swords start
+#define THROW_HANG_Y    50.0f       // over the floor: its shoulder (the boss is ~60 tall)
+#define THROW_SIDE      30.0f       // to its side, clear of its body (capsule r 20)
+#define THROW_FWD       10.0f       // and a little toward the player
 static void boss_attacks_tick_sword_throw(Boss* boss, float dt)
 {
-    const float DESCEND = 0.6f, FIRE = DESCEND, DONE = 2.2f;     // + its 0.55 s aim; DONE: stuck and sunk away
+    const float DESCEND = 0.6f, FIRE = DESCEND, DONE = 3.2f;     // + its 0.55 s aim; DONE: flown (up to 0.8 s at range), stuck and sunk away
     float t = boss->swordThrowT;
-    float k = fminf(1.0f, t / DESCEND), rest = boss->pos[1] + boss->swordRingHeight;
+    float k = fminf(1.0f, t / DESCEND), rest = boss->pos[1] + THROW_HANG_Y;
     float y = THROW_CEILING_Y + (rest - THROW_CEILING_Y) * (1.0f - (1.0f - k) * (1.0f - k));
+    // Its spot: beside the boss, toward the player (in front of it, as the player sees it)
+    float px = character.pos[0] - boss->pos[0], pz = character.pos[2] - boss->pos[2], pd = sqrtf(px * px + pz * pz) + 1e-3f;
+    px /= pd; pz /= pd;
+    float sx = boss->pos[0] + pz * THROW_SIDE + px * THROW_FWD, sz = boss->pos[2] - px * THROW_SIDE + pz * THROW_FWD;
     if (t <= 0.0f) {
         msa_set_enabled(true);
-        msa_spawn_summoned_sword(boss->pos[0], y, boss->pos[2], rest);
+        msa_spawn_summoned_sword(sx, y, sz, rest);
         float dx = character.pos[0] - boss->pos[0], dz = character.pos[2] - boss->pos[2];
         audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_CAST_BOSS, 1.0f, sqrtf(dx * dx + dz * dz));
     }
-#ifdef HLE_FREEZE_THROW    // test aid: hold the frame this far into the first summon (s), for screenshots
+#ifdef HLE_FREEZE_THROW    // test aid: slow the game this far into the first summon (s), for screenshots; MSA keeps running at full speed, so only the drop and hang hold
     { static bool done; if (!done && t >= HLE_FREEZE_THROW) { done = true; game_time_slowmo(9999.0f, 0.0005f); debugf("[freeze] throw at %.2f\n", (double)t); } }
 #endif
     if (k >= 1.0f) msa_hide_glow(0);     // the sword has come to its ghost
+
     if (t < FIRE) {
-        msa_update_aerial_ring_pose(boss->pos[0], y, boss->pos[2], 0.0f, character.pos[0], character.pos[1], character.pos[2]);
+        msa_update_aerial_ring_pose(sx, y, sz, 0.0f, character.pos[0], character.pos[1], character.pos[2]);
     } else if (t - dt < FIRE) {
         msa_fire_aerial_sword(0, character.pos[0], character.pos[1] + 10.0f, character.pos[2]);
     }

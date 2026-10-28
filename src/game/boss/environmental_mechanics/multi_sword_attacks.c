@@ -91,6 +91,8 @@ static const float WALL_THICKNESS = 10.0f;
 
 static const float DMG_BODY     = 35.0f;
 static const float DMG_WALL     = 12.0f;
+static const float DMG_SUMMONED = 20.0f;     // Unbound's thrown sword: it lands with a melee blow
+static const float SUMMONED_SPEED = 330.0f;  // a third of the barrage's, so its flight can be seen and rolled
 // A sword hit knocks the player down; give them time to get clear of it before the next
 // (back-to-back knockdowns were a stun-lock). The glowing walls hurt at most once a second.
 static const float BODY_HIT_GRACE = 1.4f;
@@ -932,7 +934,7 @@ void msa_update(float dt) {
 #endif
 
                 if (hit && gHitCd <= 0.0f) {
-                    character_apply_damage(DMG_BODY);
+                    character_apply_damage(gGlowSwordShape ? DMG_SUMMONED : DMG_BODY);
                     gHitCd = BODY_HIT_GRACE;
                 }
 
@@ -963,7 +965,7 @@ void msa_update(float dt) {
             float ny = dy * invD;
             float nz = dz * invD;
 
-            float step = AERIAL_SPEED * dt;
+            float step = (gGlowSwordShape ? SUMMONED_SPEED : AERIAL_SPEED) * dt;
             float dist = sqrtf(d2);
             if (step > dist) step = dist;
 
