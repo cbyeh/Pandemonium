@@ -74,6 +74,6 @@ typedef enum Scene1Sfx
 // usual range. The Guardian's sounds fall off with distance (0.72 near, ~0.6 at 40 away); the
 // Bonus bosses' play as if near (their bodies are big), and their spell, fire, beam and chain
 // sounds are the hostile/ copies (tools/boss_sfx_levels.py), as loud as the Guardian's own
-#define BONUS_SFX_VOL 0.85f // TODO: Change this from scene to a entity specific later.
+#define BONUS_SFX_VOL 1.0f   // the Bonus bosses as the Guardian: his volume and distance falloff (their copies levelled to his loudness)
 
 #endif

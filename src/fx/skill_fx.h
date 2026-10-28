@@ -12,6 +12,7 @@ typedef enum {
     SKILL_WAVE_BLADE,   // Crescent Cleave: tall, slightly curved light blade rising out of the ground
     SKILL_WAVE_CRESCENT,    // Moonlight Splitter (the Fallen Warrior): one flying crescent, tilted
     SKILL_WAVE_ORB,     // the Shackled Sun's embers: a small fire star
+    SKILL_WAVE_SLICES,  // the Fallen Warrior's Moon Blade: two long thin parallel slashes, apart (the player's is a solid X)
 } SkillWaveShape;
 
 void skill_fx_init(void);

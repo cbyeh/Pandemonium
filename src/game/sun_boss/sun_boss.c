@@ -137,7 +137,14 @@ static void enter(SbState st) {
 #endif
     s.state = st; s.t = 0.0f; s.step = 0; }
 
-static void sfx(int id, float vol) { audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, 0.0f); }
+// At the Guardian's level and with his falloff (boss_play_attack_sfx: the distance to the player);
+// they played at a fixed 0.85 with none, as his at melee range but up to 3x his further off
+static void sfx(int id, float vol)
+{
+    Boss *b = boss_get_instance();
+    float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
+    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+}
 static void sfx_boom(void) { sfx(SCENE1_SFX_BOSS_SMASH1, 1.0f); }
 static void sfx_cast(void) { sfx(SCENE1_SFX_BOSS_SWING2, 1.0f); }
 static void sfx_chain(int k) { sfx(k ? SCENE1_SFX_CHAIN2 : SCENE1_SFX_CHAIN1, 1.0f); }

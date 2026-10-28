@@ -9,7 +9,7 @@ The page embeds the .wav sources, so it opens anywhere:
 
 Each sound also shows how loud it plays in game: the file's loudness as heard (EBU R128, the
 loudest 400 ms, LUFS) plus its playback gain in dB (the call's volume x BONUS_SFX_VOL x the
-near gain, capped per channel; the Guardian's at a fight's 40 away), all read from the code.
+distance falloff at a fight's 40 away, as the Guardian's; capped per channel), all read from the code.
 Ones well over or under the Guardian's are marked.
 
 To change a sound: replace the .wav it names (every move listed under that file changes), or
@@ -201,7 +201,7 @@ def main():
     g_mid = ref[len(ref) // 2]
 
     def level(sid, vol):
-        v = in_game(sid, (vol if vol is not None else 1.0) * bonus_vol * near)
+        v = in_game(sid, (vol if vol is not None else 1.0) * bonus_vol * g_range)     # with the Guardian's falloff, at the same 40
         if v is None:
             return ""
         d = v - g_mid

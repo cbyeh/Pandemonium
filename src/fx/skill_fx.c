@@ -278,6 +278,25 @@ static void update_arc_hit(SkillFx *f, Boss *b)
     screen_shake_set_shake_mag(14.0f);
 }
 
+// The Fallen Warrior's slices: two long, thin parallel slashes on one diagonal, side by side like
+// claw marks, a clear gap between them; SLICE_L each way (60 long, longer than the player's X arms
+// of 48) and SLICE_R thick, as drawn and as hit. They are SLICE_GAP*2 apart, less than the
+// player's body (8 round): one aimed at the player lands, wherever between them they stand
+#define SLICE_L   30.0f
+#define SLICE_GAP 5.0f      // each slice's axis this far from the path, across the slash
+#define SLICE_R   2.5f
+static void slice_ends(const SkillFx *f, const float d[3], const float sd[3], const float u[3], float ends[2][2][3])
+{
+    (void)d;
+    for (int k = 0; k < 2; k++) {
+        float side = (k ? 1.0f : -1.0f) * SLICE_GAP * f->scale;
+        for (int m = 0; m < 3; m++) {
+            float e = (sd[m] + u[m]) * 0.7071f, n = (sd[m] - u[m]) * 0.7071f, c = f->pos[m] + n * side;
+            ends[k][0][m] = c + e * SLICE_L * f->scale; ends[k][1][m] = c - e * SLICE_L * f->scale;
+        }
+    }
+}
+
 static void update_wave_hit(SkillFx *f, Boss *b, float dt)
 {
     if (f->hitsLeft <= 0 || f->age < f->delay) return;
@@ -291,10 +310,22 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
         r = f->hostile ? 4.0f : 7.0f;   // a hostile one is drawn 4 wide: no further (the player's own reaches wider)
     } else {
         memcpy(c, f->pos, sizeof(c));
-        r = (f->shape == SKILL_WAVE_ORB ? 5.0f : f->shape == SKILL_WAVE_CRESCENT ? 14.0f : f->hostile ? 12.0f : 14.0f) * f->scale;     // the player's crosses are wider
+        r = (f->shape == SKILL_WAVE_ORB ? 5.0f : f->shape == SKILL_WAVE_CRESCENT ? 14.0f : 12.0f) * f->scale;     // the player's solid X is drawn 24 long (hit as drawn)
     }
     if (f->hostile) {
-        if (f->shape == SKILL_WAVE_CRESCENT) {
+        if (f->shape == SKILL_WAVE_SLICES) {
+            // Each slash as drawn (draw_xwave): a thin blade capsule
+            float d[3], sd[3], u[3], pa[3], pb[3], ends[2][2][3];
+            dir_basis(f->vel, d, sd, u);
+            slice_ends(f, d, sd, u, ends);
+            for (int m = 0; m < 3; m++) {
+                pa[m] = character.pos[m] + character.capsuleCollider.localCapA.v[m];
+                pb[m] = character.pos[m] + character.capsuleCollider.localCapB.v[m];
+            }
+            bool hit = false;
+            for (int k = 0; k < 2 && !hit; k++) hit = scu_capsule_vs_capsule_f(ends[k][0], ends[k][1], SLICE_R * f->scale, pa, pb, character.capsuleCollider.radius);
+            if (!hit) return;
+        } else if (f->shape == SKILL_WAVE_CRESCENT) {
             // A crescent is one long thin blade (draw_xwave): hit along it, not with a ball round its
             // middle (that missed the ends of a level one and hit well clear of an upright one)
             float d[3], sd[3], u[3], a[3], b[3], pa[3], pb[3];
@@ -526,6 +557,26 @@ static void draw_xwave(const SkillFx *f)
     float d[3], s[3], u[3];
     dir_basis(f->vel, d, s, u);
     float a = fade(f, 0.1f, 0.3f);
+    if (f->shape == SKILL_WAVE_SLICES) {
+        // The Fallen Warrior's: two long thin parallel slashes, a gap between them, each curving forward
+        float ends[2][2][3];
+        slice_ends(f, d, s, u, ends);
+        for (int k = 0; k < 2; k++) {
+            float outer[N][3], inner[N][3];
+            uint32_t co[N], ci[N];
+            for (int i = 0; i < N; i++) {
+                float t = (float)i / (N - 1), bulge = 4.0f * t * (1.0f - t);
+                for (int c = 0; c < 3; c++) {
+                    outer[i][c] = ends[k][0][c] + (ends[k][1][c] - ends[k][0][c]) * t + d[c] * bulge * SLICE_R * f->scale;
+                    inner[i][c] = outer[i][c] - d[c] * bulge * 2.0f * SLICE_R * f->scale;
+                }
+                co[i] = rgba(235, 250, 255, a);
+                ci[i] = rgba(90, 200, 255, a * 0.2f);
+            }
+            build_ribbon(outer, inner, co, ci, N);
+        }
+        return;
+    }
     bool one = f->shape == SKILL_WAVE_CRESCENT;
     for (int k = 0; k < (one ? 1 : 2); k++) {
         float ca = one ? cosf(f->yaw) : 0.7071f, sa = one ? sinf(f->yaw) : k ? -0.7071f : 0.7071f;    // +-45 degrees, or its tilt
@@ -533,22 +584,19 @@ static void draw_xwave(const SkillFx *f)
         float outer[N][3], inner[N][3];
         uint32_t co[N], ci[N];
         if (!f->hostile) {
-            // The player's: wide blades whose width lies across the arm (so the X reads
-            // from behind), bright down the middle and fading to the edges
+            // The player's: a solid X, each arm one ribbon edge to edge in one colour (no seam
+            // down its middle), its width across the arm so the X reads from behind; 24 long
             float n[3] = { s[0]*ca - u[0]*sa, s[1]*ca - u[1]*sa, s[2]*ca - u[2]*sa };
-            for (int side = -1; side <= 1; side += 2) {
-                for (int i = 0; i < N; i++) {
-                    float t = -1.0f + 2.0f * i / (N - 1);
-                    float bulge = 1.0f - t * t;
-                    for (int c = 0; c < 3; c++) {
-                        inner[i][c] = f->pos[c] + e[c] * t * 28.0f + d[c] * bulge * 4.0f;
-                        outer[i][c] = inner[i][c] + n[c] * side * (0.8f + bulge * 3.5f);
-                    }
-                    ci[i] = rgba(240, 252, 255, a);
-                    co[i] = rgba(90, 200, 255, a * 0.25f);
+            for (int i = 0; i < N; i++) {
+                float t = -1.0f + 2.0f * i / (N - 1);
+                float bulge = 1.0f - t * t, w = 0.7f + bulge * 3.0f;
+                for (int c = 0; c < 3; c++) {
+                    float mid = f->pos[c] + e[c] * t * 24.0f + d[c] * bulge * 3.5f;
+                    outer[i][c] = mid + n[c] * w; inner[i][c] = mid - n[c] * w;
                 }
-                build_ribbon(outer, inner, co, ci, N);
+                co[i] = ci[i] = rgba(200, 240, 255, a);
             }
+            build_ribbon(outer, inner, co, ci, N);
             continue;
         }
         // charging (a delay): it grows where it will be loosed from

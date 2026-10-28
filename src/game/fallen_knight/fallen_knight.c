@@ -32,6 +32,7 @@ extern T3DModel* characterModel;       // the player's knight model (character.c
 #define FK_TURN_RATE      4.0f
 #define FK_MELEE_RANGE    24.0f
 #define FK_MELEE_DAMAGE   12.0f
+#define FK_FELT(x)        ((x) / 1.125f)           // the damage the player takes -> its base (boss_damage_scale: 1.125)
 #define FK_INTRO_TIME     2.4f
 #define FK_DROP_HEIGHT    90.0f
 #define FK_WIND           0.65f     // a basic swing's windup: as the Guardian's (0.8 s), a little quicker
@@ -180,7 +181,14 @@ static void enter(FkState st)
 #endif
 }
 
-static void sfx(int id, float vol) { audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, 0.0f); }
+// At the Guardian's level and with his falloff (boss_play_attack_sfx: the distance to the player);
+// they played at a fixed 0.85 with none, as his at melee range but up to 3x his further off
+static void sfx(int id, float vol)
+{
+    Boss *b = boss_get_instance();
+    float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
+    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+}
 static void swing_sfx(void) { sfx(SCENE1_SFX_SWING_BOSS, 1.0f); }
 
 /** The drawn blade in world space, from the last pose: guard to tip, as the knight model has it
@@ -531,7 +539,7 @@ static void cleave_update(Boss *b, float dt)
     if (s.step < 5 && s.t >= RELEASE + s.step * GAP) {
         float o[3], dx, dz;
         cleave_point(b, s.step, o, &dx, &dz);
-        skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, o, (float[3]){ dx * 6.0f, 0.0f, dz * 6.0f }, 5.0f, 2, 0.4f, 1.5f, false);
+        skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, o, (float[3]){ dx * 6.0f, 0.0f, dz * 6.0f }, FK_FELT(7.0f), 2, 0.4f, 1.5f, false);
         if (s.step == 0) screen_shake_set_shake_mag(5.0f);
         s.step++;
     }
@@ -550,7 +558,7 @@ static void halfmoon_update(Boss *b, float dt)
         if (clip_time() > 0.3f) hold_blade(-0.45f, -0.89f, 0.0f);
         if (s.t >= CHARGE) {
             skill_fx_next_arc_half(HALF);
-            skill_fx_spawn_arc_hostile((float[3]){ b->pos[0], b->pos[1] + 12.0f, b->pos[2] }, b->rot[1], 90.0f, 30.0f);
+            skill_fx_spawn_arc_hostile((float[3]){ b->pos[0], b->pos[1] + 12.0f, b->pos[2] }, b->rot[1], 90.0f, FK_FELT(55.0f));
             screen_shake_set_shake_mag(12.0f);
             sfx(SCENE1_SFX_BLADE_SLASH_BOSS, 1.0f);
             s.step = 1;
@@ -581,8 +589,8 @@ static void moonblade_update(Boss *b, float dt)
         float len = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
         if (len < 1.0f) len = 1.0f;
         const float SPEED = 58.0f;
-        skill_fx_spawn_wave_hostile(SKILL_WAVE_X, o, (float[3]){ d[0] / len * SPEED, d[1] / len * SPEED, d[2] / len * SPEED },
-                                    8.0f, 1, 0.0f, len / SPEED, s.step == 5);
+        skill_fx_spawn_wave_hostile(SKILL_WAVE_SLICES, o, (float[3]){ d[0] / len * SPEED, d[1] / len * SPEED, d[2] / len * SPEED },
+                                    FK_FELT(16.0f), 1, 0.0f, len / SPEED, s.step == 5);
         swing_sfx();
         // One full swing per cross, like the player's: cycle the three clips, sped up
         // to fit the gap between waves
@@ -726,7 +734,7 @@ static void holyslam_update(Boss *b, float dt)
     if (s.step == 0) {          // the opening swing (wound up like the combo's)
         swing_pace(0.0f, WIN[0][0], FK_WIND);
         if (clip < WIN[0][0] && swing_tracks(FK_LOCK_K)) face_player(b, dt, 2.5f);
-        melee_check(b, WIN[0][0], WIN[0][1], FK_MELEE_DAMAGE);
+        melee_check(b, WIN[0][0], WIN[0][1], FK_FELT(15.0f));
         if (clip >= WIN[0][1] || clip_done()) {
             s.step = 1; s.t = 0.0f; s.hitDone = false;
             play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.05f);
@@ -738,8 +746,8 @@ static void holyslam_update(Boss *b, float dt)
         if (!s.hitDone && clip >= W_DN[0] - 0.08f) s.hitDone = true;    // as it comes down
         if (clip >= 2.02f) {
             float o[3] = { b->pos[0], s.groundY + 4.0f, b->pos[2] };
-            skill_fx_spawn_arc_hostile(o, b->rot[1], 105.0f, 26.0f);
-            skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 105.0f, 26.0f);
+            skill_fx_spawn_arc_hostile(o, b->rot[1], 105.0f, FK_FELT(45.0f));
+            skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 105.0f, FK_FELT(45.0f));
             skill_fx_spawn_pillar_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
             {   // where the blade bites
                 float base[3], tip[3], cx = b->pos[0] - fm_sinf(b->rot[1]) * 22.0f, cz = b->pos[2] + fm_cosf(b->rot[1]) * 22.0f;
@@ -881,6 +889,7 @@ static void choose(Boss *b, float dist)
     if (HLE_FK_FORCE == 6) { enter(FK_TRISLAM); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.1f); debugf("[fk] trislam\n"); return; }
     if (HLE_FK_FORCE == 8) { if (dist < 40.0f) return; s.cdPlunge = 0.0f; enter(FK_PLUNGE); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], 0.3f); debugf("[fk] plunge\n"); return; }
     if (HLE_FK_FORCE >= 4 && dist > FK_MELEE_RANGE - 4.0f) return;     // the melee ones: in reach first
+    if (HLE_FK_FORCE == 9) { if (dist < 40.0f) return; enter(FK_MOONBLADE); debugf("[fk] moonblade\n"); return; }   // 9 = the Moon Blade (the leap and its crosses)
     if (HLE_FK_FORCE == 4) { enter(FK_UPDOWN); play(FKA_ATTACK2, true); debugf("[fk] updown\n"); return; }
     if (HLE_FK_FORCE == 5) { enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); debugf("[fk] combo\n"); return; }
 #endif

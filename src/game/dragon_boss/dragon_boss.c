@@ -272,7 +272,14 @@ static void hb_move_end(void)     // the move's closest pass of each blow it cou
 #define HB_TOUCH(src, gap) ((void)sizeof(gap))
 #endif
 
-static void sfx(int id, float vol) { audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, 0.0f); }
+// At the Guardian's level and with his falloff (boss_play_attack_sfx: the distance to the player);
+// they played at a fixed 0.85 with none, as his at melee range but up to 3x his further off
+static void sfx(int id, float vol)
+{
+    Boss *b = boss_get_instance();
+    float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
+    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+}
 static void sfx_boom(void) { sfx(SCENE1_SFX_BOSS_SMASH2, 1.0f); }
 static void sfx_swing(void) { sfx(SCENE1_SFX_BOSS_SWING3, 1.0f); }
 static void sfx_lunge(void) { sfx(SCENE1_SFX_BOSS_LUNGE, 1.0f); }
