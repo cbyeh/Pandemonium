@@ -493,7 +493,10 @@ static void boss_attacks_handle_combo(Boss* boss, float dt)
 #define THROW_FWD       10.0f       // and a little toward the player
 static void boss_attacks_tick_sword_throw(Boss* boss, float dt)
 {
-    const float DESCEND = 0.6f, FIRE = DESCEND, DONE = 3.2f;     // + its 0.55 s aim; DONE: flown (up to 0.8 s at range), stuck and sunk away
+    // It hangs ready 2.3 s, then aims (0.55 s, MSA's) and flies: 3.45 s from appearing to its
+    // launch (it was 1.15 s, too quick to read beside a melee blow). DONE: flown (up to 0.8 s
+    // at range), stuck and sunk away
+    const float DESCEND = 0.6f, FIRE = DESCEND + 2.3f, DONE = 5.5f;
     float t = boss->swordThrowT;
     float k = fminf(1.0f, t / DESCEND), rest = boss->pos[1] + THROW_HANG_Y;
     float y = THROW_CEILING_Y + (rest - THROW_CEILING_Y) * (1.0f - (1.0f - k) * (1.0f - k));
