@@ -673,8 +673,12 @@ static void trislam_update(Boss *b, float dt)
     const float ERUPT = 0.7f;
     float clip = clip_time();
     if (s.step == 0) {
+        // Its own tell (the Up-Down's slam is the same clip): the blade turned point-down over
+        // its head to stab the floor, a grinding of stone as it raises it, held a moment longer
         face_player(b, dt, 3.0f);
-        swing_pace(DN_FROM, W_DN[0], 0.75f);
+        swing_pace(DN_FROM, W_DN[0], 1.0f);
+        if (clip < 1.95f) hold_blade(0.1f, 0.0f, -1.0f);
+        if (s.t <= dt) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);
         if (clip >= 1.95f && clip - dt < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.8f);     // its onset on the bite
         if (clip >= 2.02f) {    // the blade meets the floor: mark the triangle where the player stands
             float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
@@ -716,8 +720,8 @@ static void trislam_update(Boss *b, float dt)
 
 static void holyslam_update(Boss *b, float dt)
 {
-    // A swing, then the sword held high while the light gathers round
-    // it, then slammed down: a blast all round it. Get far away, roll it or jump it
+    // A swing, then the sword held high while the light gathers (its sound; no floor marks),
+    // then slammed down: a blast all round it. Get far away, roll it or jump it
     float clip = clip_time();
     if (s.step == 0) {          // the opening swing (wound up like the combo's)
         swing_pace(0.0f, WIN[0][0], FK_WIND);
@@ -732,10 +736,6 @@ static void holyslam_update(Boss *b, float dt)
         face_player(b, dt, 1.5f);
         swing_pace(DN_FROM, W_DN[0], 1.5f);
         if (!s.hitDone && clip >= W_DN[0] - 0.08f) s.hitDone = true;    // as it comes down
-        if ((int)(s.t * 5.0f) != (int)((s.t - dt) * 5.0f)) {    // the light drawn in toward it
-            float a = s.t * 5.0f, r = 45.0f - 25.0f * clamp01f(s.t / 1.5f);
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * r, s.groundY, b->pos[2] + cosf(a) * r }, a);
-        }
         if (clip >= 2.02f) {
             float o[3] = { b->pos[0], s.groundY + 4.0f, b->pos[2] };
             skill_fx_spawn_arc_hostile(o, b->rot[1], 105.0f, 26.0f);

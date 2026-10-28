@@ -71,6 +71,7 @@ static struct {
     bool dark;                  // the second half: the dark has taken it
     // The pose, eased each frame toward the targets the current move sets
     float neckPitch, neckYaw, neckReach, jaw, wingRaise, wingSpan, tail, crouch, claw[2], aimK, rear;
+    float tailUp, tTailUp;  // the tail curled up over its back (0: trailing; the Whip's tell)
     float tNeckPitch, tNeckYaw, tNeckReach, tJaw, tWingRaise, tWingSpan, tTail, tCrouch, tClaw[2], tAimK, tRear;
     float poseRate, flapRate, flapPh;
     float aim[3];               // where the head looks when aimK > 0
@@ -923,7 +924,8 @@ static void rig(Boss *b, float dt)
     memcpy(s.tl[0], s.hips, sizeof(s.hips));
     for (int i = 0; i < NTAIL; i++) {
         float k = (float)(i + 1) / NTAIL;
-        float yi = yaw + T3D_PI + (sinf(s.life * 1.4f - i * 0.7f) * 0.1f + s.tail) * k, pi = -0.12f - 0.05f * i;
+        float yi = yaw + T3D_PI + (sinf(s.life * 1.4f - i * 0.7f) * 0.1f + s.tail) * k;
+        float pi = -0.12f - 0.05f * i + s.tailUp * (0.35f + 0.12f * i);     // curled up, more toward the tip
         dir[0] = sinf(yi) * cosf(pi); dir[1] = sinf(pi); dir[2] = cosf(yi) * cosf(pi);
         mad3(s.tl[i + 1], s.tl[i], dir, TAIL_SEG);
         if (s.tl[i + 1][1] < s.groundY + 3.0f) s.tl[i + 1][1] = s.groundY + 3.0f;
@@ -1131,7 +1133,6 @@ static void tail_update(Boss *b, float dt)
             float sg = pr > 0.0f ? 1.0f : -1.0f, c = fminf(fmaxf(pr, -1.1f), 1.1f);
             s.sweepFrom = fminf(fmaxf(c + sg * 1.0f, -1.9f), 1.9f);      // out past the player...
             s.sweepSpan = c - sg * 1.3f - s.sweepFrom;                    // ...and through them, toward the middle
-            skill_fx_spawn_burst_hostile((float[3]){ s.tl[NTAIL][0], s.groundY, s.tl[NTAIL][2] }, 0.0f);
         }
         float rel = remainderf(atan2f(dx, dz) - b->rot[1], 2.0f * T3D_PI);
         s.tNeckYaw = rel > 0.0f ? 1.1f : -1.1f; s.tNeckPitch = 0.2f;    // a look back at you
@@ -1156,10 +1157,11 @@ static void tail_update(Boss *b, float dt)
 static void whip_update(Boss *b, float dt)
 {
     // Spins a full turn with its tail out, a scything whip all round it: jump it, roll
-    // through, or be out of the tail's reach. Told by its crouch, the tail held out and its blade glowing.
+    // through, or be out of the tail's reach. Told by its crouch, head dipped, and its tail curled up
+    // over its back like a scorpion's (its resting pose has the tail trailing low)
     const float WIND = 0.8f / (s.dark ? 1.2f : 1.0f), SPIN = 0.6f;
     if (s.step == 0) {      // it doesn't turn to face you: the spin reaches all round
-        s.tCrouch = 7.0f; s.tNeckPitch = -0.4f; s.tTail = 0.0f; s.poseRate = 5.0f;
+        s.tCrouch = 7.0f; s.tNeckPitch = -0.4f; s.tTail = 0.0f; s.tTailUp = 1.0f; s.poseRate = 5.0f;
         if (s.t >= WIND) { s.step = 1; s.t = 0.0f; sfx_swing(); }
     } else if (s.step == 1) {
         b->rot[1] = remainderf(b->rot[1] + 2.0f * T3D_PI * dt / SPIN, 2.0f * T3D_PI);     // counter-clockwise on screen
@@ -1316,10 +1318,6 @@ static void nova_update(Boss *b, float dt)
     if (s.step == 0) {
         s.tCrouch = 6.0f; s.tWingRaise = 0.9f; s.tWingSpan = 1.0f; s.tNeckPitch = 0.5f; s.tJaw = 0.6f;
         s.glow = clamp01(s.t / 1.7f);
-        if ((int)(s.t * 4.0f) != (int)((s.t - dt) * 4.0f)) {
-            float a = s.life * 2.3f;
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * 30.0f, s.groundY, b->pos[2] + cosf(a) * 30.0f }, a);
-        }
         if (s.t >= 1.42f && s.t - dt < 1.42f) sfx(SCENE1_SFX_DARK_NOVA, 1.0f);    // loud 0.28 s on: the burst
         if (s.t >= 1.7f) {
             float c[3] = { b->pos[0], s.groundY + 6.0f, b->pos[2] };
@@ -1576,6 +1574,9 @@ static void triple_update(Boss *b, float dt)
         bool rear = u < 0.75f;      // rear back, then snap forward to spit
         s.tNeckPitch = rear ? 0.7f : -0.1f; s.tNeckReach = rear ? 0.8f : 1.1f;
         s.tJaw = rear ? 0.3f : 0.9f; s.poseRate = rear ? 6.0f : 14.0f;
+        // its own tell (the Breath's head-up is alike): wings flared high and the neck drawn far
+        // back as it rears for each spit
+        s.tWingRaise = rear ? 0.9f : 0.4f; if (rear) s.tNeckReach = 0.7f;
         s.glow = 0.4f + 0.6f * u;
         if (s.step == 0 && s.t >= wind) {       // the aim, once: from the mouth to where the player stands
             memcpy(s.beamFrom, s.mouth, sizeof(s.beamFrom));
@@ -1705,26 +1706,27 @@ static void cone_update(Boss *b, float dt)
     if (s.step == 0) {          // rears up
         if (s.t < dt * 1.5f) sfx_roar();
         face_player(b, dt, 1.8f);
-        s.tRear = 16.0f; s.tClaw[0] = s.tClaw[1] = 0.8f; s.tNeckPitch = 0.8f; s.tNeckReach = 0.8f; s.tJaw = 0.4f; s.tWingRaise = 0.75f; s.poseRate = 4.0f;
+        // (lower than it was, 16 and 0.8: from the player's camera up close its head was off the top)
+        s.tRear = 9.0f; s.tClaw[0] = s.tClaw[1] = 0.8f; s.tNeckPitch = 0.45f; s.tNeckReach = 0.8f; s.tJaw = 0.4f; s.tWingRaise = 0.75f; s.poseRate = 4.0f;
         s.glow = 0.5f * smooth01(s.t / (REAR / sm));
         if (s.t >= REAR / sm) { s.step = 1; s.t = 0.0f; }
     } else if (s.step == 1) {   // down on its forefeet, the head still drawn back: the first tell
         face_player(b, dt, 1.2f);
-        s.tNeckPitch = 0.75f; s.tNeckReach = 0.75f; s.tJaw = 0.35f; s.tCrouch = 3.0f; s.tWingRaise = 0.6f; s.poseRate = 6.0f;
+        s.tNeckPitch = 0.45f; s.tNeckReach = 0.75f; s.tJaw = 0.35f; s.tCrouch = 3.0f; s.tWingRaise = 0.6f; s.poseRate = 6.0f;
         if (s.t >= 0.15f && s.t - dt < 0.15f) { screen_shake_set_shake_mag(7.0f); sfx_boom(); }
         s.glow = 0.5f + 0.5f * smooth01(s.t / (PLANT / sm)) + flick;
         if (s.t >= PLANT / sm) { s.step = 2; s.t = 0.0f; }
     } else if (s.step <= 6 && !(s.step & 1)) {     // 2, 4, 6: a burst, the head thrust down along it
         float u = smooth01(s.t / 0.12f);
         memcpy(s.aim, aim, sizeof(s.aim)); s.tAimK = u;
-        s.tNeckPitch = 0.7f - 1.15f * u; s.tNeckReach = 0.8f + 0.15f * u; s.tJaw = 0.35f + 0.65f * u; s.tCrouch = 4.0f; s.poseRate = 12.0f;
+        s.tNeckPitch = 0.45f - 0.9f * u; s.tNeckReach = 0.8f + 0.15f * u; s.tJaw = 0.35f + 0.65f * u; s.tCrouch = 4.0f; s.poseRate = 12.0f;
         if (s.t >= LEAD && s.t - dt < LEAD) cone_fire(b);
         s.glow = 1.0f - 0.6f * clamp01((s.t - LEAD) / BURST);
         if (s.t >= LEAD + BURST) { s.step++; s.t = 0.0f; }
     } else if (s.step <= 5) {   // 3, 5: the next tell: the head drawn back up, the jaws glowing
         face_player(b, dt, 1.2f);
         float u = smooth01(s.t / (TELL / sm)), back = smooth01(s.t / 0.3f);
-        s.tNeckPitch = -0.45f + 1.15f * back; s.tNeckReach = 0.95f - 0.15f * back; s.tJaw = 1.0f - 0.7f * back; s.tCrouch = 3.0f; s.poseRate = 8.0f;
+        s.tNeckPitch = -0.45f + 0.9f * back; s.tNeckReach = 0.95f - 0.15f * back; s.tJaw = 1.0f - 0.7f * back; s.tCrouch = 3.0f; s.poseRate = 8.0f;
         s.glow = 0.4f + 0.6f * u + flick * u;
         if (s.t >= TELL / sm) { s.step++; s.t = 0.0f; }
     } else {                    // spent: head low a moment, the opening
@@ -1745,10 +1747,12 @@ static void hover_update(Boss *b, float dt)
     s.tWingSpan = 1.0f;
     float bob = 3.0f * sinf(s.life * 2.2f), to[3];
     if (s.step == 0) {          // up, then the charge
-        if (s.t < dt * 1.5f) sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.8f);
+        // its own tell (the Sky Beam also rises casting): a roar as it heaves itself straight up,
+        // its wings pounding
+        if (s.t < dt * 1.5f) { sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.8f); sfx_roar(); }
         float u = smooth01(s.t / RISE);
         s.alt = (ALT + bob) * u;
-        s.flapRate = s.t < RISE ? 9.0f : 7.0f;
+        s.flapRate = s.t < RISE ? 13.0f : 7.0f;
         s.tNeckPitch = -0.3f; s.tJaw = 0.5f; s.poseRate = 4.0f;
         s.glow = 0.9f * clamp01(s.t / (RISE + CHARGE)) + 0.1f * sinf(s.life * 24.0f) * clamp01((s.t - RISE) / CHARGE);
         if (s.t < RISE) face_player(b, dt, 1.6f);
@@ -1852,7 +1856,7 @@ void dragon_boss_update(Boss* b, float dt)
     // The resting pose, which each move overrides: it watches the player
     s.tNeckPitch = 0.0f; s.tNeckYaw = fminf(fmaxf(rel * 0.6f, -0.6f), 0.6f); s.tNeckReach = 1.0f;
     s.tJaw = 0.05f; s.tWingRaise = 0.25f; s.tWingSpan = 0.5f; s.tTail = 0.0f; s.tCrouch = 0.0f;
-    s.tClaw[0] = s.tClaw[1] = 0.0f; s.tAimK = 0.0f; s.tRear = 0.0f; s.poseRate = 6.0f; s.flapRate = 0.0f;
+    s.tClaw[0] = s.tClaw[1] = 0.0f; s.tAimK = 0.0f; s.tRear = 0.0f; s.tTailUp = 0.0f; s.poseRate = 6.0f; s.flapRate = 0.0f;
 
     if (b->state == BOSS_STATE_DEAD && s.state != DG_DEAD) { enter(DG_DEAD); clear_hazards(); }
     if (!s.dark && s.state != DG_DEAD && s.state != DG_INTRO && b->health <= b->maxHealth * 0.5f) {
@@ -1967,6 +1971,7 @@ void dragon_boss_update(Boss* b, float dt)
     s.jaw = ease(s.jaw, s.tJaw, 10.0f, dt);
     s.wingSpan = ease(s.wingSpan, s.tWingSpan, 3.0f, dt);
     s.tail = ease(s.tail, s.tTail, pr, dt);
+    s.tailUp = ease(s.tailUp, s.tTailUp, pr, dt);
     s.crouch = ease(s.crouch, s.tCrouch, s.state == DG_DOWN ? 7.0f : 5.0f, dt);     // it drops when its legs give
     s.aimK = ease(s.aimK, s.tAimK, 8.0f, dt);
     s.rear = ease(s.rear, s.tRear, 4.0f, dt);

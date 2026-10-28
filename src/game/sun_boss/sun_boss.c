@@ -92,6 +92,7 @@ static struct {
     bool flareHit;
     float ramFrom[2], ramLen;   // the tackle's lane (along s.strikeDir)
     int ramLeft;
+    float rainTell;         // the rain's tell: its chains rattle and it throbs twice (s)
     float ecPos[3][6][2];   // the eclipse's marks, by wave
 } s;
 
@@ -224,6 +225,7 @@ void sun_boss_begin(Boss* boss)
     s.weights = true;
     s.downT = -1.0f;
     for (int i = 0; i < RAIN_MAX; i++) s.rainT[i] = -1.0f;
+    s.rainTell = 0.0f;
     enter(SB_INTRO);
 }
 
@@ -275,9 +277,6 @@ static void glare_update(Boss *b, float dt)
             skill_fx_spawn_wave_hostile(SKILL_WAVE_X, o, (float[3]){ sinf(a) * vh, vy, cosf(a) * vh },
                                         hurt(k ? 13.0f : 18.0f), 1, 0.0f, fmaxf(2.2f, (h + 40.0f) / SPEED), false);   // far enough to reach
         }
-        for (int i = 1; i <= 4; i++)    // the middle lane, on the floor, out to the player
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(s.aim) * d * 0.25f * i, s.groundY,
-                                                     b->pos[2] + cosf(s.aim) * d * 0.25f * i }, s.aim + i);
         sfx(SCENE1_SFX_DARK_BEAM, 0.8f);
 #ifdef HLE_AUTOPLAY
         debugf("[sun] cross volley %d at %.0f\n", s.step + 1, (double)d);
@@ -390,12 +389,10 @@ static void rain_tick(float dt)
 
 static void corona_update(Boss *b, float dt)
 {
-    // A long wind-up (the rays spin up, the ground glows), then a ring of fire all
-    // around: roll through it or be far away
+    // A long wind-up (the rays spin up, the eye red), then a ring of fire all around: roll
+    // through it or be far away
     if (s.step == 0) {
         s.raysSpin = 6.0f;
-        if ((int)(s.t * 6.0f) != (int)((s.t - dt) * 6.0f))
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, s.t * 4.0f);
         if (s.t >= 1.3f / speed_mult()) {
             float o[3] = { b->pos[0], s.groundY + 6.0f, b->pos[2] };
             skill_fx_spawn_arc_hostile(o, b->rot[1], 85.0f, hurt(22.0f));
@@ -513,7 +510,8 @@ static void ram_start(Boss *b, int count)
 
 static void ram_update(Boss *b, float dt)
 {
-    const float sm = speed_mult(), WIND = (s.ramLeft > 1 || !s.unshackled ? 0.9f : 0.6f) / sm, LOCK = 0.3f, SPEED = 125.0f;
+    // (the second ram, unshackled, was 0.6: 0.44 s to read a 24 hit; now 0.7 s)
+    const float sm = speed_mult(), WIND = (s.ramLeft > 1 || !s.unshackled ? 0.9f : 0.95f) / sm, LOCK = 0.3f, SPEED = 125.0f;
     float dx, dz, d = to_player(b, &dx, &dz);
     if (s.step == 0) {
         if (s.t - dt <= 0.0f) { s.ramFrom[0] = b->pos[0]; s.ramFrom[1] = b->pos[2]; }   // where the pull-back starts
@@ -971,6 +969,7 @@ static void choose(Boss *b, float dist)
     }
     if (HLE_SUN_FORCE == 12) { ram_start(b, s.unshackled ? 2 : 1); return; }
     if (HLE_SUN_FORCE == 13) { enter(SB_ECLIPSE); debugf("[sun] eclipse\n"); return; }
+    if (HLE_SUN_FORCE == 14) { if (s.cdRain > 0.0f) return; s.cdRain = 3.0f; rain_spawn(); sfx_cast(); s.t = -0.3f; s.rainTell = 0.9f; sfx_chain(0); sfx_chain(1); debugf("[sun] rain\n"); return; }   // 14 = the rain alone (no tell of its own before 2026-10-28)
     if (HLE_SUN_FORCE == 11) { lash_start(b, s.unshackled ? 2 : 1); return; }
     if (HLE_SUN_FORCE == 5 || HLE_SUN_FORCE == 7) { if (dist < FAR_DIST + 5.0f) return; }    // the ranged ones: it drifts out to range first
     else if (HLE_SUN_FORCE != 9) { float dx, dz, d = to_player(b, &dx, &dz);   // within reach of the player
@@ -1024,7 +1023,8 @@ static void choose(Boss *b, float dist)
     // At range: the crosses and the hunting ember (standing off is not safe)
     case M_GLARE:  s.cdGlare = s.unshackled ? 3.5f : 5.0f; enter(SB_GLARE); break;
     case M_EMBER:  s.cdEmber = s.unshackled ? 5.0f : 7.0f; enter(SB_EMBER); break;
-    case M_RAIN:   s.cdRain = s.unshackled ? 6.0f : 8.0f; rain_spawn(); sfx_cast(); s.t = -0.3f; break;
+    case M_RAIN:   s.cdRain = s.unshackled ? 6.0f : 8.0f; rain_spawn(); sfx_cast(); s.t = -0.3f;
+                   s.rainTell = 0.9f; sfx_chain(0); sfx_chain(1); break;     // it shakes in its chains as the light falls
     default: break;
     }
 }
@@ -1168,6 +1168,7 @@ void sun_boss_update(Boss* b, float dt)
     s.red += (red - s.red) * fminf(1.0f, dt * 10.0f);
     if (gold > 0.0f && s.raysSpin < 5.0f) s.raysSpin += (5.0f - s.raysSpin) * fminf(1.0f, dt * 4.0f);   // and its corona spins up
     s.gold += (gold - s.gold) * fminf(1.0f, dt * (gold > s.gold ? 6.0f : 4.0f));
+    if (s.rainTell > 0.0f) s.rainTell -= dt;
 
 #ifdef HLE_LOG_CLOTH     // test aid: the chains' time a frame (simulation; drawing logged in sun_boss_draw)
     uint32_t t0 = TICKS_READ();
@@ -1281,7 +1282,8 @@ void sun_boss_draw(Boss* b)
 {
     if (!s.ready || !b->visible) return;
     float dying = (s.state == SB_DEAD) ? clamp01(s.t / 3.0f) : 0.0f;
-    float pulse = 1.0f + 0.04f * sinf(s.life * 5.0f) + (b->damageFlashTimer > 0.0f ? 0.08f : 0.0f)
+    float pulse = 1.0f + 0.04f * sinf(s.life * 5.0f) + (s.rainTell > 0.0f ? 0.25f * fabsf(sinf(s.rainTell * 7.0f)) : 0.0f)   // the rain: two throbs (drawn only: the lock-on stays put)
+                + (b->damageFlashTimer > 0.0f ? 0.08f : 0.0f)
                 + s.gold * (0.06f + 0.03f * sinf(s.life * 12.0f));     // swells, throbbing, while it charges fire
     float scale = (SUN_R / MESH_R) * pulse * (1.0f - 0.5f * dying);
     static float restK;     // shrinks a little on the floor, easing (a stagger drops it there)
