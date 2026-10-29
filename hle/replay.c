@@ -355,8 +355,13 @@ static bool rp_replay(rp_rec_t *r)
         uint32_t src = r->mtx[m].kind == RP_SRC_SLOT ? hle_t3d_slot_addr(r->mtx[m].src) : hle_t3d_resolve(r->mtx[m].src);
         hle_t3d_mtx_conv_to(sc + r->mtx[m].off, src);
     }
+#ifdef HLE_REPLAY_INLINE   // test aid: the list copied into the task instead of called
+    { uint32_t s0 = PhysicalAddr(sc); uint64_t *d = __gbi_ptr;
+      memcpy(d, r->dl, r->ncmds * 8); for (uint32_t i = 0; i < r->nreloc; i++) d[r->reloc[i]] += s0; __gbi_ptr += r->ncmds; }
+#else
     if (r->nreloc) GBI_SEGMENT(RP_SEG, PhysicalAddr(sc));
     gbi((uint32_t)G_DL << 24, PhysicalAddr(r->gdl));
+#endif
 
     // the state the block left
     uint32_t e, p3, v3; hle_vrdp_counters(&e, &p3, &v3);
@@ -385,6 +390,9 @@ bool hle_replay_call(uint32_t target, int slot)
     rp_block_t *b = rp_find(target, false);
     if (!b) return false;
     hle_t3d_flush();
+#ifdef HLE_REPLAY_FLUSH_ONLY    // test aid: the entry flush alone
+    return false;
+#endif
     if (rp_ndead) rp_collect();
 
     // the biggest recording must fit without splitting the task while checking
@@ -393,7 +401,10 @@ bool hle_replay_call(uint32_t target, int slot)
         if (b->rec[i]->ncmds > need_cmds) need_cmds = b->rec[i]->ncmds;
         if (b->rec[i]->scratch_bytes > need_sc) need_sc = b->rec[i]->scratch_bytes;
     }
-#ifdef HLE_TEST_REPLAY_CHECK
+#ifdef HLE_REPLAY_NO_RESERVE  // test aid
+    need_cmds = 0;
+#endif
+#if defined(HLE_TEST_REPLAY_CHECK) || defined(HLE_REPLAY_INLINE)
     if (need_cmds) gbi_reserve(need_cmds + 8, need_sc + 64);
 #else
     if (need_cmds) gbi_reserve(8, need_sc + 64);     // a replay is a segment and a call

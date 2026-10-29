@@ -573,6 +573,7 @@ void fallen_knight_begin(Boss* boss)
             t3d_anim_set_playing(&s.anims[i], false);
         }
         s.mat = malloc_uncached(sizeof(T3DMat4FP));
+        memset(s.mat, 0, sizeof(T3DMat4FP));    // nothing drawn until the first update sets it (was whatever the heap held)
         s.swordBone = t3d_skeleton_find_bone(&s.skel, "Hand-Right");
         s.headBone = t3d_skeleton_find_bone(&s.skel, "Head");
         s.spineBone = t3d_skeleton_find_bone(&s.skel, "Spine1");

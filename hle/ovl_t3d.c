@@ -868,7 +868,12 @@ uint32_t hle_t3d_slot_io(uint8_t *buf, int k, bool load)
     } else memcpy(buf, &v, sizeof(v));
     return sizeof(v);
 }
-uint32_t hle_t3d_resolve(uint32_t raw) { return resolve_segment(raw); }
+/** resolve_segment with Tiny3D's own segment table (a replay runs while any overlay may be current). */
+uint32_t hle_t3d_resolve(uint32_t raw)
+{
+    const uint8_t *img = hle_vrsp_t3d_img();
+    return (raw + *(const uint32_t*)(img + D(SEGMENT_TABLE) + ((raw >> 24) & 0x1C))) & 0xFFFFFF;
+}
 /** The DMEM this port ever reads (SCREEN_SCALE .. VERTEX_FX_FUNC): all a replay must match and restore. */
 void hle_t3d_dmem_range(uint32_t *lo, uint32_t *hi) { *lo = D(SCREEN_SCALE); *hi = D(VERTEX_FX_FUNC) + 2; }
 void hle_t3d_seg_mask(uint8_t *state_copy, uint32_t state_start)

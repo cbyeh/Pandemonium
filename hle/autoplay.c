@@ -53,6 +53,14 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
     static int frame;
     frame++;
+#ifdef HLE_TEST_DIRTY_HEAP  // test aid: freed heap left full of garbage (finds memory used before it is set)
+    if (frame == 400 || frame == 900) {
+        void *p[64]; int n = 0;
+        for (; n < 64; n++) { p[n] = malloc(16 * 1024); if (!p[n]) break; memset(p[n], 0xA5, 16 * 1024); }
+        for (int i = 0; i < n; i++) free(p[i]);
+        debugf("[dirty] %d KB of freed heap set to A5\n", n * 16);
+    }
+#endif
 #ifdef HLE_TEST_MEMBENCH    // test aid: emulated cost of cached vs uncached loads/stores, and of plain ALU work
     if (frame == 60) {
         static uint32_t buf[4096] __attribute__((aligned(16)));
@@ -1117,6 +1125,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 customCamPos = (T3DVec3){{ mx - dz / d * back - dx / d * 25.0f, character.pos[1] + 55.0f * HLE_SIDECAM_K, mz + dx / d * back - dz / d * 25.0f }};
                 customCamTarget = (T3DVec3){{ mx, character.pos[1] + 18.0f, mz }};
                 camera_mode_smooth(CAMERA_CUSTOM, 0.02f);
+#ifdef HLE_LOG_SIDECAM  // test aid: where everything is
+                { static int n; if (++n % 300 == 0) debugf("[sidecam] %d boss %.0f %.0f %.0f mode %d player %.0f %.0f %.0f ticks %lu\n", n, (double)boss->pos[0], (double)boss->pos[1], (double)boss->pos[2],
+                      boss->mode, (double)character.pos[0], (double)character.pos[1], (double)character.pos[2], (unsigned long)get_ticks_ms()); }
+#endif
             }
 #endif
 #ifdef HLE_DUMMY_CAM_NEAR  // close on the boss from its front-left (past the player): its poses

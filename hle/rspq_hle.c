@@ -2173,6 +2173,11 @@ void hle_vrsp_state(hle_st_t *s, uint32_t ovl_mask, bool sig)
         if (s->load && vrsp_cur_ovl) vrsp_load_overlay(vrsp_cur_ovl);
     }
 }
+const uint8_t *hle_vrsp_t3d_img(void)
+{
+    for (int i = 1; i < RSPQ_MAX_OVERLAYS; i++) if (vrsp_handlers[i] == ovl_t3d && vrsp_imgs[i]) return vrsp_imgs[i];
+    return __vrsp_img;
+}
 uint32_t hle_vrsp_pstack_io(uint8_t *buf, int slot, bool load)
 {
     if (load) memcpy(&PSTACK(slot), buf, 4); else memcpy(buf, &PSTACK(slot), 4);

@@ -194,6 +194,7 @@ void hle_vrdp_counters_set(uint32_t epoch, uint32_t proj_ver, uint32_t vp_ver);
 uint32_t hle_vrdp_dp_cur(void);
 void hle_vrdp_dp_cur_set(uint32_t phys);
 uint32_t hle_vrsp_loaded_mask(void);
+const uint8_t *hle_vrsp_t3d_img(void);
 void hle_vrsp_state(hle_st_t *s, uint32_t ovl_mask, bool sig);
 uint32_t hle_vrsp_pstack_io(uint8_t *buf, int slot, bool load);
 void hle_vrsp_rdp_get(uint32_t *cur, uint32_t *sentinel, uint32_t *dp, uint8_t *syncfull);
