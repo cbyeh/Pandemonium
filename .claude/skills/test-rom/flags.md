@@ -6,7 +6,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Straight to a boss:** `HLE_TEST_DUMMY HLE_DUMMY_BOSS=1..5` (Guardian, Unbound, Fallen Warrior, Sun, Shadowborne). Taps through menus, skips cutscenes; player is invincible and logs `[dummy]` damage over 120 s plus openings.
 - **Second half / phase 2:** `HLE_DUMMY_HALF` (boss starts at 45% HP). `HLE_DRAGON_DARK` starts Shadowborne dark.
 - **Full fights that never die:** `HLE_TEST_BONUS` (+ `HLE_TEST_BONUS_SUN` / `_DRAGON`), `HLE_TEST_UNBOUND`, `HLE_TEST_STRIKE`, `HLE_TEST_CRUCIFIX`: refill the player below 60 HP, log `[dmg]`.
-- **One attack on a loop:** `HLE_FK_FORCE=1..5`, `HLE_SUN_FORCE=1..7` (`11` = lash into sweep), `HLE_DRAGON_FORCE=<DgState>`.
+- **One attack on a loop:** `HLE_FK_FORCE=1..5`, `HLE_SUN_FORCE=1..7` (`11` = lash into sweep), `HLE_DRAGON_FORCE=<DgState>`. `HLE_DRAGON_CYCLE`: every Shadowborne move in turn (a gallery, `[cycle]` lines).
 - **Boss held still** (before/after shots that line up): `HLE_TEST_FREEZE_BOSS`. Boss AI is otherwise non-deterministic.
 - **Ending:** `HLE_TEST_ENDING`.
 - **Bot playtest:** `HLE_DUMMY_REAL` + `HLE_DUMMY_STRIKE` / `_ROLL`, `HLE_STRIKE_OPEN`, `HLE_STRIKE_STAMINA`; potions below 40%, prints `[bot] ... beaten/died`.
@@ -29,6 +29,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **FPS / CPU:** `HLE_LOG_FPS` (`[fps]` every 2 s, per-part ms, tri/vert counts; meant for Ares). `HLE_TEST_PERF` (rsp-hle CPU %, audio queue, worst frame). GPU: `HLE_PROF_SERIAL`, `_DRAGON`, `_BOSS`, `_WAITEND`.
 - **Pacing:** `HLE_LOG_HITCH`, `HLE_LOG_JITTER`, `HLE_LOG_LATENCY`. `HLE_TEST_TASKS` checks one graphics task per frame (catches black-frame flicker shots can't).
 - **Memory:** `HLE_TEST_BONUS` logs the lowest free heap.
+- **Rig:** `HLE_LOG_RIG` (Shadowborne, per move: worst leg reach, neck and torso stretch as drawn, the head's nearest pass of its own body).
 - **Hits:** `HLE_LOG_MOVES` (`[move]` then `[hit]`), `HLE_LOG_HURTBOX`, `HLE_LOG_HITVOL`, `HLE_FK_HITLOG`, `HLE_TEST_ARC_REACH`, `HLE_LOG_JUMPS`. Sound timing: `HLE_LOG_SFX` with `HLE_LOG_MOVES`.
 - **Same pixels after a rewrite:** `HLE_TEST_T3D_EXACT`.
 - **Logs only:** one huge shot frame (`run.sh rom 40000`) plus `TIMEOUT`; batch in the background, then `grep 'IS64: \[dummy\]'`.
