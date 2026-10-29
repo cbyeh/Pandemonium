@@ -77,7 +77,7 @@ ifeq ($(HLE),1)
 HLEFILES = $(wildcard hle/*.c) $(wildcard hle/*.S)
 ifeq ($(HLE_BOOTFIX_ONLY),1)
 # Test aid: only the emulator boot fixes, real RSP microcode (for LLE reference runs)
-HLEFILES := $(filter-out hle/rspq_hle.c hle/vrdp.c hle/ovl_%.c,$(HLEFILES))
+HLEFILES := $(filter-out hle/rspq_hle.c hle/vrdp.c hle/ovl_%.c hle/replay.c,$(HLEFILES))
 endif
 CODEOBJECTS += $(patsubst hle/%,$(OBJDIR)/hle/%.o,$(basename $(HLEFILES)))
 N64_ASFLAGS += -Ihle/internal

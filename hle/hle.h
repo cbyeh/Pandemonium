@@ -9,6 +9,7 @@
 #ifndef HLE_H
 #define HLE_H
 
+#include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -51,7 +52,7 @@ void ovl_tpx(uint32_t cmd, const uint32_t *a, int n);
 void ovl_mixer(uint32_t cmd, const uint32_t *a, int n);
 
 /** DMEM offset of the current overlay's saved state. */
-extern uint32_t __vrsp_state_start;
+extern uint32_t __vrsp_state_start, __vrsp_state_end;   ///< the current overlay's state in DMEM
 /** Z-buffer clear (vrdp.c) */
 void vrdp_clear_z(uint32_t zaddr, uint32_t size, uint16_t value);
 
@@ -139,5 +140,65 @@ void hle_t3d_flush(void);
 void hle_logf(const char *fmt, ...);
 /** Logs a message only the first time `key` is seen. */
 void hle_warn_once(const char *key, const char *fmt, ...);
+
+
+// ---- Block replay (replay.c) ----
+
+/** State snapshot cursor: copies a variable out (save) or back in (load). */
+typedef struct { uint8_t *p; bool load; } hle_st_t;
+static inline void hle_st(hle_st_t *s, void *var, int n)
+{
+    if (s->load) memcpy(var, s->p, n); else memcpy(s->p, var, n);
+    s->p += n;
+}
+#define HLE_ST(s, v) hle_st((s), &(v), sizeof(v))
+
+bool hle_replay_call(uint32_t target, int slot);
+void hle_replay_ret(int slot);
+void hle_replay_abort(void);
+void hle_replay_block_new(const void *cmds);
+void hle_replay_block_gone(const void *cmds);
+// hooks: what a block being recorded does (one flag test otherwise)
+extern bool hle_rp_on;
+void hle_rp_bad_(void);
+void hle_rp_slot_written_(int k);
+void hle_rp_pstack_(int slot);
+void hle_rp_zvalid_(int v);
+void hle_rp_rdp_send_(int nbytes);
+void hle_rp_rdp_abs_(void);
+void hle_rp_mtx_(const void *dst, int k, uint32_t raw);
+#define HLE_RP_HOOK(call) do { if (__builtin_expect(hle_rp_on, 0)) call; } while (0)
+#define hle_rp_bad()                HLE_RP_HOOK(hle_rp_bad_())
+#define hle_rp_slot_written(k)      HLE_RP_HOOK(hle_rp_slot_written_(k))
+#define hle_rp_pstack(slot)         HLE_RP_HOOK(hle_rp_pstack_(slot))
+#define hle_rp_zvalid(v)            HLE_RP_HOOK(hle_rp_zvalid_(v))
+#define hle_rp_rdp_send(n)          HLE_RP_HOOK(hle_rp_rdp_send_(n))
+#define hle_rp_rdp_abs()            HLE_RP_HOOK(hle_rp_rdp_abs_())
+#define hle_rp_mtx(dst, k, raw)     HLE_RP_HOOK(hle_rp_mtx_(dst, k, raw))
+// each module's part of the state (sig: for the starting-state signature, else the state left)
+void hle_t3d_state(hle_st_t *s, bool sig);
+uint32_t hle_t3d_slot_io(uint8_t *buf, int k, bool load);
+uint32_t hle_t3d_slot_addr(int k);
+uint32_t hle_t3d_resolve(uint32_t raw);
+/** Tiny3D's segment table (left out of signatures: per-frame buffers swap through it). */
+void hle_t3d_seg_mask(uint8_t *state_copy, uint32_t state_start);
+void hle_t3d_seg_keep(uint8_t *img, bool restore);
+void hle_t3d_mtx_conv_to(void *dst, uint32_t src);
+void hle_t3d_zvalid_min(int v);
+uint32_t hle_vc_gen(void);
+void hle_rdpq_state(hle_st_t *s);
+void hle_vrdp_state(hle_st_t *s, bool sig);
+void hle_vrdp_counters(uint32_t *epoch, uint32_t *proj_ver, uint32_t *vp_ver);
+void hle_vrdp_counters_set(uint32_t epoch, uint32_t proj_ver, uint32_t vp_ver);
+uint32_t hle_vrdp_dp_cur(void);
+void hle_vrdp_dp_cur_set(uint32_t phys);
+uint32_t hle_vrsp_loaded_mask(void);
+void hle_vrsp_state(hle_st_t *s, uint32_t ovl_mask, bool sig);
+uint32_t hle_vrsp_pstack_io(uint8_t *buf, int slot, bool load);
+void hle_vrsp_rdp_get(uint32_t *cur, uint32_t *sentinel, uint32_t *dp, uint8_t *syncfull);
+void hle_vrsp_rdp_set(uint32_t cur, uint32_t sentinel, uint32_t dp, uint8_t syncfull);
+void hle_vrsp_rdp_advance(uint32_t nbytes);
+bool hle_vrsp_rdp_room(uint32_t nbytes);
+bool hle_vrsp_rdp_synced(void);
 
 #endif

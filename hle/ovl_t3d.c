@@ -47,6 +47,7 @@ __attribute__((always_inline)) static inline int vtx_index(uint32_t dmem)
 
 typedef struct { uint32_t addr; bool mul; } slot_t;
 static slot_t slots[STACK_SIZE];
+static uint32_t slot_raw[STACK_SIZE];   // the address the command gave (segmented), for replay
 // Integer (16.16) so the emulated CPU avoids FPU conversions; values stay far below 2^47
 static int64_t zrow[STACK_SIZE][4]; // clip z = sum_c zrow[k][c] * v[c]
 static int64_t proj_z[4];           // z row of the projection
@@ -76,15 +77,23 @@ void hle_mat_mul(float out[4][4], const float l[4][4], const float r[4][4])
     memcpy(out, res, sizeof(res));
 }
 
-/** T3DMat4FP in RDRAM -> GBI Mtx in scratch (integer reshuffle only). */
-static uint32_t mtx_conv(uint32_t addr)
+/** T3DMat4FP in RDRAM -> GBI Mtx at dst (integer reshuffle only). */
+void hle_t3d_mtx_conv_to(void *dst_, uint32_t addr)
 {
     const uint32_t *src = hle_rdram(addr);      // per column: 2 words of int halves, 2 of frac halves
-    uint32_t *dst = gbi_alloc(sizeof(gbi_mtx_t));
+    uint32_t *dst = dst_;
     for (int c = 0; c < 4; c++) {
         dst[c*2+0] = src[c*4+0]; dst[c*2+1] = src[c*4+1];
         dst[8+c*2+0] = src[c*4+2]; dst[8+c*2+1] = src[c*4+3];
     }
+}
+
+/** Slot k's matrix (at addr) as a GBI Mtx in scratch. */
+static uint32_t mtx_conv(uint32_t addr, int k)
+{
+    uint32_t *dst = gbi_alloc(sizeof(gbi_mtx_t));
+    hle_t3d_mtx_conv_to(dst, addr);
+    hle_rp_mtx(dst, k, slot_raw[k]);
     return PhysicalAddr(dst);
 }
 
@@ -110,7 +119,7 @@ static void update_zrow(int k)
 /** Emits slot k on top of a GBI stack that holds slots 0..k-1 below the current depth. */
 static void gbi_slot(int k)
 {
-    uint32_t m = slots[k].addr ? mtx_conv(slots[k].addr) : 0;
+    uint32_t m = slots[k].addr ? mtx_conv(slots[k].addr, k) : 0;
     if (!m) return;
     uint32_t op = (slots[k].mul && k > 0) ? G_MTX_MUL : G_MTX_LOAD;
     if (k > gdepth) {
@@ -142,7 +151,7 @@ static void sync_modelview(void)
     gdepth = 0;
     for (int k = 0; k <= cur_slot; k++) {
         if (k == 0) {
-            uint32_t m = slots[0].addr ? mtx_conv(slots[0].addr) : 0;
+            uint32_t m = slots[0].addr ? mtx_conv(slots[0].addr, 0) : 0;
             if (m) GBI_MTX(m, G_MTX_LOAD | G_MTX_NOPUSH | G_MTX_MODELVIEW);
         } else {
             gbi_slot(k);
@@ -174,7 +183,10 @@ __attribute__((noinline)) static void matrix_stack(uint32_t a0, uint32_t a1)
     }
     slots[slot].addr = resolve_segment(a1);
     slots[slot].mul = (a0 & 1) && slot > 0;
+    slot_raw[slot] = a1;
+    hle_rp_slot_written(slot);
     if (zvalid >= slot) zvalid = slot - 1;
+    hle_rp_zvalid(slot - 1);
     if (in_sync)
         gbi_slot(slot);
 }
@@ -396,6 +408,9 @@ static int vc_nmodels;
 uint32_t hle_vc_hits, hle_vc_misses, hle_vc_resets, hle_vc_peak, hle_vc_strip_hits;
 #endif
 
+static uint32_t vc_gen_n;           // pool generations: a reset frees everything recorded with it
+uint32_t hle_vc_gen(void) { return vc_gen_n; }
+
 static void vc_reset_later(void)
 {
     memset(vc_tab, 0, sizeof(vc_tab));
@@ -417,7 +432,7 @@ static void hle_vcache_model(const void *data, uint32_t bytes, bool add)
 /** The entry for this copy (out != 0 when cached), a free one to fill (out == 0), or NULL. */
 static vc_ent_t *vc_find(uint32_t src, uint32_t bytes, uint32_t uv, uint32_t amb)
 {
-    if (vc_reset_pending && vc_task != gsp_tasks) { vc_used = 0; vc_reset_pending = false; }
+    if (vc_reset_pending && vc_task != gsp_tasks) { vc_used = 0; vc_reset_pending = false; vc_gen_n++; }
     uint32_t h = ((src >> 4) * 2654435761u) >> 22;
     for (int n = 0; n < 8; n++, h = (h + 1) & (VC_SLOTS - 1)) {
         vc_ent_t *e = &vc_tab[h];
@@ -489,6 +504,7 @@ __attribute__((noinline)) static void vert_load_copy(int dest, int count, const 
     } else {
         if (e) e->src = 0;                  // the slot stays free (out == 0)
         out = gbi_alloc(count * sizeof(gbi_vtx_t));
+        hle_rp_bad();                       // a copy for this task only (CPU fog, not a model) can't be replayed
     }
     const uint32_t *in = (const uint32_t*)src;
     switch ((uv_ofs != 0) | scale << 1 | fog << 2) {
@@ -545,6 +561,7 @@ __attribute__((noinline)) static void vert_load(const uint32_t *a)
     if (dest + count > T3D_VERTEX_CACHE_SIZE) count = T3D_VERTEX_CACHE_SIZE - dest;
     if (count <= 0) return;
     const T3DVertPacked *src = hle_rdram(resolve_segment(a[1]));
+    if (a[1] >> 24) hle_rp_bad();       // through a segment: the buffer may differ next time
 
     uint32_t fx = VDMEM16(D(VERTEX_FX_FUNC));
     if (fx != (RSP_T3D_CODE_LOOP_TRAIL & 0xFFF))
@@ -639,6 +656,7 @@ __attribute__((noinline)) static void tri_strip(uint32_t a0, uint32_t a1)
         return;
     }
     uint64_t *dl_start = __gbi_ptr;
+    if (!ce) hle_rp_bad();              // indices outside models may change
     // Literal port of the STRIP_LOOP: strips alternate winding, and an index
     // with the MSB set restarts a new strip.
 #ifdef HLE_TEST_T3D_EXACT   // test aid: the strip walked as it was: the same triangles, in order
@@ -689,7 +707,7 @@ __attribute__((noinline)) static void tri_strip(uint32_t a0, uint32_t a1)
         hle_t3d_flush();
         int n = __gbi_ptr - dl_start;
         uint64_t *dst = (uint64_t*)vc_alloc((n + 1) * 8);
-        if (!dst) { ce->src = 0; return; }
+        if (!dst) { ce->src = 0; hle_rp_bad(); return; }
         memcpy(dst, dl_start, n * 8);
         dst[n] = (uint64_t)G_ENDDL << 56;
         __gbi_ptr = dl_start;
@@ -717,6 +735,7 @@ __attribute__((noinline)) static void tri_seq(uint32_t a0, uint32_t a1)
 
 void hle_t3d_matrices(const float (**proj)[4], const float (**mv)[4])
 {
+    hle_rp_bad();
     full_modelview(mat_mv);
     *proj = mat_proj;
     *mv = mat_mv;
@@ -751,6 +770,8 @@ void ovl_t3d(uint32_t cmd, const uint32_t *a, int n)
         return;
     case T3D_CMD_SET_WORD: {
         uint32_t addr = a[0] & 0xFFFF;
+        if ((addr & 0xFFF) < __vrsp_state_start || (addr & 0xFFF) + 4 > __vrsp_state_end) hle_rp_bad();   // outside what replay restores
+        if ((addr & 0xFFF) >= D(SEGMENT_TABLE) && (addr & 0xFFF) < D(SEGMENT_TABLE) + 32) hle_rp_bad();     // segments aren't in signatures
         if (addr & 0x8000) VDMEM16(addr) = a[1];
         else VDMEM32(addr) = a[1];
         fog_dirty = true;
@@ -763,6 +784,7 @@ void ovl_t3d(uint32_t cmd, const uint32_t *a, int n)
         return;
     case T3D_CMD_LIGHT_SET: {
         uint32_t addr = a[0] & 0xFFF;
+        if (addr < __vrsp_state_start || addr + 16 > __vrsp_state_end) hle_rp_bad();
         VDMEM32(addr) = a[1];
         if (a[2]) { VDMEM32(addr + 8) = a[2]; VDMEM32(addr + 12) = a[3]; }
         VDMEM32(addr + 4) = a[1];
@@ -781,6 +803,7 @@ void ovl_t3d(uint32_t cmd, const uint32_t *a, int n)
         for (int m = 0; m < 4; m++)
             proj_z[m] = fp_elem((const int16_t*)hle_rdram(a[0] & 0xFFFFFF) + m * 8, 2);
         zvalid = -1;                            // fog rows depend on the projection
+        hle_rp_zvalid(-1);
         fog_dirty = true;
         return;
     case T3D_CMD_FOG_STATE:
@@ -814,3 +837,46 @@ void __wrap_t3d_model_free(T3DModel *model)
     hle_vcache_model(model, 0, false);
     __real_t3d_model_free(model);
 }
+
+// ---- Block replay: this overlay's state ----
+
+void hle_t3d_state(hle_st_t *s, bool sig)
+{
+    HLE_ST(s, mat_proj); HLE_ST(s, proj_z);
+    HLE_ST(s, state_dirty); HLE_ST(s, cur_slot); HLE_ST(s, gdepth); HLE_ST(s, stack_base);
+    HLE_ST(s, fog_dirty); HLE_ST(s, fog_word);
+    uint32_t pend = tri_has_pending ? tri_pending : 0;      // stale when nothing is pending
+    HLE_ST(s, pend); HLE_ST(s, tri_has_pending);
+    if (s->load) tri_pending = pend;
+    uint32_t rel = gbi_epoch - gsp_epoch;       // in sync or not, not the epoch itself
+    HLE_ST(s, rel);
+    if (s->load) gbi_epoch = gsp_epoch + rel;
+    if (sig) {  // which slots hold a matrix and how it combines (their matrices are re-read on replay)
+        for (int k = 0; k < STACK_SIZE; k++) {
+            uint8_t f = slots[k].mul | (slots[k].addr != 0) << 1;
+            HLE_ST(s, f);
+        }
+    }
+}
+/** A slot the block set: the address it gave, resolved again on replay (segments may point elsewhere). */
+uint32_t hle_t3d_slot_io(uint8_t *buf, int k, bool load)
+{
+    struct { uint32_t raw; bool mul; } v = { slot_raw[k], slots[k].mul };
+    if (load) {
+        memcpy(&v, buf, sizeof(v));
+        slot_raw[k] = v.raw; slots[k].mul = v.mul; slots[k].addr = resolve_segment(v.raw);
+    } else memcpy(buf, &v, sizeof(v));
+    return sizeof(v);
+}
+uint32_t hle_t3d_resolve(uint32_t raw) { return resolve_segment(raw); }
+void hle_t3d_seg_mask(uint8_t *state_copy, uint32_t state_start)
+{
+    memset(state_copy + D(SEGMENT_TABLE) - state_start, 0, 32);
+}
+void hle_t3d_seg_keep(uint8_t *img, bool restore)
+{
+    static uint8_t seg[32];
+    if (restore) memcpy(img + D(SEGMENT_TABLE), seg, 32); else memcpy(seg, img + D(SEGMENT_TABLE), 32);
+}
+uint32_t hle_t3d_slot_addr(int k) { return slots[k].addr; }
+void hle_t3d_zvalid_min(int v) { if (v < zvalid) zvalid = v; }

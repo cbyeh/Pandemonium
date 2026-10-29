@@ -35,7 +35,7 @@ static void write16(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
 }
 static void finalize(void) {
 #ifdef HLE_TEST_PERF
-    extern uint32_t hle_rm_calls[4], hle_fin_ticks; uint32_t t = TICKS_READ();
+    extern uint32_t hle_fin_ticks; uint32_t t = TICKS_READ();
 #endif
     vrsp_rdpq_send(staging, staged * 4);
     staged = 0;
@@ -440,4 +440,15 @@ void ovl_rdpq(uint32_t cmd, const uint32_t *a, int n)
         finalize();
         return;
     }
+}
+
+// ---- Block replay: this overlay's state ----
+
+void hle_rdpq_state(hle_st_t *s)
+{
+    HLE_ST(s, address_table);
+    HLE_ST(s, autotmem_addr); HLE_ST(s, autotmem_prev); HLE_ST(s, autotmem_limit); HLE_ST(s, autotmem_enabled);
+    HLE_ST(s, prim_color_ex); HLE_ST(s, prim_color_rgba);
+    HLE_ST(s, mode_stack); HLE_ST(s, tri_data);
+    HLE_ST(s, staged);
 }

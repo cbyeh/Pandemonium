@@ -365,3 +365,40 @@ __attribute__((constructor(131))) static void hle_early_debug(void)
 {
     debug_init_isviewer();
 }
+
+// ---- Block replay: this module's state ----
+
+void hle_vrdp_state(hle_st_t *s, bool sig)
+{
+    // the color image cycles through the framebuffers: blocks only depend on its format and width,
+    // and leave it as it was unless they set one
+    static uint64_t cimg_entry;
+    if (sig) {
+        uint32_t fmt = last_cimg >> 32;
+        HLE_ST(s, fmt);
+        cimg_entry = last_cimg;
+    } else {
+        uint8_t changed = last_cimg != cimg_entry;
+        uint64_t v = changed ? last_cimg : 0;
+        HLE_ST(s, changed); HLE_ST(s, v);
+        if (s->load && changed) last_cimg = v;
+    }
+    HLE_ST(s, last_som); HLE_ST(s, last_fillcolor); HLE_ST(s, last_scissor);
+    HLE_ST(s, sent_som); HLE_ST(s, sent_comb);
+    HLE_ST(s, gsp_3d.proj); HLE_ST(s, gsp_3d.vp); HLE_ST(s, gsp_3d.geom); HLE_ST(s, gsp_3d.tex); HLE_ST(s, gsp_3d.fog);
+    HLE_ST(s, gsp_cur.geom); HLE_ST(s, gsp_cur.tex); HLE_ST(s, gsp_cur.fog); HLE_ST(s, gsp_cur.valid);
+    // versions as steps behind the current ones
+    uint32_t rel[2] = { gsp_cur.proj_ver - gsp_3d.proj_ver, gsp_cur.vp_ver - gsp_3d.vp_ver };
+    HLE_ST(s, rel);
+    if (s->load) { gsp_cur.proj_ver = gsp_3d.proj_ver + rel[0]; gsp_cur.vp_ver = gsp_3d.vp_ver + rel[1]; }
+}
+void hle_vrdp_counters(uint32_t *epoch, uint32_t *proj_ver, uint32_t *vp_ver)
+{
+    *epoch = gsp_epoch; *proj_ver = gsp_3d.proj_ver; *vp_ver = gsp_3d.vp_ver;
+}
+void hle_vrdp_counters_set(uint32_t epoch, uint32_t proj_ver, uint32_t vp_ver)
+{
+    gsp_epoch = epoch; gsp_3d.proj_ver = proj_ver; gsp_3d.vp_ver = vp_ver;
+}
+uint32_t hle_vrdp_dp_cur(void) { return dp_cur; }
+void hle_vrdp_dp_cur_set(uint32_t phys) { dp_cur = phys & 0xFFFFFF; }

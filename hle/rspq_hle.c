@@ -1303,6 +1303,7 @@ void rspq_block_begin_reuse(rspq_block_t *reuse_block)
         rspq_chain_init(&rspq_block_chain, block->cmds, block_size);
     } else {
         block = reuse_block;
+        hle_replay_block_gone(block->cmds);
         rspq_block_free_atexit_chain(block);
         block->nesting_level = 0;
         block->min_ph_level = RSPQ_MAX_BLOCK_NESTING_LEVEL;
@@ -1341,6 +1342,7 @@ rspq_block_t* rspq_block_end(void)
 #ifdef HLE_TEST_PERF
     { extern uint32_t hle_blk_addr[512]; extern int hle_blk_n; if (hle_blk_n < 512) hle_blk_addr[hle_blk_n++] = PhysicalAddr(rspq_block->cmds); }
 #endif
+    hle_replay_block_new(rspq_block->cmds);
     // Return the created block
     rspq_block_t *b = rspq_block;
     rspq_block = NULL;
@@ -1349,6 +1351,7 @@ rspq_block_t* rspq_block_end(void)
 
 void rspq_block_free(rspq_block_t *block)
 {
+    hle_replay_block_gone(block->cmds);
     // Free RDP blocks first
     __rdpq_block_free(block->rdp_block);
 
@@ -1791,7 +1794,7 @@ extern inline void rspq_call_deferred(void (*func)(void *), void *arg);
  * ======================================================================== */
 
 uint8_t *__vrsp_img;
-uint32_t __vrsp_state_start;
+uint32_t __vrsp_state_start, __vrsp_state_end;
 static uint8_t *vrsp_imgs[RSPQ_MAX_OVERLAYS];      // per-overlay DMEM image
 static uint8_t vrsp_cmdsize[RSPQ_MAX_OVERLAYS][64]; // command sizes (bytes) per overlay
 static bool vrsp_img_loaded[RSPQ_MAX_OVERLAYS];    // image holds the live state
@@ -1860,6 +1863,7 @@ static void vrsp_load_overlay(int ovl)
         vrsp_img_loaded[ovl] = true;
     }
     __vrsp_state_start = h->state_start & 0xFFF;
+    __vrsp_state_end = __vrsp_state_start + h->state_size + 1;
 }
 
 /** Writes back the state of every overlay to RDRAM (like an overlay switch would). */
@@ -1906,7 +1910,9 @@ void vrsp_rdpq_send(const uint32_t *words, int nbytes)
     if (!nbytes) return;
     uint32_t cur = rspq_data.rspq_rdp_current & 0xFFFFFF;
     uint32_t sentinel = rspq_data.rspq_rdp_sentinel;
+    hle_rp_rdp_send(nbytes);
     if ((int32_t)(sentinel - nbytes) < (int32_t)cur) {
+        hle_rp_bad();
         // Switch to the other dynamic buffer
         cur = rspq_data.rspq_rdp_buffers[1];
         rspq_data.rspq_rdp_buffers[1] = rspq_data.rspq_rdp_buffers[0];
@@ -1947,6 +1953,10 @@ void hle_perf_dump(uint32_t total)
     hle_vl_ticks[6] = hle_vl_ticks[7] = hle_vl_ticks[8] = 0;
     debugf("[hle]   inside recorded blocks: %lu%% (%lu block runs, %d blocks)\n", (unsigned long)(hle_blk_ticks * 100ULL / total), (unsigned long)hle_blk_calls, hle_blk_n);
     hle_blk_ticks = hle_blk_calls = 0;
+    extern uint32_t hle_rp_stats[8];
+    debugf("[hle]   replay: %lu replayed, %lu recorded, %lu unreplayable, %lu no match, check %lu ok %lu BAD\n", (unsigned long)hle_rp_stats[0],
+           (unsigned long)hle_rp_stats[1], (unsigned long)hle_rp_stats[2], (unsigned long)hle_rp_stats[3], (unsigned long)hle_rp_stats[4], (unsigned long)hle_rp_stats[5]);
+    memset(hle_rp_stats, 0, sizeof(hle_rp_stats));
     extern uint32_t hle_rm_calls[4], hle_fin_ticks;
     debugf("[hle]   rdpq finalize (all commands): %lu%%\n", (unsigned long)(hle_fin_ticks * 100ULL / total)); hle_fin_ticks = 0;
     debugf("[hle]   modify other modes: %lu plain, %lu render mode (%lu memo hits), %lu mode/combine commands dropped\n",
@@ -1974,6 +1984,7 @@ static void vrsp_run(void)
                 == SP_STATUS_SIG_HIGHPRI_REQUESTED) {
             vsp_write(SP_WSTATUS_CLEAR_SIG_HIGHPRI_REQUESTED | SP_WSTATUS_SET_SIG_HIGHPRI_RUNNING);
             uint32_t target = PSTACK(RSPQ_HIGHPRI_CALL_SLOT);
+            hle_replay_abort();
             PSTACK(RSPQ_LOWPRI_CALL_SLOT) = vrsp_ptr;
             vrsp_ptr = target & 0xFFFFFF;
             continue;
@@ -1998,6 +2009,7 @@ static void vrsp_run(void)
             uint32_t next = vrsp_ptr + sizes[cmd_byte];
             switch (cmd_byte) {
             case RSPQ_CMD_WRITE_WORD:
+                hle_rp_bad();
                 *(uint32_t*)vrsp_dmem_addr(a0) = a[1];
                 break;
             case RSPQ_CMD_JUMP:
@@ -2005,10 +2017,17 @@ static void vrsp_run(void)
                 break;
             case RSPQ_CMD_CALL: {
                 uint32_t target = a0 & 0xFFFFFF;
-                if ((int32_t)a[1] < 0)      // placeholder: target read from DMEM
+                bool placeholder = (int32_t)a[1] < 0;
+                if (placeholder) {          // placeholder: target read from DMEM
                     target = *(uint32_t*)vrsp_dmem_addr(target) & 0xFFFFFF;
-                PSTACK((a[1] & 0xFFC) >> 2) = next;
-                next = target;
+                    hle_rp_bad();
+                }
+                int slot = (a[1] & 0xFFC) >> 2;
+                PSTACK(slot) = next;
+                hle_rp_pstack(slot);
+                // a recorded block starting from a state seen before: its output is copied
+                if (placeholder || !hle_replay_call(target, slot))
+                    next = target;
 #ifdef HLE_TEST_PERF    // test aid: time spent inside recorded blocks
                 {
                     extern uint32_t hle_blk_addr[512], hle_blk_mask, hle_blk_t0, hle_blk_ticks, hle_blk_calls; extern int hle_blk_n;
@@ -2022,6 +2041,7 @@ static void vrsp_run(void)
             }
             case RSPQ_CMD_RET:
                 next = PSTACK((a0 & 0xFFC) >> 2) & 0xFFFFFF;
+                hle_replay_ret((a0 & 0xFFC) >> 2);
 #ifdef HLE_TEST_PERF
                 {
                     extern uint32_t hle_blk_mask, hle_blk_t0, hle_blk_ticks;
@@ -2031,6 +2051,7 @@ static void vrsp_run(void)
 #endif
                 break;
             case RSPQ_CMD_DMA: {
+                hle_rp_bad();
                 uint8_t *dmem = vrsp_dmem_addr(a[1]);
                 void *rdram = hle_rdram(a0);
                 uint32_t len = (a[2] & 0xFFF) + 1;
@@ -2039,9 +2060,11 @@ static void vrsp_run(void)
                 break;
             }
             case RSPQ_CMD_WRITE_STATUS:
+                hle_rp_bad();
                 vsp_write(a0 & 0x1FFFFFF);
                 break;
             case RSPQ_CMD_SWAP_BUFFERS: {
+                hle_rp_bad();
                 vsp_write(a[2]);
                 uint32_t target = PSTACK((a0 & 0xFFC) >> 2);
                 PSTACK((a[1] & 0xFFC) >> 2) = next;
@@ -2051,12 +2074,15 @@ static void vrsp_run(void)
             case RSPQ_CMD_TEST_WRITE_STATUS:
                 // Signals are cleared synchronously, so the wait can never block.
                 assertf(!(vsp_status & a[1]), "HLE: TEST_WRITE_STATUS would block");
+                hle_rp_bad();
                 vsp_write(a0 & 0x1FFFFFF);
                 break;
             case RSPQ_CMD_RDP_SET_BUFFER:
+                hle_rp_rdp_abs();
                 vrsp_rdp_set_buffer(a0 & 0xFFFFFF, a[1], a[2]);
                 break;
             case RSPQ_CMD_RDP_APPEND_BUFFER:
+                hle_rp_rdp_abs();
                 vrsp_rdp_append_buffer(a0 & 0xFFFFFF);
                 break;
             }
@@ -2074,6 +2100,8 @@ static void vrsp_run(void)
         }
         uint32_t cmd = cmd_byte - (base << 4);
         int size = vrsp_cmdsize[base][cmd & 63];
+        if (__builtin_expect(hle_rp_on, 0) && vrsp_handlers[base] != ovl_t3d && vrsp_handlers[base] != ovl_rdpq)
+            hle_rp_bad_();      // only these two overlays' state is saved
         assertf(size || cmd == 0, "HLE: invalid command %02lx in overlay %s", cmd_byte, rspq_overlay_ucodes[base]->name);
         if (vrsp_handlers[base] == ovl_t3d && cmd == 0) {
             // Runs of Tiny3D triangles are the bulk of the queue: take them in one go
@@ -2106,4 +2134,70 @@ static void vrsp_run(void)
 #ifdef HLE_TEST_PERF
     __hle_perf_ticks += TICKS_READ() - t0;
 #endif
+}
+
+// ---- Block replay: the virtual RSP's state ----
+
+/** Tiny3D overlays with live state (rdpq's DMEM state only matters to SYNC_FULL, which ends a recording). */
+uint32_t hle_vrsp_loaded_mask(void)
+{
+    uint32_t m = 0;
+    for (int i = 1; i < RSPQ_MAX_OVERLAYS; i++)
+        if (vrsp_img_loaded[i] && vrsp_handlers[i] == ovl_t3d) m |= 1u << i;     // rdpq's own DMEM: only SYNC_FULL reads it
+#ifdef HLE_TEST_REPLAY_CHECK
+    static bool shown;
+    if (!shown && m) {
+        shown = true;
+        for (int i = 1; i < RSPQ_MAX_OVERLAYS; i++) if (m & (1u << i))
+            debugf("[replay] overlay %d %s: state %03x +%lu\n", i, rspq_overlay_ucodes[i]->name, (unsigned)(vrsp_header(i)->state_start & 0xFFF), (unsigned long)vrsp_header(i)->state_size + 1);
+    }
+#endif
+    return m;
+}
+void hle_vrsp_state(hle_st_t *s, uint32_t ovl_mask, bool sig)
+{
+    HLE_ST(s, rspq_data.rdp_mode); HLE_ST(s, rspq_data.rdp_scissor_rect);
+    HLE_ST(s, rspq_data.rdp_fill_color); HLE_ST(s, rspq_data.rdp_target_bitdepth);
+    for (int i = 1; i < RSPQ_MAX_OVERLAYS; i++) {
+        if (!(ovl_mask & (1u << i))) continue;
+        rspq_overlay_header_t *h = vrsp_header(i);
+        bool t3d = vrsp_handlers[i] == ovl_t3d;
+        uint8_t *at = s->p;
+        if (t3d && s->load) hle_t3d_seg_keep(vrsp_imgs[i], false);
+        hle_st(s, vrsp_imgs[i] + (h->state_start & 0xFFF), h->state_size + 1);
+        if (t3d && s->load) hle_t3d_seg_keep(vrsp_imgs[i], true);
+        if (t3d && !s->load) hle_t3d_seg_mask(at, h->state_start & 0xFFF);   // kept as it is on load
+    }
+    if (!sig) {
+        HLE_ST(s, vrsp_cur_ovl);
+        if (s->load && vrsp_cur_ovl) vrsp_load_overlay(vrsp_cur_ovl);
+    }
+}
+uint32_t hle_vrsp_pstack_io(uint8_t *buf, int slot, bool load)
+{
+    if (load) memcpy(&PSTACK(slot), buf, 4); else memcpy(buf, &PSTACK(slot), 4);
+    return 4;
+}
+void hle_vrsp_rdp_get(uint32_t *cur, uint32_t *sentinel, uint32_t *dp, uint8_t *syncfull)
+{
+    *cur = rspq_data.rspq_rdp_current; *sentinel = rspq_data.rspq_rdp_sentinel;
+    *dp = hle_vrdp_dp_cur(); *syncfull = rspq_data.rdp_syncfull_ongoing;
+}
+void hle_vrsp_rdp_set(uint32_t cur, uint32_t sentinel, uint32_t dp, uint8_t syncfull)
+{
+    rspq_data.rspq_rdp_current = cur; rspq_data.rspq_rdp_sentinel = sentinel;
+    hle_vrdp_dp_cur_set(dp); rspq_data.rdp_syncfull_ongoing = syncfull;
+}
+void hle_vrsp_rdp_advance(uint32_t nbytes)
+{
+    rspq_data.rspq_rdp_current += nbytes;
+    hle_vrdp_dp_cur_set(rspq_data.rspq_rdp_current);
+}
+bool hle_vrsp_rdp_room(uint32_t nbytes)
+{
+    return !nbytes || (int32_t)(rspq_data.rspq_rdp_sentinel - nbytes) >= (int32_t)(rspq_data.rspq_rdp_current & 0xFFFFFF);
+}
+bool hle_vrsp_rdp_synced(void)
+{
+    return hle_vrdp_dp_cur() == (rspq_data.rspq_rdp_current & 0xFFFFFF);
 }
