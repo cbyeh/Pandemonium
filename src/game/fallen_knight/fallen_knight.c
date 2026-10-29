@@ -569,15 +569,16 @@ static void halfmoon_update(Boss *b, float dt)
     if (s.t > 2.9f) recover(1.6f, false);
 }
 
-#define BEAM_GAP 0.15f      // between a Moon Blade cross's two beams (58 a second: ~9 apart along their path)
+#define BEAM_GAP 0.25f      // between a Moon Blade cross's two beams (58 a second: ~15 apart along their path, told apart)
+#define BEAM_TILT 1.2217f   // each beam 70 degrees off level, the two across each other: a tall, narrow X (10 to each side) to step out of
 // A cut for each beam of a cross, as it leaves: Attack1's diagonal for the first, Attack2's rising
 // cut, the other diagonal, for the second (Attack3's overhead is vertical: it matched neither);
-// begun just before the strike so the blade meets the beam, sped up to fit the 0.15 s between them
+// begun just before the strike so the blade meets the beam, sped up to fit the 0.25 s between them
 static void beam_swing(int k)
 {
     play(k ? FKA_ATTACK2 : FKA_ATTACK1, true);
     t3d_anim_set_time(&s.anims[s.anim], WIN[k][0] - 0.05f);
-    t3d_anim_set_speed(&s.anims[s.anim], 1.4f);
+    t3d_anim_set_speed(&s.anims[s.anim], 1.2f);
 }
 static void moonblade_update(Boss *b, float dt)
 {
@@ -593,20 +594,27 @@ static void moonblade_update(Boss *b, float dt)
     b->pos[1] += s.velY * dt;
     face_player(b, dt, 6.0f);
     // the crosses come slower and further apart than the player's own: readable, dodgeable
-    if (s.step >= 1 && s.step <= 5 && s.t >= 0.55f + (s.step - 1) * 0.4f) {
+    if (s.step >= 1 && s.step <= 5 && s.t >= 0.55f + (s.step - 1) * 0.55f) {
         float o[3] = { b->pos[0], b->pos[1] + 20.0f, b->pos[2] };
-        float side = (s.step - 3) * 8.0f;
+        float side = (s.step - 3) * 4.0f;     // walking across the player (narrow X: no wider, or it passes a still one)
         float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
         float tgt[3] = { character.pos[0] + fz * side, s.groundY + 4.0f, character.pos[2] - fx * side };
         float d[3] = { tgt[0] - o[0], tgt[1] - o[1], tgt[2] - o[2] };
         float len = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
         if (len < 1.0f) len = 1.0f;
         const float SPEED = 58.0f;
+        if (s.step == 5) {      // the last a little ahead of the player (half its way there): strafing alone won't clear it
+            float vx, vz, lead = 0.5f * len / SPEED;
+            character_get_velocity(&vx, &vz);
+            tgt[0] += vx * lead; tgt[2] += vz * lead;
+            d[0] = tgt[0] - o[0]; d[2] = tgt[2] - o[2];
+            len = fmaxf(1.0f, sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]));
+        }
         // Each cross is two beams, tilted across each other, the second loosed BEAM_GAP after the
         // first along the same path: they make the criss-cross, a gap between them (they never
         // touch), 8 each (the cross's 16)
         float v[3] = { d[0] / len * SPEED, d[1] / len * SPEED, d[2] / len * SPEED };
-        skill_fx_spawn_slash_hostile(o, v, 0.7854f, FK_FELT(8.0f), len / SPEED);
+        skill_fx_spawn_slash_hostile(o, v, BEAM_TILT, FK_FELT(8.0f), len / SPEED);
         memcpy(s.beam2O, o, sizeof(o)); memcpy(s.beam2V, v, sizeof(v)); s.beam2Life = len / SPEED; s.beam2T = BEAM_GAP;
         swing_sfx();
         beam_swing(0);      // its first beam's cut (the second's is played as that beam leaves)
@@ -952,7 +960,7 @@ void fallen_knight_update(Boss* b, float dt)
 #endif
     // a Moon Blade cross's second beam, BEAM_GAP after its first (even once the leap has landed)
     if (s.beam2T >= 0.0f && (s.beam2T -= dt) < 0.0f) {
-        skill_fx_spawn_slash_hostile(s.beam2O, s.beam2V, -0.7854f, FK_FELT(8.0f), s.beam2Life);
+        skill_fx_spawn_slash_hostile(s.beam2O, s.beam2V, -BEAM_TILT, FK_FELT(8.0f), s.beam2Life);
         if (s.state == FK_MOONBLADE) { beam_swing(1); swing_sfx(); }      // its cut (not once it has landed)
     }
     switch (s.state) {

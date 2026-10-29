@@ -273,6 +273,12 @@ static void glare_update(Boss *b, float dt)
     b->pos[1] += (s.groundY + HOVER_H + 6.0f - b->pos[1]) * fminf(1.0f, dt * 3.0f);
     if (s.step < volleys && s.t >= lockAt) {
         float dx, dz, d = to_player(b, &dx, &dz);
+        {   // aimed at a random point between the player and where they're heading (0-100% of
+            // the way they'd go before the crosses reach them): a strafe isn't a sure dodge
+            float vx, vz, lead = (rand() % 1001) / 1000.0f * (CROSS_LOCK + d / SPEED);
+            character_get_velocity(&vx, &vz);
+            dx += vx * lead; dz += vz * lead;
+        }
         s.aim = atan2f(dx, dz);
         float dy = (character.pos[1] + 10.0f) - b->pos[1];
         float h = sqrtf(d * d + dy * dy);

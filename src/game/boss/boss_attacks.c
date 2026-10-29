@@ -515,7 +515,12 @@ static void boss_attacks_tick_sword_throw(Boss* boss, float dt)
     if (t < FIRE) {
         msa_update_aerial_ring_pose(sx, y, sz, 0.0f, character.pos[0], character.pos[1], character.pos[2]);
     } else if (t - dt < FIRE) {
-        msa_fire_aerial_sword(0, character.pos[0], character.pos[1] + 10.0f, character.pos[2]);
+        // at a random point between the player and where they're heading (0-100% of the way
+        // they'd go while it aims and flies at 330): moving off the spot isn't a sure dodge
+        float vx, vz, dx = character.pos[0] - sx, dz = character.pos[2] - sz;
+        float lead = (rand() % 1001) / 1000.0f * (0.55f + sqrtf(dx * dx + dz * dz) / 330.0f);
+        character_get_velocity(&vx, &vz);
+        msa_fire_aerial_sword(0, character.pos[0] + vx * lead, character.pos[1] + 10.0f, character.pos[2] + vz * lead);
     }
     if (t >= FIRE + 0.5f && t - dt < FIRE + 0.5f) {      // a whoosh as it leaves
         float dx = character.pos[0] - boss->pos[0], dz = character.pos[2] - boss->pos[2];
