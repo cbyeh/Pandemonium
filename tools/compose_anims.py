@@ -39,14 +39,15 @@ CLIPS = {
         ("Roll", 0.45, 0.45, 0.60),
     ],
     # Knocked down and back up, 5.0 s like the knockdown in character.c: the fall, a
-    # short lie, up into a crouch by 2.0 s (the earliest breakaway: the stock clip still
-    # lies flat until 2.75 s, so breaking away popped him upright), the crouch held, the rise
+    # short lie, up into a half-risen crouch by 2.0 s (the earliest breakaway: the stock
+    # clip still lies flat until 2.75 s, so breaking away popped him upright), the crouch
+    # held, the rise
     "KnockdownRise": [
         ("Knockdown", 0.00, 1.00, 1.00),
         ("Knockdown", 1.00, 1.60, 0.35),
-        ("Knockdown", 2.75, 3.55, 0.65),
-        ("Knockdown", 3.55, 3.70, 2.00),
-        ("Knockdown", 3.70, 4.50, 1.00),
+        ("Knockdown", 2.75, 3.80, 0.65),
+        ("Knockdown", 3.80, 3.85, 2.00),
+        ("Knockdown", 3.85, 4.50, 1.00),
     ],
 }
 

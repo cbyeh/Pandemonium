@@ -2247,7 +2247,7 @@ static void switch_to_locomotion_animation(int targetAnim)
             skeleton_copy_pose_bones(character.skeletonBlend, character.skeleton);
             hasBlendSnapshot = true;
             startCrossfade   = true;
-            crossfadeDur     = (prevState == CHAR_STATE_KNOCKDOWN) ? 0.25f : 0.12f;   // up from the crouch, not a pop
+            crossfadeDur     = (prevState == CHAR_STATE_KNOCKDOWN) ? 0.40f : 0.12f;   // up from the crouch, not a pop
         }
     } else {
         // locomotion -> locomotion crossfade (idle/walk/run/back variants)
