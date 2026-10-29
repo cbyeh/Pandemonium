@@ -47,6 +47,8 @@ void skill_fx_spawn_crown_hostile(const float pos[3]);
 // Hostile versions (the Fallen Knight): same shapes in a crimson palette, hitting
 // the player instead of the boss.
 void skill_fx_spawn_burst_hostile(const float pos[3], float yaw);
+// A hostile burst in red: marks where a hit will land (nothing hurts there yet)
+void skill_fx_spawn_burst_warn(const float pos[3], float yaw);
 void skill_fx_spawn_pillar_hostile(const float pos[3]);
 void skill_fx_spawn_arc_hostile(const float pos[3], float yaw, float radius, float damage);
 void skill_fx_spawn_wave_hostile(SkillWaveShape shape, const float pos[3], const float vel[3],

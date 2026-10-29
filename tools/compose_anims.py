@@ -5,12 +5,14 @@ then writes them back into the file (replacing clips with the same name).
 
   python3 tools/compose_anims.py assets/knight/knight.glb
 
-Each clip is a list of segments: (source clip, t0, t1, duration). A segment plays
-source time t0..t1 stretched to `duration` seconds (t0 == t1 holds a pose).
-Consecutive segments are crossfaded over BLEND seconds. Output is sampled at
-FPS with LINEAR interpolation. Needs numpy.
+Each clip is a list of segments: (source clip, t0, t1, duration[, blend]). A segment
+plays source time t0..t1 stretched to `duration` seconds (t0 == t1 holds a pose).
+Each is crossfaded in from the previous one over `blend` seconds (BLEND by default,
+eased when longer). A source "pose:NAME" is a held pose from tools/poses/NAME.json
+(posed in Blender: tools/pose_blender.py). Output is sampled at FPS with LINEAR
+interpolation. Needs numpy.
 """
-import json, struct, sys
+import json, os, struct, sys
 import numpy as np
 
 FPS = 30
@@ -49,14 +51,38 @@ CLIPS = {
         ("Knockdown", 3.80, 3.85, 2.00),
         ("Knockdown", 3.85, 4.50, 1.00),
     ],
-    # The Fallen Warrior's stagger (stretched to its length): the same, the crouch held
-    # low on one knee
-    "KnockdownKneel": [
-        ("Knockdown", 0.00, 1.00, 1.00),
-        ("Knockdown", 1.00, 1.60, 0.35),
-        ("Knockdown", 2.75, 3.55, 0.65),
-        ("Knockdown", 3.55, 3.70, 2.00),
-        ("Knockdown", 3.70, 4.50, 1.00),
+    # The Fallen Warrior's stagger (3.5 s, stretched to its length): not knocked down but
+    # on one knee (its rear knee on the ground, the front bent square, head bowed, the sword
+    # resting across the knee), held, then up into its stance
+    # The Fallen Warrior's Holy Slam tell: both hands high on the hilt behind its head, the
+    # elbows out either side of it, the blade down its back (held, then its slam)
+    "HolyRaise": [
+        ("pose:holy_raise", 0.0, 0.0, 1.0),
+    ],
+    # The Fallen Warrior's leaping plunge in the air: AttackCharged's sword raised overhead
+    # (1.25-1.85 s), its legs tucked into the leap and reaching down again to land (LEGS_FROM)
+    "PlungeLeap": [
+        ("AttackCharged", 1.25, 1.85, 0.6),
+        ("AttackCharged", 1.85, 1.85, 0.3),
+    ],
+    "StaggerKneel": [
+        ("pose:kneel", 0.0, 0.0, 2.7),
+        ("Idle", 0.0, 0.0, 0.8, 0.8),
+    ],
+}
+
+# Clips an earlier version made, removed from the file (KnockdownKneel: the stagger, now StaggerKneel)
+RETIRED = ["KnockdownKneel"]
+
+# Per-clip hips and legs from other segments (the same total length); the body above the
+# waist follows the clip's own
+LEG_BONES = ["Root", "Foot_IK-Right", "Foot_IK-Left", "Waist", "UpperLeg-Right", "LowerLeg-Right",
+             "Foot-Right", "UpperLeg-Left", "LowerLeg-Left", "Foot-Left"]
+LEGS_FROM = {
+    "PlungeLeap": [
+        ("AttackCharged", 1.25, 1.25, 0.05),
+        ("pose:plunge_air", 0.0, 0.0, 0.5, 0.25),
+        ("AttackCharged", 1.86, 1.86, 0.35, 0.3),
     ],
 }
 
@@ -88,7 +114,47 @@ def load(path):
     bl = struct.unpack('<I', d[o:o + 4])[0]
     return j, bytearray(d[o + 8:o + 8 + bl])
 
+def compact(j, b):
+    """Drops the accessors and buffer data nothing uses any more (the clips each run replaced:
+    left in, the file grew ~0.5 MB a run), renumbering the rest"""
+    used = set()
+    for m in j.get('meshes', []):
+        for p in m['primitives']:
+            used.update(p['attributes'].values())
+            if 'indices' in p: used.add(p['indices'])
+            for t in p.get('targets', []): used.update(t.values())
+    for sk in j.get('skins', []):
+        if 'inverseBindMatrices' in sk: used.add(sk['inverseBindMatrices'])
+    for a in j['animations']:
+        for sm in a['samplers']: used.update((sm['input'], sm['output']))
+    amap = {o: n for n, o in enumerate(sorted(used))}
+    j['accessors'] = [j['accessors'][o] for o in sorted(used)]
+    for m in j.get('meshes', []):
+        for p in m['primitives']:
+            p['attributes'] = {k: amap[v] for k, v in p['attributes'].items()}
+            if 'indices' in p: p['indices'] = amap[p['indices']]
+            if 'targets' in p: p['targets'] = [{k: amap[v] for k, v in t.items()} for t in p['targets']]
+    for sk in j.get('skins', []):
+        if 'inverseBindMatrices' in sk: sk['inverseBindMatrices'] = amap[sk['inverseBindMatrices']]
+    for a in j['animations']:
+        for sm in a['samplers']: sm['input'], sm['output'] = amap[sm['input']], amap[sm['output']]
+    views = sorted({a['bufferView'] for a in j['accessors'] if 'bufferView' in a} |
+                   {im['bufferView'] for im in j.get('images', []) if 'bufferView' in im})
+    vmap, nb, nv = {}, bytearray(), []
+    for o in views:
+        v = dict(j['bufferViews'][o]); off = v.get('byteOffset', 0)
+        while len(nb) % 4: nb.append(0)
+        v['byteOffset'] = len(nb); nb.extend(b[off:off + v['byteLength']])
+        vmap[o] = len(nv); nv.append(v)
+    j['bufferViews'] = nv
+    for a in j['accessors']:
+        if 'bufferView' in a: a['bufferView'] = vmap[a['bufferView']]
+    for im in j.get('images', []):
+        if 'bufferView' in im: im['bufferView'] = vmap[im['bufferView']]
+    return nb
+
 def save(path, j, b):
+    b = compact(j, b)
     while len(b) % 4: b.append(0)
     j['buffers'][0]['byteLength'] = len(b)
     js = json.dumps(j, separators=(',', ':')).encode()
@@ -133,13 +199,23 @@ def mix(a, b, u):
         return q / np.linalg.norm(q)
     return a * (1 - u) + b * u
 
-def compose(j, b, segs, clip_name=None):
+def compose(j, b, segs, clip_name=None, raw=False):
     anims = {a['name']: a for a in j['animations']}
     # channel layout (node, path) taken from the first source clip
-    first = anims[segs[0][0]]
-    layout = [(c['target']['node'], c['target']['path']) for c in first['channels']]
+    if not segs[0][0].startswith('pose:'):
+        first = anims[segs[0][0]]
+        layout = [(c['target']['node'], c['target']['path']) for c in first['channels']]
     fns = {}
     for name in {s[0] for s in segs}:
+        if name.startswith('pose:'):
+            pose = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'poses', name[5:] + '.json')))
+            ids = {nd.get('name'): i for i, nd in enumerate(j['nodes'])}
+            for bone, paths in pose.items():
+                for path, v in paths.items():
+                    fns[(name, ids[bone], path)] = (lambda v: lambda t: np.array(v))(v)
+            if name == segs[0][0]:
+                layout = [(ids[bone], path) for bone, paths in pose.items() for path in paths]
+            continue
         a = anims[name]
         for c in a['channels']:
             s = a['samplers'][c['sampler']]
@@ -153,16 +229,25 @@ def compose(j, b, segs, clip_name=None):
     for t in times:
         k = min(np.searchsorted(starts, t, side='right') - 1, len(segs) - 1)
         def value(si, node, path, tt):
-            src, t0, t1, dur = segs[si]
+            src, t0, t1, dur = segs[si][:4]
             u = min(1.0, max(0.0, (tt - starts[si]) / dur)) if dur > 0 else 0.0
             return fns[(src, node, path)](t0 + (t1 - t0) * u)
         for node, path in layout:
             v = value(k, node, path, t)
             # crossfade into this segment from the end of the previous one
-            if k > 0 and t - starts[k] < BLEND:
+            bl = segs[k][4] if len(segs[k]) > 4 else BLEND
+            if k > 0 and t - starts[k] < bl:
                 prev = value(k - 1, node, path, starts[k])
-                v = mix(prev, v, (t - starts[k]) / BLEND)
+                u = (t - starts[k]) / bl
+                v = mix(prev, v, ease(u) if bl > BLEND else u)
             out[(node, path)].append(v)
+    if raw:
+        return out
+    if clip_name in LEGS_FROM:      # the hips and legs from other segments of the same length
+        legs = compose(j, b, LEGS_FROM[clip_name], raw=True)
+        for key in layout:
+            if j['nodes'][key[0]].get('name') in LEG_BONES and key in legs:
+                out[key] = legs[key]
     names = {n: i for i, n in enumerate(nd.get('name') for nd in j['nodes'])}
     for bone, paths in OVERRIDES.get(clip_name, {}).items():
         for path, f in paths.items():
@@ -178,7 +263,7 @@ def compose(j, b, segs, clip_name=None):
 
 def main(path):
     j, b = load(path)
-    j['animations'] = [a for a in j['animations'] if a['name'] not in CLIPS]
+    j['animations'] = [a for a in j['animations'] if a['name'] not in CLIPS and a['name'] not in RETIRED]
     for name, segs in CLIPS.items():
         a = compose(j, b, segs, name)
         a['name'] = name

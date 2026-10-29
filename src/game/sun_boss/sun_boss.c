@@ -302,8 +302,7 @@ static void glare_update(Boss *b, float dt)
     if (s.t > WIND + (volleys - 1) * (CROSS_LOCK + GAP) + 0.7f) enter(SB_HOVER);
 }
 
-// Solar Spiral: the sun climbs, its corona spins up and a ring of sparks runs round the
-// floor under it, then two arms of slow embers (three unshackled) wheel out of it, wide
+// Solar Spiral: the sun climbs, its corona spins up, then two arms of slow embers (three unshackled) wheel out of it, wide
 // enough to fill the arena: roll through an arm, or weave between them
 static void spiral_update(Boss *b, float dt)
 {
@@ -313,11 +312,6 @@ static void spiral_update(Boss *b, float dt)
     s.raysSpin = 4.0f + 4.0f * clamp01(s.t / WIND);
     if (s.t < WIND) {
         face_player(b, dt, 2.0f);
-        int k = (int)(s.t * 6.0f / WIND);
-        if (k != (int)((s.t - dt) * 6.0f / WIND) && k < 6) {
-            float a = b->rot[1] + k * (T3D_PI / 3.0f);
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * 22.0f, s.groundY, b->pos[2] + cosf(a) * 22.0f }, a);
-        }
         if (s.t - dt <= 0.0f) sfx(SCENE1_SFX_FIRE, 0.9f);
         s.aim = b->rot[1];
         return;
@@ -381,7 +375,7 @@ static void rain_spawn(void)
         s.rainPos[i][0] = character.pos[0] + ox;
         s.rainPos[i][1] = character.pos[2] + oz;
         s.rainT[i] = 1.0f + i * 0.12f;
-        skill_fx_spawn_burst_hostile((float[3]){ s.rainPos[i][0], s.groundY, s.rainPos[i][1] }, 0.0f);
+        skill_fx_spawn_burst_warn((float[3]){ s.rainPos[i][0], s.groundY, s.rainPos[i][1] }, 0.0f);
     }
 }
 
@@ -425,7 +419,7 @@ static void dive_update(Boss *b, float dt)
         b->pos[1] += (s.groundY + 75.0f - b->pos[1]) * fminf(1.0f, dt * 4.0f);
         move_toward(b, character.pos[0], character.pos[2], 70.0f * speed_mult(), dt);
         if (s.t >= 1.1f) { s.diveTarget[0] = character.pos[0]; s.diveTarget[1] = character.pos[2]; s.step = 1; s.t = 0.0f;
-                           skill_fx_spawn_burst_hostile((float[3]){ s.diveTarget[0], s.groundY, s.diveTarget[1] }, 0.0f); }
+                           skill_fx_spawn_burst_warn((float[3]){ s.diveTarget[0], s.groundY, s.diveTarget[1] }, 0.0f); }
     } else if (s.step == 1) {
         if (s.t >= 0.35f) { s.step = 2; s.t = 0.0f; }
     } else {
@@ -436,12 +430,6 @@ static void dive_update(Boss *b, float dt)
             float dx, dz;
             // A shockwave along the floor: wide, but jumping over it (Moon Blade Dance) avoids it
             if (to_player(b, &dx, &dz) < 34.0f && character.pos[1] - s.groundY < 6.0f) character_apply_damage(hurt(20.0f));
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.0f);
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.5f);
-            for (int i = 0; i < 8; i++) {   // and out to its reach (34: the two in the middle showed 14 of it)
-                float a = i * (T3D_PI / 4.0f) + b->rot[1];
-                skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * 24.0f, s.groundY, b->pos[2] + cosf(a) * 24.0f }, a);
-            }
             boss_ground_crush_spawn(b->pos[0], s.groundY + 0.25f, b->pos[2]);
             screen_shake_set_shake_mag(14.0f);
             sfx_boom();
@@ -466,7 +454,7 @@ static void flare_update(Boss *b, float dt)
         int k = (int)floorf(s.t * 8.0f / WIND);
         if (k != (int)floorf((s.t - dt) * 8.0f / WIND) && k < 8) {     // round the reach, in turn
             float a = b->rot[1] + k * (T3D_PI / 4.0f);
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * FLARE_R, s.groundY, b->pos[2] + cosf(a) * FLARE_R }, a);
+            skill_fx_spawn_burst_warn((float[3]){ b->pos[0] + sinf(a) * FLARE_R, s.groundY, b->pos[2] + cosf(a) * FLARE_R }, a);
         }
         if (s.t <= dt) sfx(SCENE1_SFX_FIRE, 1.0f);
         if (s.t >= WIND) {
@@ -476,7 +464,6 @@ static void flare_update(Boss *b, float dt)
             skill_fx_next_arc_half(T3D_PI);
             skill_fx_spawn_arc_hostile(s.flarePos, s.flareYaw, FLARE_R, 0.0f);
             skill_fx_spawn_pillar_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.0f);
             screen_shake_set_shake_mag(9.0f);
             sfx_boom();
             s.step = 1; s.t = 0.0f;
@@ -578,8 +565,6 @@ static void ram_update(Boss *b, float dt)
         }
 #endif
         if (hit) { s.hitDone = true; character_apply_damage(hurt(20.0f)); }
-        if ((int)(s.t * 10.0f) != (int)((s.t - dt) * 10.0f) && k < 0.8f)    // it scorches the floor on its way
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, s.t * 7.0f);
         if (k >= 1.0f || blocked) { s.step = 2; s.t = 0.0f; b->capsuleCollider.radius = SUN_R + 4.0f;
                                     screen_shake_set_shake_mag(blocked ? 10.0f : 4.0f); if (blocked) sfx_boom(); }
     } else {
@@ -618,7 +603,7 @@ static void eclipse_update(Boss *b, float dt)
             float m[3] = { cx + sinf(a) * r, s.groundY + 1.0f, cz + cosf(a) * r };
             if (!scene_bounds_check_room(m[0], s.groundY, m[2])) { m[0] = cx; m[2] = cz; }
             s.ecPos[w][i][0] = m[0]; s.ecPos[w][i][1] = m[2];
-            skill_fx_spawn_burst_hostile(m, a);
+            skill_fx_spawn_burst_warn(m, a);
             // falls from the sun's underside onto the mark, landing as the mark's last spark fades
             float o[3] = { b->pos[0], b->pos[1] - SUN_R, b->pos[2] };
             skill_fx_next_shape(1.5f, 0.0f);
@@ -636,10 +621,9 @@ static void eclipse_update(Boss *b, float dt)
         float tw = EC_RISE + w * EC_GAP + EC_FLY * 0.5f;
         if (s.t >= tw && s.t - dt < tw)
             for (int i = 0; i < EC_N[w]; i++)
-                skill_fx_spawn_burst_hostile((float[3]){ s.ecPos[w][i][0], s.groundY, s.ecPos[w][i][1] }, (float)i);
+                skill_fx_spawn_burst_warn((float[3]){ s.ecPos[w][i][0], s.groundY, s.ecPos[w][i][1] }, (float)i);
     }
     if (s.t > spent + 0.5f) {       // down on the floor, dim: open
-        skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.0f);
         screen_shake_set_shake_mag(7.0f); sfx_boom();
         enter(SB_REST);
         s.t = 3.0f / speed_mult() - 2.6f;
@@ -651,7 +635,6 @@ bool sun_boss_stagger(Boss* b)
     // Knocked out of the air onto the floor, dimmed (as after a dive); not mid-dive or breaking free
     if (!s.ready || s.state == SB_INTRO || s.state == SB_DIVE || s.state == SB_REST || s.state == SB_BREAK || s.state == SB_DEAD) return false;
     for (int k = 0; k < NCH; k++) s.ch[k].kin = s.ch[k].hot = false;
-    skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.0f);
     enter(SB_REST);
     s.t = 3.0f / speed_mult() - BOSS_STAGGER_S;     // on the floor for the stagger
     s.downT = 0.0f;         // it falls from where it was: a bounce and a rocking on the floor
@@ -877,9 +860,6 @@ static void lash_update(Boss *b, float dt)
                      (double)(tp[0]-r[0]), (double)(tp[1]-r[1]), (double)(tp[2]-r[2]),
                      (double)(c->kt[NN-1][0]-r[0]), (double)(c->kt[NN-1][1]-r[1]), (double)(c->kt[NN-1][2]-r[2])); }
 #endif
-            for (int i = 1; i <= 3; i++)
-                skill_fx_spawn_burst_hostile((float[3]){ root[0] + s.strikeDir[0] * CHAIN_LEN * 0.3f * i, s.groundY,
-                                                         root[2] + s.strikeDir[1] * CHAIN_LEN * 0.3f * i }, i * 0.7f);
             boss_ground_crush_spawn(root[0] + s.strikeDir[0] * CHAIN_LEN * 0.6f, s.groundY + 0.25f,
                                     root[2] + s.strikeDir[1] * CHAIN_LEN * 0.6f);
             screen_shake_set_shake_mag(10.0f);
@@ -1129,8 +1109,7 @@ void sun_boss_update(Boss* b, float dt)
             float bounce = bt > 0.0f ? fabsf(sinf(bt * 9.0f)) * 9.0f * expf(-bt * 4.0f) : 0.0f;
             float h = s.groundY + REST_H + bounce;
             b->pos[1] += (h - b->pos[1]) * (fall < 1.0f ? fminf(1.0f, dt * 14.0f) : 1.0f);
-            if (bt > 0.0f && bt - dt <= 0.0f) { screen_shake_set_shake_mag(9.0f); sfx_boom();
-                skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, 0.0f); }
+            if (bt > 0.0f && bt - dt <= 0.0f) { screen_shake_set_shake_mag(9.0f); sfx_boom(); }
         } else
         b->pos[1] += (s.groundY + REST_H - b->pos[1]) * fminf(1.0f, dt * 8.0f);
         if (s.t > 3.0f / sm) s.downT = -1.0f;
@@ -1138,21 +1117,17 @@ void sun_boss_update(Boss* b, float dt)
         break;
 
     case SB_BREAK:
-        // The chains snap: bursts all around, then it burns hotter
+        // The chains snap, then it burns hotter
         b->pos[1] += (s.groundY + HOVER_H + 10.0f - b->pos[1]) * fminf(1.0f, dt * 3.0f);
         s.raysSpin = 8.0f;
         if (s.weights && s.t >= 0.5f) {   // the weights burst and the chains whip free
             s.weights = false;
             sfx_chain(0); sfx_chain(1);
-            for (int k = 0; k < NCH; k++) {
-                skill_fx_spawn_burst_hostile((float[3]){ s.ch[k].p[NN - 1][0], s.groundY, s.ch[k].p[NN - 1][2] }, k * 0.8f);
+            for (int k = 0; k < NCH; k++)
                 for (int i = 1; i < NN; i++) s.ch[k].q[i][1] -= 0.6f * i;
-            }
             screen_shake_set_shake_mag(10.0f);
         }
         if (s.step < 6 && s.t >= s.step * 0.25f) {
-            float a = s.step * 1.05f;
-            skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * 20.0f, s.groundY, b->pos[2] + cosf(a) * 20.0f }, a);
             screen_shake_set_shake_mag(8.0f);
             if (s.step == 0) sfx_boom();
             s.step++;

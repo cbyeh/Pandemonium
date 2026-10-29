@@ -1423,7 +1423,6 @@ static void scene_bonus_intro_update(bool aJustPressed)
         static float pulse;
         pulse -= deltaTime;
         if (pulse <= 0.0f) {
-            skill_fx_spawn_burst_hostile((float[3]){ BONUS_SPAWN_X, character.pos[1], 0.0f }, t * 2.0f);
             pulse = 0.45f;
         }
         if (t >= s_bonusDropT) {     // it comes down from the dark

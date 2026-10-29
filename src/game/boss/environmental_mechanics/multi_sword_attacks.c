@@ -23,6 +23,7 @@
 #include "game_math.h"
 
 #include "path_ribbon.h"
+#include "fx/skill_fx.h"     // the red warning burst where a sword will land
 #include "fx/lightning_fx.h"   // now using lightning_fx_system_* (scene owns init)
 
 // ============================================================
@@ -1043,6 +1044,7 @@ void msa_update(float dt) {
                 s->state = SW_FALLING;
                 s->fallT = 0.0f;
                 s->fallTime = MSA_DROP_FALL_TIME_SEC;
+                skill_fx_spawn_burst_warn((float[3]){ s->spawnX, gFloorY, s->spawnZ }, (float)idx);     // where it lands, then sets off
             }
         }
 
@@ -1610,6 +1612,9 @@ void msa_fire_aerial_sword(int index, float targetX, float targetY, float target
     gAerialTargets[index][0] = targetX;
     gAerialTargets[index][1] = targetY;
     gAerialTargets[index][2] = targetZ;
+    // where it will stick (the throw and the barrage): both aim 10 above the player's feet (gFloorY is the
+    // ring's height here). shortcut: a mark under a jumping player floats as high as they are, fine while it's brief
+    skill_fx_spawn_burst_warn((float[3]){ targetX, targetY - 10.0f, targetZ }, (float)index);
 
     // Capture the sword's current (SW_CEILING) rest orientation as the
     // start of the aim rotation so we can smoothly lerp to the target.

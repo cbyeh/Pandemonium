@@ -1,8 +1,8 @@
 """Builds the Fallen Warrior's Holy Slam gathering sound: the light called down, as a threat.
 
 It was the knight's heal chime, which read as the boss healing: none of it is used. Here, at
-22 kHz, over the ~1.7 s from the sword going up to the slam (fallen_knight.c holyslam_update:
-1.5 s to the strike's windup, then 0.22 s of the strike):
+22 kHz, over the ~1.2 s from the sword going up to the slam (fallen_knight.c holyslam_update:
+1 s held, then 0.22 s of the strike):
   the draw     boss_land1's rumble played backwards, so the floor's roar is pulled in to the slam
   the swell    noise in a band rising 400 Hz -> 2.5 kHz, growing to the slam
   the drone    a saturated 55 Hz sine rising to 70 Hz, growing with it
@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from boss_sfx_levels import OUT, ROOT, limit, loud, process, read, write    # noqa: E402
 from halfmoon_sfx import band, env, sweep_band                        # noqa: E402
 
-SLAM = 1.72     # s from the sword going up to the slam
+SLAM = 1.22     # s from the sword going up to the slam
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Straight to a boss:** `HLE_TEST_DUMMY HLE_DUMMY_BOSS=1..5` (Guardian, Unbound, Fallen Warrior, Sun, Shadowborne). Taps through menus, skips cutscenes; player is invincible and logs `[dummy]` damage over 120 s plus openings.
 - **Second half / phase 2:** `HLE_DUMMY_HALF` (boss starts at 45% HP). `HLE_DRAGON_DARK` starts Shadowborne dark.
 - **Full fights that never die:** `HLE_TEST_BONUS` (+ `HLE_TEST_BONUS_SUN` / `_DRAGON`), `HLE_TEST_UNBOUND`, `HLE_TEST_STRIKE`, `HLE_TEST_CRUCIFIX`: refill the player below 60 HP, log `[dmg]`.
-- **One attack on a loop:** `HLE_FK_FORCE=1..5`, `HLE_SUN_FORCE=1..7` (`11` = lash into sweep), `HLE_DRAGON_FORCE=<DgState>`.
+- **One attack on a loop:** `HLE_FK_FORCE=1..9` (6 Triangle Slam, 7 Holy Slam, 8 Plunge, 9 Moon Blade), `HLE_SUN_FORCE=1..7` (`11` = lash into sweep), `HLE_DRAGON_FORCE=<DgState>`, Unbound's `HLE_THROW_FORCE` and `HLE_SWEEP_FORCE` (the ground sweep at any range: the dummy stays close).
 - **Boss held still** (before/after shots that line up): `HLE_TEST_FREEZE_BOSS`. Boss AI is otherwise non-deterministic.
 - **Ending:** `HLE_TEST_ENDING`.
 - **Bot playtest:** `HLE_DUMMY_REAL` + `HLE_DUMMY_STRIKE` / `_ROLL`, `HLE_STRIKE_OPEN`, `HLE_STRIKE_STAMINA`; potions below 40%, prints `[bot] ... beaten/died`.
@@ -17,7 +17,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - No timescale, fast-forward or RNG seed aid exists (boss order seeds from the clock). Speed up by skipping to the state above, not by running faster.
 
 ## Capture
-- **Cameras:** `HLE_DUMMY_SIDECAM` (`HLE_SIDECAM_K`), `HLE_DUMMY_CAM`, `CAM_NEAR`, `CAM_HIGH`, `CAM_PORTRAIT` (`HLE_PORTRAIT_D/H/LOOK/TURN`). `HLE_SKIN_GATE` poses skins at the fog gate.
+- **Cameras:** `HLE_DUMMY_SIDECAM` (`HLE_SIDECAM_K`), `HLE_DUMMY_CAM` (`HLE_DUMMY_CAM_YAW` turns it round the boss, 1.57 = side; `HLE_DUMMY_CAM_DIST`, 120), `CAM_NEAR`, `CAM_HIGH`, `CAM_PORTRAIT` (`HLE_PORTRAIT_D/H/LOOK/TURN`). `HLE_SKIN_GATE` poses skins at the fog gate.
 - **Clean README shots:** `HLE_SHOT_CLEAN` / `HLE_NO_HUD`.
 - **Frame-exact video:** shot every frame, `run.sh rom "$(seq -s, 900 1 1100)"` (comma list, not a range), then
   `ffmpeg -framerate 30 -pattern_type glob -i '*.png' -vf scale=640:-2,format=yuv420p -c:v libx264 -crf 18 out.mp4`. Lower `-framerate` or `setpts=4*PTS` for slow motion.

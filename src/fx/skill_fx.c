@@ -35,12 +35,14 @@ typedef struct {
     float hitInterval, hitTimer;
     bool  pillarOnEnd;
     bool  hostile;          // hits the player (Fallen Knight) instead of the boss
+    bool  warn;             // a hostile burst marking where a hit will land: drawn red
     float scale;            // a wave's size (hit and drawn), 1 by default
     float delay;            // charging where it was spawned: still, harmless and growing until then
     float homing;           // turn rate toward the player (an orb), 0 once it has committed
 } SkillFx;
 
 static bool s_spawnHostile;     // palette/target for effects spawned now
+static bool s_spawnWarn;        // a warning burst (skill_fx_spawn_burst_warn)
 static float s_spawnRoll;       // a crescent's tilt, for waves spawned now
 static float s_spawnPoise = -1.0f;   // for the next spawn only (skill_fx_next_poise)
 static float s_spawnScale = 1.0f, s_spawnDelay, s_spawnHoming;     // for the next spawn only (skill_fx_next_shape)
@@ -61,6 +63,7 @@ static SkillFx* fx_alloc(FxType type)
             memset(&s_fx[i], 0, sizeof(s_fx[i]));
             s_fx[i].type = type;
             s_fx[i].hostile = s_spawnHostile;
+            s_fx[i].warn = s_spawnWarn;
             return &s_fx[i];
         }
     }
@@ -137,6 +140,13 @@ void skill_fx_spawn_burst_hostile(const float pos[3], float yaw)
     s_spawnHostile = true;
     skill_fx_spawn_burst(pos, yaw);
     s_spawnHostile = false;
+}
+
+void skill_fx_spawn_burst_warn(const float pos[3], float yaw)
+{
+    s_spawnWarn = true;
+    skill_fx_spawn_burst_hostile(pos, yaw);
+    s_spawnWarn = false;
 }
 
 void skill_fx_spawn_arc_hostile(const float pos[3], float yaw, float radius, float damage)
@@ -421,7 +431,7 @@ void skill_fx_update(float dt)
                 float yaw = atan2f(-f->vel[0], f->vel[2]);
                 f->type = FX_NONE;      // free the slot before spawning the impact
                 s_spawnHostile = f->hostile;
-                skill_fx_spawn_burst(ground, yaw);
+                if (!f->hostile) skill_fx_spawn_burst(ground, yaw);     // the enemies' leave no spark
                 if (f->pillarOnEnd) skill_fx_spawn_pillar(ground);
                 s_spawnHostile = false;
             } else {
@@ -738,6 +748,8 @@ static void draw_burst(const SkillFx *f)
     float grow = fminf(1.0f, f->age / 0.08f);
     float a = fade(f, 0.0f, 0.6f);
     int base = build_reserve(SPIKES * 3, SPIKES);
+    bool hostile = s_drawHostile;
+    if (f->warn) s_drawHostile = false;     // red as it is (the palette swap would turn it blue)
     for (int k = 0; k < SPIKES; k++) {
         float ang = f->yaw + 2.0f * T3D_PI * k / SPIKES + (k & 1) * 0.3f;
         float len = ((k & 1) ? 9.0f : 14.0f) * grow;
@@ -745,11 +757,13 @@ static void draw_burst(const SkillFx *f)
         float p0[3] = { f->pos[0] + c * 2.0f,  f->pos[1],              f->pos[2] + s * 2.0f };
         float p1[3] = { f->pos[0] + cw * 2.0f, f->pos[1],              f->pos[2] + sw * 2.0f };
         float tip[3] = { f->pos[0] + c * len,  f->pos[1] + len * 0.8f, f->pos[2] + s * len };
-        build_vert(p0, rgba(255, 210, 80, a));
-        build_vert(p1, rgba(255, 210, 80, a));
-        build_vert(tip, rgba(255, 245, 190, a * 0.3f));
+        uint32_t c0 = f->warn ? rgba(255, 40, 25, a) : rgba(255, 210, 80, a);
+        build_vert(p0, c0);
+        build_vert(p1, c0);
+        build_vert(tip, f->warn ? rgba(255, 140, 110, a * 0.3f) : rgba(255, 245, 190, a * 0.3f));
         build_tri(base + k*3, base + k*3 + 1, base + k*3 + 2);
     }
+    s_drawHostile = hostile;
 }
 
 /** The Fallen Warrior's landing crown: a ring spreading out over the floor, a circle of spikes

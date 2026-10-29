@@ -1070,10 +1070,16 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
 #endif
 #ifdef HLE_DUMMY_CAM      // the camera on the boss, from its front a little below (a pose check)
+#ifndef HLE_DUMMY_CAM_YAW // turned round the boss (1.57: from its side)
+#define HLE_DUMMY_CAM_YAW 0.0f
+#endif
+#ifndef HLE_DUMMY_CAM_DIST
+#define HLE_DUMMY_CAM_DIST 120.0f
+#endif
             if (boss) {
                 cameraLockOnActive = false;
-                float a = boss->rot[1];
-                customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * 120.0f, boss->pos[1] + 30.0f, boss->pos[2] + cosf(a) * 120.0f }};
+                float a = boss->rot[1] + HLE_DUMMY_CAM_YAW;
+                customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * HLE_DUMMY_CAM_DIST, boss->pos[1] + 30.0f, boss->pos[2] + cosf(a) * HLE_DUMMY_CAM_DIST }};
                 customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + 35.0f, boss->pos[2] }};
                 camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
                 if (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE && frame % 20 == 0) debugf("[cam] f%d aerial, y %.0f\n", frame, (double)boss->pos[1]);

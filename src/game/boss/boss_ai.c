@@ -343,8 +343,12 @@ static void boss_ai_select_attack(Boss* boss, float dist) {
         // Ground Sweep: passive — kick off the MSA cycle and let the boss
         // keep choosing other attacks while swords drop. Aerial Sword Barrage
         // shares the MSA system, so it's gated below when ground sweep is active.
+#ifdef HLE_SWEEP_FORCE   // test aid: the sweep at any range (the dummy stays close)
+        if (boss->groundSweepCooldown <= 0.0f
+#else
         if (dist >= 100.0f && dist <= 350.0f
             && boss->groundSweepCooldown <= 0.0f
+#endif
             && !msa_ground_sweep_is_active() && boss->swordThrowT < 0.0f) {
             msa_set_floor_y(boss->pos[1]);
             msa_set_sword_count(5);

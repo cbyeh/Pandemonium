@@ -704,7 +704,7 @@ static void blast_spawn(const float p[3])
     Blast *e = &s.bl[s.blNext];
     s.blNext = (s.blNext + 1) % BL_MAX;
     e->p[0] = p[0]; e->p[1] = p[2]; e->t = 0.9f; e->on = true;
-    skill_fx_spawn_burst_hostile((float[3]){ p[0], s.groundY, p[2] }, s.life);
+    skill_fx_spawn_burst_warn((float[3]){ p[0], s.groundY, p[2] }, s.life);
 }
 
 static void hazards_update(float dt)
@@ -752,7 +752,6 @@ static void hazards_update(float dt)
         if (hit) { HB_HIT(HB_ORB, axis_dist_pt(o->p) - 4.5f - 8.0f); character_apply_damage(12.0f); }
         if (hit || o->p[1] < s.groundY + 1.0f || o->age > 7.0f || !room_ok(o->p[0], o->p[2])) {
             o->on = false;
-            skill_fx_spawn_burst_hostile((float[3]){ o->p[0], fmaxf(o->p[1], s.groundY), o->p[2] }, 0.0f);
         }
     }
     for (int i = 0; i < BL_MAX; i++) {
@@ -767,7 +766,6 @@ static void hazards_update(float dt)
         // a burst with the blade: the blade alone is 4 wide and the hit reached 13 (its warning
         // burst gone half a second before)
         skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, p, (float[3]){ 0, 0, 0 }, 0.0f, 0, 1.0f, 0.8f, false);
-        skill_fx_spawn_burst_hostile(p, s.life + i);
         float dx = character.pos[0] - p[0], dz = character.pos[2] - p[2];
         HB_TOUCH(HB_BLAST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f);
         if (burst_hits(p)) { HB_HIT(HB_BLAST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage(12.0f); }
@@ -781,7 +779,6 @@ static void hazards_update(float dt)
         if (!direct && o->p[1] > s.groundY + 2.0f && room_ok(o->p[0], o->p[2])) continue;
         o->on = false;      // bursts where it lands
         float p[3] = { o->p[0], s.groundY, o->p[2] };
-        skill_fx_spawn_burst_hostile(p, s.life);
         float dx = character.pos[0] - p[0], dz = character.pos[2] - p[2];
         HB_TOUCH(HB_BALLBURST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f);
         if (direct || burst_hits(p)) { HB_HIT(direct ? HB_BALL : HB_BALLBURST, direct ? axis_dist_pt(o->p) - 5.5f - 8.0f : sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage(12.0f); }
@@ -1151,7 +1148,6 @@ static void tail_update(Boss *b, float dt)
         b->rot[1] += (s.sweepSpan > 0.0f ? 1.0f : -1.0f) * 0.7f * dt * (1.0f - s.t / 0.45f) * 2.0f;   // the hips twist with it (~0.3 rad)
         // (the hit: hits_after_rig, on the tail as drawn)
         if (s.t >= 0.45f) {
-            skill_fx_spawn_burst_hostile((float[3]){ s.tl[NTAIL][0], s.groundY, s.tl[NTAIL][2] }, 0.0f);
             screen_shake_set_shake_mag(5.0f);
             s.step = 2; s.t = 0.0f;
         }
@@ -1176,7 +1172,6 @@ static void whip_update(Boss *b, float dt)
         // the whole warned circle, as the tail and body sweep it (hits_after_rig: it hit everyone
         // in the circle 0.18 s in, wherever the tail was)
         if (s.t >= SPIN) {
-            skill_fx_spawn_burst_hostile((float[3]){ s.tl[NTAIL][0], s.groundY, s.tl[NTAIL][2] }, 0.0f);
             screen_shake_set_shake_mag(7.0f);
             sfx_boom();
             s.step = 2; s.t = 0.0f;
@@ -1235,11 +1230,10 @@ static void charge_update(Boss *b, float dt)
     } else if (s.t >= 0.6f) enter(DG_IDLE);
 }
 
-// Touching down: bursts at its feet and a quake, harmless (only its moves hit)
+// Touching down: a quake, harmless (only its moves hit)
 static void land_slam(float shake)
 {
     s.heavyRest = true;
-    for (int i = 0; i < 4; i++) skill_fx_spawn_burst_hostile((float[3]){ s.foot[i][0], s.groundY, s.foot[i][2] }, i * 1.5f);
     screen_shake_set_shake_mag(shake);
     sfx_boom();
 }
@@ -1309,10 +1303,8 @@ static void roar_update(Boss *b, float dt)
     // Half health: the dark takes it. A long roar; its crystals turn violet
     s.alt = ease(s.alt, 0.0f, 3.0f, dt);
     s.tNeckPitch = 0.8f; s.tJaw = 1.0f; s.tWingSpan = 1.0f; s.tWingRaise = 0.7f; s.tCrouch = 2.0f;
-    if (s.t <= dt) sfx_roar();      // loud 0.28 s in: the bursts from then
+    if (s.t <= dt) sfx_roar();      // loud 0.28 s in: the quakes from then
     if (s.step < 8 && s.t >= 0.25f + 0.3f * s.step) {
-        float a = s.step * 0.8f;
-        skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + sinf(a) * 45.0f, s.groundY, b->pos[2] + cosf(a) * 45.0f }, a);
         screen_shake_set_shake_mag(8.0f);
         s.step++;
     }
@@ -1400,7 +1392,7 @@ static void beam_update(Boss *b, float dt)
         if (s.t >= CHARGE * 0.55f && s.t - dt < CHARGE * 0.55f) {
             float p[3];
             floor_point(b, s.sweepFrom, beam_reach(b, s.range), p);
-            skill_fx_spawn_burst_hostile(p, 0.0f);     // where it will begin
+            skill_fx_spawn_burst_warn(p, 0.0f);     // where it will begin
         }
         if (s.t >= CHARGE) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(6.0f); }
     } else if (s.step == 1) {
@@ -1418,7 +1410,7 @@ static void beam_update(Boss *b, float dt)
                 s.sweepFrom = atan2f(dx, dz) + 1.2f * sg; s.sweepSpan = -2.4f * sg;
                 s.range = dist;
                 floor_point(b, s.sweepFrom, beam_reach(b, s.range), p);
-                skill_fx_spawn_burst_hostile(p, 0.0f);
+                skill_fx_spawn_burst_warn(p, 0.0f);
                 sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.7f);
                 s.glow = 0.45f; s.step = 2;
             } else { s.glow = 0.0f; s.step = 3; }
@@ -1482,7 +1474,7 @@ static void skybeam_update(Boss *b, float dt)
             float w = fminf(fmaxf(nx * px + nz * pz, 45.0f), 150.0f);
             off[0] = nx * w; off[1] = nz * w;
             s.sweepFrom = b->rot[1]; s.sweepSpan = remainderf(atan2f(D[0], D[2]) - b->rot[1], 2.0f * T3D_PI);
-            skill_fx_spawn_burst_hostile((float[3]){ P0[0] + off[0], s.groundY, P0[2] + off[1] }, 0.0f);    // where the beam touches down
+            skill_fx_spawn_burst_warn((float[3]){ P0[0] + off[0], s.groundY, P0[2] + off[1] }, 0.0f);    // where the beam touches down
             s.step = 1; s.t = 0.0f;
         }
     } else if (s.step == 1) {
@@ -1544,7 +1536,7 @@ static void snipe_update(Boss *b, float dt)
                 float p[3];
                 lerp3(p, s.mouth, s.target, 0.25f + 0.25f * i);
                 p[1] = s.groundY;
-                skill_fx_spawn_burst_hostile(p, i * 1.3f);
+                skill_fx_spawn_burst_warn(p, i * 1.3f);
             }
             s.step = 1; s.t = 0.0f;
         }
@@ -1654,7 +1646,7 @@ static void sweep_update(Boss *b, float dt)
         float u = smooth01(s.t / (WIND * 0.6f));
         s.tNeckPitch = -0.6f; s.tNeckYaw = -s.sg * HALF * 0.7f * u; s.tJaw = 0.35f; s.poseRate = 4.0f;
         floor_point(b, b->rot[1] - s.sg * HALF * u, REACH, to);
-        if (s.t >= WIND * 0.5f && s.t - dt < WIND * 0.5f) skill_fx_spawn_burst_hostile(to, 0.0f);     // where it starts
+        if (s.t >= WIND * 0.5f && s.t - dt < WIND * 0.5f) skill_fx_spawn_burst_warn(to, 0.0f);     // where it starts
         to[1] += 6.0f;      // the head looks along the floor, the jaws just off it
         memcpy(s.aim, to, sizeof(s.aim)); s.tAimK = u;
         s.glow = clamp01(s.t / (WIND / sm)) * (0.85f + 0.15f * sinf(s.life * 20.0f));
@@ -1769,7 +1761,7 @@ static void hover_update(Boss *b, float dt)
                 s.range = fminf(fmaxf(to_player(b, &dx, &dz), 50.0f), 230.0f);
                 s.sweepFrom = b->rot[1] - HALF; s.sweepSpan = 2.0f * HALF;
                 floor_point(b, s.sweepFrom, s.range, to);
-                skill_fx_spawn_burst_hostile(to, 0.0f);
+                skill_fx_spawn_burst_warn(to, 0.0f);
             }
             floor_point(b, s.sweepFrom, s.range, to);
             memcpy(s.aim, to, sizeof(s.aim)); s.tAimK = smooth01((s.t - RISE) / (CHARGE * 0.7f));
@@ -1789,7 +1781,7 @@ static void hover_update(Boss *b, float dt)
                 float dx, dz;
                 s.range = fminf(fmaxf(to_player(b, &dx, &dz), 50.0f), 230.0f);
                 floor_point(b, s.sweepFrom + s.sweepSpan, s.range, to);
-                skill_fx_spawn_burst_hostile(to, 0.0f);
+                skill_fx_spawn_burst_warn(to, 0.0f);
                 sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.7f);
             } else s.sg = s.alt;    // the height it sinks from
         }
@@ -1890,8 +1882,6 @@ void dragon_boss_update(Boss* b, float dt)
             s.alt = fmaxf(0.0f, s.alt - fmaxf(s.alt * 1.1f, 25.0f) * dt);
             if (s.alt <= 0.0f) {
                 s.step = 1; s.t = 0.0f;     // landed: the roar follows
-                for (int i = 0; i < 4; i++)
-                    skill_fx_spawn_burst_hostile((float[3]){ s.foot[i][0], s.groundY, s.foot[i][2] }, i * 1.5f);
                 screen_shake_set_shake_mag(12.0f);
                 sfx_boom();
             }
@@ -1950,8 +1940,7 @@ void dragon_boss_update(Boss* b, float dt)
         float t = s.t, up = clamp01((t - (BOSS_STAGGER_S - 0.8f)) / 0.8f);     // it heaves itself up over the last 0.8 s
         if (t < 0.25f) { s.tNeckPitch = 0.8f; s.tCrouch = -3.0f; s.tJaw = 0.9f; s.tWingRaise = 0.8f; s.poseRate = 9.0f; }
         else {
-            if (t >= 0.47f && t - dt < 0.47f) { screen_shake_set_shake_mag(10.0f); sfx_boom();     // the belly on the floor
-                for (int i = 0; i < 2; i++) skill_fx_spawn_burst_hostile((float[3]){ s.chest[0] + s.R[0] * (i ? 14.0f : -14.0f), s.groundY, s.chest[2] + s.R[2] * (i ? 14.0f : -14.0f) }, i * 1.5f); }
+            if (t >= 0.47f && t - dt < 0.47f) { screen_shake_set_shake_mag(10.0f); sfx_boom(); }    // the belly on the floor
             s.tCrouch = (BODY_H - 12.0f) * (1.0f - up); s.tNeckPitch = -0.95f + 0.6f * up; s.tNeckReach = 1.15f;
             s.tNeckYaw = 0.45f * sinf(t * 2.4f) * (1.0f - up); s.tJaw = 0.5f * (1.0f - up);
             s.tWingRaise = -0.35f + 0.5f * up; s.tWingSpan = 0.95f; s.tTail = 0.15f * sinf(t * 1.3f);
