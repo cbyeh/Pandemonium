@@ -2160,13 +2160,13 @@ void hle_vrsp_state(hle_st_t *s, uint32_t ovl_mask, bool sig)
     HLE_ST(s, rspq_data.rdp_fill_color); HLE_ST(s, rspq_data.rdp_target_bitdepth);
     for (int i = 1; i < RSPQ_MAX_OVERLAYS; i++) {
         if (!(ovl_mask & (1u << i))) continue;
-        rspq_overlay_header_t *h = vrsp_header(i);
-        bool t3d = vrsp_handlers[i] == ovl_t3d;
+        // (only Tiny3D overlays are in the mask) the DMEM the port reads, segment table aside
+        uint32_t lo, hi; hle_t3d_dmem_range(&lo, &hi);
         uint8_t *at = s->p;
-        if (t3d && s->load) hle_t3d_seg_keep(vrsp_imgs[i], false);
-        hle_st(s, vrsp_imgs[i] + (h->state_start & 0xFFF), h->state_size + 1);
-        if (t3d && s->load) hle_t3d_seg_keep(vrsp_imgs[i], true);
-        if (t3d && !s->load) hle_t3d_seg_mask(at, h->state_start & 0xFFF);   // kept as it is on load
+        if (s->load) hle_t3d_seg_keep(vrsp_imgs[i], false);
+        hle_st(s, vrsp_imgs[i] + lo, hi - lo);
+        if (s->load) hle_t3d_seg_keep(vrsp_imgs[i], true);
+        else hle_t3d_seg_mask(at, lo);          // kept as it is on load
     }
     if (!sig) {
         HLE_ST(s, vrsp_cur_ovl);

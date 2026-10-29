@@ -38,6 +38,7 @@
 #define G_MTX_PROJECTION  0x04
 
 #define G_MW_FOG          0x08
+#define G_MW_SEGMENT      0x06
 #define G_MV_VIEWPORT     8
 
 typedef struct { int16_t ob[3]; uint16_t flag; int16_t tc[2]; uint8_t cn[4]; } gbi_vtx_t;
@@ -50,6 +51,7 @@ typedef struct { int16_t i[16]; uint16_t f[16]; } gbi_mtx_t;
 #define GBI_GEOMETRY(clr, set)  gbi(((uint32_t)G_GEOMETRYMODE << 24) | (~(uint32_t)(clr) & 0x00FFFFFF), (set))
 #define GBI_TEXTURE(on, level, tile, s, t) \
     gbi(((uint32_t)G_TEXTURE << 24) | ((level) << 11) | ((tile) << 8) | ((on) << 1), ((uint32_t)(s) << 16) | (t))
+#define GBI_SEGMENT(seg, base) gbi(((uint32_t)G_MOVEWORD << 24) | (G_MW_SEGMENT << 16) | ((seg) * 4), (base))
 #define GBI_FOG(fm, fo)         gbi(((uint32_t)G_MOVEWORD << 24) | (G_MW_FOG << 16), ((uint32_t)(uint16_t)(fm) << 16) | (uint16_t)(fo))
 
 #endif

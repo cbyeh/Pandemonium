@@ -869,6 +869,8 @@ uint32_t hle_t3d_slot_io(uint8_t *buf, int k, bool load)
     return sizeof(v);
 }
 uint32_t hle_t3d_resolve(uint32_t raw) { return resolve_segment(raw); }
+/** The DMEM this port ever reads (SCREEN_SCALE .. VERTEX_FX_FUNC): all a replay must match and restore. */
+void hle_t3d_dmem_range(uint32_t *lo, uint32_t *hi) { *lo = D(SCREEN_SCALE); *hi = D(VERTEX_FX_FUNC) + 2; }
 void hle_t3d_seg_mask(uint8_t *state_copy, uint32_t state_start)
 {
     memset(state_copy + D(SEGMENT_TABLE) - state_start, 0, 32);

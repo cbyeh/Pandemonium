@@ -26,6 +26,7 @@
 #define RP_BLOCKS   512             // power of 2
 #define RP_RECS     4               // recordings per block (one per starting state)
 #define RP_SIG_MAX  8192
+#define RP_SEG      15              // GBI segment the recorded lists reach their scratch through
 
 typedef struct {
     uint32_t off;                   // scratch offset of the converted matrix
@@ -47,12 +48,14 @@ typedef struct {
     uint32_t lru;
     uint8_t *sig, *exit;            // starting / final state
     uint64_t *dl;                   // w1 of relocated commands holds the scratch offset
+    uint64_t *gdl;                  // the list as the plugin calls it (uncached; scratch through RP_SEG)
+    uint32_t nspan; uint32_t *span; // scratch byte ranges that aren't matrices (copied as recorded)
     uint32_t *reloc;                // command indices
     uint8_t *scratch;
     rp_mtx_t *mtx;
 } rp_rec_t;
 
-typedef struct { uint32_t addr; rp_rec_t *rec[RP_RECS]; } rp_block_t;
+typedef struct { uint32_t addr; rp_rec_t *rec[RP_RECS]; uint16_t skip, misses; } rp_block_t;
 
 static rp_block_t rp_blocks[RP_BLOCKS];
 static uint32_t rp_lru;
@@ -99,7 +102,25 @@ static rp_block_t *rp_find(uint32_t addr, bool add)
     return NULL;
 }
 
-static void rp_rec_free(rp_rec_t *r) { if (r) { free(r->sig); free(r); } }
+// Freed recordings wait until the plugin is done with the task that may still call their list
+static struct { rp_rec_t *r; uint32_t task; } rp_dead[256];
+static int rp_ndead;
+static void rp_rec_destroy(rp_rec_t *r) { free_uncached(r->gdl); free(r->span); free(r->sig); free(r); }
+static void rp_collect(void)
+{
+    int n = 0;
+    for (int i = 0; i < rp_ndead; i++) {
+        if (rp_dead[i].task != gsp_tasks) rp_rec_destroy(rp_dead[i].r);
+        else rp_dead[n++] = rp_dead[i];
+    }
+    rp_ndead = n;
+}
+static void rp_rec_free(rp_rec_t *r)
+{
+    if (!r) return;
+    if (rp_ndead == 256) { rp_rec_destroy(rp_dead[0].r); memmove(rp_dead, rp_dead + 1, sizeof(rp_dead[0]) * 255); rp_ndead--; }
+    rp_dead[rp_ndead].r = r; rp_dead[rp_ndead].task = gsp_tasks; rp_ndead++;
+}
 
 void hle_replay_block_new(const void *cmds)
 {
@@ -193,6 +214,9 @@ static void rp_end(void)
 #ifdef HLE_TEST_REPLAY_CHECK
         rp.check = NULL;
 #endif
+        // try this block again less and less often (cloth, per-frame meshes are never replayable)
+        if (rp.blk->misses < 6) rp.blk->misses++;
+        rp.blk->skip = (1 << rp.blk->misses) - 1;
 #if defined(HLE_TEST_PERF) || defined(HLE_TEST_REPLAY_CHECK)
         hle_rp_stats[2]++;
 #endif
@@ -292,6 +316,28 @@ static void rp_end(void)
     r->rdp_rel = rp.rdp_rel; r->rdp_abs = rp.rdp_abs;
     r->rdp_cur = rcur; r->rdp_sentinel = rsent; r->rdp_dp = rdp; r->rdp_syncfull = rsync;
     r->lru = ++rp_lru;
+    r->gdl = malloc_uncached((ncmds + 1) * 8);
+    // the scratch that isn't matrices, copied as recorded
+    static uint8_t is_mtx[64 * 1024];
+    static uint32_t spans[1024];
+    uint32_t nspan = 0;
+    if (r->gdl && sbytes <= sizeof(is_mtx)) {
+        memset(is_mtx, 0, sbytes);
+        for (int m = 0; m < rp.nmtx; m++) memset(is_mtx + rp.mtx[m].off, 1, 64);
+        for (uint32_t i = 0; i < sbytes && nspan < 1022; ) {
+            if (is_mtx[i]) { i++; continue; }
+            uint32_t j = i; while (j < sbytes && !is_mtx[j]) j++;
+            spans[nspan++] = i; spans[nspan++] = j - i;
+            i = j;
+        }
+    }
+    r->span = (r->gdl && sbytes <= sizeof(is_mtx) && nspan < 1022) ? malloc(nspan * 4 + 4) : NULL;
+    if (!r->span) { free_uncached(r->gdl); free(mem); free(r); return; }
+    memcpy(r->span, spans, nspan * 4); r->nspan = nspan / 2;
+    for (uint32_t i = 0; i < ncmds; i++) r->gdl[i] = r->dl[i];
+    for (uint32_t i = 0; i < nreloc; i++) r->gdl[r->reloc[i]] |= (uint64_t)RP_SEG << 24;
+    r->gdl[ncmds] = (uint64_t)G_ENDDL << 56;
+    b->misses = 0;
     rp_rec_free(b->rec[victim]);
     b->rec[victim] = r;
 #ifdef HLE_TEST_PERF
@@ -304,16 +350,13 @@ static void rp_end(void)
 static bool rp_replay(rp_rec_t *r)
 {
     uint8_t *sc = gbi_alloc(r->scratch_bytes);
-    memcpy(sc, r->scratch, r->scratch_bytes);
+    for (uint32_t i = 0; i < r->nspan; i++) memcpy(sc + r->span[2*i], r->scratch + r->span[2*i], r->span[2*i+1]);
     for (uint32_t m = 0; m < r->nmtx; m++) {
         uint32_t src = r->mtx[m].kind == RP_SRC_SLOT ? hle_t3d_slot_addr(r->mtx[m].src) : hle_t3d_resolve(r->mtx[m].src);
         hle_t3d_mtx_conv_to(sc + r->mtx[m].off, src);
     }
-    uint32_t s0 = PhysicalAddr(sc);
-    uint64_t *d = __gbi_ptr;
-    memcpy(d, r->dl, r->ncmds * 8);
-    for (uint32_t i = 0; i < r->nreloc; i++) d[r->reloc[i]] += s0;
-    __gbi_ptr += r->ncmds;
+    if (r->nreloc) GBI_SEGMENT(RP_SEG, PhysicalAddr(sc));
+    gbi((uint32_t)G_DL << 24, PhysicalAddr(r->gdl));
 
     // the state the block left
     uint32_t e, p3, v3; hle_vrdp_counters(&e, &p3, &v3);
@@ -335,10 +378,14 @@ static bool rp_replay(rp_rec_t *r)
  */
 bool hle_replay_call(uint32_t target, int slot)
 {
+#ifdef HLE_NO_REPLAY    // test aid: every block interpreted
+    return false;
+#endif
     if (rp.on) return false;                        // nested: part of the block being recorded
     rp_block_t *b = rp_find(target, false);
     if (!b) return false;
     hle_t3d_flush();
+    if (rp_ndead) rp_collect();
 
     // the biggest recording must fit without splitting the task while checking
     uint32_t need_cmds = 0, need_sc = 0;
@@ -346,7 +393,11 @@ bool hle_replay_call(uint32_t target, int slot)
         if (b->rec[i]->ncmds > need_cmds) need_cmds = b->rec[i]->ncmds;
         if (b->rec[i]->scratch_bytes > need_sc) need_sc = b->rec[i]->scratch_bytes;
     }
+#ifdef HLE_TEST_REPLAY_CHECK
     if (need_cmds) gbi_reserve(need_cmds + 8, need_sc + 64);
+#else
+    if (need_cmds) gbi_reserve(8, need_sc + 64);     // a replay is a segment and a call
+#endif
 
     uint32_t mask = hle_vrsp_loaded_mask();
     static uint8_t sig[RP_SIG_MAX];
@@ -373,6 +424,7 @@ bool hle_replay_call(uint32_t target, int slot)
 #if defined(HLE_TEST_PERF) || defined(HLE_TEST_REPLAY_CHECK)
     hle_rp_stats[3]++;
 #endif
+    if (b->skip) { b->skip--; return false; }
 #ifdef HLE_TEST_REPLAY_CHECK    // why the newest recording didn't match: the first differing byte of the signature
     {
         static int logged;

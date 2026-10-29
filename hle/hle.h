@@ -180,6 +180,7 @@ void hle_t3d_state(hle_st_t *s, bool sig);
 uint32_t hle_t3d_slot_io(uint8_t *buf, int k, bool load);
 uint32_t hle_t3d_slot_addr(int k);
 uint32_t hle_t3d_resolve(uint32_t raw);
+void hle_t3d_dmem_range(uint32_t *lo, uint32_t *hi);
 /** Tiny3D's segment table (left out of signatures: per-frame buffers swap through it). */
 void hle_t3d_seg_mask(uint8_t *state_copy, uint32_t state_start);
 void hle_t3d_seg_keep(uint8_t *img, bool restore);
