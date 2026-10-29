@@ -313,6 +313,7 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
 
     [SCENE1_SFX_BOSS_STEP1]  = "rom:/audio/sfx/boss/boss_step1_22k.wav64",
     [SCENE1_SFX_DRAGON_ROAR] = "rom:/audio/sfx/boss/dragon_roar_22k.wav64",
+    [SCENE1_SFX_DRAGON_GROWL] = "rom:/audio/sfx/hostile/dragon_growl_22k.wav64",
     [SCENE1_SFX_SPELL_WAVE]  = "rom:/audio/sfx/fx/spell_wave_22k.wav64",
     [SCENE1_SFX_SPELL_CAST]  = "rom:/audio/sfx/fx/spell_cast_22k.wav64",
     [SCENE1_SFX_BLADE_SLASH] = "rom:/audio/sfx/fx/halfmoon_slash_22k.wav64",    // Halfmoon Slash (tools/halfmoon_sfx.py)

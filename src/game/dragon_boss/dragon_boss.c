@@ -98,6 +98,11 @@ static struct {
     bool passTail;              // ...and (most of the time) it uses it rather than turning round
     float paceSg;               // which way it first paces in a pause
     float bsDist;               // the backstep's length: as far as the room behind it allows
+    // Little life: a flinch at each blow taken, a shake-off after a landing or getting up, fidgets in
+    // a pause (a tail thump, a paw scrape), a growl as it paces, the head following the player a beat late
+    float prevHealth, shakeT, shakeNow, fidgetT, lookRel;
+    int fidgetK;
+    bool growled;
     bool followRanged;          // the backstep leads into a ranged attack
     int sweeps;                 // the ground beam's sweeps still to come
     bool heavyRest;             // the next pause a spent one (after a landing or three beam sweeps)
@@ -192,7 +197,7 @@ static void enter(DgState st)
 #ifndef HLE_DG_PAUSE
 #define HLE_DG_PAUSE 0.2f   // the recovery added to every pause (a longer opening: about 70% cost, not ~80%)
 #endif
-    if (st == DG_IDLE) s.paceSg = (rand_custom_u32() & 1) ? 1.0f : -1.0f;
+    if (st == DG_IDLE) { s.paceSg = (rand_custom_u32() & 1) ? 1.0f : -1.0f; s.growled = false; s.fidgetT = 0.0f; }
     if (st == DG_IDLE) s.idleWait = ((rand_custom_u32() % 100 < 35) ? 3.3f + (rand_custom_u32() % 100) / 100.0f : 1.8f) + HLE_DG_PAUSE;
 #ifdef HLE_AUTOPLAY
     debugf("[dragon] state %d\n", st);
@@ -705,6 +710,7 @@ void dragon_boss_begin(Boss* boss)
     s.wingSpan = 1.0f; s.wingRaise = 0.3f; s.wingSweep = 0.0f;     // (flying in: as it always did)
     s.yawPrev = boss->rot[1]; s.altPrev = DROP_H; s.tailLag = s.tailV = 0.0f; s.passT = 0.0f;
     s.cdBackstep = 6.0f; s.cdSwipe = 7.0f;
+    s.prevHealth = boss->health; s.shakeT = 0.0f; s.lookRel = 0.0f;
     s.cdWhip = 8.0f;
     s.cdClaw = 2.0f; s.cdBite = 4.0f; s.cdTail = 3.0f; s.cdBreath = 6.0f; s.cdCharge = 9.0f; s.cdFly = 16.0f;
     s.cdNova = 0.0f; s.cdOrbs = 4.0f; s.cdBeam = 9.0f; s.cdTriple = 5.0f; s.cdSnipe = 7.0f; s.cdSweep = 10.0f; s.cdCone = 6.0f;
@@ -962,7 +968,8 @@ static void rig(Boss *b, float dt)
     float gaitF = fmaxf(s.swing[0], s.swing[1]), gaitH = fmaxf(s.swing[2], s.swing[3]);
     bool fl = flying();
     float bank = fl ? 0.0f : fminf(fmaxf(-s.yawRate * 0.08f, -0.35f), 0.35f);
-    s.rollNow = s.roll + bank + 0.05f * (s.swing[0] + s.swing[2] - s.swing[1] - s.swing[3]);
+    s.shakeNow = s.shakeT > 0.0f && s.shakeT < 0.6f && s.alt < 1.0f ? fm_sinf(T3D_PI * s.shakeT / 0.6f) * fm_sinf(s.life * 32.0f) : 0.0f;
+    s.rollNow = s.roll + bank + 0.05f * (s.swing[0] + s.swing[2] - s.swing[1] - s.swing[3]) + 0.12f * s.shakeNow;
     for (int m = 0; m < 3; m++) s.bodyUp[m] = UP[m] * fm_cosf(s.rollNow) - s.R[m] * fm_sinf(s.rollNow);
 
     mad3(s.chest, b->pos, s.F, CHEST_Z + s.lean);
@@ -979,7 +986,7 @@ static void rig(Boss *b, float dt)
     // The neck curves up from the chest and over, toward its yaw. Never quite still: it looks
     // about a little and nods with its breath (less as it aims at something)
     float idle = fl ? 0.0f : 1.0f - clamp01(s.aimK);
-    float nyaw = s.neckYaw + idle * (0.06f * fm_sinf(s.life * 0.83f) + 0.03f * fm_sinf(s.life * 2.1f + 1.0f));
+    float nyaw = s.neckYaw + idle * (0.06f * fm_sinf(s.life * 0.83f) + 0.03f * fm_sinf(s.life * 2.1f + 1.0f)) + 0.25f * s.shakeNow;
     float p0 = 0.6f + s.neckPitch + idle * 0.03f * fm_sinf(s.life * 1.7f - 0.6f), dir[3] = { 0 };
     memcpy(s.neck[0], s.chest, sizeof(s.chest));
     for (int i = 0; i < NNECK; i++) {
@@ -1356,6 +1363,7 @@ static void land_slam(float shake)
 {
     s.heavyRest = true;
     passed_player();                    // (a flight often ends past the player)
+    s.shakeT = 0.9f;                    // a shake-off once it has its feet
     for (int i = 0; i < 4; i++) skill_fx_spawn_burst_hostile((float[3]){ s.foot[i][0], s.groundY, s.foot[i][2] }, i * 1.5f);
     screen_shake_set_shake_mag(shake);
     sfx_boom();
@@ -1982,7 +1990,10 @@ static float backstep_room(const Boss *b)
 
 static void backstep_update(Boss *b, float dt)
 {
-    if (s.t < dt * 1.5f && s.step == 0) s.bsDist = fmaxf(backstep_room(b), 30.0f);
+    if (s.t < dt * 1.5f && s.step == 0) {      // most often as far as it can, sometimes (40%) a short hop
+        float room = backstep_room(b);
+        s.bsDist = fmaxf(rand_custom_u32() % 100 < 40 && room >= 55.0f ? fminf(room, 55.0f + rand_custom_u32() % 25) : room, 30.0f);
+    }
     // Harmless, and quick: it sinks onto its haunches, wings flaring, and springs back off its
     // forelegs with one great beat of the wings, head high and eyes on you, the tail swung up to
     // balance; it lands hind feet first, skids, and the forefeet come down. Mostly a ranged attack
@@ -2197,7 +2208,8 @@ void dragon_boss_update(Boss* b, float dt)
     float rel = remainderf(atan2f(dx, dz) - b->rot[1], 2.0f * T3D_PI);
 
     // The resting pose, which each move overrides: it watches the player
-    s.tNeckPitch = 0.0f; s.tNeckYaw = fminf(fmaxf(rel * 0.6f, -0.6f), 0.6f); s.tNeckReach = 1.0f;
+    s.lookRel = ease(s.lookRel, rel, 2.5f, dt);     // the head follows the player a beat late (a roll past it)
+    s.tNeckPitch = 0.0f; s.tNeckYaw = fminf(fmaxf(s.lookRel * 0.75f, -0.85f), 0.85f); s.tNeckReach = 1.0f;
     s.tJaw = 0.05f; s.tWingRaise = 0.25f; s.tWingSpan = 0.7f; s.tTail = 0.0f; s.tCrouch = 0.0f;
     s.tClaw[0] = s.tClaw[1] = 0.0f; s.tAimK = 0.0f; s.tRear = 0.0f; s.tTailUp = 0.0f; s.poseRate = 6.0f; s.flapRate = 0.0f;
     s.tRoll = 0.0f; s.tShLift[0] = s.tShLift[1] = 0.0f; s.tBend = 0.0f; s.tLean = 0.0f; s.tWingSweep = 0.55f; s.tClawHi = 0.0f; s.tSwipeAmt = 0.0f;
@@ -2259,7 +2271,8 @@ void dragon_boss_update(Boss* b, float dt)
             float off = sgn * (1.15f - fminf(fmaxf((dist - 120.0f) / 150.0f, -0.35f), 0.35f));
             float d = turn_toward(b, atan2f(dx, dz) + off, 1.6f * sm, dt);
             if (fabsf(d) < 0.6f) move_by(b, s.F[0] * 24.0f * sm * dt, s.F[2] * 24.0f * sm * dt);
-            s.tNeckYaw = fminf(fmaxf(rel * 0.85f, -1.1f), 1.1f);
+            s.tNeckYaw = fminf(fmaxf(s.lookRel * 0.85f, -1.1f), 1.1f);
+            if (!s.growled) { s.growled = true; if (rand_custom_u32() % 100 < 60) sfx(SCENE1_SFX_DRAGON_GROWL, 0.8f); }     // a low growl as it starts to prowl
         } else {
             float d = turn_toward(b, atan2f(dx, dz), (wait >= 1.8f && s.t >= wait - 0.8f ? 2.2f : 0.7f) * sm, dt);    // (back round from its pacing)
             if (dist > 75.0f && fabsf(d) < 0.8f) move_by(b, s.F[0] * 30.0f * sm * dt, s.F[2] * 30.0f * sm * dt);
@@ -2273,6 +2286,23 @@ void dragon_boss_update(Boss* b, float dt)
             } else {
                 float br = fm_sinf(s.life * 2.0f);
                 s.tCrouch = 1.5f + 1.5f * br; s.tNeckPitch = 0.04f * br; s.poseRate = 3.0f;
+                // Standing in a pause, now and then (about once in 3 s) a fidget: the tail lifted and
+                // slapped down on the floor, or a forepaw lifted and scraped back across it
+                if (!pace && s.fidgetT <= 0.0f && s.t > 0.6f && s.t < wait - 1.2f && (rand_custom_u32() % 1000) < (uint32_t)(dt * 330.0f)) {
+                    s.fidgetT = 1.0f; s.fidgetK = rand_custom_u32() % 3;
+                }
+                if (s.fidgetT > 0.0f) {
+                    float u = 1.0f - s.fidgetT, was = u - dt;
+                    if (s.fidgetK == 0) {
+                        s.tTailUp = u < 0.4f ? 0.55f : 0.0f; s.poseRate = u < 0.4f ? 5.0f : 10.0f;
+                        if (u >= 0.6f && was < 0.6f) { sfx(SCENE1_SFX_BOSS_STEP1, 0.45f); screen_shake_set_shake_mag(1.5f); }
+                    } else {
+                        int k = s.fidgetK - 1;
+                        s.tClaw[k] = u < 0.3f ? 0.3f : u < 0.7f ? 0.1f : 0.0f; s.tNeckPitch = -0.15f; s.tNeckYaw = k ? 0.2f : -0.2f;
+                        if (u >= 0.32f && was < 0.32f) sfx(SCENE1_SFX_BOSS_STEP1, 0.3f);
+                    }
+                    s.fidgetT -= dt;
+                }
             }
         }
         if (s.t > s.idleWait / sm) choose(b, dist, rel);     // a pause between attacks: the opening
@@ -2315,7 +2345,7 @@ void dragon_boss_update(Boss* b, float dt)
             s.tWingSweep = 0.2f; s.tRoll = 0.12f * fm_sinf(t * 1.9f) * (1.0f - up);      // sprawled, rocking as it tries to rise
             s.poseRate = t < 0.6f ? 6.0f : 3.0f;
         }
-        if (t >= BOSS_STAGGER_S) enter(DG_IDLE);
+        if (t >= BOSS_STAGGER_S) { enter(DG_IDLE); s.shakeT = 0.6f; }     // up, it shakes itself off
         break;
     }
 
@@ -2328,6 +2358,25 @@ void dragon_boss_update(Boss* b, float dt)
         break;
     }
     b->rot[0] = b->rot[2] = 0.0f;
+
+#ifdef HLE_DRAGON_HITME   // test aid: a sword hit every 1.5 s, a finisher's every 6 s (the flinch)
+    { static float ht; ht += dt; if (ht >= 1.5f) { ht = 0.0f; static int n; boss_apply_damage(b, (++n % 4) ? 4.0f : 10.0f); } }
+#endif
+    // A blow taken: a flinch (the head jerked up and away, the body recoiling, wings twitching),
+    // kicked onto the pose and eased back: a finisher the whole of it. No change to what it is doing
+    {
+        float hit = s.prevHealth - b->health;
+        if (hit > 0.5f && s.state != DG_DEAD && s.state != DG_INTRO && s.state != DG_ROAR) {
+            float k = fminf(fmaxf(hit / 10.0f, 0.35f), 1.0f), sd = rel > 0.0f ? 1.0f : -1.0f;
+            s.neckPitch += 0.3f * k; s.neckYaw -= sd * 0.25f * k; s.lean -= 4.0f * k; s.jaw += 0.4f * k;
+            s.roll += sd * 0.08f * k; s.wingKick += 0.15f * k; s.tailV += sd * 1.5f * k;
+#ifdef HLE_LOG_MOVES
+            debugf("[flinch] %.1f k %.2f state %d\n", (double)hit, (double)k, s.state);
+#endif
+        }
+        s.prevHealth = b->health;
+        s.shakeT -= dt;
+    }
 
     // Ease the pose toward the move's targets
     float pr = s.poseRate;
@@ -2562,7 +2611,7 @@ void dragon_boss_draw(Boss* b)
         int pair = w >> 1;
         float sd = (w & 1) ? 1.0f : -1.0f, ph = s.flapPh - pair * 0.7f;
         float flap = 0.25f + 0.6f * fm_sinf(ph - 0.35f * fm_cosf(ph));      // a quick downstroke, a slower recovery
-        float th = s.wingRaise + (flap - s.wingRaise) * s.flapAmt + (pair ? -0.2f : 0.0f) + sd * s.rollNow + air + s.wingKick + br;
+        float th = s.wingRaise + (flap - s.wingRaise) * s.flapAmt + (pair ? -0.2f : 0.0f) + sd * s.rollNow + air + s.wingKick + br + 0.15f * s.shakeNow;
         float sw = s.wingSweep + (pair ? 0.15f : 0.0f), tw = -0.25f * fm_cosf(ph) * s.flapAmt;
         float c = fm_cosf(th), sn = fm_sinf(th), cs = fm_cosf(sw), ss = fm_sinf(sw), ct = fm_cosf(tw), st = fm_sinf(tw);
         for (int m = 0; m < 3; m++) {
