@@ -2,10 +2,13 @@
 #include "gpu_frame.h"
 #include <t3d/t3d.h>
 #include <t3d/t3dmath.h>
+#include <t3d/t3dmodel.h>
+#include <t3d/t3dskeleton.h>
 #include <math.h>
 #include <string.h>
 
 #include "dragon_boss.h"
+#include "shadowborne_bind.h"     // tools/shadowborne_model.py
 #include "character.h"
 #include "globals.h"
 #include "general_utility.h"
@@ -28,6 +31,8 @@
 #define TAIL_SEG   17.0f
 #define LEG_L      19.0f        // each leg bone
 #define MESH       16.0f        // the segment and limb meshes are built 16 across, 16 long
+#define SB_SCALE   64.0f        // the skinned body's model units a world unit (the importer's base scale)
+#define WING_K     2.3f         // the great wings, this much bigger than the old pair (tools/shadowborne_rig.py)
 #define HIT_R      20.0f        // the hit capsule: wide enough for its legs at sword height (17 missed their outer 4)
 #define DROP_H     160.0f       // flies down from this high
 
@@ -35,11 +40,10 @@
 #define ORB_MAX  8
 #define BL_MAX   14             // the dark beam's delayed explosions
 #define BALL_MAX 4              // the triple breath's fireballs
-#define MAT_MAX  (40 + FL_MAX + ORB_MAX + 2 * BALL_MAX + 6)
+#define MAT_MAX  (34 + FL_MAX + ORB_MAX + 2 * BALL_MAX + 6)
 #define MAT_RING 3              // frames the RSP may still be reading
 
 // A little brighter than they read: the scale and membrane textures multiply them (mean ~0.75)
-#define SEG_VARIANTS 2          // copies of the body and tail segments, alternating down the body (each ~6 KB)
 #define COL_BACK   proc_rgb(58, 52, 68)
 #define COL_BELLY  proc_rgb(104, 92, 98)
 #define COL_BONE   proc_rgb(150, 140, 146)
@@ -61,7 +65,18 @@ typedef struct { float p[3], v[3]; bool on; } Ball;
 
 static struct {
     bool ready;
-    ProcMesh seg[SEG_VARIANTS], segDark[SEG_VARIANTS], tseg[SEG_VARIANTS], tsegDark[SEG_VARIANTS], limb, mThroat, mFoot, mHead, mHeadDark, mJaw, wing, wingDark, wingMemb, tip, tipDark, flame, mOrb, mIce, mCone;
+    // Rigid parts on the skinned body: head, jaw, throat, feet
+    ProcMesh mThroat, mFoot, mHead, mHeadDark, mJaw, flame, mOrb, mIce, mCone;      // (the crystals, the tail's blade: the skinned body's own)
+    // The skinned body (tools/shadowborne_model.py): each bone's frame rebuilt from the rig every
+    // frame. bindK: the bone's bind rotation in the frame the rig builds for it (F_bind^T R_bind)
+    T3DModel *model;
+    float bindK[SB_BONES][9];
+    int boneT[SB_BONES];                                // each bind entry's bone in the model
+    float knee[4][3];                                   // the leg joints (solved in the rig)
+    float wj[2][13][3], wup[2][3];                      // each great wing: root, elbow, wrist, five knuckles, five fingertips; its upper side
+    float flapOn;                                       // eased in and out of flapping (the wing's joints ripple with the beat)
+    rspq_block_t *block;                                // the body's draw, recorded once: the bones' matrices set each frame
+    float wingFold, tWingFold;                          // 1 folded along its back .. 0 spread
     sprite_t *texScales, *texMemb;      // tools/boss_textures.py
     T3DMat4FP *mats;
     int matRing, mi;
@@ -387,74 +402,13 @@ static void ring(float *out, int n, float z, float w, float h, float yc, float f
     }
 }
 
-// A colour for each point of a ring of `n` (from the right side, going up first): the spine dark
-// and cold, the flanks the back's colour, warming to the pale belly (the scales and plates are
-// the texture's). A closed ring (a dome's tip) all the back's, so its point stays one vertex
-static void scale_vcols(uint32_t *out, const float *K, int rings, int n)
-{
-    static const int SPINE[3] = { 40, 36, 58 }, BACK[3] = { 58, 52, 68 }, BELLY[3] = { 112, 98, 100 };
-    for (int r = 0; r < rings; r++)
-        for (int i = 0; i < n; i++) {
-            float sn = K[r] > 0.0f ? fm_sinf(2.0f * T3D_PI * i / n) : 0.0f;
-            float up = clamp01((sn - 0.45f) / 0.55f), down = smooth01((-sn - 0.05f) / 0.75f);
-            int c[3];
-            for (int m = 0; m < 3; m++) c[m] = (int)(BACK[m] + (SPINE[m] - BACK[m]) * up + (BELLY[m] - BACK[m]) * down);
-            out[r * n + i] = proc_rgb(c[0], c[1], c[2]);
-        }
-}
-
 // The scale map (tools/boss_textures.py) wraps once round a tube: 128 pixels round it (and
 // repeats every 32 down it). The UV densities below keep its texels about square on each mesh
 #define SCALES_AROUND 128.0f
 
-// A body or neck segment along +z: a smooth ten-sided tube tapering to 0.82, scaled back,
-// belly plates, crystals down the spine and a ridge of small ones on each flank. `variant`
-// starts it further down the scale map, so the segments in a row don't repeat one another
-static void build_seg(ProcMesh *out, bool dark, int variant)
-{
-    // Starts with a closed dome behind z = 0: where the chain of segments bends, the next one's
-    // dome fills the gap on the outside of the bend (an open tube showed the hall through it)
-    enum { N = 10, R = 5 };
-    static const float Z[R] = { -0.3f, -0.18f, 0.0f, 0.5f, 1.0f }, K[R] = { 0.0f, 0.75f, 1.0f, 0.95f * 0.91f, 0.82f };
-    float pts[R * N * 3];
-    for (int r = 0; r < R; r++)
-        ring(&pts[r * N * 3], N, MESH * Z[r], MESH * K[r], MESH * K[r] * 0.92f, 0.0f, 99.0f);
-    uint32_t vcols[R * N];
-    scale_vcols(vcols, K, R, N);
-    proc_mesh_begin();
-    proc_mesh_uv(SCALES_AROUND, 1.7f);     // about 13 flank scales round the torso
-    proc_mesh_uv_shift(0.0f, 16.0f * variant);     // half the map's repeat further down
-    proc_mesh_loft_vcol(pts, R, N, vcols, false);
-    uint32_t cr = crystal_col(dark);
-    crystal((float[3]){ 0, MESH * 0.88f, 3.0f }, (float[3]){ 0, MESH * 1.95f, -5.0f }, 4.0f, cr);
-    crystal((float[3]){ 0, MESH * 0.8f, 11.0f }, (float[3]){ 0, MESH * 1.55f, 6.0f }, 3.0f, cr);
-    for (int sd = -1; sd <= 1; sd += 2)
-        crystal((float[3]){ sd * MESH * 0.62f, MESH * 0.6f, 7.0f }, (float[3]){ sd * MESH * 1.15f, MESH * 1.02f, 2.0f }, 2.2f, cr);
-    proc_mesh_end(out);
-}
-
-// A tail segment: the same, lighter (eight sides, one crystal)
-static void build_tail_seg(ProcMesh *out, bool dark, int variant)
-{
-    enum { N = 8, R = 4 };      // with a closed dome at its start, as the body's
-    static const float Z[R] = { -0.3f, -0.18f, 0.0f, 1.0f }, K[R] = { 0.0f, 0.75f, 1.0f, 0.82f };
-    float pts[R * N * 3];
-    for (int r = 0; r < R; r++) ring(&pts[r * N * 3], N, MESH * Z[r], MESH * K[r], MESH * K[r] * 0.9f, 0.0f, 99.0f);
-    uint32_t vcols[R * N];
-    scale_vcols(vcols, K, R, N);
-    proc_mesh_begin();
-    proc_mesh_uv(SCALES_AROUND, 2.0f);
-    proc_mesh_uv_shift(0.0f, 16.0f * variant);
-    proc_mesh_loft_vcol(pts, R, N, vcols, false);
-    crystal((float[3]){ 0, MESH * 0.85f, 6.0f }, (float[3]){ 0, MESH * 1.8f, -2.0f }, 3.5f, crystal_col(dark));
-    proc_mesh_end(out);
-}
-
-// A leg bone along +z: a smooth six-sided tube
+// The throat: a smooth six-sided tube along +z, rounded and closed at both ends
 static void build_limb(ProcMesh *out, uint32_t col)
 {
-    // A leg bone: rounded and closed at both ends, the domes reaching past the joints, so the
-    // upper and lower bones overlap at the knee like a ball joint (open tubes showed through)
     enum { N = 6, R = 6 };
     static const float Z[R] = { -0.3f, -0.17f, 0.0f, 1.0f, 1.15f, 1.27f }, K[R] = { 0.0f, 0.75f, 1.0f, 0.8f, 0.6f, 0.0f };
     float pts[R * N * 3];
@@ -548,57 +502,6 @@ static void build_jaw(void)
     proc_mesh_end(&s.mJaw);
 }
 
-// The right wing, spanning +x: arm, wrist claw and five fingers; the membrane scalloped
-// between the fingertips; crystals along the leading edge
-// The bones and crystals (closed: drawn with their far sides culled) apart from the membrane
-// (seen from both sides): `memb` gets the membrane, if not NULL
-static void build_wing(ProcMesh *out, ProcMesh *memb, bool dark)
-{
-    const float root[3] = { 0, 0, 0 }, elbow[3] = { 30, 6, 4 }, wrist[3] = { 58, 10, -6 }, back[3] = { 2, -2, -32 };
-    const float tip[5][3] = { { 88, 5, -14 }, { 80, 2, -32 }, { 66, 0, -46 }, { 48, -2, -54 }, { 28, -3, -48 } };
-    proc_mesh_begin();
-    bone_uv(0.9f);
-    proc_mesh_spike(root, elbow, 2.6f, 4, COL_BONE);
-    proc_mesh_spike(elbow, wrist, 2.1f, 4, COL_BONE);
-    proc_mesh_spike(wrist, (float[3]){ wrist[0] + 6, wrist[1] + 3, wrist[2] + 6 }, 1.0f, 3, COL_IVORY);    // wrist claw
-    for (int i = 0; i < 5; i++) proc_mesh_spike(wrist, tip[i], 1.2f, 3, COL_BONE);
-    uint32_t cr = crystal_col(dark);
-    crystal(elbow, (float[3]){ elbow[0] + 1, elbow[1] + 8, elbow[2] + 4 }, 2.0f, cr);
-    crystal(wrist, (float[3]){ wrist[0] + 5, wrist[1] + 9, wrist[2] + 2 }, 2.2f, cr);
-    crystal((float[3]){ 44, 8, -1 }, (float[3]){ 46, 13, 2 }, 1.4f, cr);
-    proc_mesh_end(out);
-    if (!memb) return;
-    proc_mesh_begin();
-    proc_mesh_uv(0.0f, 0.55f);      // the membrane texture across it, about 1.5 times over a wing
-    const uint32_t membC = COL_MEMB, memb2 = proc_rgb(64, 46, 72);
-    for (int i = 0; i < 4; i++) {
-        // the edge between two fingertips sags in toward the wrist
-        float mid[3];
-        for (int k = 0; k < 3; k++) mid[k] = (tip[i][k] + tip[i + 1][k]) * 0.5f * 0.78f + wrist[k] * 0.22f;
-        proc_mesh_tri(wrist, tip[i], mid, (i & 1) ? membC : memb2, false);
-        proc_mesh_tri(wrist, mid, tip[i + 1], (i & 1) ? memb2 : membC, false);
-    }
-    float mid[3];
-    for (int k = 0; k < 3; k++) mid[k] = (tip[4][k] + back[k]) * 0.5f * 0.8f + elbow[k] * 0.2f;
-    proc_mesh_tri(wrist, tip[4], elbow, membC, false);
-    proc_mesh_tri(elbow, tip[4], mid, memb2, false);
-    proc_mesh_tri(elbow, mid, back, membC, false);
-    proc_mesh_tri(elbow, back, root, memb2, false);
-    proc_mesh_end(memb);
-}
-
-// The tail's tip: a crystal blade along +z
-static void build_tail_tip(ProcMesh *out, bool dark)
-{
-    uint32_t cr = crystal_col(dark);
-    proc_mesh_begin();
-    proc_mesh_uv(1.0f, 1.0f);       // (crystals only: texel (2, 2), drawn with the scales)
-    crystal((float[3]){ 0, 0, 0 }, (float[3]){ 0, 0, 16.0f }, 3.4f, cr);
-    for (int sd = -1; sd <= 1; sd += 2)
-        crystal((float[3]){ 0, 0, 3.0f }, (float[3]){ sd * 6.0f, 1.0f, 8.0f }, 1.6f, cr);
-    proc_mesh_end(out);
-}
-
 // A glow: an unlit octahedron of radius 8, drawn additively (flames, dark orbs, the beam)
 static void build_glow(ProcMesh *out, uint32_t a, uint32_t b)
 {
@@ -633,16 +536,125 @@ static void build_cone(void)
     proc_mesh_end(&s.mCone);
 }
 
+// ---- The skinned body ----
+
+// A bone's frame from its head, tail and reference: columns x, y (along the bone), z; row-major
+static void sb_frame(const float h[3], const float t[3], const float ref[3], float M[9])
+{
+    float y[3] = { t[0] - h[0], t[1] - h[1], t[2] - h[2] }, x[3], z[3];
+    norm3(y); cross3(x, ref, y); norm3(x); cross3(z, x, y);
+    for (int r = 0; r < 3; r++) { M[r * 3 + 0] = x[r]; M[r * 3 + 1] = y[r]; M[r * 3 + 2] = z[r]; }
+}
+
+// Each bone's bind rotation as seen from the frame the rig will build for it: the rig's frame
+// times this is the bone's rotation (whatever roll the model gave it)
+static void sb_load(void)
+{
+    s.model = t3d_model_load("rom:/dragon_boss/shadowborne.t3dm");
+    T3DSkeleton sk = t3d_skeleton_create(s.model);
+    assertf(sk.skeletonRef->boneCount == SB_BONES, "shadowborne: %d bones, the bind pose has %d", sk.skeletonRef->boneCount, SB_BONES);
+    t3d_skeleton_update(&sk);
+    assertf(!strcmp(SB_BIND[16].name, "upper0") && !strcmp(SB_BIND[24].name, "armL") && !strcmp(SB_BIND[36].name, "armR"), "shadowborne: bone order");
+    for (int i = 0; i < SB_BONES; i++) {
+        int t = t3d_skeleton_find_bone(&sk, SB_BIND[i].name);
+        assertf(t >= 0, "shadowborne: no bone %s", SB_BIND[i].name);
+        s.boneT[i] = t;
+        const T3DMat4x3 *m = &sk.bones[t].matrix;      // columns m[c]: its axes in the model
+        float Fb[9];
+        sb_frame(SB_BIND[i].head, SB_BIND[i].tail, SB_BIND[i].ref, Fb);
+        for (int r = 0; r < 3; r++)
+            for (int c = 0; c < 3; c++) s.bindK[i][r * 3 + c] = Fb[0 * 3 + r] * m->m[c][0] + Fb[1 * 3 + r] * m->m[c][1] + Fb[2 * 3 + r] * m->m[c][2];
+    }
+    t3d_skeleton_destroy(&sk);
+    gpu_block_begin();      // (its matrices: the skeleton segment, set before each run)
+    t3d_model_draw_custom(s.model, (T3DModelDrawConf){ .matrices = gpu_skeleton_matrices() });
+    s.block = gpu_block_end();
+}
+
+static void tail_tip(float e[3]);
+// Bone i's head, tail and frame reference from the rig as it stands (the order tools/shadowborne_model.py writes)
+static void sb_points(const Boss *b, int i, float h[3], float t[3], const float **ref)
+{
+    static float up[3];
+    *ref = UP;
+    if (i == 0) { memcpy(h, b->pos, 12); mad3(t, b->pos, UP, 10.0f); *ref = s.F; return; }
+    if (i <= 3) {
+        const float *pts[4] = { s.chest, s.spine[0], s.spine[1], s.hips };
+        memcpy(h, pts[i - 1], 12); memcpy(t, pts[i], 12); memcpy(up, s.bodyUp, 12); *ref = up; return;
+    }
+    if (i <= 7) { memcpy(h, s.neck[i - 4], 12); memcpy(t, s.neck[i - 3], 12); return; }
+    if (i <= 15) { int j = i - 8; memcpy(h, s.tl[j], 12); if (j < NTAIL) memcpy(t, s.tl[j + 1], 12); else tail_tip(t); return; }
+    if (i <= 23) {
+        int k = (i - 16) >> 1;
+        if (!((i - 16) & 1)) { memcpy(h, s.shoulder[k], 12); memcpy(t, s.knee[k], 12); }
+        else { memcpy(h, s.knee[k], 12); memcpy(t, s.foot[k], 12); }
+        *ref = s.F; return;
+    }
+    int w = (i - 24) / 12, j = (i - 24) % 12;      // arm, forearm, each finger's two joints
+    if (j == 0) { memcpy(h, s.wj[w][0], 12); memcpy(t, s.wj[w][1], 12); }
+    else if (j == 1) { memcpy(h, s.wj[w][1], 12); memcpy(t, s.wj[w][2], 12); }
+    else if (j < 7) { memcpy(h, s.wj[w][2], 12); memcpy(t, s.wj[w][3 + j - 2], 12); }
+    else { memcpy(h, s.wj[w][3 + j - 7], 12); memcpy(t, s.wj[w][8 + j - 7], 12); }
+    *ref = s.wup[w];
+}
+
+// The body: every bone's matrix this frame (the rig's frame times its bind rotation, at the rig's
+// point), the model at the root, scaled down from its model units; lit by the hall's light
+static void sb_draw(Boss *b)
+{
+#ifdef HLE_LOG_FPS      // test aid: what the skinned body costs the CPU (its bones; the model's draw)
+    static uint32_t tb, tm, n; uint32_t t0 = TICKS_READ();
+#endif
+    T3DMat4FP *bm = gpu_alloc(sizeof(T3DMat4FP) * SB_BONES);
+    for (int i = 0; i < SB_BONES; i++) {
+        float h[3], t[3], Ft[9], M[9];
+        const float *ref;
+        sb_points(b, i, h, t, &ref);
+        sb_frame(h, t, ref, Ft);
+        const float *K = s.bindK[i];
+        for (int r = 0; r < 3; r++)
+            for (int c = 0; c < 3; c++) M[r * 3 + c] = Ft[r * 3 + 0] * K[0 * 3 + c] + Ft[r * 3 + 1] * K[1 * 3 + c] + Ft[r * 3 + 2] * K[2 * 3 + c];
+        T3DMat4 m = {{
+            { M[0], M[3], M[6], 0 }, { M[1], M[4], M[7], 0 }, { M[2], M[5], M[8], 0 },
+            { (h[0] - b->pos[0]) * SB_SCALE, (h[1] - b->pos[1]) * SB_SCALE, (h[2] - b->pos[2]) * SB_SCALE, 1 },
+        }};
+        t3d_mat4_to_fixed(&bm[s.boneT[i]], &m);
+    }
+    const float k = 1.0f / SB_SCALE;
+    T3DMat4 mm = {{ { k, 0, 0, 0 }, { 0, k, 0, 0 }, { 0, 0, k, 0 }, { b->pos[0], b->pos[1], b->pos[2], 1 } }};
+    T3DMat4FP mf;
+    t3d_mat4_to_fixed(&mf, &mm);
+    t3d_matrix_set(gpu_mat(&mf), true);
+    // The rigid parts' baked light (proc_mesh: a key from above-front, 0.72, over 0.42 ambient) as a
+    // real light: the body shades as it bends. The hall has no other lights: put back after
+    static const T3DVec3 KEY = {{ -0.45f / 1.0136f, 0.8f / 1.0136f, 0.4f / 1.0136f }};
+    t3d_light_set_ambient((uint8_t[4]){ 107, 107, 107, 255 });
+    t3d_light_set_directional(0, (uint8_t[4]){ 184, 184, 184, 255 }, &KEY);
+    t3d_light_set_count(1);
+#ifdef HLE_LOG_FPS
+    uint32_t t1 = TICKS_READ();
+#endif
+    t3d_segment_set(T3D_SEGMENT_SKELETON, bm);
+    rspq_block_run(s.block);
+#ifdef HLE_LOG_FPS
+    tb += t1 - t0; tm += TICKS_READ() - t1;
+    if (++n == 120) { debugf("[sbcpu] bones %.2f model %.2f ms\n", TICKS_TO_US(tb / 120) / 1000.0, TICKS_TO_US(tm / 120) / 1000.0); tb = tm = n = 0; }
+#endif
+    t3d_light_set_count(0);
+    t3d_light_set_ambient((uint8_t[4]){ 255, 255, 255, 255 });
+}
+
 // ---- Lifetime ----
 
 void dragon_boss_free(void)
 {
     if (!s.ready) return;
     gpu_wait();
-    for (int v = 0; v < SEG_VARIANTS; v++) { proc_mesh_free(&s.seg[v]); proc_mesh_free(&s.segDark[v]); proc_mesh_free(&s.tseg[v]); proc_mesh_free(&s.tsegDark[v]); }
-    ProcMesh *all[] = { &s.limb, &s.mThroat, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.wing, &s.wingDark, &s.wingMemb, &s.tip, &s.tipDark, &s.flame, &s.mOrb, &s.mIce, &s.mCone };
+    ProcMesh *all[] = { &s.mThroat, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.flame, &s.mOrb, &s.mIce, &s.mCone };
     for (unsigned i = 0; i < sizeof(all) / sizeof(all[0]); i++) proc_mesh_free(all[i]);
     sprite_free(s.texScales); sprite_free(s.texMemb);
+    rspq_block_free(s.block);
+    t3d_model_free(s.model);
     free_uncached(s.mats);
     memset(&s, 0, sizeof(s));
 }
@@ -661,17 +673,11 @@ static void clear_hazards(void)
 void dragon_boss_begin(Boss* boss)
 {
     if (!s.ready) {
-        for (int v = 0; v < SEG_VARIANTS; v++) {
-            build_seg(&s.seg[v], false, v); build_seg(&s.segDark[v], true, v);
-            build_tail_seg(&s.tseg[v], false, v); build_tail_seg(&s.tsegDark[v], true, v);
-        }
-        build_tail_tip(&s.tip, false); build_tail_tip(&s.tipDark, true);
-        build_limb(&s.limb, COL_BACK);
+        sb_load();
         build_limb(&s.mThroat, COL_BELLY);
         build_foot();
         build_head(&s.mHead, false); build_head(&s.mHeadDark, true);
         build_jaw();
-        build_wing(&s.wing, &s.wingMemb, false); build_wing(&s.wingDark, NULL, true);
         build_glow(&s.flame, proc_rgb(255, 120, 30), proc_rgb(255, 200, 70));
         build_glow(&s.mOrb, proc_rgb(150, 50, 255), proc_rgb(230, 170, 255));
         build_glow(&s.mIce, proc_rgb(110, 170, 255), proc_rgb(225, 240, 255));     // the crystal beam, before the dark
@@ -708,6 +714,7 @@ void dragon_boss_begin(Boss* boss)
     s.feetReady = false;
     s.neckReach = s.tNeckReach = 1.0f;
     s.wingSpan = 1.0f; s.wingRaise = 0.3f; s.wingSweep = 0.0f;     // (flying in: as it always did)
+    s.wingFold = s.tWingFold = 0.0f;
     s.yawPrev = boss->rot[1]; s.altPrev = DROP_H; s.tailLag = s.tailV = 0.0f; s.passT = 0.0f;
     s.cdBackstep = 6.0f; s.cdSwipe = 7.0f;
     s.prevHealth = boss->health; s.shakeT = 0.0f; s.lookRel = 0.0f;
@@ -952,6 +959,95 @@ static void feet_update(float dt)
     }
 }
 
+static void knee(const float a[3], const float c[3], const float bend[3], float out[3]);
+
+// The great wings' joints in the wing's own frame (x out along the arm, y its upper side, z
+// forward), open; each bone keeps its length and turns toward its folded direction with the fold
+// (tools/shadowborne_rig.py: the model is built from the same)
+static const float W_ELBOW[3] = { 30, 6, 4 }, W_WRIST[3] = { 58, 10, -6 };
+static const float W_TIPS[5][3] = { { 88, 5, -14 }, { 80, 2, -32 }, { 66, 0, -46 }, { 48, -2, -54 }, { 28, -3, -48 } };
+static const float W_FOLD_ARM[3] = { 0.70f, 0.32f, -0.64f }, W_FOLD_FORE[3] = { 0.10f, -0.12f, -0.99f };
+static const float W_FOLD_FING[5][3] = { { 0.26f, -0.40f, -0.88f }, { 0.25f, -0.46f, -0.85f }, { 0.24f, -0.52f, -0.82f }, { 0.23f, -0.58f, -0.78f }, { 0.22f, -0.64f, -0.74f } };
+static void slerp_dir(const float a[3], const float b[3], float t, float o[3])
+{
+    float an[3] = { a[0], a[1], a[2] }, bn[3] = { b[0], b[1], b[2] };
+    norm3(an); norm3(bn);
+    float c = fminf(fmaxf(an[0] * bn[0] + an[1] * bn[1] + an[2] * bn[2], -1.0f), 1.0f), th = acosf(c);
+    if (th < 1e-4f) { memcpy(o, an, 12); return; }
+    float s0 = fm_sinf((1.0f - t) * th) / fm_sinf(th), s1 = fm_sinf(t * th) / fm_sinf(th);
+    for (int m = 0; m < 3; m++) o[m] = an[m] * s0 + bn[m] * s1;
+    norm3(o);
+}
+#define KNUCKLE 0.55f      // each finger's knuckle, this far from the wrist to its tip
+// Each segment folds by its own amount (the arm, forearm and fingers apart: a beat runs down the
+// wing as a wave) and droops (the forearm and fingers bent down under the stroke); `curl` bends a
+// finger's outer joint on down
+typedef struct { float foldArm, foldFore, foldFing, droopFore, droopFing, curl[5]; } WingPose;
+static void droop(float d[3], float k) { d[1] -= k; norm3(d); }
+static void wing_local(const WingPose *w, float L[12][3])     // elbow, wrist, five knuckles, five fingertips (the root at 0)
+{
+    float e0[3], w0[3], d[3], dir[3];
+    for (int m = 0; m < 3; m++) { e0[m] = W_ELBOW[m] * WING_K; w0[m] = W_WRIST[m] * WING_K; d[m] = w0[m] - e0[m]; }
+    slerp_dir(e0, W_FOLD_ARM, clamp01(w->foldArm), dir); mad3(L[0], (float[3]){ 0, 0, 0 }, dir, len3(e0));
+    slerp_dir(d, W_FOLD_FORE, clamp01(w->foldFore), dir); droop(dir, w->droopFore); mad3(L[1], L[0], dir, len3(d));
+    for (int i = 0; i < 5; i++) {
+        float f[3] = { W_TIPS[i][0] * WING_K - w0[0], W_TIPS[i][1] * WING_K - w0[1], W_TIPS[i][2] * WING_K - w0[2] }, l = len3(f);
+        slerp_dir(f, W_FOLD_FING[i], clamp01(w->foldFing), dir); droop(dir, w->droopFing * 0.6f); mad3(L[2 + i], L[1], dir, l * KNUCKLE);
+        // the outer joint folds further, curled down under the wing
+        float fb[3] = { W_FOLD_FING[i][0] * 0.9f, W_FOLD_FING[i][1] - 0.75f, W_FOLD_FING[i][2] * 0.8f };
+        slerp_dir(f, fb, clamp01(w->foldFing), dir); droop(dir, w->droopFing);
+        if (w->curl[i] > 0.001f) { float cd[3] = { dir[0], dir[1] - 0.8f, dir[2] }; slerp_dir(dir, cd, w->curl[i], dir); }
+        mad3(L[7 + i], L[2 + i], dir, l * (1.0f - KNUCKLE));
+    }
+}
+
+static bool flying(void);
+// Each great wing: swept back about the upright (`wingSweep`), raised about the body's length, its
+// leading edge twisted down on the downstroke, folded along the back (`wingFold`). They roll with
+// the body, flare as it falls (the air under them) and on a landing, rise and fall a little with
+// its breath
+static void wings_rig(void)
+{
+    bool fl = flying();
+    float air = fl ? 0.0f : fminf(fmaxf(-s.altVel * 0.006f, -0.2f), 0.45f), br = fl ? 0.0f : 0.04f * fm_sinf(s.life * 1.7f - 0.4f);
+    // The joints ripple with a beat: the wing half folds on the upstroke and the fingers trail it,
+    // the outer ones last; standing, the fingers flex a little, slowly, each on its own
+    // A beat runs down the wing: the arm leads, the forearm folds and droops after it, the fingers
+    // last (they fold most on the upstroke and are flung open on the down); standing, they flex
+    float L[12][3], ph0 = s.flapPh, f = s.flapOn;
+    WingPose wp = {
+        .foldArm  = s.wingFold + 0.10f * f * (0.5f - 0.5f * fm_sinf(ph0 - 0.3f)),
+        .foldFore = s.wingFold + 0.38f * f * (0.5f - 0.5f * fm_sinf(ph0 - 0.7f)),
+        .foldFing = s.wingFold + 0.48f * f * (0.5f - 0.5f * fm_sinf(ph0 - 1.0f)),
+        .droopFore = 0.30f * f * fm_sinf(ph0 - 0.8f),
+        .droopFing = 0.50f * f * fm_sinf(ph0 - 1.3f),
+    };
+    for (int i = 0; i < 5; i++)
+        wp.curl[i] = f * 0.35f * (0.5f + 0.5f * fm_sinf(ph0 - 1.2f - 0.15f * i)) + (1.0f - f) * 0.07f * (0.5f + 0.5f * fm_sinf(s.life * 1.3f + i * 0.7f));
+    wing_local(&wp, L);
+    for (int w = 0; w < 2; w++) {
+        float sd = w ? 1.0f : -1.0f, ph = s.flapPh;
+        float flap = 0.25f + 0.6f * fm_sinf(ph - 0.35f * fm_cosf(ph));      // a quick downstroke, a slower recovery
+        float th = s.wingRaise + (flap - s.wingRaise) * s.flapAmt + sd * s.rollNow + air + s.wingKick + br + 0.15f * s.shakeNow;
+        float sw = s.wingSweep, tw = -0.25f * fm_cosf(ph) * s.flapAmt;
+        float c = fm_cosf(th), sn = fm_sinf(th), cs = fm_cosf(sw), ss = fm_sinf(sw), ct = fm_cosf(tw), st = fm_sinf(tw), wx[3], wy[3], wz[3];
+        for (int m = 0; m < 3; m++) {
+            float x1 = sd * s.R[m] * cs - s.F[m] * ss, z1 = s.F[m] * cs + sd * s.R[m] * ss;
+            float y2 = -x1 * sn + UP[m] * c;
+            wx[m] = x1 * c + UP[m] * sn; wy[m] = y2 * ct - z1 * st; wz[m] = z1 * ct + y2 * st;
+        }
+        float *root = s.wj[w][0];
+        mad3(root, s.chest, UP, 10.0f); mad3(root, root, s.R, sd * 9.0f); mad3(root, root, s.F, 2.0f);
+        root[1] += sd * s.rollNow * 9.0f;
+        for (int j = 0; j < 12; j++)
+            for (int m = 0; m < 3; m++) s.wj[w][1 + j][m] = root[m] + wx[m] * L[j][0] + wy[m] * L[j][1] + wz[m] * L[j][2];
+        // never into the floor (6 clear): a joint that would dip under rides up on it, its bone
+        // turning up (the wings stay their size; a low stroke or a sprawl just lifts the tips)
+        for (int j = 1; j < 13; j++) s.wj[w][j][1] = fmaxf(s.wj[w][j][1], s.groundY + 6.0f);
+        memcpy(s.wup[w], wy, 12);
+    }
+}
+
 // Flying (and its landing): its wings, tail and body move as they always did in the air
 static bool flying(void) { return s.state == DG_FLY || s.state == DG_SKYBEAM || s.state == DG_HOVER || s.state == DG_INTRO; }
 
@@ -960,7 +1056,8 @@ static void rig(Boss *b, float dt)
     float yaw = b->rot[1];
     s.F[0] = fm_sinf(yaw); s.F[1] = 0.0f; s.F[2] = fm_cosf(yaw);
     s.R[0] = fm_cosf(yaw); s.R[1] = 0.0f; s.R[2] = -fm_sinf(yaw);
-    float base = s.groundY + s.alt, breath = fm_sinf(s.life * 1.7f);
+    // in the air each downstroke heaves the body up (lags the beat)
+    float base = s.groundY + s.alt + (s.alt > 4.0f ? 3.0f * s.flapOn * fm_sinf(s.flapPh - 2.2f) : 0.0f), breath = fm_sinf(s.life * 1.7f);
     b->pos[1] = base;
 
     // The gait (each foot's swing, last frame): the chest and hips ride up a little over each
@@ -1034,6 +1131,12 @@ static void rig(Boss *b, float dt)
         if (l > 14.0f) mad3(s.shoulder[k], c, o, 14.0f / l);
     }
     feet_update(dt);
+    for (int k = 0; k < 4; k++) {       // elbows point back and out, knees forward and out
+        float side = (k & 1) ? 1.0f : -1.0f, bend[3];
+        for (int m = 0; m < 3; m++) bend[m] = s.F[m] * (k < 2 ? -1.0f : 0.8f) + s.R[m] * side * 0.5f + UP[m] * 0.2f;
+        knee(s.shoulder[k], s.foot[k], bend, s.knee[k]);
+    }
+    wings_rig();
 
     // The hit capsule runs the length of the body, from the base of the neck (or the head,
     // when it is down) to the hips, at the height a sword swings (the spine is above it:
@@ -2212,7 +2315,7 @@ void dragon_boss_update(Boss* b, float dt)
     s.tNeckPitch = 0.0f; s.tNeckYaw = fminf(fmaxf(s.lookRel * 0.75f, -0.85f), 0.85f); s.tNeckReach = 1.0f;
     s.tJaw = 0.05f; s.tWingRaise = 0.25f; s.tWingSpan = 0.7f; s.tTail = 0.0f; s.tCrouch = 0.0f;
     s.tClaw[0] = s.tClaw[1] = 0.0f; s.tAimK = 0.0f; s.tRear = 0.0f; s.tTailUp = 0.0f; s.poseRate = 6.0f; s.flapRate = 0.0f;
-    s.tRoll = 0.0f; s.tShLift[0] = s.tShLift[1] = 0.0f; s.tBend = 0.0f; s.tLean = 0.0f; s.tWingSweep = 0.55f; s.tClawHi = 0.0f; s.tSwipeAmt = 0.0f;
+    s.tRoll = 0.0f; s.tShLift[0] = s.tShLift[1] = 0.0f; s.tBend = 0.0f; s.tLean = 0.0f; s.tWingSweep = 0.0f; s.tClawHi = 0.0f; s.tSwipeAmt = 0.0f;
 
     if (b->state == BOSS_STATE_DEAD && s.state != DG_DEAD) { enter(DG_DEAD); clear_hazards(); }
     if (!s.dark && s.state != DG_DEAD && s.state != DG_INTRO && b->health <= b->maxHealth * 0.5f) {
@@ -2397,11 +2500,15 @@ void dragon_boss_update(Boss* b, float dt)
     s.bend = ease(s.bend, s.tBend, pr * 0.7f, dt);
     s.lean = ease(s.lean, s.tLean, pr, dt);
     s.wingSweep = ease(s.wingSweep, s.tWingSweep, 3.0f, dt);
+    // the great wings fold along its back when the moves hold them in (their old span), spread when out
+    s.tWingFold = clamp01((0.95f - s.tWingSpan) / 0.25f);
+    s.wingFold = ease(s.wingFold, s.tWingFold, 3.0f, dt);
     s.clawHi = ease(s.clawHi, s.tClawHi, 6.0f, dt);
     s.swipeAmt = ease(s.swipeAmt, s.tSwipeAmt, 10.0f, dt);
     // Flapping fades in and out; the raise it beats about stays eased
     s.flapPh += dt * s.flapRate;
     s.flapAmt = ease(s.flapAmt, s.flapRate > 0.0f ? 1.0f : 0.0f, 5.0f, dt);
+    s.flapOn = ease(s.flapOn, s.flapRate > 0.0f ? 1.0f : 0.0f, 5.0f, dt);
     s.wingRaise = ease(s.wingRaise, s.tWingRaise, 3.0f, dt);
     if (flying()) {     // the flight's beat as it was: straight onto it, from it eased back
         s.tWingSweep = 0.0f; s.flapAmt = 0.0f;
@@ -2539,29 +2646,19 @@ void dragon_boss_draw(Boss* b)
     // most of this boss's cost). The wings stay two-sided
     t3d_state_set_drawflags(DRAW_CLOSED);
 
-    const ProcMesh *seg = s.dark ? s.segDark : s.seg;      // [link % SEG_VARIANTS]
-    put_link_up(&seg[0], s.chest, s.spine[0], 18.0f, 1.2f, s.bodyUp);
-    put_link_up(&seg[1 % SEG_VARIANTS], s.spine[0], s.spine[1], 17.5f, 1.2f, s.bodyUp);
-    put_link_up(&seg[2 % SEG_VARIANTS], s.spine[1], s.hips, 16.0f, 1.25f, s.bodyUp);
-    for (int i = 0; i < NNECK; i++) put_link(&seg[(i + 1) % SEG_VARIANTS], s.neck[i], s.neck[i + 1], 11.0f - i * 1.2f, 1.25f);
-    const ProcMesh *tseg = s.dark ? s.tsegDark : s.tseg;
-    for (int i = 0; i < NTAIL; i++) put_link(i < 2 ? &seg[(i + 1) % SEG_VARIANTS] : &tseg[i % SEG_VARIANTS], s.tl[i], s.tl[i + 1], 14.5f - i * 1.8f, 1.2f);
-    {   // the crystal blade at its tip, along the last segment
-        float d[3] = { s.tl[NTAIL][0] - s.tl[NTAIL - 1][0], s.tl[NTAIL][1] - s.tl[NTAIL - 1][1], s.tl[NTAIL][2] - s.tl[NTAIL - 1][2] }, e[3];
-        norm3(d);
-        mad3(e, s.tl[NTAIL], d, 16.0f);
-        put_link(s.dark ? &s.tipDark : &s.tip, s.tl[NTAIL], e, MESH, 1.0f);
+    {   // its crystals' tint (the body's crystal material is unlit: its facets' shade times this)
+        uint32_t c = crystal_col(s.dark);
+        rdpq_set_prim_color(RGBA32(c >> 24, (c >> 16) & 0xFF, (c >> 8) & 0xFF, 255));
     }
+    sb_draw(b);         // the skinned body (its own texture, combiner and light)
+    proc_mesh_tex_begin(s.texScales);
+    t3d_state_set_drawflags(DRAW_CLOSED);
 
 #ifdef HLE_PROF_DRAGON
     DPROF(0);
 #endif
     for (int k = 0; k < 4; k++) {
-        float side = (k & 1) ? 1.0f : -1.0f, bend[3], kn[3];
-        // elbows point back and out, knees forward and out
-        for (int m = 0; m < 3; m++) bend[m] = s.F[m] * (k < 2 ? -1.0f : 0.8f) + s.R[m] * side * 0.5f + UP[m] * 0.2f;
-        knee(s.shoulder[k], s.foot[k], bend, kn);
-        // The front leg about to slam glows red, pulsing (the claw's windup)
+        // The front leg about to slam glows red, pulsing (the claw's windup): its paw
         bool hot = s.state == DG_CLAW && (s.step == 0 || s.step == 2) && k == (s.step < 2 ? 0 : 1);
         if (hot) {
             float w = (0.6f + 0.4f * fm_sinf(s.life * 18.0f)) * clamp01(s.t / 0.3f);
@@ -2569,11 +2666,10 @@ void dragon_boss_draw(Boss* b)
             rdpq_mode_combiner(RDPQ_COMBINER1((PRIM, SHADE, PRIM_ALPHA, SHADE), (0, 0, 0, SHADE)));
             rdpq_set_prim_color(RGBA32(235, 30, 20, (int)(200 * w)));
         }
-        put_link(&s.limb, s.shoulder[k], kn, k < 2 ? 7.5f : 8.5f, 1.0f);   // thick upper legs, the hind ones thicker
-        put_link(&s.limb, kn, s.foot[k], 5.5f, 1.0f);
         static const float Y[3] = { 0, 1, 0 };
-        float fx[3]; cross3(fx, Y, s.F);
-        put(&s.mFoot, s.foot[k], fx, Y, s.F, 1.0f, 1.0f, 1.0f);     // the foot, flat, facing forward
+        float fx[3], fs = k < 2 ? 1.6f : 1.25f;     // the forefeet big, clawed (the old feet, larger)
+        cross3(fx, Y, s.F);
+        put(&s.mFoot, s.foot[k], fx, Y, s.F, fs, fs, fs);
         if (hot) rdpq_mode_combiner(RDPQ_COMBINER_TEX_SHADE);
     }
 
@@ -2597,45 +2693,6 @@ void dragon_boss_draw(Boss* b)
 #ifdef HLE_PROF_DRAGON
     DPROF(2);
 #endif
-    // Four wings: the great pair at the shoulders, a smaller pair behind. Their bones first (the
-    // scales), then the membranes (their own texture: one upload)
-    const ProcMesh *wing = s.dark ? &s.wingDark : &s.wing;
-    // Each wing: swept back about the upright (`wingSweep`), raised about the body's length, its
-    // leading edge twisted down on the downstroke. They roll with the body, flare as it falls
-    // (the air under them) and on a landing, rise and fall a little with its breath; the hind
-    // pair beats a beat behind the great one
-    float wx[4][3], wy[4][3], wz[4][3], wroot[4][3], wk[4];
-    bool fl = flying();
-    float air = fl ? 0.0f : fminf(fmaxf(-s.altVel * 0.006f, -0.2f), 0.45f), br = fl ? 0.0f : 0.04f * fm_sinf(s.life * 1.7f - 0.4f);
-    for (int w = 0; w < 4; w++) {
-        int pair = w >> 1;
-        float sd = (w & 1) ? 1.0f : -1.0f, ph = s.flapPh - pair * 0.7f;
-        float flap = 0.25f + 0.6f * fm_sinf(ph - 0.35f * fm_cosf(ph));      // a quick downstroke, a slower recovery
-        float th = s.wingRaise + (flap - s.wingRaise) * s.flapAmt + (pair ? -0.2f : 0.0f) + sd * s.rollNow + air + s.wingKick + br + 0.15f * s.shakeNow;
-        float sw = s.wingSweep + (pair ? 0.15f : 0.0f), tw = -0.25f * fm_cosf(ph) * s.flapAmt;
-        float c = fm_cosf(th), sn = fm_sinf(th), cs = fm_cosf(sw), ss = fm_sinf(sw), ct = fm_cosf(tw), st = fm_sinf(tw);
-        for (int m = 0; m < 3; m++) {
-            float x1 = sd * s.R[m] * cs - s.F[m] * ss, z1 = s.F[m] * cs + sd * s.R[m] * ss;
-            float y2 = -x1 * sn + UP[m] * c;
-            wx[w][m] = x1 * c + UP[m] * sn;
-            wy[w][m] = y2 * ct - z1 * st;
-            wz[w][m] = z1 * ct + y2 * st;
-        }
-        mad3(wroot[w], s.chest, UP, pair ? 6.0f : 10.0f);
-        mad3(wroot[w], wroot[w], s.R, sd * (pair ? 7.0f : 9.0f));
-        mad3(wroot[w], wroot[w], s.F, pair ? -16.0f : 2.0f);
-        wroot[w][1] += sd * s.rollNow * (pair ? 7.0f : 9.0f);
-        wk[w] = pair ? 0.6f : 1.0f;
-        // a left wing is the right one mirrored: its triangles turn the other way
-        float xy[3]; cross3(xy, wx[w], wy[w]);
-        bool mirrored = xy[0] * wz[w][0] + xy[1] * wz[w][1] + xy[2] * wz[w][2] < 0.0f;
-        t3d_state_set_drawflags(HLE_DRAGON_CULL ? DRAW_OPEN | (mirrored ? T3D_FLAG_CULL_FRONT : T3D_FLAG_CULL_BACK) : DRAW_OPEN);
-        put(wing, wroot[w], wx[w], wy[w], wz[w], wk[w] * s.wingSpan, wk[w], wk[w]);
-    }
-    t3d_state_set_drawflags(DRAW_OPEN);
-    rdpq_sprite_upload(TILE0, s.texMemb, &(rdpq_texparms_t){ .s.repeats = REPEAT_INFINITE, .t.repeats = REPEAT_INFINITE });
-    for (int w = 0; w < 4; w++) put(&s.wingMemb, wroot[w], wx[w], wy[w], wz[w], wk[w] * s.wingSpan, wk[w], wk[w]);
-
 #ifdef HLE_PROF_DRAGON
     DPROF(3);
 #endif
