@@ -6,6 +6,9 @@
 #include <string.h>
 
 #include "proc_mesh.h"
+#ifdef HLE_BUILD
+void hle_vcache_model(const void *data, uint32_t bytes, bool add);    // hle/ovl_t3d.c
+#endif
 
 // The build scratch (43 KB), static: not on the heap. Freed after each build it left a hole in
 // the middle of the heap that a fight's later buffers fell into wherever it happened to be, and
@@ -846,6 +849,10 @@ void proc_mesh_end(ProcMesh *out)
     free(ref); free(idx); free(batchTri); free(batchRef);
     out->mat = malloc_uncached(sizeof(T3DMat4FP));
     proc_mesh_set_transform(out, 1.0f, (float[3]){ 0, 0, 0 }, (float[3]){ 0, 0, 0 });
+#ifdef HLE_BUILD    // never rewritten: the HLE converts them once, like model data
+    hle_vcache_model(out->verts, sizeof(T3DVertPacked) * packed, true);
+    hle_vcache_model(out->idx, sizeof(int16_t) * nidx, true);
+#endif
 #ifdef HLE_LOG_HITCH
     { static uint32_t sum; sum += TICKS_READ() - t0; debugf("[load] proc mesh %d tris: %lu us (%lu ms so far)\n", s_ntris, (unsigned long)TICKS_TO_US(TICKS_READ() - t0), (unsigned long)TICKS_TO_MS(sum)); }
 #endif
@@ -918,6 +925,10 @@ void proc_mesh_draw_textured(const ProcMesh *m, sprite_t *tex, color_t tint) { d
 void proc_mesh_free(ProcMesh *m)
 {
     if (m->block) { gpu_wait(); rspq_block_free(m->block); }
+#ifdef HLE_BUILD
+    if (m->verts) hle_vcache_model(m->verts, 0, false);
+    if (m->idx) hle_vcache_model(m->idx, 0, false);
+#endif
     if (m->verts) free_uncached(m->verts);
     if (m->idx) free_uncached(m->idx);
     if (m->mat) free_uncached(m->mat);

@@ -394,9 +394,14 @@ __attribute__((always_inline)) static inline void vert_copy(uint32_t *o, const u
 
 #define VC_BYTES    (128 * 1024)
 #define VC_SLOTS    1024                // power of 2
-#define VC_MODELS   64
+#define VC_MODELS   256
 
-typedef struct { uint32_t src, uv, amb, out, bytes; } vc_ent_t;    // strips: uv = amb = VC_STRIP
+typedef struct {
+    uint32_t src, uv, amb, out, bytes;  // strips: uv = amb = VC_STRIP
+#ifdef HLE_TEST_VCACHE_VERIFY
+    uint32_t sum;                       // the source when it was cached
+#endif
+} vc_ent_t;
 #define VC_STRIP    0xFFFFFFFE
 static vc_ent_t vc_tab[VC_SLOTS];
 static uint8_t *vc_pool;
@@ -418,7 +423,7 @@ static void vc_reset_later(void)
     vc_task = gsp_tasks;
 }
 
-static void hle_vcache_model(const void *data, uint32_t bytes, bool add)
+void hle_vcache_model(const void *data, uint32_t bytes, bool add)
 {
     uint32_t lo = PhysicalAddr(data), hi = lo + bytes;
     for (int i = 0; i < vc_nmodels; i++) {
@@ -429,6 +434,15 @@ static void hle_vcache_model(const void *data, uint32_t bytes, bool add)
     if (add && vc_nmodels < VC_MODELS) vc_models[vc_nmodels++] = (typeof(vc_models[0])){ lo, hi };
 }
 
+#ifdef HLE_TEST_VCACHE_VERIFY   // test aid: every hit checks its source is what was cached
+uint32_t hle_vc_verify_hits, hle_vc_verify_bad;
+static uint32_t vc_sum(uint32_t src, uint32_t bytes)
+{
+    const uint8_t *p = hle_rdram(src); uint32_t h = 2166136261u;
+    for (uint32_t i = 0; i < bytes; i++) h = (h ^ p[i]) * 16777619u;
+    return h;
+}
+#endif
 /** The entry for this copy (out != 0 when cached), a free one to fill (out == 0), or NULL. */
 static vc_ent_t *vc_find(uint32_t src, uint32_t bytes, uint32_t uv, uint32_t amb)
 {
@@ -442,9 +456,21 @@ static vc_ent_t *vc_find(uint32_t src, uint32_t bytes, uint32_t uv, uint32_t amb
             while (i < vc_nmodels && (src < vc_models[i].lo || src + bytes > vc_models[i].hi)) i++;
             if (i == vc_nmodels) return NULL;
             e->src = src; e->uv = uv; e->amb = amb; e->bytes = bytes;
+#ifdef HLE_TEST_VCACHE_VERIFY
+            e->sum = vc_sum(src, bytes);
+#endif
             return e;
         }
-        if (e->src == src && e->uv == uv && e->amb == amb && e->bytes == bytes) return e;
+        if (e->src == src && e->uv == uv && e->amb == amb && e->bytes == bytes) {
+#ifdef HLE_TEST_VCACHE_VERIFY
+            hle_vc_verify_hits++;
+            if (vc_sum(src, bytes) != e->sum) {
+                if (hle_vc_verify_bad++ < 10) debugf("[vcache] CHANGED since cached: %06lx +%lu (%s)\n", src, bytes, uv == VC_STRIP ? "strip" : "vertices");
+                e->sum = vc_sum(src, bytes);
+            }
+#endif
+            return e;
+        }
     }
     return NULL;
 }

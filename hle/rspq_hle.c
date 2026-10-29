@@ -1953,6 +1953,9 @@ void hle_perf_dump(uint32_t total)
     hle_vl_ticks[6] = hle_vl_ticks[7] = hle_vl_ticks[8] = 0;
     debugf("[hle]   inside recorded blocks: %lu%% (%lu block runs, %d blocks)\n", (unsigned long)(hle_blk_ticks * 100ULL / total), (unsigned long)hle_blk_calls, hle_blk_n);
     hle_blk_ticks = hle_blk_calls = 0;
+#ifdef HLE_TEST_VCACHE_VERIFY
+    { extern uint32_t hle_vc_verify_hits, hle_vc_verify_bad; debugf("[vcache] verify: %lu hits, %lu changed\n", (unsigned long)hle_vc_verify_hits, (unsigned long)hle_vc_verify_bad); }
+#endif
     extern uint32_t hle_rp_stats[8];
     debugf("[hle]   replay: %lu replayed, %lu recorded, %lu unreplayable, %lu no match, check %lu ok %lu BAD\n", (unsigned long)hle_rp_stats[0],
            (unsigned long)hle_rp_stats[1], (unsigned long)hle_rp_stats[2], (unsigned long)hle_rp_stats[3], (unsigned long)hle_rp_stats[4], (unsigned long)hle_rp_stats[5]);
