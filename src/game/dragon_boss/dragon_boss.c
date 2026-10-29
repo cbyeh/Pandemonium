@@ -95,6 +95,9 @@ static struct {
     // Moves
     float cdClaw, cdBite, cdTail, cdBreath, cdCharge, cdFly, cdNova, cdOrbs, cdBeam, cdWhip, cdTriple, cdSnipe, cdSweep, cdCone, cdBackstep, cdSwipe;
     float passT;                // just went past the player (charge, swipe, flight): the tail is ready for one behind it
+    bool passTail;              // ...and (most of the time) it uses it rather than turning round
+    float paceSg;               // which way it first paces in a pause
+    float bsDist;               // the backstep's length: as far as the room behind it allows
     bool followRanged;          // the backstep leads into a ranged attack
     int sweeps;                 // the ground beam's sweeps still to come
     bool heavyRest;             // the next pause a spent one (after a landing or three beam sweeps)
@@ -189,10 +192,19 @@ static void enter(DgState st)
 #ifndef HLE_DG_PAUSE
 #define HLE_DG_PAUSE 0.2f   // the recovery added to every pause (a longer opening: about 70% cost, not ~80%)
 #endif
+    if (st == DG_IDLE) s.paceSg = (rand_custom_u32() & 1) ? 1.0f : -1.0f;
     if (st == DG_IDLE) s.idleWait = ((rand_custom_u32() % 100 < 35) ? 3.3f + (rand_custom_u32() % 100) / 100.0f : 1.8f) + HLE_DG_PAUSE;
 #ifdef HLE_AUTOPLAY
     debugf("[dragon] state %d\n", st);
 #endif
+}
+
+// Gone past the player: for a moment the tail answers one behind it, most of the time (75%;
+// always when they face the tail) before it would turn round
+static void passed_player(void)
+{
+    s.passT = 3.0f;
+    s.passTail = rand_custom_u32() % 100 < 75;
 }
 
 bool dragon_boss_stagger(Boss* b)
@@ -690,7 +702,7 @@ void dragon_boss_begin(Boss* boss)
     s.life = 0.0f;
     s.feetReady = false;
     s.neckReach = s.tNeckReach = 1.0f;
-    s.wingSpan = 1.0f; s.wingRaise = 0.3f; s.wingSweep = 0.35f;
+    s.wingSpan = 1.0f; s.wingRaise = 0.3f; s.wingSweep = 0.0f;     // (flying in: as it always did)
     s.yawPrev = boss->rot[1]; s.altPrev = DROP_H; s.tailLag = s.tailV = 0.0f; s.passT = 0.0f;
     s.cdBackstep = 6.0f; s.cdSwipe = 7.0f;
     s.cdWhip = 8.0f;
@@ -917,7 +929,7 @@ static void feet_update(float dt)
             float side = (k & 1) ? 1.0f : -1.0f, up[3];
             mad3(up, s.shoulder[k], s.F, 20.0f);
             mad3(up, up, s.R, -side * 4.0f);
-            up[1] += 6.0f + 16.0f * s.clawHi;      // the heavy stomp's paw lifted high
+            up[1] += 6.0f + 8.0f * s.clawHi;       // the heavy stomp's paw lifted higher
             lerp3(s.foot[k], f->p, up, s.claw[k]);
         }
         if (k == s.swipeK && s.swipeAmt > 0.01f) {      // the swipe charge: the foreleg cocked out wide, then raked across in front
@@ -934,6 +946,9 @@ static void feet_update(float dt)
     }
 }
 
+// Flying (and its landing): its wings, tail and body move as they always did in the air
+static bool flying(void) { return s.state == DG_FLY || s.state == DG_SKYBEAM || s.state == DG_HOVER || s.state == DG_INTRO; }
+
 static void rig(Boss *b, float dt)
 {
     float yaw = b->rot[1];
@@ -945,7 +960,8 @@ static void rig(Boss *b, float dt)
     // The gait (each foot's swing, last frame): the chest and hips ride up a little over each
     // swinging leg and the body rolls off the lifted side; a turn banks it (more in the air)
     float gaitF = fmaxf(s.swing[0], s.swing[1]), gaitH = fmaxf(s.swing[2], s.swing[3]);
-    float bank = fminf(fmaxf(-s.yawRate * (s.alt > 4.0f ? 0.35f : 0.08f), -0.35f), 0.35f);
+    bool fl = flying();
+    float bank = fl ? 0.0f : fminf(fmaxf(-s.yawRate * 0.08f, -0.35f), 0.35f);
     s.rollNow = s.roll + bank + 0.05f * (s.swing[0] + s.swing[2] - s.swing[1] - s.swing[3]);
     for (int m = 0; m < 3; m++) s.bodyUp[m] = UP[m] * fm_cosf(s.rollNow) - s.R[m] * fm_sinf(s.rollNow);
 
@@ -954,7 +970,7 @@ static void rig(Boss *b, float dt)
     mad3(s.hips, b->pos, s.F, HIPS_Z);
     s.hips[1] = base + BODY_H - s.crouch * 0.6f + 0.3f * breath + gaitH;
     // The spine bows sideways between them (`bend`; a turn bows it out behind the head)
-    float bend = s.bend + fminf(fmaxf(-s.yawRate * 6.0f, -6.0f), 6.0f);
+    float bend = s.bend + (fl ? 0.0f : fminf(fmaxf(-s.yawRate * 6.0f, -6.0f), 6.0f));
     for (int j = 0; j < 2; j++) {
         lerp3(s.spine[j], s.chest, s.hips, (j + 1) / 3.0f);
         mad3(s.spine[j], s.spine[j], s.R, bend * 0.9f);
@@ -962,7 +978,7 @@ static void rig(Boss *b, float dt)
 
     // The neck curves up from the chest and over, toward its yaw. Never quite still: it looks
     // about a little and nods with its breath (less as it aims at something)
-    float idle = 1.0f - clamp01(s.aimK);
+    float idle = fl ? 0.0f : 1.0f - clamp01(s.aimK);
     float nyaw = s.neckYaw + idle * (0.06f * fm_sinf(s.life * 0.83f) + 0.03f * fm_sinf(s.life * 2.1f + 1.0f));
     float p0 = 0.6f + s.neckPitch + idle * 0.03f * fm_sinf(s.life * 1.7f - 0.6f), dir[3] = { 0 };
     memcpy(s.neck[0], s.chest, sizeof(s.chest));
@@ -1005,6 +1021,10 @@ static void rig(Boss *b, float dt)
         mad3(s.shoulder[k], k < 2 ? s.chest : s.hips, s.R, side * (k < 2 ? 12.0f : 11.0f));
         s.shoulder[k][1] += (k < 2 ? -6.0f : -4.0f) + side * s.rollNow * (k < 2 ? 12.0f : 11.0f) + 2.0f * s.swing[k]
                           + (k < 2 ? s.shLift[k] + 4.0f * s.claw[k] : 0.0f);
+        // never out of the torso's side (18 round): a raised shoulder came out of it, the leg off the body
+        const float *c = k < 2 ? s.chest : s.hips;
+        float o[3] = { s.shoulder[k][0] - c[0], s.shoulder[k][1] - c[1], s.shoulder[k][2] - c[2] }, l = len3(o);
+        if (l > 14.0f) mad3(s.shoulder[k], c, o, 14.0f / l);
     }
     feet_update(dt);
 
@@ -1202,25 +1222,30 @@ static void bite_update(Boss *b, float dt)
 static void tail_update(Boss *b, float dt)
 {
     // The answer to standing behind it: it looks back over its shoulder at you, cocks the tail
-    // out past you (its crystal blade glowing), the hips and spine coiling, then scythes it
-    // through where you stand, its hips twisting into the blow; if that missed, often (half the
-    // time) a backhand straight back the other way. No spin: jump it, roll through, or get out in front
-    const float SWING = 0.36f;
+    // out beside the hind leg on your side (its crystal blade glowing), the hips and spine
+    // coiling, then scythes it in a wide fan across behind it to beside the other hind leg, its
+    // hips twisting into the blow; if that missed, often (half the time) a backhand straight back.
+    // Out of the tail's reach, it backs toward you as it coils. No spin: jump it, roll through,
+    // or get out in front
+    const float SWING = 0.45f, FAN = 1.95f, REACH = 105.0f;     // the fan: FAN each side of straight back
     float dx, dz;
     to_player(b, &dx, &dz);
     float rel = remainderf(atan2f(dx, dz) - b->rot[1], 2.0f * T3D_PI), sd = s.sweepSpan > 0.0f ? 1.0f : -1.0f;
     if (s.step == 0) {
         if (s.t < dt * 1.5f) {
             float pr = remainderf(atan2f(dx, dz) - b->rot[1] - T3D_PI, 2.0f * T3D_PI);   // from the tail's line
-            float sg = pr > 0.0f ? 1.0f : -1.0f, c = fminf(fmaxf(pr, -1.1f), 1.1f);
-            s.sweepFrom = fminf(fmaxf(c + sg * 1.0f, -1.9f), 1.9f);      // out past the player...
-            s.sweepSpan = c - sg * 1.3f - s.sweepFrom;                    // ...and through them, toward the middle
+            float sg = pr > 0.0f ? 1.0f : -1.0f;
+            s.sweepFrom = sg * FAN; s.sweepSpan = -2.0f * sg * FAN;     // from the player's side right across
             s.sweeps = rand_custom_u32() % 100 < 50;                      // a backhand to follow, if it misses
             sd = s.sweepSpan > 0.0f ? 1.0f : -1.0f;
         }
         s.tNeckYaw = rel > 0.0f ? 1.1f : -1.1f; s.tNeckPitch = 0.2f;    // a look back at you
         s.tTail = s.sweepFrom; s.tCrouch = 4.0f; s.poseRate = 4.0f;
         s.tBend = sd * 5.0f; s.tRoll = sd * 0.08f; s.tTailUp = 0.15f; s.tWingRaise = 0.45f;     // coiled against the swing
+        {   // backs in until the player is in reach of the tail's root
+            float hx = character.pos[0] - s.hips[0], hz = character.pos[2] - s.hips[2], dh = sqrtf(hx * hx + hz * hz);
+            if (dh > REACH) move_by(b, -s.F[0] * fminf(dh - REACH, 140.0f * dt), -s.F[2] * fminf(dh - REACH, 140.0f * dt));
+        }
         if (s.t >= 0.5f && s.t - dt < 0.5f) sfx_swing();
         if (s.t >= 0.65f) { s.step = 1; s.t = 0.0f; }
     } else if (s.step == 1) {
@@ -1323,15 +1348,14 @@ static void charge_update(Boss *b, float dt)
         s.tLean = 4.0f; s.tWingRaise = 0.35f; s.tWingSweep = 1.0f; s.tWingSpan = 0.8f; s.poseRate = 12.0f;
         bool moved = move_by(b, s.F[0] * 240.0f * dt, s.F[2] * 240.0f * dt);     // (the hit: hits_after_rig)
         if (!moved || s.t >= 0.6f) { s.step = 2; s.t = 0.0f; screen_shake_set_shake_mag(6.0f); sfx_step(); s.crouch += 3.0f; }
-    } else if (s.t >= 0.6f) { s.passT = 3.0f; enter(DG_IDLE); }
+    } else if (s.t >= 0.6f) { passed_player(); enter(DG_IDLE); }
 }
 
 // Touching down: bursts at its feet and a quake, harmless (only its moves hit)
 static void land_slam(float shake)
 {
     s.heavyRest = true;
-    s.passT = 3.0f;                     // (a flight often ends past the player)
-    s.crouch += 7.0f; s.wingKick = 0.5f;    // the legs take its weight, the wings flare
+    passed_player();                    // (a flight often ends past the player)
     for (int i = 0; i < 4; i++) skill_fx_spawn_burst_hostile((float[3]){ s.foot[i][0], s.groundY, s.foot[i][2] }, i * 1.5f);
     screen_shake_set_shake_mag(shake);
     sfx_boom();
@@ -1340,7 +1364,7 @@ static void land_slam(float shake)
 static void fly_update(Boss *b, float dt)
 {
     // Takes off, strafes the hall breathing fire down onto the floor, lands with a quake
-    s.tWingSpan = 1.0f; s.tWingSweep = s.step == 1 ? 0.25f : 0.0f;
+    s.tWingSpan = 1.0f;
     if (s.step == 0) {
         s.flapRate = 9.0f;
         s.alt = ease(s.alt, 95.0f, 2.2f, dt);
@@ -1948,13 +1972,23 @@ static void enter_ranged(Boss *b, float dist, float rel)
     enter(st);
 }
 
+// How far it can spring back here: the longest hop (to 150) that keeps it in the hall
+static float backstep_room(const Boss *b)
+{
+    float d = 150.0f;
+    while (d >= 50.0f && !room_behind(b, d + 20.0f)) d -= 20.0f;
+    return d;
+}
+
 static void backstep_update(Boss *b, float dt)
 {
+    if (s.t < dt * 1.5f && s.step == 0) s.bsDist = fmaxf(backstep_room(b), 30.0f);
     // Harmless, and quick: it sinks onto its haunches, wings flaring, and springs back off its
     // forelegs with one great beat of the wings, head high and eyes on you, the tail swung up to
     // balance; it lands hind feet first, skids, and the forefeet come down. Mostly a ranged attack
     // follows straight away: keep after it
-    const float SINK = 0.24f, AIR = 0.5f, LAND = 0.4f, DIST = 80.0f, HOP = 16.0f;
+    const float SINK = 0.24f, AIR = 0.35f + s.bsDist / 600.0f, LAND = 0.45f, HOP = 8.0f + s.bsDist * 0.08f;     // a longer hop, longer and higher
+    const float DIST = s.bsDist;
     face_player(b, dt, 2.5f);
     if (s.step == 0) {
         if (s.t < dt * 1.5f) { s.followRanged = rand_custom_u32() % 100 < 75; sfx(SCENE1_SFX_BOSS_STEP1, 0.8f); }
@@ -1979,7 +2013,7 @@ static void backstep_update(Boss *b, float dt)
         }
     } else {
         float u = clamp01(s.t / LAND);
-        move_by(b, -s.F[0] * 50.0f * (1.0f - u) * dt, -s.F[2] * 50.0f * (1.0f - u) * dt);     // the skid
+        move_by(b, -s.F[0] * 70.0f * (1.0f - u) * dt, -s.F[2] * 70.0f * (1.0f - u) * dt);     // the skid
         s.tRear = u < 0.35f ? 6.0f : 0.0f;      // the forefeet come down after the hind
         if (s.t >= LAND * 0.35f && s.t - dt < LAND * 0.35f) sfx_step();
         s.tCrouch = 4.0f; s.tNeckPitch = 0.2f; s.tWingRaise = 0.4f; s.tWingSweep = 0.25f; s.poseRate = 8.0f;
@@ -2051,7 +2085,7 @@ static void swipe_update(Boss *b, float dt)
         float rel = remainderf(atan2f(dx, dz) - b->rot[1], 2.0f * T3D_PI);
         s.tNeckYaw = fminf(fmaxf(rel * 0.8f, -1.1f), 1.1f); s.tNeckPitch = 0.1f;
         s.tCrouch = 5.0f * (1.0f - u) + 2.0f; s.tRoll = -side * 0.1f * (1.0f - u); s.tWingRaise = 0.5f; s.tWingSweep = 0.5f; s.poseRate = 6.0f;
-        if (s.t >= 0.9f) { s.passT = 3.0f; enter(DG_IDLE); s.idleWait = 0.5f; }
+        if (s.t >= 0.9f) { passed_player(); enter(DG_IDLE); s.idleWait = 0.5f; }
     }
 }
 
@@ -2075,7 +2109,7 @@ static void stomp_update(Boss *b, float dt)
         face_player(b, dt, 1.2f);
         float u = smooth01(s.t / (wind * 0.75f));
         s.tClaw[k] = s.t < wind - 0.07f ? 1.0f : 0.0f; s.tClawHi = s.t < wind - 0.07f ? 1.0f : 0.0f;
-        s.tRoll = side * 0.36f * u; s.tShLift[k] = 14.0f * u; s.tCrouch = 2.0f; s.tLean = -3.0f * u;
+        s.tRoll = side * 0.36f * u; s.tShLift[k] = 6.0f * u; s.tCrouch = 2.0f; s.tLean = -3.0f * u;
         s.tNeckPitch = -0.1f; s.tNeckYaw = side * 0.25f; s.tJaw = 0.45f;
         s.tWingRaise = 0.45f; s.tWingSweep = 0.15f; s.tTail = -side * 0.35f * u; s.tBend = side * 3.0f * u; s.poseRate = 5.0f;
         float lead = wind - 0.34f;
@@ -2116,11 +2150,11 @@ static void choose(Boss *b, float dist, float rel)
     return;
 #endif
     bool front = fabsf(rel) < 0.7f, behind = fabsf(rel) > 2.0f;
-    if (behind && dist < 150.0f && (s.cdTail <= 0.0f || (s.passT > 0.0f && player_faces_tail()))) { s.cdTail = 3.5f; enter(DG_TAIL); return; }
+    if (behind && dist < 150.0f && s.cdTail <= 0.0f) { s.cdTail = 3.5f; enter(DG_TAIL); return; }
     // Close in front: now and then it springs back out of reach (a ranged attack mostly follows),
     // or claws (half of those the heavy one-sided stomp) before the whip or the fire get a turn
     uint32_t coin = rand_custom_u32() % 100;
-    if (front && dist < 80.0f && s.cdBackstep <= 0.0f && coin < 22 && room_behind(b, 95.0f)) { s.cdBackstep = 12.0f; enter(DG_BACKSTEP); return; }
+    if (front && dist < 80.0f && s.cdBackstep <= 0.0f && coin < 22 && backstep_room(b) >= 70.0f) { s.cdBackstep = 12.0f; enter(DG_BACKSTEP); return; }
     if (front && dist < 85.0f && s.cdClaw <= 0.0f && coin >= 22 && coin < 70) { s.cdClaw = 3.0f; enter(coin < 45 ? DG_STOMP : DG_CLAW); return; }
     if (dist > 30.0f && dist < 115.0f && s.cdWhip <= 0.0f) { s.cdWhip = 11.0f; enter(DG_WHIP); return; }   // any side
     if (s.dark) {
@@ -2210,12 +2244,27 @@ void dragon_boss_update(Boss* b, float dt)
         // It only creeps round to follow a player in front of it; one at its side or behind gets
         // the tail if it's ready, else a slow, heavy turn (DG_TURN): get beside it and behind it
         // just past the player and they face its tail: the tail at once, its cooldown or not
-        bool passed = s.passT > 0.0f && player_faces_tail();
-        if (s.t > (passed ? 0.12f : 0.3f) && fabsf(rel) > 2.0f && dist < 150.0f && (s.cdTail <= 0.0f || passed)) { s.cdTail = 3.5f; enter(DG_TAIL); break; }
-        if (s.t > 0.3f && fabsf(rel) > 1.0f) { enter(DG_TURN); break; }
-        float d = turn_toward(b, atan2f(dx, dz), 0.7f * sm, dt);
-        if (dist > 75.0f && fabsf(d) < 0.8f) move_by(b, s.F[0] * 30.0f * sm * dt, s.F[2] * 30.0f * sm * dt);
-        else if (dist < 50.0f && fabsf(d) < 1.0f) move_by(b, -s.F[0] * 18.0f * dt, -s.F[2] * 18.0f * dt);
+        // (past a player at range the tail backs in to them: tail_update)
+        bool passed = s.passT > 0.0f && (s.passTail || player_faces_tail());
+        if (passed && s.t > 0.12f && fabsf(rel) > 2.0f && dist < 240.0f) { s.cdTail = 3.5f; enter(DG_TAIL); break; }
+        if (s.t > 0.3f && fabsf(rel) > 2.0f && dist < 150.0f && s.cdTail <= 0.0f) { s.cdTail = 3.5f; enter(DG_TAIL); break; }
+        // In a long pause at range it prowls: paces side to side across your front like a big cat,
+        // its head on you (closing in when far, easing off when near), and turns back to face you
+        // before it strikes
+        float wait = s.idleWait / sm;
+        bool paces = !s.heavyRest && wait >= 1.8f && dist > 70.0f && dist < 220.0f, pace = paces && s.t > 0.4f && s.t < wait - 0.8f;
+        if (s.t > 0.3f && fabsf(rel) > (paces ? 1.7f : 1.0f)) { enter(DG_TURN); break; }     // (pacing, it turns back by itself)
+        if (pace) {
+            float sgn = ((int)((s.t - 0.4f) / 2.8f) & 1) ? -s.paceSg : s.paceSg;
+            float off = sgn * (1.15f - fminf(fmaxf((dist - 120.0f) / 150.0f, -0.35f), 0.35f));
+            float d = turn_toward(b, atan2f(dx, dz) + off, 1.6f * sm, dt);
+            if (fabsf(d) < 0.6f) move_by(b, s.F[0] * 24.0f * sm * dt, s.F[2] * 24.0f * sm * dt);
+            s.tNeckYaw = fminf(fmaxf(rel * 0.85f, -1.1f), 1.1f);
+        } else {
+            float d = turn_toward(b, atan2f(dx, dz), (wait >= 1.8f && s.t >= wait - 0.8f ? 2.2f : 0.7f) * sm, dt);    // (back round from its pacing)
+            if (dist > 75.0f && fabsf(d) < 0.8f) move_by(b, s.F[0] * 30.0f * sm * dt, s.F[2] * 30.0f * sm * dt);
+            else if (dist < 50.0f && fabsf(d) < 1.0f) move_by(b, -s.F[0] * 18.0f * dt, -s.F[2] * 18.0f * dt);
+        }
         if (s.t > 0.3f && s.t < s.idleWait / sm - 0.3f) {   // every pause it breathes, its body rising and sinking
             if (s.heavyRest) {      // spent (after landing, or three beam sweeps): heaving, head low, panting, wings sagging
                 float br = fm_sinf(s.life * 3.3f);
@@ -2305,6 +2354,10 @@ void dragon_boss_update(Boss* b, float dt)
     s.flapPh += dt * s.flapRate;
     s.flapAmt = ease(s.flapAmt, s.flapRate > 0.0f ? 1.0f : 0.0f, 5.0f, dt);
     s.wingRaise = ease(s.wingRaise, s.tWingRaise, 3.0f, dt);
+    if (flying()) {     // the flight's beat as it was: straight onto it, from it eased back
+        s.tWingSweep = 0.0f; s.flapAmt = 0.0f;
+        if (s.flapRate > 0.0f) s.wingRaise = 0.25f + 0.6f * fm_sinf(s.flapPh);
+    }
     s.wingKick = ease(s.wingKick, 0.0f, 2.5f, dt);
     // How fast it turns and climbs; the tail's follow-through, a spring (it overshoots and settles)
     if (dt > 0.0f) {
@@ -2312,7 +2365,7 @@ void dragon_boss_update(Boss* b, float dt)
         s.altVel = ease(s.altVel, (s.alt - s.altPrev) / dt, 8.0f, dt);
     }
     s.yawPrev = b->rot[1]; s.altPrev = s.alt;
-    s.tailV += (40.0f * (fminf(fmaxf(-s.yawRate * 0.35f, -0.7f), 0.7f) - s.tailLag) - 7.0f * s.tailV) * fminf(dt, 0.05f);
+    s.tailV += (40.0f * (flying() ? 0.0f : fminf(fmaxf(-s.yawRate * 0.35f, -0.7f), 0.7f) - s.tailLag) - 7.0f * s.tailV) * fminf(dt, 0.05f);
     s.tailLag = fminf(fmaxf(s.tailLag + s.tailV * dt, -0.9f), 0.9f);
 
     rig(b, dt);
@@ -2503,7 +2556,8 @@ void dragon_boss_draw(Boss* b)
     // (the air under them) and on a landing, rise and fall a little with its breath; the hind
     // pair beats a beat behind the great one
     float wx[4][3], wy[4][3], wz[4][3], wroot[4][3], wk[4];
-    float air = fminf(fmaxf(-s.altVel * 0.006f, -0.2f), 0.45f), br = 0.04f * fm_sinf(s.life * 1.7f - 0.4f);
+    bool fl = flying();
+    float air = fl ? 0.0f : fminf(fmaxf(-s.altVel * 0.006f, -0.2f), 0.45f), br = fl ? 0.0f : 0.04f * fm_sinf(s.life * 1.7f - 0.4f);
     for (int w = 0; w < 4; w++) {
         int pair = w >> 1;
         float sd = (w & 1) ? 1.0f : -1.0f, ph = s.flapPh - pair * 0.7f;
