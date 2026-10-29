@@ -46,6 +46,9 @@ void hle_open_tick(bool open, float dt)
     else if (hle_open_cur > 0.0f) { hle_open_gaps++; hle_open_cur = 0.0f; }
 }
 
+#ifdef HLE_TEST_FOG_AB
+bool hle_fog_ab_cpu;
+#endif
 void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
     static int frame;
@@ -181,6 +184,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             minq = 99; maxdt = 0;
             extern void hle_perf_dump(uint32_t total);
             hle_perf_dump(now - start);
+#ifdef HLE_TEST_FOG_AB
+            extern bool hle_fog_ab_cpu;
+            debugf("[fogab] the frames above: %s fog\n", hle_fog_ab_cpu ? "cpu" : "gpu");
+            hle_fog_ab_cpu = !hle_fog_ab_cpu;
+#endif
             __hle_perf_ticks = 0; start = now;
         }
         last = now; (void)last;

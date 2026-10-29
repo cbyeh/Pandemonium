@@ -1939,6 +1939,10 @@ void hle_perf_dump(uint32_t total)
     debugf("[hle]   vert_load: setup %lu%% begin %lu%% loop %lu%% vtx %lu%%, %lu verts\n", (unsigned long)(hle_vl_ticks[0] * 100ULL / total), (unsigned long)(hle_vl_ticks[1] * 100ULL / total),
            (unsigned long)(hle_vl_ticks[2] * 100ULL / total), (unsigned long)(hle_vl_ticks[3] * 100ULL / total), (unsigned long)hle_vl_verts);
     hle_vl_ticks[0] = hle_vl_ticks[1] = hle_vl_ticks[2] = hle_vl_ticks[3] = hle_vl_verts = 0;
+    extern uint32_t hle_vc_hits, hle_vc_misses, hle_vc_resets, hle_vc_peak;
+    debugf("[hle]   vertex cache: %lu hits, %lu misses, %lu resets, peak %lu KB\n", (unsigned long)hle_vc_hits, (unsigned long)hle_vc_misses,
+           (unsigned long)hle_vc_resets, (unsigned long)hle_vc_peak / 1024);
+    hle_vc_hits = hle_vc_misses = hle_vc_resets = 0;
 }
 #endif
 

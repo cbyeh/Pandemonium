@@ -85,6 +85,10 @@ N64_CFLAGS += $(HLE_EXTRA_CFLAGS) -DHLE_BUILD -Ihle -Ihle/internal -Ihle/interna
 N64_LDFLAGS += --wrap sys_hw_memset --wrap sys_hw_memset16 --wrap sys_hw_memset32 --wrap sys_hw_memset64
 # Z clears without a mid-frame SYNC_FULL (hle/clearz_hle.c)
 N64_LDFLAGS += --wrap __rdpq_clear_z
+ifneq ($(HLE_BOOTFIX_ONLY),1)
+# Models register their vertices with the converted-vertex cache (hle/ovl_t3d.c)
+N64_LDFLAGS += --wrap t3d_model_load --wrap t3d_model_free
+endif
 # libdragon IPL3 patched to boot on emulators without RDRAM chip emulation (hle/ipl3/)
 $(ROM): N64_ROM_HEADER=hle/ipl3/ipl3_hle.z64
 # Region-free ROMs have country code 0, which Delta treats as PAL (50 Hz pacing): the

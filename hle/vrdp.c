@@ -24,7 +24,7 @@ uint8_t *__gbi_scratch, *__gbi_scratch_end;
 #define dl_end      __gbi_end
 #define scratch_ptr __gbi_scratch
 #define scratch_end __gbi_scratch_end
-uint32_t gsp_epoch;
+uint32_t gsp_epoch, gsp_tasks;
 
 static uint32_t dp_cur;                 // virtual DP_CURRENT (physical)
 
@@ -34,7 +34,7 @@ static uint64_t last_scissor = 0xED00000000000000ull;
 
 gsp_state_t gsp_3d;
 static struct {
-    uint32_t proj_ver, vp_ver, geom, tex;
+    uint32_t proj_ver, vp_ver, geom, tex, fog;
     bool valid;                         // false after a task split or a 2D draw
 } gsp_cur;
 
@@ -132,6 +132,7 @@ static void task_submit(void)
     scratch_ptr = scratch_base;
     gsp_cur.valid = false;
     gsp_epoch++;
+    gsp_tasks++;
 }
 
 void gbi_split(void)
@@ -154,10 +155,11 @@ void gbi_mtx(const hle_mat4_t *mf, uint32_t which)
 
 void gsp_sync_3d(void)
 {
+    uint32_t geom = gsp_3d.fog ? gsp_3d.geom | G_FOG : gsp_3d.geom;
     if (gsp_cur.valid && gsp_cur.vp_ver == gsp_3d.vp_ver && gsp_cur.proj_ver == gsp_3d.proj_ver &&
-        gsp_cur.geom == gsp_3d.geom && gsp_cur.tex == gsp_3d.tex)
+        gsp_cur.geom == geom && gsp_cur.tex == gsp_3d.tex && (!gsp_3d.fog || gsp_cur.fog == gsp_3d.fog))
         return;
-    gbi_reserve(8, 2*sizeof(gbi_mtx_t) + 16);
+    gbi_reserve(9, 2*sizeof(gbi_mtx_t) + 16);
     bool all = !gsp_cur.valid;
     if (all || gsp_cur.vp_ver != gsp_3d.vp_ver) {
         int16_t *vp = gbi_alloc(16);
@@ -169,9 +171,13 @@ void gsp_sync_3d(void)
         gbi_mtx(gsp_3d.proj, G_MTX_PROJECTION);
         gsp_cur.proj_ver = gsp_3d.proj_ver;
     }
-    if (all || gsp_cur.geom != gsp_3d.geom) {
-        GBI_GEOMETRY(0xFFFFFFFF, gsp_3d.geom);
-        gsp_cur.geom = gsp_3d.geom;
+    if (gsp_3d.fog && (all || gsp_cur.fog != gsp_3d.fog)) {
+        GBI_FOG(gsp_3d.fog >> 16, gsp_3d.fog);
+        gsp_cur.fog = gsp_3d.fog;
+    }
+    if (all || gsp_cur.geom != geom) {
+        GBI_GEOMETRY(0xFFFFFFFF, geom);
+        gsp_cur.geom = geom;
     }
     if (all || gsp_cur.tex != gsp_3d.tex) {
         gbi(((uint32_t)G_TEXTURE << 24) | gsp_3d.tex, 0xFFFFFFFF);

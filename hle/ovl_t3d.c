@@ -9,6 +9,7 @@
  */
 #include <libdragon.h>
 #include <t3d/t3d.h>
+#include <t3d/t3dmodel.h>
 #include "rsp/rsp_tiny3d.h"
 #include "rspq_internal.h"
 #include "hle.h"
@@ -210,6 +211,68 @@ static void fog_plane(int64_t k[4])
     k[3] += (int64_t)offset << 16;
 }
 
+#ifndef HLE_FOG_GBI_ERR
+#define HLE_FOG_GBI_ERR 0.08f   // most fog alpha (0..1) G_FOG may be off by, else CPU fog
+#endif
+/**
+ * The same fog done by the graphics plugin (G_FOG), so vertices need no CPU work.
+ * Tiny3D's alpha is affine in depth d, G_FOG's in NDC z (affine in 1/d): fit the
+ * G_FOG closest over the fog range. Returns the G_MW_FOG word, 0 = keep CPU fog.
+ * Refit only when the fog or projection values change.
+ */
+static bool fog_dirty = true;   // the projection or a DMEM word changed since the last fit
+static uint32_t fog_gbi(void)
+{
+#ifdef HLE_FOG_CPU      // test aid: always the exact CPU fog
+    return 0;
+#endif
+#ifdef HLE_TEST_FOG_AB  // test aid: autoplay flips between CPU and G_FOG every 120 frames
+    extern bool hle_fog_ab_cpu;
+    if (hle_fog_ab_cpu) return 0;
+#endif
+    static float key[6];
+    static uint32_t word;
+    if (!fog_dirty) return word;
+    fog_dirty = false;
+    float sl = (int32_t)(((uint32_t)VDMEM16(D(SCREEN_SCALE) + 6) << 16) | VDMEM16(D(SCREEN_SCALE) + 14)) / 65536.0f;
+    float ofs = (int16_t)VDMEM16(D(SCREEN_OFFSET) + 6) + 32768;
+    const float (*P)[4] = mat_proj;
+    float now[6] = { sl, ofs, P[2][2], P[3][2], P[2][3], P[3][3] };
+    if (!memcmp(key, now, sizeof(now))) return word;
+    memcpy(key, now, sizeof(now));
+    word = 0;
+    if (P[0][2] != 0 || P[1][2] != 0 || P[0][3] != 0 || P[1][3] != 0) return 0;   // not a plain perspective
+    // eye point at depth d: clip z = az*d + bz, clip w = aw*d + bw; Tiny3D alpha = sl*clip_z + ofs
+    float az = -P[2][2], bz = P[3][2], aw = -P[2][3], bw = P[3][3];
+    if (sl * az == 0) return 0;
+    // depths where the alpha leaves its near value (va) and reaches its far one (1 - va)
+    float va = sl * az < 0;
+    float dn = (255 * va - ofs - sl*bz) / (sl*az), df = (255 * (1 - va) - ofs - sl*bz) / (sl*az);
+    if (!(dn > 0 && df > dn)) return 0;
+    float w = df - dn, best = 2;
+    for (int i = 0; i < 16; i++) for (int j = 0; j < 16; j++) {
+        float d0 = dn + w * (-0.1f + 0.4f * i / 15), d1 = df + w * (-0.1f + 0.6f * j / 15);
+        if (d0 <= 0 || d1 <= d0) continue;
+        float u0 = (az*d0 + bz) / (aw*d0 + bw), u1 = (az*d1 + bz) / (aw*d1 + bw);
+        float fm = roundf(256 * (1 - 2 * va) / (u1 - u0)), fo = roundf(256 * va - u0 * fm);
+        if (!(fabsf(fm) <= 32767 && fo >= -32768 && fo <= 32767)) continue;
+        float err = 0;
+        for (int n = 0; n < 24 && err < best; n++) {
+            float d = dn + w * (-0.25f + 1.75f * n / 23);
+            if (d <= 0) continue;
+            float t = (sl*(az*d + bz) + ofs) / 255, g = (fm * (az*d + bz) / (aw*d + bw) + fo) / 256;
+            t = t < 0 ? 0 : t > 1 ? 1 : t; g = g < 0 ? 0 : g > 1 ? 1 : g;
+            err = fmaxf(err, fabsf(t - g));
+        }
+        if (err < best) { best = err; word = (uint32_t)(int)fm << 16 | (uint16_t)(int)fo; }
+    }
+    if (best > HLE_FOG_GBI_ERR) word = 0;
+#ifdef HLE_LOG_FOG
+    debugf("[fog] range %.0f-%.0f: G_FOG %s (error %.3f)\n", (double)dn, (double)df, word ? "on" : "off", (double)best);
+#endif
+    return word;
+}
+
 static void sync_state(void)
 {
     if (state_dirty) {
@@ -296,6 +359,85 @@ __attribute__((always_inline)) static inline void vert_copy(uint32_t *o, const u
     }
 }
 
+// ---- Converted-vertex cache ----
+//
+// Model vertices (t3d_model_load) never change, so without CPU fog their G_VTX copy
+// only depends on the UV offset and ambient: it is made once and reused. Buffers
+// rewritten every frame (cloth, trails, chains) live outside models and are copied
+// each time. The pool is only reused between tasks: the plugin reads a task's
+// vertices when it is submitted.
+
+#define VC_BYTES    (96 * 1024)
+#define VC_SLOTS    1024                // power of 2
+#define VC_MODELS   64
+
+typedef struct { uint32_t src, uv, amb, out; uint16_t count; } vc_ent_t;
+static vc_ent_t vc_tab[VC_SLOTS];
+static uint8_t *vc_pool;
+static uint32_t vc_used, vc_task;
+static bool vc_reset_pending;
+static struct { uint32_t lo, hi; } vc_models[VC_MODELS];
+static int vc_nmodels;
+#ifdef HLE_TEST_PERF
+uint32_t hle_vc_hits, hle_vc_misses, hle_vc_resets, hle_vc_peak;
+#endif
+
+static void vc_reset_later(void)
+{
+    memset(vc_tab, 0, sizeof(vc_tab));
+    vc_reset_pending = true;
+    vc_task = gsp_tasks;
+}
+
+static void hle_vcache_model(const void *verts, uint32_t bytes, bool add)
+{
+    uint32_t lo = PhysicalAddr(verts), hi = lo + bytes;
+    for (int i = 0; i < vc_nmodels; i++) {
+        if (vc_models[i].lo != lo) continue;
+        if (!add) { vc_models[i] = vc_models[--vc_nmodels]; vc_reset_later(); }
+        return;
+    }
+    if (add && vc_nmodels < VC_MODELS) vc_models[vc_nmodels++] = (typeof(vc_models[0])){ lo, hi };
+}
+
+/** The entry for this copy (out != 0 when cached), a free one to fill (out == 0), or NULL. */
+static vc_ent_t *vc_find(uint32_t src, int count, uint32_t uv, uint32_t amb)
+{
+    if (vc_reset_pending && vc_task != gsp_tasks) { vc_used = 0; vc_reset_pending = false; }
+    uint32_t h = ((src >> 4) * 2654435761u) >> 22;
+    for (int n = 0; n < 8; n++, h = (h + 1) & (VC_SLOTS - 1)) {
+        vc_ent_t *e = &vc_tab[h];
+        if (!e->out) {
+            if (vc_reset_pending) return NULL;      // pool full until the next task
+            int i = 0;
+            while (i < vc_nmodels && (src < vc_models[i].lo || src + count * 16 > vc_models[i].hi)) i++;
+            if (i == vc_nmodels) return NULL;
+            e->src = src; e->uv = uv; e->amb = amb; e->count = count;
+            return e;
+        }
+        if (e->src == src && e->uv == uv && e->amb == amb && e->count == count) return e;
+    }
+    return NULL;
+}
+
+static uint32_t *vc_alloc(int bytes)
+{
+    if (!vc_pool) vc_pool = malloc_uncached(VC_BYTES);
+    if (!vc_pool || vc_used + bytes > VC_BYTES) {
+#ifdef HLE_TEST_PERF
+        hle_vc_resets++;
+#endif
+        vc_reset_later();
+        return NULL;
+    }
+    uint32_t *p = (uint32_t*)(vc_pool + vc_used);
+    vc_used += bytes;
+#ifdef HLE_TEST_PERF
+    if (vc_used > hle_vc_peak) hle_vc_peak = vc_used;
+#endif
+    return p;
+}
+
 #ifdef HLE_TEST_PERF
 uint32_t hle_vl_ticks[6], hle_vl_verts, hle_vl_amb, hle_vl_zrow, hle_vl_fog;     // test aid: vert_load's setup, t3d_begin, the loop, the G_VTX
 #define VL_MARK(i) do { uint32_t _n = TICKS_READ(); hle_vl_ticks[i] += _n - _vl; _vl = _n; } while (0)
@@ -327,6 +469,8 @@ static void vert_load(const uint32_t *a)
 
     VL_MARK(4);
     bool fog = fog_enabled();
+    gsp_3d.fog = fog ? fog_gbi() : 0;
+    if (gsp_3d.fog) fog = false;
     int64_t k[4] = {0};
     if (fog) fog_plane(k);
     VL_MARK(5);
@@ -345,9 +489,32 @@ static void vert_load(const uint32_t *a)
 #endif
     }
     VL_MARK(0);
+#ifdef HLE_NO_VCACHE    // test aid: copy every load
+    vc_ent_t *e = NULL;
+#else
+    vc_ent_t *e = fog ? NULL : vc_find(PhysicalAddr(src), count, uv_ofs, scale ? amb : 0xFFFFFFFF);
+#endif
+    if (e && e->out) {
+        t3d_begin(2, 0);
+        GBI_VTX(dest, count, e->out);
+#ifdef HLE_TEST_PERF
+        hle_vc_hits++;
+        hle_vl_verts += count;
+#endif
+        return;
+    }
     t3d_begin(2, count * sizeof(gbi_vtx_t));
     VL_MARK(1);
-    uint32_t *out = gbi_alloc(count * sizeof(gbi_vtx_t));
+    uint32_t *out = e ? vc_alloc(count * sizeof(gbi_vtx_t)) : NULL;
+    if (out) {
+        e->out = PhysicalAddr(out);
+#ifdef HLE_TEST_PERF
+        hle_vc_misses++;
+#endif
+    } else {
+        if (e) e->src = 0, e->count = 0;    // the slot stays free (out == 0)
+        out = gbi_alloc(count * sizeof(gbi_vtx_t));
+    }
     const uint32_t *in = (const uint32_t*)src;
     switch ((uv_ofs != 0) | scale << 1 | fog << 2) {
     case 0: vert_copy(out, in, count, false, false, false, uv_s, uv_t, amb_tbl, k); break;
@@ -531,6 +698,7 @@ void ovl_t3d(uint32_t cmd, const uint32_t *a, int n)
         uint32_t addr = a[0] & 0xFFFF;
         if (addr & 0x8000) VDMEM16(addr) = a[1];
         else VDMEM32(addr) = a[1];
+        fog_dirty = true;
         if ((addr & 0xFFE) == D(SCREEN_OFFSET) + 4)
             apply_depth_offset(VDMEM16(D(SCREEN_OFFSET) + 4));
         return;
@@ -558,6 +726,7 @@ void ovl_t3d(uint32_t cmd, const uint32_t *a, int n)
         for (int m = 0; m < 4; m++)
             proj_z[m] = fp_elem((const int16_t*)hle_rdram(a[0] & 0xFFFFFF) + m * 8, 2);
         zvalid = -1;                            // fog rows depend on the projection
+        fog_dirty = true;
         return;
     case T3D_CMD_FOG_STATE:
         VDMEM8(D(FOG_STORE_OFFSET)) = a[0] & 0xFF;
@@ -574,4 +743,19 @@ void ovl_t3d(uint32_t cmd, const uint32_t *a, int n)
         hle_warn_once("t3dcmd", "Tiny3D command %ld ignored", cmd);
         return;
     }
+}
+
+// Models register their vertex buffer with the cache (linked with --wrap)
+T3DModel *__real_t3d_model_load(const char *path);
+void __real_t3d_model_free(T3DModel *model);
+T3DModel *__wrap_t3d_model_load(const char *path)
+{
+    T3DModel *m = __real_t3d_model_load(path);
+    hle_vcache_model(t3d_model_get_vertices(m), m->totalVertCount * 16, true);
+    return m;
+}
+void __wrap_t3d_model_free(T3DModel *model)
+{
+    hle_vcache_model(t3d_model_get_vertices(model), model->totalVertCount * 16, false);
+    __real_t3d_model_free(model);
 }

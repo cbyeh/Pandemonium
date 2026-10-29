@@ -110,6 +110,7 @@ typedef struct {
     uint32_t vp_ver;
     uint32_t geom;          ///< F3DEX2 geometry mode
     uint32_t tex;           ///< G_TEXTURE w0 low bits (0 = off)
+    uint32_t fog;           ///< G_MW_FOG word with G_FOG set (0 = off)
 } gsp_state_t;
 
 extern gsp_state_t gsp_3d;
@@ -118,6 +119,8 @@ extern gsp_state_t gsp_3d;
  * or clobbered (2D draws), so the modelview stack must be rebuilt.
  */
 extern uint32_t gsp_epoch;
+/** Graphics tasks submitted so far (the plugin is done with everything before). */
+extern uint32_t gsp_tasks;
 /** Bump when the projection changes. */
 static inline void gsp_3d_proj(const hle_mat4_t *m) { gsp_3d.proj = m; gsp_3d.proj_ver++; }
 /** Emits whatever 3D state changed since the last sync (call before G_VTX/G_TRI). */
