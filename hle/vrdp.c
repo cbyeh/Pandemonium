@@ -29,10 +29,18 @@ uint32_t gsp_epoch, gsp_tasks;
 static uint32_t dp_cur;                 // virtual DP_CURRENT (physical)
 
 // Last RDP state seen, needed to restore after internal commands.
-static uint64_t last_cimg, last_som = 0xEF00000000000000ull, last_fillcolor = 0xF700000000000000ull;
-static uint64_t last_scissor = 0xED00000000000000ull;
-// Other modes / combiner the plugin has this task: models set the same ones over and over
-static uint64_t sent_som = ~0ull, sent_comb = ~0ull;
+static uint64_t last_cimg;
+// (one struct: a block replay saves and compares it in one piece)
+static struct {
+    uint64_t som, fillcolor, scissor;
+    // Other modes / combiner the plugin has this task: models set the same ones over and over
+    uint64_t sent_som, sent_comb;
+} rs = { 0xEF00000000000000ull, 0xF700000000000000ull, 0xED00000000000000ull, ~0ull, ~0ull };
+#define last_som       rs.som
+#define last_fillcolor rs.fillcolor
+#define last_scissor   rs.scissor
+#define sent_som       rs.sent_som
+#define sent_comb      rs.sent_comb
 
 gsp_state_t gsp_3d;
 static struct {
@@ -373,24 +381,31 @@ void hle_vrdp_state(hle_st_t *s, bool sig)
     // the color image cycles through the framebuffers: blocks only depend on its format and width,
     // and leave it as it was unless they set one
     static uint64_t cimg_entry;
-    if (sig) {
-        uint32_t fmt = last_cimg >> 32;
-        HLE_ST(s, fmt);
-        cimg_entry = last_cimg;
-    } else {
-        uint8_t changed = last_cimg != cimg_entry;
-        uint64_t v = changed ? last_cimg : 0;
-        HLE_ST(s, changed); HLE_ST(s, v);
-        if (s->load && changed) last_cimg = v;
+    HLE_ST(s, rs);
+    // the small fields packed, so they go in one piece too
+    struct {
+        uint64_t cimg;                  // the state left: the color image, if the block set one
+        uint32_t cimg_fmt;              // signatures: its format and width; the state left: whether it changed
+        const hle_mat4_t *proj;
+        int16_t vp[8];
+        uint32_t geom, tex, fog, cur_geom, cur_tex, cur_fog, cur_valid;
+        uint32_t rel[2];                // versions as steps behind the current ones
+    } x;
+    memset(&x, 0, sizeof(x));
+    if (sig) { x.cimg_fmt = last_cimg >> 32; cimg_entry = last_cimg; }
+    else if (last_cimg != cimg_entry) { x.cimg_fmt = 1; x.cimg = last_cimg; }
+    x.proj = gsp_3d.proj; memcpy(x.vp, gsp_3d.vp, sizeof(x.vp));
+    x.geom = gsp_3d.geom; x.tex = gsp_3d.tex; x.fog = gsp_3d.fog;
+    x.cur_geom = gsp_cur.geom; x.cur_tex = gsp_cur.tex; x.cur_fog = gsp_cur.fog; x.cur_valid = gsp_cur.valid;
+    x.rel[0] = gsp_cur.proj_ver - gsp_3d.proj_ver; x.rel[1] = gsp_cur.vp_ver - gsp_3d.vp_ver;
+    HLE_ST(s, x);
+    if (s->load) {
+        if (x.cimg_fmt) last_cimg = x.cimg;
+        gsp_3d.proj = x.proj; memcpy(gsp_3d.vp, x.vp, sizeof(x.vp));
+        gsp_3d.geom = x.geom; gsp_3d.tex = x.tex; gsp_3d.fog = x.fog;
+        gsp_cur.geom = x.cur_geom; gsp_cur.tex = x.cur_tex; gsp_cur.fog = x.cur_fog; gsp_cur.valid = x.cur_valid;
+        gsp_cur.proj_ver = gsp_3d.proj_ver + x.rel[0]; gsp_cur.vp_ver = gsp_3d.vp_ver + x.rel[1];
     }
-    HLE_ST(s, last_som); HLE_ST(s, last_fillcolor); HLE_ST(s, last_scissor);
-    HLE_ST(s, sent_som); HLE_ST(s, sent_comb);
-    HLE_ST(s, gsp_3d.proj); HLE_ST(s, gsp_3d.vp); HLE_ST(s, gsp_3d.geom); HLE_ST(s, gsp_3d.tex); HLE_ST(s, gsp_3d.fog);
-    HLE_ST(s, gsp_cur.geom); HLE_ST(s, gsp_cur.tex); HLE_ST(s, gsp_cur.fog); HLE_ST(s, gsp_cur.valid);
-    // versions as steps behind the current ones
-    uint32_t rel[2] = { gsp_cur.proj_ver - gsp_3d.proj_ver, gsp_cur.vp_ver - gsp_3d.vp_ver };
-    HLE_ST(s, rel);
-    if (s->load) { gsp_cur.proj_ver = gsp_3d.proj_ver + rel[0]; gsp_cur.vp_ver = gsp_3d.vp_ver + rel[1]; }
 }
 void hle_vrdp_counters(uint32_t *epoch, uint32_t *proj_ver, uint32_t *vp_ver)
 {

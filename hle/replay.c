@@ -55,7 +55,8 @@ typedef struct {
     rp_mtx_t *mtx;
 } rp_rec_t;
 
-typedef struct { uint32_t addr; rp_rec_t *rec[RP_RECS]; uint16_t skip, misses; } rp_block_t;
+typedef struct { uint32_t addr; rp_rec_t *rec[RP_RECS]; uint16_t skip, misses; bool small; } rp_block_t;
+#define RP_MIN_CMDS 16              // smaller blocks cost less to run than to replay (state compare, restore)
 
 static rp_block_t rp_blocks[RP_BLOCKS];
 static uint32_t rp_lru;
@@ -71,7 +72,7 @@ static struct {
     uint32_t ovl_mask;
     rp_mtx_t mtx[512]; int nmtx;
     uint32_t rdp_rel; bool rdp_abs;
-    uint8_t sig[RP_SIG_MAX]; uint32_t sig_len;
+    uint8_t sig[RP_SIG_MAX] __attribute__((aligned(8))); uint32_t sig_len;
     uint32_t e_entry, p3_entry, v3_entry;
     uint16_t slots_written;
     uint32_t pstack_written;
@@ -82,7 +83,10 @@ static struct {
 } rp;
 
 #if defined(HLE_TEST_PERF) || defined(HLE_TEST_REPLAY_CHECK)
-uint32_t hle_rp_stats[8];           // replays, recorded, unreplayable, no match, check ok, check bad
+uint32_t hle_rp_stats[8], hle_rp_ticks[6];     // test aid: replay's signature, compare, scratch+matrices, list, state
+#define RP_MARK(i) do { uint32_t _n = TICKS_READ(); hle_rp_ticks[i] += _n - _t; _t = _n; } while (0)
+#else
+#define RP_MARK(i) do {} while (0)           // replays, recorded, unreplayable, no match, check ok, check bad
 #endif
 
 // ---- Registry ----
@@ -141,6 +145,7 @@ void hle_replay_block_gone(const void *cmds)
 // ---- Hooks ----
 
 bool hle_rp_on;
+uint32_t hle_rp_cmds;               // commands (and triangles) the block being recorded ran
 void hle_rp_bad_(void) { rp.bad = true; }
 void hle_rp_slot_written_(int k) { rp.slots_written |= 1u << k; }
 void hle_rp_pstack_(int slot) { if (slot > rp.slot) rp.pstack_written |= 1u << slot; }
@@ -174,16 +179,20 @@ static uint32_t rp_signature(uint8_t *out, uint32_t ovl_mask)
 static uint32_t rp_exit_io(uint8_t *buf, bool load, uint32_t ovl_mask)
 {
     hle_st_t s = { buf, load };
-    hle_t3d_state(&s, false);
-    hle_rdpq_state(&s);
-    hle_vrdp_state(&s, false);
-    hle_vrsp_state(&s, ovl_mask, false);
+    uint32_t o[4];
+    o[0] = s.p - buf; hle_t3d_state(&s, false);
+    o[1] = s.p - buf; hle_rdpq_state(&s);
+    o[2] = s.p - buf; hle_vrdp_state(&s, false);
+    o[3] = s.p - buf; hle_vrsp_state(&s, ovl_mask, false);
+#ifdef HLE_TEST_REPLAY_CHECK
+    static bool shown; if (!shown) { shown = true; debugf("[replay] exit layout (after the 24 counter bytes): t3d %lu rdpq %lu vrdp %lu vrsp %lu end %lu\n", o[0], o[1], o[2], o[3], (unsigned long)(s.p - buf)); }
+#endif
     return s.p - buf;
 }
 
 // ---- Recording ----
 
-static uint8_t rp_exit_buf[RP_SIG_MAX + 1024];
+static uint8_t rp_exit_buf[RP_SIG_MAX + 1024] __attribute__((aligned(8)));
 
 static void rp_begin(rp_block_t *b, int slot)
 {
@@ -199,6 +208,7 @@ static void rp_begin(rp_block_t *b, int slot)
     rp.rdp_rel = 0; rp.rdp_abs = false;
     rp.slots_written = 0; rp.pstack_written = 0;
     rp.zmin = 1 << 30;
+    hle_rp_cmds = 0;
     hle_vrdp_counters(&rp.e_entry, &rp.p3_entry, &rp.v3_entry);
     if (!hle_vrsp_rdp_synced()) rp.bad = true;
     rp.sig_len = rp_signature(rp.sig, rp.ovl_mask);
@@ -219,6 +229,13 @@ static void rp_end(void)
         rp.blk->skip = (1 << rp.blk->misses) - 1;
 #if defined(HLE_TEST_PERF) || defined(HLE_TEST_REPLAY_CHECK)
         hle_rp_stats[2]++;
+#endif
+        return;
+    }
+    if (hle_rp_cmds < RP_MIN_CMDS) {    // run it as it is from now on
+        rp.blk->small = true;
+#ifdef HLE_TEST_REPLAY_CHECK
+        rp.check = NULL;
 #endif
         return;
     }
@@ -279,6 +296,16 @@ static void rp_end(void)
                        rp.blk->addr, r->ncmds, ncmds, r->scratch_bytes, sbytes, r->nmtx, rp.nmtx, r->nreloc, nreloc, r->exit_len, elen, ediff,
                        r->rdp_abs, rp.rdp_abs, r->rdp_rel, rp.rdp_rel, bad_cmd);
                 if (bad_cmd >= 0) debugf("[replay]   was %016llx now %016llx\n", r->dl[bad_cmd], rp.dl0[bad_cmd]);
+                if (ediff >= 0) {
+                    int o = ediff & ~3;
+                    debugf("[replay]   exit at %d: was %08lx %08lx now %08lx %08lx (t3d %u rdpq %u)\n", o, *(uint32_t*)(r->exit + o), *(uint32_t*)(r->exit + o + 4),
+                           *(uint32_t*)(rp_exit_buf + o), *(uint32_t*)(rp_exit_buf + o + 4), (unsigned)hle_t3d_state_size(), (unsigned)hle_rdpq_state_size());
+                    const uint32_t *we = (const uint32_t*)r->exit, *ne = (const uint32_t*)rp_exit_buf;
+                    for (int w = (o - 40) / 4; w < (o + 24) / 4; w += 4)
+                        debugf("[replay]   @%d was %08lx %08lx %08lx %08lx now %08lx %08lx %08lx %08lx\n", w * 4, we[w], we[w+1], we[w+2], we[w+3], ne[w], ne[w+1], ne[w+2], ne[w+3]);
+                    debugf("[replay]   masks %lx/%lx, extra was %lx %lx %lx %lx %lx %lx now %lx %lx %lx %lx %lx %lx\n", r->ovl_mask, rp.ovl_mask,
+                           we[0], we[1], we[2], we[3], we[4], we[5], ne[0], ne[1], ne[2], ne[3], ne[4], ne[5]);
+                }
             }
         }
         return;
@@ -349,12 +376,16 @@ static void rp_end(void)
 
 static bool rp_replay(rp_rec_t *r)
 {
+#ifdef HLE_TEST_PERF
+    uint32_t _t = TICKS_READ();
+#endif
     uint8_t *sc = gbi_alloc(r->scratch_bytes);
     for (uint32_t i = 0; i < r->nspan; i++) memcpy(sc + r->span[2*i], r->scratch + r->span[2*i], r->span[2*i+1]);
     for (uint32_t m = 0; m < r->nmtx; m++) {
         uint32_t src = r->mtx[m].kind == RP_SRC_SLOT ? hle_t3d_slot_addr(r->mtx[m].src) : hle_t3d_resolve(r->mtx[m].src);
         hle_t3d_mtx_conv_to(sc + r->mtx[m].off, src);
     }
+    RP_MARK(2);
 #ifdef HLE_REPLAY_INLINE   // test aid: the list copied into the task instead of called
     { uint32_t s0 = PhysicalAddr(sc); uint64_t *d = __gbi_ptr;
       memcpy(d, r->dl, r->ncmds * 8); for (uint32_t i = 0; i < r->nreloc; i++) d[r->reloc[i]] += s0; __gbi_ptr += r->ncmds; }
@@ -362,6 +393,7 @@ static bool rp_replay(rp_rec_t *r)
     if (r->nreloc) GBI_SEGMENT(RP_SEG, PhysicalAddr(sc));
     gbi((uint32_t)G_DL << 24, PhysicalAddr(r->gdl));
 #endif
+    RP_MARK(3);
 
     // the state the block left
     uint32_t e, p3, v3; hle_vrdp_counters(&e, &p3, &v3);
@@ -374,6 +406,7 @@ static bool rp_replay(rp_rec_t *r)
     for (int k = 0; k < 32; k++) if (extra[5] & (1u << k)) len += hle_vrsp_pstack_io(r->exit + len, k, true);
     if (r->rdp_abs) hle_vrsp_rdp_set(r->rdp_cur, r->rdp_sentinel, r->rdp_dp, r->rdp_syncfull);
     else hle_vrsp_rdp_advance(r->rdp_rel);
+    RP_MARK(4);
     return true;
 }
 
@@ -388,7 +421,7 @@ bool hle_replay_call(uint32_t target, int slot)
 #endif
     if (rp.on) return false;                        // nested: part of the block being recorded
     rp_block_t *b = rp_find(target, false);
-    if (!b) return false;
+    if (!b || b->small) return false;
     hle_t3d_flush();
 #ifdef HLE_REPLAY_FLUSH_ONLY    // test aid: the entry flush alone
     return false;
@@ -410,15 +443,27 @@ bool hle_replay_call(uint32_t target, int slot)
     if (need_cmds) gbi_reserve(8, need_sc + 64);     // a replay is a segment and a call
 #endif
 
+#ifdef HLE_TEST_PERF
+    uint32_t _t = TICKS_READ();
+#endif
     uint32_t mask = hle_vrsp_loaded_mask();
-    static uint8_t sig[RP_SIG_MAX];
+    static uint8_t sig[RP_SIG_MAX] __attribute__((aligned(8)));
     uint32_t sig_len = 0, sig_mask = ~0u;
     uint32_t gen = hle_vc_gen();
+    // most recently used first: a block drawn the same way each frame matches its first
+    int order[RP_RECS];
     for (int i = 0; i < RP_RECS; i++) {
-        rp_rec_t *r = b->rec[i];
+        int j = i;
+        while (j > 0 && (!b->rec[order[j-1]] || (b->rec[i] && b->rec[i]->lru > b->rec[order[j-1]]->lru))) { order[j] = order[j-1]; j--; }
+        order[j] = i;
+    }
+    for (int oi = 0; oi < RP_RECS; oi++) {
+        rp_rec_t *r = b->rec[order[oi]];
         if (!r || r->vc_gen != gen || (r->ovl_mask & ~mask)) continue;
-        if (r->ovl_mask != sig_mask) { sig_len = rp_signature(sig, r->ovl_mask); sig_mask = r->ovl_mask; }
-        if (sig_len != r->sig_len || memcmp(sig, r->sig, sig_len)) continue;
+        if (r->ovl_mask != sig_mask) { sig_len = rp_signature(sig, r->ovl_mask); sig_mask = r->ovl_mask; RP_MARK(0); }
+        bool same = sig_len == r->sig_len && hle_st_equal(sig, r->sig, sig_len);
+        RP_MARK(1);
+        if (!same) continue;
         if (!hle_vrsp_rdp_synced() || (!r->rdp_abs && !hle_vrsp_rdp_room(r->rdp_rel))) continue;
         r->lru = ++rp_lru;
 #ifdef HLE_TEST_REPLAY_CHECK

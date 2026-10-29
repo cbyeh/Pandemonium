@@ -20,8 +20,28 @@
 #define VTX_SIZE    36
 #define Q           ((rsp_queue_t*)__vrsp_dmem)
 
-static hle_mat4_t mat_proj, mat_mv;
-static bool state_dirty = true;     // geometry mode / texture need recomputing
+// The state a block replay saves and compares (replay.c), in one struct so it goes in one piece
+static struct {
+    hle_mat4_t mat_proj;
+    int64_t proj_z[4];          // z row of the projection
+    uint32_t fog_word;
+    uint32_t stack_base;
+    int cur_slot;               // ucode stack slot of the current matrix
+    int gdepth;                 // GBI modelview stack depth (== cur_slot when in sync)
+    bool state_dirty;           // geometry mode / texture need recomputing
+    bool fog_dirty;             // the projection or a DMEM word changed since the last fog fit
+    bool tri_has_pending;
+} rs = { .stack_base = 0xFFFFFFFF, .state_dirty = true, .fog_dirty = true };
+#define mat_proj        rs.mat_proj
+#define proj_z          rs.proj_z
+#define fog_word        rs.fog_word
+#define stack_base      rs.stack_base
+#define cur_slot        rs.cur_slot
+#define gdepth          rs.gdepth
+#define state_dirty     rs.state_dirty
+#define fog_dirty       rs.fog_dirty
+#define tri_has_pending rs.tri_has_pending
+static hle_mat4_t mat_mv;
 
 static inline uint32_t resolve_segment(uint32_t addr)
 {
@@ -50,12 +70,8 @@ static slot_t slots[STACK_SIZE];
 static uint32_t slot_raw[STACK_SIZE];   // the address the command gave (segmented), for replay
 // Integer (16.16) so the emulated CPU avoids FPU conversions; values stay far below 2^47
 static int64_t zrow[STACK_SIZE][4]; // clip z = sum_c zrow[k][c] * v[c]
-static int64_t proj_z[4];           // z row of the projection
 static int zvalid = -1;             // zrow[0..zvalid] are up to date (computed lazily, for fog)
-static int cur_slot;                // ucode stack slot of the current matrix
-static int gdepth;                  // GBI modelview stack depth (== cur_slot when in sync)
 static uint32_t gbi_epoch = ~0u;    // gsp_epoch the GBI stack was built in
-static uint32_t stack_base = 0xFFFFFFFF;
 
 __attribute__((noinline)) void hle_mat_from_fp(float out[4][4], const void *fp_)
 {
@@ -233,8 +249,6 @@ static void fog_plane(int64_t k[4])
  * G_FOG closest over the fog range. Returns the G_MW_FOG word, 0 = keep CPU fog.
  * Refit only when the fog or projection values change.
  */
-static bool fog_dirty = true;   // the projection or a DMEM word changed since the last fit
-static uint32_t fog_word;
 __attribute__((noinline)) static uint32_t fog_gbi_fit(void);
 static uint32_t fog_gbi_refit(float sl, float ofs, const float (*P)[4]);
 static inline uint32_t fog_gbi(void)
@@ -392,7 +406,7 @@ __attribute__((always_inline)) static inline void vert_copy(uint32_t *o, const u
 // converted each time. The pool is only reused between tasks: the plugin reads a task's
 // vertices when it is submitted.
 
-#define VC_BYTES    (128 * 1024)
+#define VC_BYTES    (256 * 1024)
 #define VC_SLOTS    1024                // power of 2
 #define VC_MODELS   256
 
@@ -637,7 +651,6 @@ __attribute__((noinline)) static void vert_load(const uint32_t *a)
 uint32_t hle_exact_calls, hle_exact_strips, hle_exact_bad;
 #endif
 static uint32_t tri_pending;
-static bool tri_has_pending;
 
 void hle_t3d_flush(void)
 {
@@ -868,23 +881,18 @@ void __wrap_t3d_model_free(T3DModel *model)
 
 void hle_t3d_state(hle_st_t *s, bool sig)
 {
-    HLE_ST(s, mat_proj); HLE_ST(s, proj_z);
-    HLE_ST(s, state_dirty); HLE_ST(s, cur_slot); HLE_ST(s, gdepth); HLE_ST(s, stack_base);
-    HLE_ST(s, fog_dirty); HLE_ST(s, fog_word);
-    uint32_t pend = tri_has_pending ? tri_pending : 0;      // stale when nothing is pending
-    HLE_ST(s, pend); HLE_ST(s, tri_has_pending);
-    if (s->load) tri_pending = pend;
-    uint32_t rel = gbi_epoch - gsp_epoch;       // in sync or not, not the epoch itself
-    HLE_ST(s, rel);
-    if (s->load) gbi_epoch = gsp_epoch + rel;
-    if (sig) {  // which slots hold a matrix and how it combines (their matrices are re-read on replay)
-        for (int k = 0; k < STACK_SIZE; k++) {
-            uint8_t f = slots[k].mul | (slots[k].addr != 0) << 1;
-            HLE_ST(s, f);
-        }
-    }
+    HLE_ST(s, rs);
+    struct {
+        uint32_t pend;          // stale when nothing is pending
+        uint32_t rel;           // in sync or not, not the epoch itself
+        uint32_t slots;         // signatures: which slots hold a matrix and how it combines (re-read on replay)
+    } x = { tri_has_pending ? tri_pending : 0, gbi_epoch - gsp_epoch, 0 };
+    if (sig) for (int k = 0; k < STACK_SIZE; k++) x.slots |= (slots[k].mul | (slots[k].addr != 0) << 1) << (2 * k);
+    HLE_ST(s, x);
+    if (s->load) { tri_pending = x.pend; gbi_epoch = gsp_epoch + x.rel; }
 }
 /** A slot the block set: the address it gave, resolved again on replay (segments may point elsewhere). */
+uint32_t hle_t3d_state_size(void) { return sizeof(rs); }
 uint32_t hle_t3d_slot_io(uint8_t *buf, int k, bool load)
 {
     struct { uint32_t raw; bool mul; } v = { slot_raw[k], slots[k].mul };
@@ -900,8 +908,15 @@ uint32_t hle_t3d_resolve(uint32_t raw)
     const uint8_t *img = hle_vrsp_t3d_img();
     return (raw + *(const uint32_t*)(img + D(SEGMENT_TABLE) + ((raw >> 24) & 0x1C))) & 0xFFFFFF;
 }
-/** The DMEM this port ever reads (SCREEN_SCALE .. VERTEX_FX_FUNC): all a replay must match and restore. */
-void hle_t3d_dmem_range(uint32_t *lo, uint32_t *hi) { *lo = D(SCREEN_SCALE); *hi = D(VERTEX_FX_FUNC) + 2; }
+/**
+ * The DMEM this port ever reads, all a replay must match and restore: SCREEN_SCALE .. the
+ * lights (which it ignores), then TRI_COMMAND .. VERTEX_FX_FUNC.
+ */
+void hle_t3d_dmem_range(uint32_t *lo, uint32_t *hi, uint32_t *lo2, uint32_t *hi2)
+{
+    *lo = D(SCREEN_SCALE); *hi = D(LIGHT_DIR_COLOR);
+    *lo2 = D(TRI_COMMAND); *hi2 = D(VERTEX_FX_FUNC) + 4;
+}
 void hle_t3d_seg_mask(uint8_t *state_copy, uint32_t state_start)
 {
     memset(state_copy + D(SEGMENT_TABLE) - state_start, 0, 32);

@@ -1960,6 +1960,10 @@ void hle_perf_dump(uint32_t total)
     debugf("[hle]   replay: %lu replayed, %lu recorded, %lu unreplayable, %lu no match, check %lu ok %lu BAD\n", (unsigned long)hle_rp_stats[0],
            (unsigned long)hle_rp_stats[1], (unsigned long)hle_rp_stats[2], (unsigned long)hle_rp_stats[3], (unsigned long)hle_rp_stats[4], (unsigned long)hle_rp_stats[5]);
     memset(hle_rp_stats, 0, sizeof(hle_rp_stats));
+    extern uint32_t hle_rp_ticks[6];
+    debugf("[hle]   replay time: signature %lu%% compare %lu%% matrices %lu%% list %lu%% state %lu%%\n", (unsigned long)(hle_rp_ticks[0] * 100ULL / total),
+           (unsigned long)(hle_rp_ticks[1] * 100ULL / total), (unsigned long)(hle_rp_ticks[2] * 100ULL / total), (unsigned long)(hle_rp_ticks[3] * 100ULL / total), (unsigned long)(hle_rp_ticks[4] * 100ULL / total));
+    memset(hle_rp_ticks, 0, sizeof(hle_rp_ticks));
     extern uint32_t hle_rm_calls[4], hle_fin_ticks;
     debugf("[hle]   rdpq finalize (all commands): %lu%%\n", (unsigned long)(hle_fin_ticks * 100ULL / total)); hle_fin_ticks = 0;
     debugf("[hle]   modify other modes: %lu plain, %lu render mode (%lu memo hits), %lu mode/combine commands dropped\n",
@@ -2103,15 +2107,19 @@ static void vrsp_run(void)
         }
         uint32_t cmd = cmd_byte - (base << 4);
         int size = vrsp_cmdsize[base][cmd & 63];
-        if (__builtin_expect(hle_rp_on, 0) && vrsp_handlers[base] != ovl_t3d && vrsp_handlers[base] != ovl_rdpq)
-            hle_rp_bad_();      // only these two overlays' state is saved
+        if (__builtin_expect(hle_rp_on, 0)) {
+            if (vrsp_handlers[base] != ovl_t3d && vrsp_handlers[base] != ovl_rdpq) hle_rp_bad_();     // only these two overlays' state is saved
+            hle_rp_cmds++;
+        }
         assertf(size || cmd == 0, "HLE: invalid command %02lx in overlay %s", cmd_byte, rspq_overlay_ucodes[base]->name);
         if (vrsp_handlers[base] == ovl_t3d && cmd == 0) {
             // Runs of Tiny3D triangles are the bulk of the queue: take them in one go
 #ifdef HLE_TEST_PERF
             uint32_t c0 = TICKS_READ();
 #endif
-            vrsp_ptr += hle_t3d_tri_run(a, cmd_byte);
+            int run = hle_t3d_tri_run(a, cmd_byte);
+            vrsp_ptr += run;
+            if (__builtin_expect(hle_rp_on, 0)) hle_rp_cmds += run / 8;
 #ifdef HLE_TEST_PERF
             { extern uint32_t __hle_perf_cmd[16][64], __hle_perf_cnt[16][64]; __hle_perf_cmd[base][0] += TICKS_READ() - c0; __hle_perf_cnt[base][0]++; }
 #endif
@@ -2159,17 +2167,24 @@ uint32_t hle_vrsp_loaded_mask(void)
 }
 void hle_vrsp_state(hle_st_t *s, uint32_t ovl_mask, bool sig)
 {
-    HLE_ST(s, rspq_data.rdp_mode); HLE_ST(s, rspq_data.rdp_scissor_rect);
-    HLE_ST(s, rspq_data.rdp_fill_color); HLE_ST(s, rspq_data.rdp_target_bitdepth);
+    struct { rspq_rdp_mode_t mode; uint64_t scissor; uint32_t fill, bitdepth; } x;
+    memcpy(&x.mode, &rspq_data.rdp_mode, sizeof(x.mode)); x.scissor = rspq_data.rdp_scissor_rect;
+    x.fill = rspq_data.rdp_fill_color; x.bitdepth = rspq_data.rdp_target_bitdepth;
+    HLE_ST(s, x);
+    if (s->load) {
+        memcpy(&rspq_data.rdp_mode, &x.mode, sizeof(x.mode)); rspq_data.rdp_scissor_rect = x.scissor;
+        rspq_data.rdp_fill_color = x.fill; rspq_data.rdp_target_bitdepth = x.bitdepth;
+    }
     for (int i = 1; i < RSPQ_MAX_OVERLAYS; i++) {
         if (!(ovl_mask & (1u << i))) continue;
         // (only Tiny3D overlays are in the mask) the DMEM the port reads, segment table aside
-        uint32_t lo, hi; hle_t3d_dmem_range(&lo, &hi);
+        uint32_t lo, hi, lo2, hi2; hle_t3d_dmem_range(&lo, &hi, &lo2, &hi2);
         uint8_t *at = s->p;
         if (s->load) hle_t3d_seg_keep(vrsp_imgs[i], false);
         hle_st(s, vrsp_imgs[i] + lo, hi - lo);
         if (s->load) hle_t3d_seg_keep(vrsp_imgs[i], true);
         else hle_t3d_seg_mask(at, lo);          // kept as it is on load
+        hle_st(s, vrsp_imgs[i] + lo2, hi2 - lo2);
     }
     if (!sig) {
         HLE_ST(s, vrsp_cur_ovl);

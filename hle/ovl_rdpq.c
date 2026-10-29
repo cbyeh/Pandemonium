@@ -17,17 +17,30 @@
 #define SOM_HI  (((uint32_t*)&MODE.other_modes)[0])
 #define SOM_LO  (((uint32_t*)&MODE.other_modes)[1])
 
-// Saved-state fields that only this overlay uses live in C statics.
-static uint32_t address_table[RDPQ_ADDRESS_TABLE_SIZE];
-static uint16_t autotmem_addr, autotmem_prev, autotmem_limit;
-static uint8_t autotmem_enabled;
-static uint32_t prim_color_ex, prim_color_rgba;
-static rspq_rdp_mode_t mode_stack[3];
+// Saved-state fields that only this overlay uses live in C statics, in one struct so a
+// block replay (replay.c) saves and compares them in one piece.
+static struct {
+    uint32_t address_table[RDPQ_ADDRESS_TABLE_SIZE];
+    uint16_t autotmem_addr, autotmem_prev, autotmem_limit;
+    uint8_t autotmem_enabled;
+    uint32_t prim_color_ex, prim_color_rgba;
+    rspq_rdp_mode_t mode_stack[3];
+    int staged;
+} rs;
+// (not in it: every triangle sends its data first)
 static struct { uint32_t xy, z, rgba, st, w, inv_w; } tri_data[3];
+#define address_table    rs.address_table
+#define autotmem_addr    rs.autotmem_addr
+#define autotmem_prev    rs.autotmem_prev
+#define autotmem_limit   rs.autotmem_limit
+#define autotmem_enabled rs.autotmem_enabled
+#define prim_color_ex    rs.prim_color_ex
+#define prim_color_rgba  rs.prim_color_rgba
+#define mode_stack       rs.mode_stack
+#define staged           rs.staged
 
 // RDPQ_CMD_STAGING + RDPQ_Write8/16 + RDPQ_Finalize
 static uint32_t staging[44];
-static int staged;
 
 static void write8(uint32_t a0, uint32_t a1) { staging[staged++] = a0; staging[staged++] = a1; }
 static void write16(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
@@ -444,11 +457,8 @@ void ovl_rdpq(uint32_t cmd, const uint32_t *a, int n)
 
 // ---- Block replay: this overlay's state ----
 
+uint32_t hle_rdpq_state_size(void) { return sizeof(rs); }
 void hle_rdpq_state(hle_st_t *s)
 {
-    HLE_ST(s, address_table);
-    HLE_ST(s, autotmem_addr); HLE_ST(s, autotmem_prev); HLE_ST(s, autotmem_limit); HLE_ST(s, autotmem_enabled);
-    HLE_ST(s, prim_color_ex); HLE_ST(s, prim_color_rgba);
-    HLE_ST(s, mode_stack); HLE_ST(s, tri_data);
-    HLE_ST(s, staged);
+    HLE_ST(s, rs);
 }

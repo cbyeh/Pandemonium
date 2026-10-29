@@ -146,10 +146,29 @@ void hle_warn_once(const char *key, const char *fmt, ...);
 
 /** State snapshot cursor: copies a variable out (save) or back in (load). */
 typedef struct { uint8_t *p; bool load; } hle_st_t;
+/** Each field starts on a word in the buffer (padded with zeros), so whole states compare by words. */
+typedef uint32_t __attribute__((may_alias)) hle_u32a_t;   // copies of any type, word by word
 static inline void hle_st(hle_st_t *s, void *var, int n)
 {
-    if (s->load) memcpy(var, s->p, n); else memcpy(s->p, var, n);
-    s->p += n;
+    if (!(n & 3) && !((uintptr_t)var & 3)) {
+        hle_u32a_t *v = var, *b = (hle_u32a_t*)s->p;
+        if (s->load) for (int i = 0; i < n / 4; i++) v[i] = b[i];
+        else for (int i = 0; i < n / 4; i++) b[i] = v[i];
+    } else if (s->load) memcpy(var, s->p, n);
+    else { memcpy(s->p, var, n); for (int i = n; i & 3; i++) s->p[i] = 0; }
+    s->p += (n + 3) & ~3;
+}
+/** Word-wise equality of two word-aligned states of `len` bytes (a multiple of 4). */
+static inline bool hle_st_equal(const void *a, const void *b, uint32_t len)
+{
+    const hle_u32a_t *x = a, *y = b;
+    uint32_t diff = 0;
+    for (uint32_t i = 0; i < len / 4; i += 4) {
+        if (i + 4 <= len / 4) diff |= (x[i] ^ y[i]) | (x[i+1] ^ y[i+1]) | (x[i+2] ^ y[i+2]) | (x[i+3] ^ y[i+3]);
+        else for (uint32_t j = i; j < len / 4; j++) diff |= x[j] ^ y[j];
+        if (diff) return false;
+    }
+    return true;
 }
 #define HLE_ST(s, v) hle_st((s), &(v), sizeof(v))
 
@@ -160,6 +179,7 @@ void hle_replay_block_new(const void *cmds);
 void hle_replay_block_gone(const void *cmds);
 // hooks: what a block being recorded does (one flag test otherwise)
 extern bool hle_rp_on;
+extern uint32_t hle_rp_cmds;
 void hle_rp_bad_(void);
 void hle_rp_slot_written_(int k);
 void hle_rp_pstack_(int slot);
@@ -180,7 +200,7 @@ void hle_t3d_state(hle_st_t *s, bool sig);
 uint32_t hle_t3d_slot_io(uint8_t *buf, int k, bool load);
 uint32_t hle_t3d_slot_addr(int k);
 uint32_t hle_t3d_resolve(uint32_t raw);
-void hle_t3d_dmem_range(uint32_t *lo, uint32_t *hi);
+void hle_t3d_dmem_range(uint32_t *lo, uint32_t *hi, uint32_t *lo2, uint32_t *hi2);
 /** Tiny3D's segment table (left out of signatures: per-frame buffers swap through it). */
 void hle_t3d_seg_mask(uint8_t *state_copy, uint32_t state_start);
 void hle_t3d_seg_keep(uint8_t *img, bool restore);
@@ -188,6 +208,8 @@ void hle_t3d_mtx_conv_to(void *dst, uint32_t src);
 void hle_t3d_zvalid_min(int v);
 uint32_t hle_vc_gen(void);
 void hle_rdpq_state(hle_st_t *s);
+uint32_t hle_rdpq_state_size(void);
+uint32_t hle_t3d_state_size(void);
 void hle_vrdp_state(hle_st_t *s, bool sig);
 void hle_vrdp_counters(uint32_t *epoch, uint32_t *proj_ver, uint32_t *vp_ver);
 void hle_vrdp_counters_set(uint32_t epoch, uint32_t proj_ver, uint32_t vp_ver);
