@@ -4,10 +4,11 @@
  * A block (rspq_block_begin/end, recorded once at load) is translated every time
  * it runs, but its output only depends on its commands (static), the state it
  * starts from and the matrices it reads (rewritten every frame). So the first
- * run with a given starting state is recorded: the display list it emitted, the
- * scratch memory it used (relocated on replay), where each matrix came from (re-
- * converted on replay) and the state it left. A later run starting from the same
- * state copies all that instead of interpreting the block.
+ * run with a given starting state is recorded: the display list it emitted (kept
+ * in RDRAM, reaching this run's scratch through GBI segment RP_SEG), the scratch
+ * it used, where each matrix came from and the state it left. A later run from
+ * the same state rebuilds only the matrices and calls the list with G_DL.
+ * Blocks under RP_MIN_CMDS commands are cheaper to run than to replay.
  *
  * Anything a recording can't reproduce makes the block unreplayable for that
  * run: CPU fog, vertices or strips outside models (rewritten every frame),
@@ -179,14 +180,10 @@ static uint32_t rp_signature(uint8_t *out, uint32_t ovl_mask)
 static uint32_t rp_exit_io(uint8_t *buf, bool load, uint32_t ovl_mask)
 {
     hle_st_t s = { buf, load };
-    uint32_t o[4];
-    o[0] = s.p - buf; hle_t3d_state(&s, false);
-    o[1] = s.p - buf; hle_rdpq_state(&s);
-    o[2] = s.p - buf; hle_vrdp_state(&s, false);
-    o[3] = s.p - buf; hle_vrsp_state(&s, ovl_mask, false);
-#ifdef HLE_TEST_REPLAY_CHECK
-    static bool shown; if (!shown) { shown = true; debugf("[replay] exit layout (after the 24 counter bytes): t3d %lu rdpq %lu vrdp %lu vrsp %lu end %lu\n", o[0], o[1], o[2], o[3], (unsigned long)(s.p - buf)); }
-#endif
+    hle_t3d_state(&s, false);
+    hle_rdpq_state(&s);
+    hle_vrdp_state(&s, false);
+    hle_vrsp_state(&s, ovl_mask, false);
     return s.p - buf;
 }
 
@@ -298,13 +295,8 @@ static void rp_end(void)
                 if (bad_cmd >= 0) debugf("[replay]   was %016llx now %016llx\n", r->dl[bad_cmd], rp.dl0[bad_cmd]);
                 if (ediff >= 0) {
                     int o = ediff & ~3;
-                    debugf("[replay]   exit at %d: was %08lx %08lx now %08lx %08lx (t3d %u rdpq %u)\n", o, *(uint32_t*)(r->exit + o), *(uint32_t*)(r->exit + o + 4),
-                           *(uint32_t*)(rp_exit_buf + o), *(uint32_t*)(rp_exit_buf + o + 4), (unsigned)hle_t3d_state_size(), (unsigned)hle_rdpq_state_size());
-                    const uint32_t *we = (const uint32_t*)r->exit, *ne = (const uint32_t*)rp_exit_buf;
-                    for (int w = (o - 40) / 4; w < (o + 24) / 4; w += 4)
-                        debugf("[replay]   @%d was %08lx %08lx %08lx %08lx now %08lx %08lx %08lx %08lx\n", w * 4, we[w], we[w+1], we[w+2], we[w+3], ne[w], ne[w+1], ne[w+2], ne[w+3]);
-                    debugf("[replay]   masks %lx/%lx, extra was %lx %lx %lx %lx %lx %lx now %lx %lx %lx %lx %lx %lx\n", r->ovl_mask, rp.ovl_mask,
-                           we[0], we[1], we[2], we[3], we[4], we[5], ne[0], ne[1], ne[2], ne[3], ne[4], ne[5]);
+                    debugf("[replay]   state left, at %d: was %08lx %08lx now %08lx %08lx\n", o, *(uint32_t*)(r->exit + o), *(uint32_t*)(r->exit + o + 4),
+                           *(uint32_t*)(rp_exit_buf + o), *(uint32_t*)(rp_exit_buf + o + 4));
                 }
             }
         }
@@ -374,7 +366,7 @@ static void rp_end(void)
 
 // ---- Replay ----
 
-static bool rp_replay(rp_rec_t *r)
+__attribute__((unused)) static bool rp_replay(rp_rec_t *r)
 {
 #ifdef HLE_TEST_PERF
     uint32_t _t = TICKS_READ();
@@ -386,13 +378,8 @@ static bool rp_replay(rp_rec_t *r)
         hle_t3d_mtx_conv_to(sc + r->mtx[m].off, src);
     }
     RP_MARK(2);
-#ifdef HLE_REPLAY_INLINE   // test aid: the list copied into the task instead of called
-    { uint32_t s0 = PhysicalAddr(sc); uint64_t *d = __gbi_ptr;
-      memcpy(d, r->dl, r->ncmds * 8); for (uint32_t i = 0; i < r->nreloc; i++) d[r->reloc[i]] += s0; __gbi_ptr += r->ncmds; }
-#else
     if (r->nreloc) GBI_SEGMENT(RP_SEG, PhysicalAddr(sc));
     gbi((uint32_t)G_DL << 24, PhysicalAddr(r->gdl));
-#endif
     RP_MARK(3);
 
     // the state the block left
@@ -423,9 +410,6 @@ bool hle_replay_call(uint32_t target, int slot)
     rp_block_t *b = rp_find(target, false);
     if (!b || b->small) return false;
     hle_t3d_flush();
-#ifdef HLE_REPLAY_FLUSH_ONLY    // test aid: the entry flush alone
-    return false;
-#endif
     if (rp_ndead) rp_collect();
 
     // the biggest recording must fit without splitting the task while checking
@@ -434,10 +418,7 @@ bool hle_replay_call(uint32_t target, int slot)
         if (b->rec[i]->ncmds > need_cmds) need_cmds = b->rec[i]->ncmds;
         if (b->rec[i]->scratch_bytes > need_sc) need_sc = b->rec[i]->scratch_bytes;
     }
-#ifdef HLE_REPLAY_NO_RESERVE  // test aid
-    need_cmds = 0;
-#endif
-#if defined(HLE_TEST_REPLAY_CHECK) || defined(HLE_REPLAY_INLINE)
+#ifdef HLE_TEST_REPLAY_CHECK
     if (need_cmds) gbi_reserve(need_cmds + 8, need_sc + 64);
 #else
     if (need_cmds) gbi_reserve(8, need_sc + 64);     // a replay is a segment and a call

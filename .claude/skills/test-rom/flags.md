@@ -34,6 +34,10 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Rig:** `HLE_LOG_RIG` (Shadowborne, per move: worst leg reach, neck and torso stretch as drawn, the head's nearest pass of its own body).
 - **Hits:** `HLE_LOG_MOVES` (`[move]` then `[hit]`), `HLE_LOG_HURTBOX`, `HLE_LOG_HITVOL`, `HLE_FK_HITLOG`, `HLE_TEST_ARC_REACH`, `HLE_LOG_JUMPS`. Sound timing: `HLE_LOG_SFX` with `HLE_LOG_MOVES`.
 - **Same pixels after a rewrite:** `HLE_TEST_T3D_EXACT`.
+- **HLE block replay** (hle/replay.c): `HLE_TEST_REPLAY_CHECK` runs every replayable block normally and compares it with its recording (display list, scratch, matrix sources, state left): `[hle] replay: ... check N ok M BAD` with `HLE_TEST_PERF`, `[replay] MISMATCH` on any difference. `HLE_NO_REPLAY` interprets every block (the reference for pixel comparisons). `HLE_TEST_VCACHE_VERIFY` checksums the source of every vertex/strip cache hit (`[vcache] CHANGED` if data cached as static was rewritten). With `HLE_TEST_PERF`: replay counts, replay time by part, time inside recorded blocks.
+- **Memory used before it's set:** `HLE_TEST_DIRTY_HEAP` fills freed heap with garbage at frames 400 and 900; compare shots with a clean run (it found the Fallen Warrior's unset matrix).
+- **Emulated CPU cost:** `HLE_TEST_MEMBENCH` (Mupen charges every instruction the same, cached or not). `HLE_LOG_SIDECAM` logs boss/player positions with `HLE_DUMMY_SIDECAM`.
+- **Compare like with like:** live fights diverge between builds (AI, timing): compare pixels on frozen scenes (`HLE_TEST_FREEZE_BOSS`, best with `HLE_DUMMY_SIDECAM`) and fps over long live runs.
 - **Logs only:** one huge shot frame (`run.sh rom 40000`) plus `TIMEOUT`; batch in the background, then `grep 'IS64: \[dummy\]'`.
 
 ## Gotchas

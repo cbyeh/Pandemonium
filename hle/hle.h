@@ -208,8 +208,6 @@ void hle_t3d_mtx_conv_to(void *dst, uint32_t src);
 void hle_t3d_zvalid_min(int v);
 uint32_t hle_vc_gen(void);
 void hle_rdpq_state(hle_st_t *s);
-uint32_t hle_rdpq_state_size(void);
-uint32_t hle_t3d_state_size(void);
 void hle_vrdp_state(hle_st_t *s, bool sig);
 void hle_vrdp_counters(uint32_t *epoch, uint32_t *proj_ver, uint32_t *vp_ver);
 void hle_vrdp_counters_set(uint32_t epoch, uint32_t proj_ver, uint32_t vp_ver);

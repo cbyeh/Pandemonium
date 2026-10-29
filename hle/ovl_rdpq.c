@@ -457,7 +457,6 @@ void ovl_rdpq(uint32_t cmd, const uint32_t *a, int n)
 
 // ---- Block replay: this overlay's state ----
 
-uint32_t hle_rdpq_state_size(void) { return sizeof(rs); }
 void hle_rdpq_state(hle_st_t *s)
 {
     HLE_ST(s, rs);

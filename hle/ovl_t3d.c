@@ -892,7 +892,6 @@ void hle_t3d_state(hle_st_t *s, bool sig)
     if (s->load) { tri_pending = x.pend; gbi_epoch = gsp_epoch + x.rel; }
 }
 /** A slot the block set: the address it gave, resolved again on replay (segments may point elsewhere). */
-uint32_t hle_t3d_state_size(void) { return sizeof(rs); }
 uint32_t hle_t3d_slot_io(uint8_t *buf, int k, bool load)
 {
     struct { uint32_t raw; bool mul; } v = { slot_raw[k], slots[k].mul };
