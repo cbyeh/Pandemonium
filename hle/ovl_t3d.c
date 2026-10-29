@@ -8,6 +8,7 @@
  * (triangles, vertex loads, matrices) are kept as cheap as possible.
  */
 #include <libdragon.h>
+#include <malloc.h>
 #include <t3d/t3d.h>
 #include <t3d/t3dmodel.h>
 #include "rsp/rsp_tiny3d.h"
@@ -361,17 +362,19 @@ __attribute__((always_inline)) static inline void vert_copy(uint32_t *o, const u
 
 // ---- Converted-vertex cache ----
 //
-// Model vertices (t3d_model_load) never change, so without CPU fog their G_VTX copy
-// only depends on the UV offset and ambient: it is made once and reused. Buffers
-// rewritten every frame (cloth, trails, chains) live outside models and are copied
-// each time. The pool is only reused between tasks: the plugin reads a task's
+// Model data (t3d_model_load) never changes, so without CPU fog a G_VTX copy of its
+// vertices only depends on the UV offset and ambient, and a strip's triangles on
+// nothing: both are made once and reused (strips as a display list called with G_DL).
+// Buffers rewritten every frame (cloth, trails, chains) live outside models and are
+// converted each time. The pool is only reused between tasks: the plugin reads a task's
 // vertices when it is submitted.
 
-#define VC_BYTES    (96 * 1024)
+#define VC_BYTES    (128 * 1024)
 #define VC_SLOTS    1024                // power of 2
 #define VC_MODELS   64
 
-typedef struct { uint32_t src, uv, amb, out; uint16_t count; } vc_ent_t;
+typedef struct { uint32_t src, uv, amb, out, bytes; } vc_ent_t;    // strips: uv = amb = VC_STRIP
+#define VC_STRIP    0xFFFFFFFE
 static vc_ent_t vc_tab[VC_SLOTS];
 static uint8_t *vc_pool;
 static uint32_t vc_used, vc_task;
@@ -379,7 +382,7 @@ static bool vc_reset_pending;
 static struct { uint32_t lo, hi; } vc_models[VC_MODELS];
 static int vc_nmodels;
 #ifdef HLE_TEST_PERF
-uint32_t hle_vc_hits, hle_vc_misses, hle_vc_resets, hle_vc_peak;
+uint32_t hle_vc_hits, hle_vc_misses, hle_vc_resets, hle_vc_peak, hle_vc_strip_hits;
 #endif
 
 static void vc_reset_later(void)
@@ -389,9 +392,9 @@ static void vc_reset_later(void)
     vc_task = gsp_tasks;
 }
 
-static void hle_vcache_model(const void *verts, uint32_t bytes, bool add)
+static void hle_vcache_model(const void *data, uint32_t bytes, bool add)
 {
-    uint32_t lo = PhysicalAddr(verts), hi = lo + bytes;
+    uint32_t lo = PhysicalAddr(data), hi = lo + bytes;
     for (int i = 0; i < vc_nmodels; i++) {
         if (vc_models[i].lo != lo) continue;
         if (!add) { vc_models[i] = vc_models[--vc_nmodels]; vc_reset_later(); }
@@ -401,7 +404,7 @@ static void hle_vcache_model(const void *verts, uint32_t bytes, bool add)
 }
 
 /** The entry for this copy (out != 0 when cached), a free one to fill (out == 0), or NULL. */
-static vc_ent_t *vc_find(uint32_t src, int count, uint32_t uv, uint32_t amb)
+static vc_ent_t *vc_find(uint32_t src, uint32_t bytes, uint32_t uv, uint32_t amb)
 {
     if (vc_reset_pending && vc_task != gsp_tasks) { vc_used = 0; vc_reset_pending = false; }
     uint32_t h = ((src >> 4) * 2654435761u) >> 22;
@@ -410,12 +413,12 @@ static vc_ent_t *vc_find(uint32_t src, int count, uint32_t uv, uint32_t amb)
         if (!e->out) {
             if (vc_reset_pending) return NULL;      // pool full until the next task
             int i = 0;
-            while (i < vc_nmodels && (src < vc_models[i].lo || src + count * 16 > vc_models[i].hi)) i++;
+            while (i < vc_nmodels && (src < vc_models[i].lo || src + bytes > vc_models[i].hi)) i++;
             if (i == vc_nmodels) return NULL;
-            e->src = src; e->uv = uv; e->amb = amb; e->count = count;
+            e->src = src; e->uv = uv; e->amb = amb; e->bytes = bytes;
             return e;
         }
-        if (e->src == src && e->uv == uv && e->amb == amb && e->count == count) return e;
+        if (e->src == src && e->uv == uv && e->amb == amb && e->bytes == bytes) return e;
     }
     return NULL;
 }
@@ -423,6 +426,7 @@ static vc_ent_t *vc_find(uint32_t src, int count, uint32_t uv, uint32_t amb)
 static uint32_t *vc_alloc(int bytes)
 {
     if (!vc_pool) vc_pool = malloc_uncached(VC_BYTES);
+    bytes = (bytes + 15) & ~15;
     if (!vc_pool || vc_used + bytes > VC_BYTES) {
 #ifdef HLE_TEST_PERF
         hle_vc_resets++;
@@ -492,7 +496,7 @@ static void vert_load(const uint32_t *a)
 #ifdef HLE_NO_VCACHE    // test aid: copy every load
     vc_ent_t *e = NULL;
 #else
-    vc_ent_t *e = fog ? NULL : vc_find(PhysicalAddr(src), count, uv_ofs, scale ? amb : 0xFFFFFFFF);
+    vc_ent_t *e = fog ? NULL : vc_find(PhysicalAddr(src), count * sizeof(gbi_vtx_t), uv_ofs, scale ? amb : 0xFFFFFFFF);
 #endif
     if (e && e->out) {
         t3d_begin(2, 0);
@@ -512,7 +516,7 @@ static void vert_load(const uint32_t *a)
         hle_vc_misses++;
 #endif
     } else {
-        if (e) e->src = 0, e->count = 0;    // the slot stays free (out == 0)
+        if (e) e->src = 0;                  // the slot stays free (out == 0)
         out = gbi_alloc(count * sizeof(gbi_vtx_t));
     }
     const uint32_t *in = (const uint32_t*)src;
@@ -597,7 +601,20 @@ static void tri_strip(uint32_t a0, uint32_t a1)
 {
     int count = ((a1 & 0xFFFF) + 1) / 2;
     const uint16_t *e = hle_rdram(a0 & 0xFFFFFF);
+#ifdef HLE_NO_VCACHE
+    vc_ent_t *ce = NULL;
+#else
+    vc_ent_t *ce = vc_find(a0 & 0xFFFFFF, count * 2, VC_STRIP, VC_STRIP);
+#endif
     t3d_begin(count / 2 + 2, 0);
+    if (ce && ce->out) {
+        gbi((uint32_t)G_DL << 24, ce->out);
+#ifdef HLE_TEST_PERF
+        hle_vc_strip_hits++;
+#endif
+        return;
+    }
+    uint64_t *dl_start = __gbi_ptr;
     // Literal port of the STRIP_LOOP: strips alternate winding, and an index
     // with the MSB set restarts a new strip.
 #ifdef HLE_TEST_T3D_EXACT   // test aid: the strip walked as it was: the same triangles, in order
@@ -644,6 +661,20 @@ static void tri_strip(uint32_t a0, uint32_t a1)
         if (nref < 4096 && (ngot - off != nref || memcmp(got + off, ref, nref * 4))) hle_exact_bad++;
     }
 #endif
+    if (ce) {   // move what went out into the pool, as a list called from here
+        hle_t3d_flush();
+        int n = __gbi_ptr - dl_start;
+        uint64_t *dst = (uint64_t*)vc_alloc((n + 1) * 8);
+        if (!dst) { ce->src = 0; return; }
+        memcpy(dst, dl_start, n * 8);
+        dst[n] = (uint64_t)G_ENDDL << 56;
+        __gbi_ptr = dl_start;
+        ce->out = PhysicalAddr(dst);
+        gbi((uint32_t)G_DL << 24, ce->out);
+#ifdef HLE_TEST_PERF
+        hle_vc_misses++;
+#endif
+    }
 }
 
 static void tri_seq(uint32_t a0, uint32_t a1)
@@ -751,11 +782,11 @@ void __real_t3d_model_free(T3DModel *model);
 T3DModel *__wrap_t3d_model_load(const char *path)
 {
     T3DModel *m = __real_t3d_model_load(path);
-    hle_vcache_model(t3d_model_get_vertices(m), m->totalVertCount * 16, true);
+    hle_vcache_model(m, malloc_usable_size(m), true);      // vertices and strip indices
     return m;
 }
 void __wrap_t3d_model_free(T3DModel *model)
 {
-    hle_vcache_model(t3d_model_get_vertices(model), model->totalVertCount * 16, false);
+    hle_vcache_model(model, 0, false);
     __real_t3d_model_free(model);
 }
