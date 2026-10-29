@@ -42,7 +42,7 @@ enum {
 };
 static const char *ANIM_NAMES[FKA_COUNT] = {
     "Idle", "Walk1", "Run", "Roll", "Attack1", "Attack2", "Attack3",
-    "AttackCharged", "SkillCleave", "SkillHalfmoon", "Death", "SkillBackflip", "Knockdown", "WalkBackwards",
+    "AttackCharged", "SkillCleave", "SkillHalfmoon", "Death", "SkillBackflip", "KnockdownRise", "WalkBackwards",
 };
 static const bool ANIM_LOOP[FKA_COUNT] = { true, true, true, [FKA_BACKSTEP] = true };
 

@@ -12,7 +12,7 @@
 #ifndef HLE_STRIKE_EVERY
 #define HLE_STRIKE_EVERY 24     // frames between presses (fewer chains the combo)
 #endif
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS)
 #include "camera_controller.h"
 #include "joypad_utility.h"
 #include "character_skin.h"
@@ -931,6 +931,32 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         customCamPos = (T3DVec3){{ boss->pos[0] + 60.0f, boss->pos[1] + 30.0f, boss->pos[2] + 70.0f }};
         customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + 22.0f, boss->pos[2] }};
         camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+        return;
+    }
+#endif
+#ifdef HLE_TEST_GETUP
+    // The knight knocked down twice (with HLE_TEST_FREEZE_BOSS), seen from the side: the
+    // first time left to get up on its own at 5 s, the second broken away by moving at 2 s
+    {
+        extern float deltaTime;
+        static int start = -1;
+        static float tm, kdAt = -1.0f;
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) start = frame;
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        float prev = tm;
+        tm += deltaTime;
+        cameraLockOnActive = false;
+        if (prev < 0.5f && tm >= 0.5f) { character.pos[0] = boss->pos[0] + 150.0f; character.pos[2] = boss->pos[2]; }
+        if ((prev < 1.0f && tm >= 1.0f) || (prev < 8.0f && tm >= 8.0f)) { character_apply_damage(25.0f); kdAt = tm; debugf("[getup] f%d knocked down\n", frame); }
+        if (tm >= 8.0f + 2.0f && tm < 8.0f + 3.0f) in->stick_y = 70;     // the breakaway: move
+        if ((int)(prev * 5) != (int)(tm * 5)) debugf("[getup] f%d t %.1f since %.1f state %d\n", frame, (double)tm, (double)(tm - kdAt), character_get_state());
+        customCamPos = (T3DVec3){{ character.pos[0] + 50.0f, character.pos[1] + 20.0f, character.pos[2] + 50.0f }};
+        customCamTarget = (T3DVec3){{ character.pos[0], character.pos[1] + 8.0f, character.pos[2] }};
+        camera_mode(CAMERA_CUSTOM);
         return;
     }
 #endif

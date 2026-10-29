@@ -2247,7 +2247,7 @@ static void switch_to_locomotion_animation(int targetAnim)
             skeleton_copy_pose_bones(character.skeletonBlend, character.skeleton);
             hasBlendSnapshot = true;
             startCrossfade   = true;
-            crossfadeDur     = 0.12f;
+            crossfadeDur     = (prevState == CHAR_STATE_KNOCKDOWN) ? 0.25f : 0.12f;   // up from the crouch, not a pop
         }
     } else {
         // locomotion -> locomotion crossfade (idle/walk/run/back variants)
@@ -2502,7 +2502,7 @@ void character_init(void)
         "Run",
         "RunEnd",
         "Roll",
-        "Knockdown",
+        "KnockdownRise",     // the stock "Knockdown" retimed (tools/compose_anims.py)
         "StrafeWalkLeft",
         "StrafeWalkRight",
         "StrafeRunLeft",
