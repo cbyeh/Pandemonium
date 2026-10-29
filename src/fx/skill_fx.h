@@ -12,7 +12,7 @@ typedef enum {
     SKILL_WAVE_BLADE,   // Crescent Cleave: tall, slightly curved light blade rising out of the ground
     SKILL_WAVE_CRESCENT,    // Moonlight Splitter (the Fallen Warrior): one flying crescent, tilted
     SKILL_WAVE_ORB,     // the Shackled Sun's embers: a small fire star
-    SKILL_WAVE_SLICES,  // the Fallen Warrior's Moon Blade: two long thin parallel slashes, apart (the player's is a solid X)
+    SKILL_WAVE_SLASH,   // the Fallen Warrior's Moon Blade: one long wide beam, tilted (two in turn make its criss-cross)
 } SkillWaveShape;
 
 void skill_fx_init(void);
@@ -53,6 +53,8 @@ void skill_fx_spawn_wave_hostile(SkillWaveShape shape, const float pos[3], const
                                  float damage, int hits, float hitInterval, float life, bool pillarOnEnd);
 // One crescent flying along `vel`, its blade turned `roll` from level (one hit)
 void skill_fx_spawn_crescent_hostile(const float pos[3], const float vel[3], float roll, float damage, float life);
+// The Fallen Warrior's Moon Blade beam: one long wide slash tilted `roll` (radians) about its flight
+void skill_fx_spawn_slash_hostile(const float pos[3], const float vel[3], float roll, float damage, float life);
 
 // An ember flying along `vel` (one hit); `homing` > 0 turns it toward the player (rad/s, roughly)
 // until it is close, then it flies straight: dodge it late

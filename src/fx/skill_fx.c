@@ -118,6 +118,13 @@ void skill_fx_spawn_crescent_hostile(const float pos[3], const float vel[3], flo
     s_spawnRoll = 0.0f;
 }
 
+void skill_fx_spawn_slash_hostile(const float pos[3], const float vel[3], float roll, float damage, float life)
+{
+    s_spawnRoll = roll;
+    skill_fx_spawn_wave_hostile(SKILL_WAVE_SLASH, pos, vel, damage, 1, 0.0f, life, false);
+    s_spawnRoll = 0.0f;
+}
+
 void skill_fx_spawn_pillar_hostile(const float pos[3])
 {
     s_spawnHostile = true;
@@ -291,23 +298,15 @@ static void update_arc_hit(SkillFx *f, Boss *b)
     screen_shake_set_shake_mag(14.0f);
 }
 
-// The Fallen Warrior's slices: two long, thin parallel slashes on one diagonal, side by side like
-// claw marks, a clear gap between them; SLICE_L each way (60 long, longer than the player's X arms
-// of 44), wide across the slash, as drawn and as hit. Each is SLICE_GAP from the path, under the
-// player's body (8 round) + SLICE_R: one aimed at the player lands, wherever between them they stand
-#define SLICE_L   30.0f
-#define SLICE_GAP 7.0f      // each slice's axis this far from the path, across the slash (14 apart: a gap shows)
-#define SLICE_R   3.5f      // hit; drawn up to 3.7 wide each side at its middle, tapering to its tips
-static void slice_ends(const SkillFx *f, const float d[3], const float sd[3], const float u[3], float ends[2][2][3])
+// The Fallen Warrior's Moon Blade beam: one long slash through its path, tilted f->yaw about the
+// flight, SLASH_L each way (60 long, longer than the player's X arms), wide across itself; hit
+// along it, SLASH_R round, as drawn
+#define SLASH_L   30.0f
+#define SLASH_R   3.5f      // hit; drawn up to 3.7 wide each side at its middle, tapering to its tips
+static void slash_axis(const SkillFx *f, const float sd[3], const float u[3], float e[3], float n[3])
 {
-    (void)d;
-    for (int k = 0; k < 2; k++) {
-        float side = (k ? 1.0f : -1.0f) * SLICE_GAP * f->scale;
-        for (int m = 0; m < 3; m++) {
-            float e = (sd[m] + u[m]) * 0.7071f, n = (sd[m] - u[m]) * 0.7071f, c = f->pos[m] + n * side;
-            ends[k][0][m] = c + e * SLICE_L * f->scale; ends[k][1][m] = c - e * SLICE_L * f->scale;
-        }
-    }
+    float ca = cosf(f->yaw), sa = sinf(f->yaw);
+    for (int m = 0; m < 3; m++) { e[m] = sd[m] * ca + u[m] * sa; n[m] = u[m] * ca - sd[m] * sa; }
 }
 
 static void update_wave_hit(SkillFx *f, Boss *b, float dt)
@@ -326,18 +325,17 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
         r = (f->shape == SKILL_WAVE_ORB ? 5.0f : f->shape == SKILL_WAVE_CRESCENT ? 14.0f : f->hostile ? 12.0f : 7.5f) * f->scale;     // the player's X is drawn 15 long (hit as drawn)
     }
     if (f->hostile) {
-        if (f->shape == SKILL_WAVE_SLICES) {
-            // Each slash as drawn (draw_xwave): a thin blade capsule
-            float d[3], sd[3], u[3], pa[3], pb[3], ends[2][2][3];
+        if (f->shape == SKILL_WAVE_SLASH) {
+            // The beam as drawn (draw_xwave): a capsule along it
+            float d[3], sd[3], u[3], e[3], n[3], pa[3], pb[3], ea[3], eb[3];
             dir_basis(f->vel, d, sd, u);
-            slice_ends(f, d, sd, u, ends);
+            slash_axis(f, sd, u, e, n);
             for (int m = 0; m < 3; m++) {
+                ea[m] = f->pos[m] + e[m] * SLASH_L * f->scale; eb[m] = f->pos[m] - e[m] * SLASH_L * f->scale;
                 pa[m] = character.pos[m] + character.capsuleCollider.localCapA.v[m];
                 pb[m] = character.pos[m] + character.capsuleCollider.localCapB.v[m];
             }
-            bool hit = false;
-            for (int k = 0; k < 2 && !hit; k++) hit = scu_capsule_vs_capsule_f(ends[k][0], ends[k][1], SLICE_R * f->scale, pa, pb, character.capsuleCollider.radius);
-            if (!hit) return;
+            if (!scu_capsule_vs_capsule_f(ea, eb, SLASH_R * f->scale, pa, pb, character.capsuleCollider.radius)) return;
         } else if (f->shape == SKILL_WAVE_CRESCENT) {
             // A crescent is one long thin blade (draw_xwave): hit along it, not with a ball round its
             // middle (that missed the ends of a level one and hit well clear of an upright one)
@@ -416,7 +414,7 @@ void skill_fx_update(float dt)
             update_arc_hit(f, b);
         }
         if (f->age >= f->life) {
-            if (f->type == FX_WAVE && (f->shape == SKILL_WAVE_X || f->shape == SKILL_WAVE_SLICES)) {
+            if (f->type == FX_WAVE && (f->shape == SKILL_WAVE_X || f->shape == SKILL_WAVE_SLASH)) {
                 f->type = FX_NONE;      // the Moon Blades' waves leave nothing where they end (no spark, no pillar)
             } else if (f->type == FX_WAVE && f->shape != SKILL_WAVE_BLADE) {
                 float ground[3] = { f->pos[0], f->pos[1], f->pos[2] };
@@ -438,7 +436,7 @@ void skill_fx_update(float dt)
 #define BUILD_MAX_VERTS 68              // < T3D vertex cache (70), even
 #define BUILD_MAX_TRIS  96
 
-static T3DMat4FP *s_identity;
+static T3DMat4FP *s_quarter;
 
 static T3DVertPacked *s_vb;
 static int s_nverts, s_ntris;
@@ -468,7 +466,9 @@ static int build_vert(const float p[3], uint32_t rgba)
 {
     int vi = s_nverts++;
     T3DVertPacked *v = &s_vb[vi >> 1];
-    int16_t x = (int16_t)p[0], y = (int16_t)p[1], z = (int16_t)p[2];
+    // in quarter units (drawn through a 1/4 scale, draw_begin): whole units snapped a small
+    // effect's edges into teeth (the player's X). Arenas are well inside +-8191
+    int16_t x = (int16_t)lroundf(p[0] * 4.0f), y = (int16_t)lroundf(p[1] * 4.0f), z = (int16_t)lroundf(p[2] * 4.0f);
     if (vi & 1) { v->posB[0] = x; v->posB[1] = y; v->posB[2] = z; v->normB = s_norm; v->rgbaB = rgba; }
     else        { v->posA[0] = x; v->posA[1] = y; v->posA[2] = z; v->normA = s_norm; v->rgbaA = rgba; }
     return vi;
@@ -572,27 +572,24 @@ static void draw_xwave(const SkillFx *f)
     float d[3], s[3], u[3];
     dir_basis(f->vel, d, s, u);
     float a = fade(f, 0.1f, 0.3f);
-    if (f->shape == SKILL_WAVE_SLICES) {
-        // The Fallen Warrior's: two long parallel slashes, a gap between them, each wide across
-        // itself (it reads from behind) and bright down its middle, fading to its edges
-        float ends[2][2][3], n[3];
-        slice_ends(f, d, s, u, ends);
-        for (int c = 0; c < 3; c++) n[c] = (s[c] - u[c]) * 0.7071f;     // across the slash
-        for (int k = 0; k < 2; k++) {
-            for (int side = -1; side <= 1; side += 2) {
-                float outer[N][3], inner[N][3];
-                uint32_t co[N], ci[N];
-                for (int i = 0; i < N; i++) {
-                    float t = (float)i / (N - 1), bulge = 4.0f * t * (1.0f - t);
-                    for (int c = 0; c < 3; c++) {
-                        inner[i][c] = ends[k][0][c] + (ends[k][1][c] - ends[k][0][c]) * t + d[c] * bulge * 3.5f * f->scale;
-                        outer[i][c] = inner[i][c] + n[c] * side * (0.7f + bulge * 3.0f) * f->scale;
-                    }
-                    ci[i] = rgba(240, 252, 255, a);
-                    co[i] = rgba(90, 200, 255, a * 0.25f);
+    if (f->shape == SKILL_WAVE_SLASH) {
+        // The Fallen Warrior's beam: long, wide across itself (it reads from behind), bright down
+        // its middle and fading to its edges, curving forward a little
+        float e[3], n[3];
+        slash_axis(f, s, u, e, n);
+        for (int side = -1; side <= 1; side += 2) {
+            float outer[N][3], inner[N][3];
+            uint32_t co[N], ci[N];
+            for (int i = 0; i < N; i++) {
+                float t = -1.0f + 2.0f * i / (N - 1), bulge = 1.0f - t * t;
+                for (int c = 0; c < 3; c++) {
+                    inner[i][c] = f->pos[c] + e[c] * t * SLASH_L * f->scale + d[c] * bulge * 3.5f * f->scale;
+                    outer[i][c] = inner[i][c] + n[c] * side * (0.7f + bulge * 3.0f) * f->scale;
                 }
-                build_ribbon(outer, inner, co, ci, N);
+                ci[i] = rgba(240, 252, 255, a);
+                co[i] = rgba(90, 200, 255, a * 0.25f);
             }
+            build_ribbon(outer, inner, co, ci, N);
         }
         return;
     }
@@ -624,9 +621,9 @@ static void draw_xwave(const SkillFx *f)
                             outer[i][c] = inner[i][c] + n[c] * side * (0.8f + bulge * 3.5f) * XK;
                         }
                         // solid across the first arm where the second crosses it (no faded edge line)
-                        float solid = (!k && fabsf(t) < tc) ? 1.0f : 0.0f;
+                        bool solid = !k && fabsf(t) <= tc;
                         ci[i] = rgba(240, 252, 255, a);
-                        co[i] = solid > 0.0f ? ci[i] : rgba(90, 200, 255, a * 0.25f);
+                        co[i] = solid ? ci[i] : rgba(90, 200, 255, a * 0.25f);
                     }
                     build_ribbon(outer, inner, co, ci, N);
                 }
@@ -779,11 +776,12 @@ static void draw_crown(const SkillFx *f)
 
 static void draw_begin(void)
 {
-    if (!s_identity) {
-        s_identity = malloc_uncached(sizeof(T3DMat4FP));
+    if (!s_quarter) {
+        s_quarter = malloc_uncached(sizeof(T3DMat4FP));
         T3DMat4 id;
         t3d_mat4_identity(&id);
-        t3d_mat4_to_fixed(s_identity, &id);
+        id.m[0][0] = id.m[1][1] = id.m[2][2] = 0.25f;     // the vertices are in quarter units (build_vert)
+        t3d_mat4_to_fixed(s_quarter, &id);
         s_norm = t3d_vert_pack_normal(&(T3DVec3){{ 0, 0, 1 }});
     }
 
@@ -796,7 +794,7 @@ static void draw_begin(void)
     rdpq_mode_dithering(DITHER_NONE_BAYER);
     t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
     t3d_state_set_depth_offset(-0x20);
-    t3d_matrix_push(s_identity);
+    t3d_matrix_push(s_quarter);
 
     s_nverts = s_ntris = 0;
     s_vb = gpu_alloc(sizeof(T3DVertPacked) * (BUILD_MAX_VERTS / 2));

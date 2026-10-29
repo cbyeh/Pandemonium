@@ -97,6 +97,7 @@ static struct {
     float tiredW, breathPh; // the breathing pose's current weight, and its phase
     T3DBone spineKeep, headKeep;    // the clip's own pose of the bones posed this frame (bone_pose)
     int spineBone;
+    float beam2T, beam2O[3], beam2V[3], beam2Life;  // a Moon Blade cross's second beam, after the first (< 0: none)
 } s;
 
 // ---- Helpers ----
@@ -478,6 +479,7 @@ void fallen_knight_begin(Boss* boss)
     s.cdCleave = 5.0f; s.cdHalfmoon = 12.0f; s.cdMoonblade = 9.0f; s.cdRoll = 0.0f; s.cdSplitter = 6.0f; s.cdUpdown = 3.0f; s.cdTri = 14.0f; s.cdHoly = 20.0f; s.cdPlunge = 8.0f;
     s.enraged = false;
     s.bladeW = 0.0f;
+    s.beam2T = -1.0f;
     enter(FK_INTRO);
 }
 
@@ -567,6 +569,16 @@ static void halfmoon_update(Boss *b, float dt)
     if (s.t > 2.9f) recover(1.6f, false);
 }
 
+#define BEAM_GAP 0.15f      // between a Moon Blade cross's two beams (58 a second: ~9 apart along their path)
+// A cut for each beam of a cross, as it leaves: Attack1's diagonal for the first, Attack2's rising
+// cut, the other diagonal, for the second (Attack3's overhead is vertical: it matched neither);
+// begun just before the strike so the blade meets the beam, sped up to fit the 0.15 s between them
+static void beam_swing(int k)
+{
+    play(k ? FKA_ATTACK2 : FKA_ATTACK1, true);
+    t3d_anim_set_time(&s.anims[s.anim], WIN[k][0] - 0.05f);
+    t3d_anim_set_speed(&s.anims[s.anim], 1.4f);
+}
 static void moonblade_update(Boss *b, float dt)
 {
     // leap high and rain five crimson crosses on the player
@@ -590,15 +602,14 @@ static void moonblade_update(Boss *b, float dt)
         float len = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
         if (len < 1.0f) len = 1.0f;
         const float SPEED = 58.0f;
-        skill_fx_spawn_wave_hostile(SKILL_WAVE_SLICES, o, (float[3]){ d[0] / len * SPEED, d[1] / len * SPEED, d[2] / len * SPEED },
-                                    FK_FELT(16.0f), 1, 0.0f, len / SPEED, s.step == 5);
+        // Each cross is two beams, tilted across each other, the second loosed BEAM_GAP after the
+        // first along the same path: they make the criss-cross, a gap between them (they never
+        // touch), 8 each (the cross's 16)
+        float v[3] = { d[0] / len * SPEED, d[1] / len * SPEED, d[2] / len * SPEED };
+        skill_fx_spawn_slash_hostile(o, v, 0.7854f, FK_FELT(8.0f), len / SPEED);
+        memcpy(s.beam2O, o, sizeof(o)); memcpy(s.beam2V, v, sizeof(v)); s.beam2Life = len / SPEED; s.beam2T = BEAM_GAP;
         swing_sfx();
-        // One full swing per cross, like the player's: cycle the three clips, sped up
-        // to fit the gap between waves
-        static const int swings[3] = { FKA_ATTACK1, FKA_ATTACK2, FKA_ATTACK3 };
-        play(swings[(s.step - 1) % 3], true);
-        t3d_anim_set_time(&s.anims[s.anim], WIN[(s.step - 1) % 3][0] - 0.1f);     // the strike with the wave (the gap cut the clip short)
-        t3d_anim_set_speed(&s.anims[s.anim], 1.2f);
+        beam_swing(0);      // its first beam's cut (the second's is played as that beam leaves)
         s.step++;
     }
     if (b->pos[1] <= s.groundY && s.velY < 0.0f) {
@@ -939,6 +950,11 @@ void fallen_knight_update(Boss* b, float dt)
 #ifdef HLE_TEST_DUMMY
     { extern void hle_open_tick(bool, float); hle_open_tick((s.state == FK_CHASE || s.state == FK_RECOVER), dt); }   // test aid: measure the openings
 #endif
+    // a Moon Blade cross's second beam, BEAM_GAP after its first (even once the leap has landed)
+    if (s.beam2T >= 0.0f && (s.beam2T -= dt) < 0.0f) {
+        skill_fx_spawn_slash_hostile(s.beam2O, s.beam2V, -0.7854f, FK_FELT(8.0f), s.beam2Life);
+        if (s.state == FK_MOONBLADE) { beam_swing(1); swing_sfx(); }      // its cut (not once it has landed)
+    }
     switch (s.state) {
     case FK_INTRO:
         // Falls from above in a crimson light, lands with a burst, then fights
