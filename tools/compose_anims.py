@@ -49,6 +49,15 @@ CLIPS = {
         ("Knockdown", 3.80, 3.85, 2.00),
         ("Knockdown", 3.85, 4.50, 1.00),
     ],
+    # The Fallen Warrior's stagger (stretched to its length): the same, the crouch held
+    # low on one knee
+    "KnockdownKneel": [
+        ("Knockdown", 0.00, 1.00, 1.00),
+        ("Knockdown", 1.00, 1.60, 0.35),
+        ("Knockdown", 2.75, 3.55, 0.65),
+        ("Knockdown", 3.55, 3.70, 2.00),
+        ("Knockdown", 3.70, 4.50, 1.00),
+    ],
 }
 
 def quat_z(a):
