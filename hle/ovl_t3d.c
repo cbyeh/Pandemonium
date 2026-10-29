@@ -56,7 +56,7 @@ static int gdepth;                  // GBI modelview stack depth (== cur_slot wh
 static uint32_t gbi_epoch = ~0u;    // gsp_epoch the GBI stack was built in
 static uint32_t stack_base = 0xFFFFFFFF;
 
-void hle_mat_from_fp(float out[4][4], const void *fp_)
+__attribute__((noinline)) void hle_mat_from_fp(float out[4][4], const void *fp_)
 {
     const int16_t *p = fp_;
     for (int c = 0; c < 4; c++, p += 8) {
@@ -151,7 +151,7 @@ static void sync_modelview(void)
     gbi_epoch = gsp_epoch;
 }
 
-static void matrix_stack(uint32_t a0, uint32_t a1)
+__attribute__((noinline)) static void matrix_stack(uint32_t a0, uint32_t a1)
 {
     int16_t advance = (int16_t)(a0 >> 8);
     if (stack_base == 0xFFFFFFFF) stack_base = VDMEM32(D(MATRIX_STACK_PTR));
@@ -222,7 +222,10 @@ static void fog_plane(int64_t k[4])
  * Refit only when the fog or projection values change.
  */
 static bool fog_dirty = true;   // the projection or a DMEM word changed since the last fit
-static uint32_t fog_gbi(void)
+static uint32_t fog_word;
+__attribute__((noinline)) static uint32_t fog_gbi_fit(void);
+static uint32_t fog_gbi_refit(float sl, float ofs, const float (*P)[4]);
+static inline uint32_t fog_gbi(void)
 {
 #ifdef HLE_FOG_CPU      // test aid: always the exact CPU fog
     return 0;
@@ -231,9 +234,12 @@ static uint32_t fog_gbi(void)
     extern bool hle_fog_ab_cpu;
     if (hle_fog_ab_cpu) return 0;
 #endif
+    return fog_dirty ? fog_gbi_fit() : fog_word;
+}
+static uint32_t fog_gbi_fit(void)
+{
     static float key[6];
-    static uint32_t word;
-    if (!fog_dirty) return word;
+    uint32_t word = fog_word;
     fog_dirty = false;
     float sl = (int32_t)(((uint32_t)VDMEM16(D(SCREEN_SCALE) + 6) << 16) | VDMEM16(D(SCREEN_SCALE) + 14)) / 65536.0f;
     float ofs = (int16_t)VDMEM16(D(SCREEN_OFFSET) + 6) + 32768;
@@ -241,7 +247,12 @@ static uint32_t fog_gbi(void)
     float now[6] = { sl, ofs, P[2][2], P[3][2], P[2][3], P[3][3] };
     if (!memcmp(key, now, sizeof(now))) return word;
     memcpy(key, now, sizeof(now));
-    word = 0;
+    return fog_word = fog_gbi_refit(sl, ofs, P);
+}
+/** The G_FOG closest to the current Tiny3D fog (0 = keep CPU fog). */
+static uint32_t fog_gbi_refit(float sl, float ofs, const float (*P)[4])
+{
+    uint32_t word = 0;
     if (P[0][2] != 0 || P[1][2] != 0 || P[0][3] != 0 || P[1][3] != 0) return 0;   // not a plain perspective
     // eye point at depth d: clip z = az*d + bz, clip w = aw*d + bw; Tiny3D alpha = sl*clip_z + ofs
     float az = -P[2][2], bz = P[3][2], aw = -P[2][3], bw = P[3][3];
@@ -304,7 +315,7 @@ static void t3d_begin(int ncmds, int nbytes)
     sync_state();
 }
 
-static void screen_size(const uint32_t *a)
+__attribute__((noinline)) static void screen_size(const uint32_t *a)
 {
     int guard = a[0] & 0xF; if (guard < 1) guard = 1;
     float norm_w = (a[3] & 0xFFFF) / 65535.0f;
@@ -443,44 +454,19 @@ static uint32_t *vc_alloc(int bytes)
 }
 
 #ifdef HLE_TEST_PERF
-uint32_t hle_vl_ticks[6], hle_vl_verts, hle_vl_amb, hle_vl_zrow, hle_vl_fog;     // test aid: vert_load's setup, t3d_begin, the loop, the G_VTX
+uint32_t hle_vl_ticks[10], hle_vl_verts, hle_vl_amb, hle_vl_zrow, hle_vl_fog;     // test aid: vert_load's setup, t3d_begin, the loop, the G_VTX
 #define VL_MARK(i) do { uint32_t _n = TICKS_READ(); hle_vl_ticks[i] += _n - _vl; _vl = _n; } while (0)
 #else
 #define VL_MARK(i) do {} while (0)
 #endif
-static void vert_load(const uint32_t *a)
+/** The copy for a vertex load not in the cache (kept apart so the hit path stays light). */
+__attribute__((noinline)) static void vert_load_copy(int dest, int count, const T3DVertPacked *src, vc_ent_t *e,
+                                                    uint32_t uv_ofs, bool scale, uint32_t amb, bool fog, const int64_t *k)
 {
 #ifdef HLE_TEST_PERF
     uint32_t _vl = TICKS_READ();
 #endif
-    int count = (a[0] & 0xFFFF) / 16;   // always an even number of vertices
-    int dest = vtx_index(a[2] & 0xFFFF);
-    if (dest + count > T3D_VERTEX_CACHE_SIZE) count = T3D_VERTEX_CACHE_SIZE - dest;
-    if (count <= 0) return;
-    const T3DVertPacked *src = hle_rdram(resolve_segment(a[1]));
-
-    uint32_t fx = VDMEM16(D(VERTEX_FX_FUNC));
-    if (fx != (RSP_T3D_CODE_LOOP_TRAIL & 0xFFF))
-        hle_warn_once("t3dfx", "Tiny3D vertex FX %04lx not supported", fx);
-    uint32_t uv_ofs = VDMEM32(D(UV_GEN_PARAMS));
     int16_t uv_s = uv_ofs >> 16, uv_t = uv_ofs;
-
-    bool unlit = VDMEM8(D(TRI_COMMAND)) & 1;
-    uint32_t amb = VDMEM32(D(COLOR_AMBIENT));
-    bool scale = !unlit && amb != 0xFFFFFFFF;
-    if (!unlit && VDMEM8(D(ACTIVE_LIGHT_SIZE)))
-        hle_warn_once("t3dlights", "Tiny3D directional/point lights are ignored (ambient only)");
-
-    VL_MARK(4);
-    bool fog = fog_enabled();
-    gsp_3d.fog = fog ? fog_gbi() : 0;
-    if (gsp_3d.fog) fog = false;
-    int64_t k[4] = {0};
-    if (fog) fog_plane(k);
-    VL_MARK(5);
-#ifdef HLE_TEST_PERF
-    hle_vl_fog += fog;
-#endif
     static uint8_t amb_tbl[4][256];     // c * ambient / 255 per channel
     static uint32_t amb_tbl_for = 0xFFFFFFFF;
     if (scale && amb != amb_tbl_for) {
@@ -491,21 +477,6 @@ static void vert_load(const uint32_t *a)
 #ifdef HLE_TEST_PERF
         hle_vl_amb++;
 #endif
-    }
-    VL_MARK(0);
-#ifdef HLE_NO_VCACHE    // test aid: copy every load
-    vc_ent_t *e = NULL;
-#else
-    vc_ent_t *e = fog ? NULL : vc_find(PhysicalAddr(src), count * sizeof(gbi_vtx_t), uv_ofs, scale ? amb : 0xFFFFFFFF);
-#endif
-    if (e && e->out) {
-        t3d_begin(2, 0);
-        GBI_VTX(dest, count, e->out);
-#ifdef HLE_TEST_PERF
-        hle_vc_hits++;
-        hle_vl_verts += count;
-#endif
-        return;
     }
     t3d_begin(2, count * sizeof(gbi_vtx_t));
     VL_MARK(1);
@@ -564,6 +535,59 @@ static void vert_load(const uint32_t *a)
 #endif
 }
 
+__attribute__((noinline)) static void vert_load(const uint32_t *a)
+{
+#ifdef HLE_TEST_PERF
+    uint32_t _vl = TICKS_READ();
+#endif
+    int count = (a[0] & 0xFFFF) / 16;   // always an even number of vertices
+    int dest = vtx_index(a[2] & 0xFFFF);
+    if (dest + count > T3D_VERTEX_CACHE_SIZE) count = T3D_VERTEX_CACHE_SIZE - dest;
+    if (count <= 0) return;
+    const T3DVertPacked *src = hle_rdram(resolve_segment(a[1]));
+
+    uint32_t fx = VDMEM16(D(VERTEX_FX_FUNC));
+    if (fx != (RSP_T3D_CODE_LOOP_TRAIL & 0xFFF))
+        hle_warn_once("t3dfx", "Tiny3D vertex FX %04lx not supported", fx);
+    uint32_t uv_ofs = VDMEM32(D(UV_GEN_PARAMS));
+
+    bool unlit = VDMEM8(D(TRI_COMMAND)) & 1;
+    uint32_t amb = VDMEM32(D(COLOR_AMBIENT));
+    bool scale = !unlit && amb != 0xFFFFFFFF;
+    if (!unlit && VDMEM8(D(ACTIVE_LIGHT_SIZE)))
+        hle_warn_once("t3dlights", "Tiny3D directional/point lights are ignored (ambient only)");
+
+    VL_MARK(4);
+    bool fog = fog_enabled();
+    gsp_3d.fog = fog ? fog_gbi() : 0;
+    if (gsp_3d.fog) fog = false;
+    int64_t k[4] = {0};
+    if (fog) fog_plane(k);
+    VL_MARK(5);
+#ifdef HLE_TEST_PERF
+    hle_vl_fog += fog;
+#endif
+    VL_MARK(0);
+#ifdef HLE_NO_VCACHE    // test aid: copy every load
+    vc_ent_t *e = NULL;
+#else
+    vc_ent_t *e = fog ? NULL : vc_find(PhysicalAddr(src), count * sizeof(gbi_vtx_t), uv_ofs, scale ? amb : 0xFFFFFFFF);
+#endif
+    VL_MARK(6);
+    if (e && e->out) {
+        t3d_begin(2, 0);
+        VL_MARK(7);
+        GBI_VTX(dest, count, e->out);
+        VL_MARK(8);
+#ifdef HLE_TEST_PERF
+        hle_vc_hits++;
+        hle_vl_verts += count;
+#endif
+        return;
+    }
+    vert_load_copy(dest, count, src, e, uv_ofs, scale, amb, fog, k);
+}
+
 // Triangles are paired into G_TRI2, also across commands: hle_t3d_flush() is
 // called before anything else reaches the display list.
 #ifdef HLE_TEST_T3D_EXACT
@@ -597,7 +621,7 @@ static inline void tri(uint32_t d0, uint32_t d1, uint32_t d2, bool flip)
     tri_idx(vtx_index(d0), vtx_index(d1), vtx_index(d2), flip);
 }
 
-static void tri_strip(uint32_t a0, uint32_t a1)
+__attribute__((noinline)) static void tri_strip(uint32_t a0, uint32_t a1)
 {
     int count = ((a1 & 0xFFFF) + 1) / 2;
     const uint16_t *e = hle_rdram(a0 & 0xFFFFFF);
@@ -677,7 +701,7 @@ static void tri_strip(uint32_t a0, uint32_t a1)
     }
 }
 
-static void tri_seq(uint32_t a0, uint32_t a1)
+__attribute__((noinline)) static void tri_seq(uint32_t a0, uint32_t a1)
 {
     uint32_t base = a0 & 0xFFFF, end = a1 & 0xFFFF;
     uint32_t is_quad = a1 >> 16;

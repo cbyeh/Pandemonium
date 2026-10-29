@@ -1338,6 +1338,9 @@ rspq_block_t* rspq_block_end(void)
     // Save pointer to rdpq block (if any)
     rspq_block->rdp_block = __rdpq_block_end();
 
+#ifdef HLE_TEST_PERF
+    { extern uint32_t hle_blk_addr[512]; extern int hle_blk_n; if (hle_blk_n < 512) hle_blk_addr[hle_blk_n++] = PhysicalAddr(rspq_block->cmds); }
+#endif
     // Return the created block
     rspq_block_t *b = rspq_block;
     rspq_block = NULL;
@@ -1923,22 +1926,32 @@ void vrsp_rdpq_send(const uint32_t *words, int nbytes)
 // ---- Command loop ----
 
 #ifdef HLE_TEST_PERF
-uint32_t __hle_perf_ticks, __hle_perf_cmd[16][64], __hle_perf_cnt[16][64];
+uint32_t hle_blk_addr[512], hle_blk_mask, hle_blk_t0, hle_blk_ticks, hle_blk_calls; int hle_blk_n;
+uint32_t __hle_perf_ticks, __hle_perf_cmd[16][64], __hle_perf_cnt[16][64], hle_rm_calls[4], hle_fin_ticks;
 void hle_perf_dump(uint32_t total)
 {
     for (int o = 0; o < 16; o++) for (int c = 0; c < 64; c++) {
         if (__hle_perf_cmd[o][c] * 100ULL / total >= 1)
-            debugf("[hle]   ovl %s cmd %02x: %lu%% (%lu calls)\n", rspq_overlay_ucodes[o] ? rspq_overlay_ucodes[o]->name : "?", c,
+            debugf("[hle]   ovl %s cmd %02x: %lu%% (%lu calls)\n", o == 0 ? "rspq" : rspq_overlay_ucodes[o] ? rspq_overlay_ucodes[o]->name : "?", c,
                 (unsigned long)(__hle_perf_cmd[o][c] * 100ULL / total), (unsigned long)__hle_perf_cnt[o][c]);
         __hle_perf_cmd[o][c] = __hle_perf_cnt[o][c] = 0;
     }
-    extern uint32_t hle_vl_ticks[6], hle_vl_verts, hle_vl_amb, hle_vl_zrow, hle_vl_fog;
+    extern uint32_t hle_vl_ticks[10], hle_vl_verts, hle_vl_amb, hle_vl_zrow, hle_vl_fog;
     debugf("[hle]   vert_load setup: before fog %lu%%, fog plane %lu%%\n", (unsigned long)(hle_vl_ticks[4] * 100ULL / total), (unsigned long)(hle_vl_ticks[5] * 100ULL / total)); hle_vl_ticks[4] = hle_vl_ticks[5] = 0;
     debugf("[hle]   vert_load: %lu ambient tables, %lu z rows, %lu fogged loads\n", (unsigned long)hle_vl_amb, (unsigned long)hle_vl_zrow, (unsigned long)hle_vl_fog);
     hle_vl_amb = hle_vl_zrow = hle_vl_fog = 0;
     debugf("[hle]   vert_load: setup %lu%% begin %lu%% loop %lu%% vtx %lu%%, %lu verts\n", (unsigned long)(hle_vl_ticks[0] * 100ULL / total), (unsigned long)(hle_vl_ticks[1] * 100ULL / total),
            (unsigned long)(hle_vl_ticks[2] * 100ULL / total), (unsigned long)(hle_vl_ticks[3] * 100ULL / total), (unsigned long)hle_vl_verts);
     hle_vl_ticks[0] = hle_vl_ticks[1] = hle_vl_ticks[2] = hle_vl_ticks[3] = hle_vl_verts = 0;
+    debugf("[hle]   vert_load hits: find %lu%% begin %lu%% vtx %lu%%\n", (unsigned long)(hle_vl_ticks[6] * 100ULL / total), (unsigned long)(hle_vl_ticks[7] * 100ULL / total), (unsigned long)(hle_vl_ticks[8] * 100ULL / total));
+    hle_vl_ticks[6] = hle_vl_ticks[7] = hle_vl_ticks[8] = 0;
+    debugf("[hle]   inside recorded blocks: %lu%% (%lu block runs, %d blocks)\n", (unsigned long)(hle_blk_ticks * 100ULL / total), (unsigned long)hle_blk_calls, hle_blk_n);
+    hle_blk_ticks = hle_blk_calls = 0;
+    extern uint32_t hle_rm_calls[4], hle_fin_ticks;
+    debugf("[hle]   rdpq finalize (all commands): %lu%%\n", (unsigned long)(hle_fin_ticks * 100ULL / total)); hle_fin_ticks = 0;
+    debugf("[hle]   modify other modes: %lu plain, %lu render mode (%lu memo hits), %lu mode/combine commands dropped\n",
+           (unsigned long)hle_rm_calls[0], (unsigned long)hle_rm_calls[1], (unsigned long)hle_rm_calls[2], (unsigned long)hle_rm_calls[3]);
+    memset(hle_rm_calls, 0, sizeof(hle_rm_calls));
     extern uint32_t hle_vc_hits, hle_vc_misses, hle_vc_resets, hle_vc_peak, hle_vc_strip_hits;
     debugf("[hle]   vertex cache: %lu hits, %lu strip hits, %lu misses, %lu resets, peak %lu KB\n", (unsigned long)hle_vc_hits, (unsigned long)hle_vc_strip_hits,
            (unsigned long)hle_vc_misses, (unsigned long)hle_vc_resets, (unsigned long)hle_vc_peak / 1024);
@@ -1977,6 +1990,9 @@ static void vrsp_run(void)
         uint32_t ovl_id = a0 >> 28;
         uint32_t cmd_byte = a0 >> 24;
         if (ovl_id == 0) {
+#ifdef HLE_TEST_PERF
+            uint32_t c0 = TICKS_READ();
+#endif
             static const uint8_t sizes[] = { 0, 8, 4, 8, 4, 16, 4, 12, 8, 12, 4 };
             assertf(cmd_byte < sizeof(sizes), "HLE: invalid rspq command %08lx at %08lx", a0, vrsp_ptr);
             uint32_t next = vrsp_ptr + sizes[cmd_byte];
@@ -1993,10 +2009,26 @@ static void vrsp_run(void)
                     target = *(uint32_t*)vrsp_dmem_addr(target) & 0xFFFFFF;
                 PSTACK((a[1] & 0xFFC) >> 2) = next;
                 next = target;
+#ifdef HLE_TEST_PERF    // test aid: time spent inside recorded blocks
+                {
+                    extern uint32_t hle_blk_addr[512], hle_blk_mask, hle_blk_t0, hle_blk_ticks, hle_blk_calls; extern int hle_blk_n;
+                    for (int i = 0; i < hle_blk_n; i++) if (hle_blk_addr[i] == target) {
+                        if (!hle_blk_mask) hle_blk_t0 = TICKS_READ();
+                        hle_blk_mask |= 1u << ((a[1] & 0xFFC) >> 2); hle_blk_calls++; break;
+                    }
+                }
+#endif
                 break;
             }
             case RSPQ_CMD_RET:
                 next = PSTACK((a0 & 0xFFC) >> 2) & 0xFFFFFF;
+#ifdef HLE_TEST_PERF
+                {
+                    extern uint32_t hle_blk_mask, hle_blk_t0, hle_blk_ticks;
+                    uint32_t bit = 1u << ((a0 & 0xFFC) >> 2);
+                    if (hle_blk_mask & bit) { hle_blk_mask &= ~bit; if (!hle_blk_mask) hle_blk_ticks += TICKS_READ() - hle_blk_t0; }
+                }
+#endif
                 break;
             case RSPQ_CMD_DMA: {
                 uint8_t *dmem = vrsp_dmem_addr(a[1]);
@@ -2029,6 +2061,9 @@ static void vrsp_run(void)
                 break;
             }
             vrsp_ptr = next;
+#ifdef HLE_TEST_PERF
+            { extern uint32_t __hle_perf_cmd[16][64], __hle_perf_cnt[16][64]; __hle_perf_cmd[0][cmd_byte] += TICKS_READ() - c0; __hle_perf_cnt[0][cmd_byte]++; }
+#endif
             continue;
         }
 

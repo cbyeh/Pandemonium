@@ -34,8 +34,14 @@ static void write16(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
     write8(a0, a1); write8(a2, a3);
 }
 static void finalize(void) {
+#ifdef HLE_TEST_PERF
+    extern uint32_t hle_rm_calls[4], hle_fin_ticks; uint32_t t = TICKS_READ();
+#endif
     vrsp_rdpq_send(staging, staged * 4);
     staged = 0;
+#ifdef HLE_TEST_PERF
+    hle_fin_ticks += TICKS_READ() - t;
+#endif
 }
 
 static bool fillcopy(void) { return SOM_HI & (1u << 21); }
@@ -85,6 +91,27 @@ static void update_render_mode(void)
         finalize();
         return;
     }
+
+    // The same inputs give the same mode: models switch between a few, so keep the last ones
+    typedef struct { uint64_t comb, mask; uint32_t hi, lo, t0, t1, out[4]; bool valid; } rm_memo_t;
+    static rm_memo_t memo[64];
+    uint32_t h = som_hi * 31 + som_lo;
+    h = h * 31 + (uint32_t)MODE.combiner; h = h * 31 + (uint32_t)(MODE.combiner >> 32);
+    h = h * 31 + MODE.blend_step0; h = h * 31 + MODE.blend_step1;
+    rm_memo_t *m = &memo[(h * 2654435761u) >> 26];
+    if (m->valid && m->hi == som_hi && m->lo == som_lo && m->comb == MODE.combiner && m->mask == MODE.combiner_mipmapmask &&
+            m->t0 == MODE.blend_step0 && m->t1 == MODE.blend_step1) {
+#ifdef HLE_TEST_PERF
+        { extern uint32_t hle_rm_calls[4]; hle_rm_calls[2]++; }
+#endif
+        SOM_HI = (m->out[2] & 0x00FFFFFF) | (som_hi & 0xFF000000);
+        SOM_LO = m->out[3];
+        write16(m->out[0], m->out[1], m->out[2], m->out[3]);
+        finalize();
+        return;
+    }
+    *m = (rm_memo_t){ .comb = MODE.combiner, .mask = MODE.combiner_mipmapmask, .hi = som_hi, .lo = som_lo,
+                      .t0 = MODE.blend_step0, .t1 = MODE.blend_step1 };
 
     uint64_t comb = MODE.combiner, comb1 = 0, comb2;
     if ((int64_t)comb < 0) {
@@ -174,6 +201,8 @@ static void update_render_mode(void)
     SOM_HI = (som_hi & 0x00FFFFFF) | ((uint32_t)ext_flags << 24);
     SOM_LO = som_lo;
     write16(((uint32_t)(final_comb >> 32) & 0x00FFFFFF) | 0xFC000000, (uint32_t)final_comb, som_hi, som_lo);
+    m->out[0] = ((uint32_t)(final_comb >> 32) & 0x00FFFFFF) | 0xFC000000; m->out[1] = (uint32_t)final_comb;
+    m->out[2] = som_hi; m->out[3] = som_lo; m->valid = true;
     finalize();
 }
 
@@ -318,6 +347,9 @@ void ovl_rdpq(uint32_t cmd, const uint32_t *a, int n)
         return;
     }
     case 0x14: {                                // ModifyOtherModes
+#ifdef HLE_TEST_PERF
+        { extern uint32_t hle_rm_calls[4]; hle_rm_calls[(a0 & 0x8000) ? 1 : 0]++; }
+#endif
         uint32_t *w = (a0 & 4) ? &SOM_LO : &SOM_HI;
         *w = (*w & a1) | a[2];
         if (a0 & 0x8000) update_render_mode();

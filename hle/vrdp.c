@@ -31,6 +31,8 @@ static uint32_t dp_cur;                 // virtual DP_CURRENT (physical)
 // Last RDP state seen, needed to restore after internal commands.
 static uint64_t last_cimg, last_som = 0xEF00000000000000ull, last_fillcolor = 0xF700000000000000ull;
 static uint64_t last_scissor = 0xED00000000000000ull;
+// Other modes / combiner the plugin has this task: models set the same ones over and over
+static uint64_t sent_som = ~0ull, sent_comb = ~0ull;
 
 gsp_state_t gsp_3d;
 static struct {
@@ -130,6 +132,7 @@ static void task_submit(void)
 
     dl_ptr = dl_base;
     scratch_ptr = scratch_base;
+    sent_som = sent_comb = ~0ull;
     gsp_cur.valid = false;
     gsp_epoch++;
     gsp_tasks++;
@@ -267,6 +270,16 @@ static int translate(const uint64_t *c)
             w0 &= ~0x0007FC00;
             c0 = ((uint64_t)w0 << 32) | w1;
         }
+        if (op == 0x2F || op == 0x3C) {
+            uint64_t *sent = op == 0x2F ? &sent_som : &sent_comb;
+            if (*sent == c0) {
+#ifdef HLE_TEST_PERF
+                extern uint32_t hle_rm_calls[4]; hle_rm_calls[3]++;
+#endif
+                return 8;
+            }
+            *sent = c0;
+        }
         switch (op) {
         case 0x3F: last_cimg = c0; break;
         case 0x2F: last_som = c0; break;
@@ -326,6 +339,7 @@ void vrdp_clear_z(uint32_t zaddr, uint32_t size, uint16_t value)
     gbi(last_scissor >> 32, (uint32_t)last_scissor);
     gbi(last_som >> 32, (uint32_t)last_som);
     gbi(last_fillcolor >> 32, (uint32_t)last_fillcolor);
+    sent_som = last_som;
 }
 
 void vrdp_init(void)

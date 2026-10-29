@@ -53,6 +53,18 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
     static int frame;
     frame++;
+#ifdef HLE_TEST_MEMBENCH    // test aid: emulated cost of cached vs uncached loads/stores, and of plain ALU work
+    if (frame == 60) {
+        static uint32_t buf[4096] __attribute__((aligned(16)));
+        volatile uint32_t *c = buf, *u = UncachedAddr(buf);
+        uint32_t s = 0, t;
+        t = TICKS_READ(); for (int i = 0; i < 4096; i++) s += c[i]; t = TICKS_READ() - t; debugf("[membench] cached load   %lu ticks / 4096\n", t);
+        t = TICKS_READ(); for (int i = 0; i < 4096; i++) s += u[i]; t = TICKS_READ() - t; debugf("[membench] uncached load %lu ticks / 4096\n", t);
+        t = TICKS_READ(); for (int i = 0; i < 4096; i++) c[i] = i; t = TICKS_READ() - t; debugf("[membench] cached store  %lu ticks / 4096\n", t);
+        t = TICKS_READ(); for (int i = 0; i < 4096; i++) u[i] = i; t = TICKS_READ() - t; debugf("[membench] uncached store %lu ticks / 4096\n", t);
+        t = TICKS_READ(); for (volatile int i = 0; i < 4096; i++) s ^= s << 1; t = TICKS_READ() - t; debugf("[membench] alu loop     %lu ticks / 4096 (%lu)\n", t, s);
+    }
+#endif
 #ifdef HLE_PAD_LAYOUT       // test aid: play in this button layout (0 Classic, 1 A/B Swapped, 2 Skills on C)
     { extern void joypad_set_layout(int); joypad_set_layout(HLE_PAD_LAYOUT); }     // every frame: loading the save sets it too
 #endif
