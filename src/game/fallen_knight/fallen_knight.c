@@ -530,7 +530,7 @@ static void cleave_update(Boss *b, float dt)
         if (s.t < CROUCH) play(FKA_IDLE, false);
         else if (s.anim != FKA_CLEAVE) { play(FKA_CLEAVE, true); t3d_anim_set_time(&s.anims[s.anim], FROM); }
         if (s.t < RELEASE - 0.12f) hold_blade(0.3f, 0.0f, -0.95f);
-        if (s.t >= PLANT - 0.07f && s.t - dt < PLANT - 0.07f) sfx(SCENE1_SFX_BOSS_LAND1, 0.8f);    // its onset on the bite
+        if (s.t >= PLANT - 0.07f && s.t - dt < PLANT - 0.07f) sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);    // its onset on the bite
         if (s.t >= PLANT && s.t - dt < PLANT) {
             float base[3], tip[3];
             if (sword_segment(base, tip)) skill_fx_spawn_burst_hostile((float[3]){ tip[0], s.groundY, tip[2] }, 0.0f);
@@ -624,7 +624,7 @@ static void moonblade_update(Boss *b, float dt)
         b->pos[1] = s.groundY;
         skill_fx_spawn_crown_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
         screen_shake_set_shake_mag(6.0f);
-        sfx(SCENE1_SFX_BOSS_LAND1, 0.8f);
+        sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);
         recover(1.3f, false);
     }
 }
@@ -677,7 +677,7 @@ static void updown_update(Boss *b, float dt)
         if (clip >= w[1] || clip_done()) { s.step = 1; s.hitDone = false; play(FKA_CHARGED, true);
                                              t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.1f); }
     } else {
-        if (s.step == 1 && clip >= 1.95f && clip - dt < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.7f);
+        if (s.step == 1 && clip >= 1.95f && clip - dt < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);
         if (s.step == 1 && clip >= 2.02f) {    // the blade meets the floor
             float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + fx * 22.0f, s.groundY, b->pos[2] + fz * 22.0f }, b->rot[1]);
@@ -707,7 +707,7 @@ static void trislam_update(Boss *b, float dt)
         swing_pace(DN_FROM, W_DN[0], 1.0f);
         if (clip < 1.95f) hold_blade(0.1f, 0.0f, -1.0f);
         if (s.t <= dt) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);
-        if (clip >= 1.95f && clip - dt < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.8f);     // its onset on the bite
+        if (clip >= 1.95f && clip - dt < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);     // its onset on the bite
         if (clip >= 2.02f) {    // the blade meets the floor: mark the triangle where the player stands
             float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
             skill_fx_spawn_burst_hostile((float[3]){ b->pos[0] + fx * 22.0f, s.groundY, b->pos[2] + fz * 22.0f }, b->rot[1]);
@@ -884,7 +884,7 @@ static void plunge_update(Boss *b, float dt)
             skill_fx_spawn_arc_hostile(o, b->rot[1], 20.0f, dmg);
             skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 20.0f, dmg);
             screen_shake_set_shake_mag(10.0f);
-            sfx(SCENE1_SFX_BOSS_LAND1, 1.0f);
+            sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);
             s.step = 2; s.t = 0.0f;
         }
     } else {
@@ -968,7 +968,7 @@ void fallen_knight_update(Boss* b, float dt)
         // Falls from above in a crimson light, lands with a burst, then fights
         b->pos[1] = s.groundY + FK_DROP_HEIGHT * fmaxf(0.0f, 1.0f - s.t / (FK_INTRO_TIME * 0.6f));
         face_player(b, dt, 10.0f);
-        if (s.t >= FK_INTRO_TIME * 0.6f - 0.07f && s.t - dt < FK_INTRO_TIME * 0.6f - 0.07f) sfx(SCENE1_SFX_BOSS_LAND1, 1.0f);   // onset on the landing
+        if (s.t >= FK_INTRO_TIME * 0.6f - 0.07f && s.t - dt < FK_INTRO_TIME * 0.6f - 0.07f) sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);   // onset on the landing
         if (s.step == 0 && b->pos[1] <= s.groundY) {
             float p[3] = { b->pos[0], s.groundY, b->pos[2] };
             skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, p, (float[3]){ 0, 0, 0 }, 0.0f, 0, 1.0f, 1.0f, false);
