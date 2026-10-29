@@ -19,7 +19,7 @@ static void dir_basis(const float v[3], float d[3], float s[3], float u[3]);
 
 #define SKILL_FX_MAX 40     // the Shackled Sun's spiral has 20 embers in the air
 
-typedef enum { FX_NONE, FX_ARC, FX_WAVE, FX_PILLAR, FX_BURST } FxType;
+typedef enum { FX_NONE, FX_ARC, FX_WAVE, FX_PILLAR, FX_BURST, FX_CROWN } FxType;
 
 typedef struct {
     FxType type;
@@ -153,6 +153,19 @@ void skill_fx_spawn_pillar(const float pos[3])
     if (!f) return;
     memcpy(f->pos, pos, sizeof(f->pos));
     f->life = 0.6f;
+}
+
+// The Fallen Warrior's Moon Blade take-off and landing: a ring of pointed spikes spreading over the
+// floor, pale gold (the player's keep their sparks)
+void skill_fx_spawn_crown_hostile(const float pos[3])
+{
+    s_spawnHostile = true;
+    SkillFx *f = fx_alloc(FX_CROWN);
+    s_spawnHostile = false;
+    if (!f) return;
+    memcpy(f->pos, pos, sizeof(f->pos));
+    f->yaw = (rand() % 628) / 100.0f;
+    f->life = 0.5f;
 }
 
 void skill_fx_spawn_burst(const float pos[3], float yaw)
@@ -310,7 +323,7 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
         r = f->hostile ? 4.0f : 7.0f;   // a hostile one is drawn 4 wide: no further (the player's own reaches wider)
     } else {
         memcpy(c, f->pos, sizeof(c));
-        r = (f->shape == SKILL_WAVE_ORB ? 5.0f : f->shape == SKILL_WAVE_CRESCENT ? 14.0f : f->hostile ? 12.0f : 11.0f) * f->scale;     // the player's X is drawn 22 long (hit as drawn)
+        r = (f->shape == SKILL_WAVE_ORB ? 5.0f : f->shape == SKILL_WAVE_CRESCENT ? 14.0f : f->hostile ? 12.0f : 7.5f) * f->scale;     // the player's X is drawn 15 long (hit as drawn)
     }
     if (f->hostile) {
         if (f->shape == SKILL_WAVE_SLICES) {
@@ -403,7 +416,9 @@ void skill_fx_update(float dt)
             update_arc_hit(f, b);
         }
         if (f->age >= f->life) {
-            if (f->type == FX_WAVE && f->shape != SKILL_WAVE_BLADE) {
+            if (f->type == FX_WAVE && (f->shape == SKILL_WAVE_X || f->shape == SKILL_WAVE_SLICES)) {
+                f->type = FX_NONE;      // the Moon Blades' waves leave nothing where they end (no spark, no pillar)
+            } else if (f->type == FX_WAVE && f->shape != SKILL_WAVE_BLADE) {
                 float ground[3] = { f->pos[0], f->pos[1], f->pos[2] };
                 float yaw = atan2f(-f->vel[0], f->vel[2]);
                 f->type = FX_NONE;      // free the slot before spawning the impact
@@ -588,21 +603,33 @@ static void draw_xwave(const SkillFx *f)
         float outer[N][3], inner[N][3];
         uint32_t co[N], ci[N];
         if (!f->hostile) {
-            // The player's: wide blades whose width lies across the arm (so the X reads
-            // from behind), bright down the middle and fading to the edges; 22 long each way
+            // The player's: wide blades whose width lies across the arm (so the X reads from
+            // behind), bright down the middle and fading to the edges; XL long each way. No seam
+            // where they cross: the first arm is solid where the second meets it, and the second
+            // is drawn in two pieces ending at the first's edges (the arms are square to each
+            // other, so its cut lies along the first's edge): nothing is blended twice
+            const float XL = 15.0f, XK = XL / 22.0f;      // its size, and the width scaled to it
+            const float HALF = (0.8f + 3.5f) * XK;           // an arm's half-width at the crossing
             float n[3] = { s[0]*ca - u[0]*sa, s[1]*ca - u[1]*sa, s[2]*ca - u[2]*sa };
-            for (int side = -1; side <= 1; side += 2) {
-                for (int i = 0; i < N; i++) {
-                    float t = -1.0f + 2.0f * i / (N - 1);
-                    float bulge = 1.0f - t * t;
-                    for (int c = 0; c < 3; c++) {
-                        inner[i][c] = f->pos[c] + e[c] * t * 22.0f + d[c] * bulge * 4.0f;
-                        outer[i][c] = inner[i][c] + n[c] * side * (0.8f + bulge * 3.5f);
+            float tc = HALF / XL;                            // the crossing, along an arm
+            int pieces = k ? 2 : 1;
+            for (int p = 0; p < pieces; p++) {
+                float t0 = k ? (p ? tc : -1.0f) : -1.0f, t1 = k ? (p ? 1.0f : -tc) : 1.0f;
+                for (int side = -1; side <= 1; side += 2) {
+                    for (int i = 0; i < N; i++) {
+                        float t = t0 + (t1 - t0) * i / (N - 1);
+                        float bulge = 1.0f - t * t;
+                        for (int c = 0; c < 3; c++) {
+                            inner[i][c] = f->pos[c] + e[c] * t * XL + d[c] * bulge * 4.0f * XK;
+                            outer[i][c] = inner[i][c] + n[c] * side * (0.8f + bulge * 3.5f) * XK;
+                        }
+                        // solid across the first arm where the second crosses it (no faded edge line)
+                        float solid = (!k && fabsf(t) < tc) ? 1.0f : 0.0f;
+                        ci[i] = rgba(240, 252, 255, a);
+                        co[i] = solid > 0.0f ? ci[i] : rgba(90, 200, 255, a * 0.25f);
                     }
-                    ci[i] = rgba(240, 252, 255, a);
-                    co[i] = rgba(90, 200, 255, a * 0.25f);
+                    build_ribbon(outer, inner, co, ci, N);
                 }
-                build_ribbon(outer, inner, co, ci, N);
             }
             continue;
         }
@@ -728,6 +755,28 @@ static void draw_burst(const SkillFx *f)
     }
 }
 
+/** The Fallen Warrior's landing crown: a ring spreading out over the floor, a circle of spikes
+ *  rising from it, pointed, leaning out; fading as it spreads (no hit) */
+static void draw_crown(const SkillFx *f)
+{
+    enum { SPIKES = 14 };
+    bool hostile = s_drawHostile;
+    float k = fminf(1.0f, f->age / f->life), e = 1.0f - (1.0f - k) * (1.0f - k);
+    float R = 4.0f + 16.0f * e, H = 7.0f * (1.0f - 0.6f * k), a = 1.0f - k * k;
+    s_drawHostile = false;      // its own colours (the palette swap would turn pale gold to mauve)
+    uint32_t base = rgba(255, 236, 160, a), tipc = rgba(255, 250, 215, a * 0.35f);     // pale gold, the Fallen Warrior's too
+    int b0 = build_reserve(SPIKES * 3, SPIKES);
+    for (int i = 0; i < SPIKES; i++) {
+        float a0 = f->yaw + 2.0f * T3D_PI * i / SPIKES, a1 = a0 + 2.0f * T3D_PI / SPIKES, am = (a0 + a1) * 0.5f;
+        float h = H * ((i & 1) ? 0.7f : 1.0f);      // alternating points: a crown
+        build_vert((float[3]){ f->pos[0] + cosf(a0) * R, f->pos[1] + 0.5f, f->pos[2] + sinf(a0) * R }, base);
+        build_vert((float[3]){ f->pos[0] + cosf(a1) * R, f->pos[1] + 0.5f, f->pos[2] + sinf(a1) * R }, base);
+        build_vert((float[3]){ f->pos[0] + cosf(am) * (R + 2.5f), f->pos[1] + h, f->pos[2] + sinf(am) * (R + 2.5f) }, tipc);
+        build_tri(b0 + i * 3, b0 + i * 3 + 1, b0 + i * 3 + 2);
+    }
+    s_drawHostile = hostile;
+}
+
 static void draw_begin(void)
 {
     if (!s_identity) {
@@ -779,6 +828,7 @@ void skill_fx_draw(void)
             case FX_WAVE:   if (f->shape == SKILL_WAVE_ORB) draw_orb(f); else if (f->shape != SKILL_WAVE_BLADE) draw_xwave(f); else draw_blade(f); break;
             case FX_PILLAR: draw_pillar(f); break;
             case FX_BURST:  draw_burst(f); break;
+            case FX_CROWN:  draw_crown(f); break;
             default: break;
         }
     }

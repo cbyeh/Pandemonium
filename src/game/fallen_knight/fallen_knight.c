@@ -573,6 +573,7 @@ static void moonblade_update(Boss *b, float dt)
     if (s.step == 0) {
         s.velY = 120.0f;
         play(FKA_BACKFLIP, true);
+        skill_fx_spawn_crown_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });     // its take-off, as the player's
         s.step = 1;
     }
     s.velY -= 120.0f * ((s.step >= 1 && s.step <= 5 && s.velY < 15.0f) ? 0.15f : 1.0f) * dt;
@@ -602,7 +603,7 @@ static void moonblade_update(Boss *b, float dt)
     }
     if (b->pos[1] <= s.groundY && s.velY < 0.0f) {
         b->pos[1] = s.groundY;
-        skill_fx_spawn_burst_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] }, b->rot[1]);
+        skill_fx_spawn_crown_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
         screen_shake_set_shake_mag(6.0f);
         sfx(SCENE1_SFX_BOSS_LAND1, 0.8f);
         recover(1.3f, false);
@@ -889,7 +890,7 @@ static void choose(Boss *b, float dist)
     if (HLE_FK_FORCE == 6) { enter(FK_TRISLAM); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.1f); debugf("[fk] trislam\n"); return; }
     if (HLE_FK_FORCE == 8) { if (dist < 40.0f) return; s.cdPlunge = 0.0f; enter(FK_PLUNGE); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], 0.3f); debugf("[fk] plunge\n"); return; }
     if (HLE_FK_FORCE >= 4 && dist > FK_MELEE_RANGE - 4.0f) return;     // the melee ones: in reach first
-    if (HLE_FK_FORCE == 9) { if (dist < 40.0f) return; enter(FK_MOONBLADE); debugf("[fk] moonblade\n"); return; }   // 9 = the Moon Blade (the leap and its crosses)
+    if (HLE_FK_FORCE == 9) { enter(FK_MOONBLADE); debugf("[fk] moonblade\n"); return; }   // 9 = the Moon Blade (the leap and its slashes), at any range
     if (HLE_FK_FORCE == 4) { enter(FK_UPDOWN); play(FKA_ATTACK2, true); debugf("[fk] updown\n"); return; }
     if (HLE_FK_FORCE == 5) { enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); debugf("[fk] combo\n"); return; }
 #endif

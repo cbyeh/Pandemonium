@@ -41,6 +41,8 @@ void skill_fx_spawn_pillar(const float pos[3]);
 // Swirling orange/violet funnel hanging down from `top` (the ending's vortex).
 void skill_fx_draw_vortex(const float top[3], float depth, float radius, float time);
 void skill_fx_spawn_burst(const float pos[3], float yaw);
+// The Fallen Warrior's Moon Blade take-off and landing: a crown of pointed spikes spreading over the floor
+void skill_fx_spawn_crown_hostile(const float pos[3]);
 
 // Hostile versions (the Fallen Knight): same shapes in a crimson palette, hitting
 // the player instead of the boss.
