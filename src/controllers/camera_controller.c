@@ -78,7 +78,6 @@ static bool  breathEnabled = false;
 static float breathT = 0.0f;
 static float breathHz = 0.1f;
 static float breathAmpY = 1.0f;
-static float breathAmpX = 1.0f;
 static float breathSmooth = 1.0f;
 
 static float breathY = 0.0f;

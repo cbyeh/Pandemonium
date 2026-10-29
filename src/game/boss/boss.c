@@ -44,7 +44,6 @@ static T3DModel* s_bossShadowModel = NULL;
 // Boss shadow tuning
 static const float BOSS_SHADOW_GROUND_Y = -1.0f;
 static const float BOSS_SHADOW_Y_OFFSET = 0.2f;
-static const float BOSS_SHADOW_BASE_ALPHA = 120.0f;
 static const float BOSS_SHADOW_SHRINK_AMOUNT = 0.35f;
 static const float BOSS_JUMP_REF_HEIGHT = 120.0f;
 static const float BOSS_SHADOW_SIZE_MULT = 4.05f;

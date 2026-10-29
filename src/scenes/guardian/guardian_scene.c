@@ -882,49 +882,6 @@ static inline float scene_dist_xz(float ax, float az, float bx, float bz) {
     return sqrtf(dx*dx + dz*dz);
 }
 
-
-static void scene_debug_force_boss_defeated(void)
-{
-    if (!g_boss) return;
-
-    // Force boss into a fully stopped "dead" configuration.
-    g_boss->health = 0.0f;
-    g_boss->state = BOSS_STATE_DEAD;
-    g_boss->stateTimer = 0.0f;
-    g_boss->isAttacking = false;
-    g_boss->attackAnimTimer = 0.0f;
-    g_boss->handAttackColliderActive = false;
-    g_boss->sphereAttackColliderActive = false;
-    g_boss->velX = 0.0f;
-    g_boss->velZ = 0.0f;
-    g_boss->currentSpeed = 0.0f;
-
-    // If the boss had any pending external AI requests, clear them too.
-    g_boss->pendingRequests = 0;
-    boss_set_mode(g_boss, BOSS_MODE_POST_DEFEAT);
-
-    // Enter victory state so the "Enemy restored" end-card renders/advances.
-    // This is primarily for debugging (L-trigger skip).
-    if (scene_get_game_state() != GAME_STATE_VICTORY) {
-        scene_set_game_state(GAME_STATE_VICTORY);
-    } else {
-        // If already in victory, restart the title animation.
-        victoryTitleTimer = 0.0f;
-        victoryTitleDone = false;
-    }
-
-    // Ensure we return to gameplay (no cutscene controlling camera/logic).
-    cutsceneState = CUTSCENE_NONE;
-    cutsceneTimer = 0.0f;
-    cutsceneCameraTimer = 0.0f;
-    cutsceneDialogActive = false;
-    skipButtonVisible = false;
-
-    // Keep post-defeat interaction available after skipping.
-    bossPostDefeatTalkDone = false;
-    bossPostDefeatDialogStep = 0;
-}
-
 bool scene_is_cutscene_active(void) {
     return cutsceneState != CUTSCENE_NONE;
 }

@@ -2,7 +2,6 @@
 
 #include "game_time.h"
 
-static float TIME_SPEED = 1.0f;
 static float s_freezeT, s_slowT, s_slowScale = 1.0f;     // real seconds left
 
 void game_time_hitstop(float seconds) { if (seconds > s_freezeT) s_freezeT = seconds; }

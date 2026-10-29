@@ -630,7 +630,6 @@ static void boss_ai_select_attack(Boss* boss, float dist) {
             }
 
             bool starterReady = (boss->comboStarterCooldown <= 0.0f);
-            bool comboReady   = (boss->comboCooldown <= 0.0f);          // combo itself
             bool a1Ready      = (boss->attack1Cooldown <= 0.0f);
             bool slamReady    = (boss->trackingSlamCooldown <= 0.0f);
 

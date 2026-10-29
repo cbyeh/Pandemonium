@@ -41,7 +41,6 @@ Character character;
 // Sword collider config (player)
 static int   characterSwordBoneIndex = -1;       // cached bone index for sword/hand
 static const float SWORD_LENGTH = 640.0f;        // local-space length of sword capsule segment
-static const float SWORD_COLLIDER_RADIUS = 5.0f; // sword collider radius in world units
 
 // Shadow tuning
 static const float SHADOW_GROUND_Y = 4.0f;        // Match roomY floor level
@@ -93,8 +92,6 @@ static const float PERFECT_DODGE_STAMINA = 25.0f;
 static bool s_perfectThisRoll;
 
 static const float ROLL_ANIM_SPEED = 1.0f;
-static const float ATTACK_DURATION = 0.9f; // (legacy, not used directly)
-static const float JUMP_DURATION = 0.75f; // unused (jump removed)
 static const float JUMP_HEIGHT = 40.0f;   // retained for shadow math
 static const float ROLL_SPEED = MAX_MOVEMENT_SPEED;
 static const float ROLL_STEER_ACCELERATION = 14.0f;
@@ -208,7 +205,6 @@ static const float TURN_RATE = 8.0f;
 static const float IDLE_THRESHOLD = 0.1f;
 static const float WALK_THRESHOLD = 0.03f;
 static const float RUN_THRESHOLD = 0.7f;
-static const float BLEND_MARGIN = 0.2f;         // (currently unused)
 static const float ATTACK_FRICTION_SCALE = 0.3f;
 
 static bool walkThroughFog = false;
@@ -264,8 +260,6 @@ static float lockonLastW       = 0.0f;  // last blend weight
 static const float LOCOMOTION_CROSSFADE_DURATION = 0.10f; // tune 0.06–0.14
 
 // (optional) avoid blending every micro-switch when speed jitters
-static const float LOCOMOTION_MIN_SWITCH_INTERVAL = 0.00f; // set to 0.06f if you want
-static float locomotionSwitchCooldown = 0.0f;
 
 // Lock-on strafe enter ramp (prevents idle->strafe "pop" when base switches to RUN)
 static bool  lockonWasStrafing = false;
@@ -1322,7 +1316,6 @@ static void skill_fire_moon_blade(void)
 static void update_skill(float dt)
 {
     skillTime += dt;
-    float fx = -fm_sinf(character.rot[1]), fz = fm_cosf(character.rot[1]);
     float yaw = character.rot[1];
 
     switch (activeSkill) {

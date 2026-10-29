@@ -92,7 +92,6 @@ static inline void boss_attacks_on_player_hit(float damage)
 static void boss_attacks_handle_power_jump(Boss* boss, float dt);
 static void boss_attacks_handle_combo(Boss* boss, float dt);
 static void boss_attacks_handle_combo_starter(Boss* boss, float dt);
-static void boss_attacks_handle_roar_stomp(Boss* boss, float dt);
 static void boss_attacks_handle_tracking_slam(Boss* boss, float dt);
 static void boss_attacks_handle_charge(Boss* boss, float dt);
 static void boss_attacks_handle_flip_attack(Boss* boss, float dt);
@@ -473,8 +472,6 @@ static void boss_attacks_handle_combo(Boss* boss, float dt)
     // Facing
     // -------------------------
     if (boss->stateTimer < MOVE_END_TIME) {
-        float dx = boss->lockedTargetingPos[0] - boss->pos[0];
-        float dz = boss->lockedTargetingPos[2] - boss->pos[2];
         boss_turn_towards_player(boss, dt, 0.5f); 
     }
 
@@ -577,48 +574,6 @@ static void boss_attacks_handle_lunge_starter(Boss* boss, float dt) {
     if (dx != 0.0f || dz != 0.0f) {
         boss_turn_towards_player(boss, dt, 0.5f); 
     }
-}
-
-static void boss_attacks_handle_roar_stomp(Boss* boss, float dt) {
-    // Phase 1: Roar buildup (0.0 - 1.0s)
-    if (boss->stateTimer < 1.0f) {
-        // Face player - use consistent rotation formula
-        float dx = character.pos[0] - boss->pos[0];
-        float dz = character.pos[2] - boss->pos[2];
-        boss_turn_towards_player(boss, dt, 0.5f); 
-        
-        // Animation trigger would be handled by animation system at 0.8-0.9s
-    }
-    // Phase 2: Stomp impact (1.0s)
-    else if (boss->stateTimer >= 1.0f && boss->stateTimer < 1.1f) {
-
-        // Visual: dust at the stomp impact moment
-        const float DUST_LATE_S = 0.20f;
-        const float dustT = 1.0f + DUST_LATE_S;
-        if (boss->stateTimer - dt < dustT && boss->stateTimer >= dustT) {
-            boss_spawn_dust_toward_player(boss, 20.0f, 1.6f);
-        }
-
-        //boss_play_attack_sfx(boss, SCENE1_SFX_BOSS_LAND1, 0.0f);
-        
-        // Roar stomp uses shockwave, so use distance check for ground-based attack
-        // (hand collider is not appropriate for ground shockwave)
-        float dx = character.pos[0] - boss->pos[0];
-        float dz = character.pos[2] - boss->pos[2];
-        float dist = sqrtf(dx*dx + dz*dz);
-        
-        float shockwaveRadius = 15.0f;
-        if (dist <= shockwaveRadius && !boss->currentAttackHasHit) {
-            // Damage decreases with distance
-            float damage = 30.0f * (1.0f - (dist / shockwaveRadius));
-            character_apply_damage(damage);
-            boss_attacks_on_player_hit(damage);
-            boss->currentAttackHasHit = true;
-        }
-    }
-    // Phase 3: Recovery (1.1s+)
-    // End attack - transition handled by AI
-    // (AI will check stateTimer > 2.0f and transition to STRAFE)
 }
 
 static void boss_attacks_handle_tracking_slam(Boss* boss, float dt) {
@@ -1159,60 +1114,6 @@ static void boss_attacks_fire_sword_projectile(Boss* boss, int swordIndex) {
     float targetZ = character.pos[2];
 
     msa_fire_aerial_sword(swordIndex, targetX, targetY, targetZ);
-}
-
-static void boss_attacks_update_aerial_swords(Boss* boss, float dt) {
-    if (!boss) return;
-    
-    const float swordSpeed = 120.0f; // Units per second
-    
-    for (int i = 0; i < 12; i++) {
-        if (!boss->aerialSwordActive[i]) continue;
-        
-        // Update progress
-        float startX = boss->aerialSwordPositions[i][0];
-        float startY = boss->aerialSwordPositions[i][1];
-        float startZ = boss->aerialSwordPositions[i][2];
-        
-        float targetX = boss->aerialSwordTargets[i][0];
-        float targetY = boss->aerialSwordTargets[i][1];
-        float targetZ = boss->aerialSwordTargets[i][2];
-        
-        float dx = targetX - startX;
-        float dy = targetY - startY;
-        float dz = targetZ - startZ;
-        float totalDistance = sqrtf(dx*dx + dy*dy + dz*dz);
-        
-        if (totalDistance > 0.1f) {
-            float progressIncrement = (swordSpeed * dt) / totalDistance;
-            boss->aerialSwordProgress[i] += progressIncrement;
-            
-            if (boss->aerialSwordProgress[i] >= 1.0f) {
-                // Sword reached target - check for hit
-                boss->aerialSwordProgress[i] = 1.0f;
-                
-                // Check collision with player
-                float hitDx = character.pos[0] - targetX;
-                float hitDy = character.pos[1] - targetY;
-                float hitDz = character.pos[2] - targetZ;
-                float hitDist = sqrtf(hitDx*hitDx + hitDy*hitDy + hitDz*hitDz);
-                
-                if (hitDist <= 25.0f) {
-                    float damagePerSword = 50.0f / (float)boss->swordRingCount;
-                    character_apply_damage(damagePerSword);
-                    boss_attacks_on_player_hit(damagePerSword);
-                }
-                
-                // Impact effect
-                dust_particles_fx_spawn_burst(targetX, targetY, targetZ, 1.5f);
-                
-                // Deactivate sword
-                boss->aerialSwordActive[i] = false;
-            }
-        } else {
-            boss->aerialSwordActive[i] = false;
-        }
-    }
 }
 
 static void boss_attacks_handle_aerial_sword_barrage(Boss* boss, float dt) {
