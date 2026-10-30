@@ -65,6 +65,7 @@ static uint32_t rp_lru;
 // The recording in progress
 static struct {
     bool on, bad;
+    uint32_t vc_gen;            // the cache generation the recording started in
     int slot;                       // pointer stack slot of the block's CALL
     rp_block_t *blk;
     uint64_t *dl0;
@@ -108,7 +109,7 @@ static rp_block_t *rp_find(uint32_t addr, bool add)
 }
 
 // Freed recordings wait until the plugin is done with the task that may still call their list
-static struct { rp_rec_t *r; uint32_t task; } rp_dead[256];
+static struct { rp_rec_t *r; uint32_t task; } rp_dead[1024];
 static int rp_ndead;
 static void rp_rec_destroy(rp_rec_t *r) { free_uncached(r->gdl); free(r->span); free(r->sig); free(r); }
 static void rp_collect(void)
@@ -123,7 +124,14 @@ static void rp_collect(void)
 static void rp_rec_free(rp_rec_t *r)
 {
     if (!r) return;
-    if (rp_ndead == 256) { rp_rec_destroy(rp_dead[0].r); memmove(rp_dead, rp_dead + 1, sizeof(rp_dead[0]) * 255); rp_ndead--; }
+    if (rp_ndead == 1024) rp_collect();
+    // shortcut: still full means all 1024 died this task and may still be called: the oldest is leaked, not freed under the plugin
+    if (rp_ndead == 1024) {
+#ifdef HLE_TEST_DL_CHECK
+        static int n; if (n++ < 20) debugf("[replay] dead list full at task %lu: a recording leaked\n", gsp_tasks);
+#endif
+        memmove(rp_dead, rp_dead + 1, sizeof(rp_dead[0]) * 1023); rp_ndead--;
+    }
     rp_dead[rp_ndead].r = r; rp_dead[rp_ndead].task = gsp_tasks; rp_ndead++;
 }
 
@@ -200,6 +208,7 @@ static void rp_begin(rp_block_t *b, int slot)
     rp.blk = b; rp.slot = slot;
     rp.dl0 = __gbi_ptr; rp.sc0 = __gbi_scratch;
     rp.tasks = gsp_tasks;
+    rp.vc_gen = hle_vc_gen();
     rp.ovl_mask = hle_vrsp_loaded_mask();
     rp.nmtx = 0;
     rp.rdp_rel = 0; rp.rdp_abs = false;
@@ -217,7 +226,7 @@ static void rp_end(void)
 {
     rp.on = hle_rp_on = false;
     hle_t3d_flush();
-    if (rp.bad || gsp_tasks != rp.tasks || hle_vrsp_loaded_mask() != rp.ovl_mask) {
+    if (rp.bad || gsp_tasks != rp.tasks || hle_vc_gen() != rp.vc_gen || hle_vrsp_loaded_mask() != rp.ovl_mask) {
 #ifdef HLE_TEST_REPLAY_CHECK
         rp.check = NULL;
 #endif
@@ -368,7 +377,7 @@ static void rp_end(void)
 
 __attribute__((unused)) static bool rp_replay(rp_rec_t *r)
 {
-#ifdef HLE_TEST_PERF
+#if defined(HLE_TEST_PERF) || defined(HLE_TEST_REPLAY_CHECK)
     uint32_t _t = TICKS_READ();
 #endif
     uint8_t *sc = gbi_alloc(r->scratch_bytes);
@@ -424,7 +433,7 @@ bool hle_replay_call(uint32_t target, int slot)
     if (need_cmds) gbi_reserve(8, need_sc + 64);     // a replay is a segment and a call
 #endif
 
-#ifdef HLE_TEST_PERF
+#if defined(HLE_TEST_PERF) || defined(HLE_TEST_REPLAY_CHECK)
     uint32_t _t = TICKS_READ();
 #endif
     uint32_t mask = hle_vrsp_loaded_mask();
@@ -454,6 +463,9 @@ bool hle_replay_call(uint32_t target, int slot)
 #else
 #ifdef HLE_TEST_PERF
         hle_rp_stats[0]++;
+#endif
+#ifdef HLE_TEST_DL_CHECK
+        { extern bool hle_vc_pending(void); static int n; if (hle_vc_pending() && n++ < 20) debugf("[vcache] replay of gen %lu while a reset is pending\n", r->vc_gen); }
 #endif
         return rp_replay(r);
 #endif

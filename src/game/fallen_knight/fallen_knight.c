@@ -30,6 +30,7 @@ extern T3DModel* characterModel;       // the player's knight model (character.c
 #define FK_RUN_SPEED      46.0f
 #define FK_WALK_SPEED     18.0f
 #define FK_TURN_RATE      4.0f
+#define KNEEL_RISE_S      0.8f                     // StaggerKneel's last segment: up into the stance
 #define FK_MELEE_RANGE    24.0f
 #define FK_MELEE_DAMAGE   12.0f
 #define FK_FELT(x)        ((x) / 1.125f)           // the damage the player takes -> its base (boss_damage_scale: 1.125)
@@ -197,6 +198,13 @@ static void sfx(int id, float vol)
 {
     Boss *b = boss_get_instance();
     float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
+    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+}
+// A ranged move's impact, heard from where it lands (from the boss, one by the player at range
+// was faint or silent)
+static void sfx_at(int id, float vol, float x, float z)
+{
+    float dx = character.pos[0] - x, dz = character.pos[2] - z;
     audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
 }
 static void swing_sfx(void) { sfx(SCENE1_SFX_SWING_BOSS, 1.0f); }
@@ -653,8 +661,7 @@ bool fallen_knight_stagger(Boss* b)
     b->pos[1] = s.groundY;
     enter(FK_STAGGER);
     play(FKA_KNEEL, true);
-    t3d_anim_set_speed(&s.anims[FKA_KNEEL], t3d_anim_get_length(&s.anims[FKA_KNEEL]) / BOSS_STAGGER_S);   // down on one knee and up again in the stagger
-    b->staggerT = BOSS_STAGGER_S;
+    b->staggerT = boss_stagger_s();
     return true;
 }
 
@@ -883,7 +890,8 @@ static void trislam_update(Boss *b, float dt)
             }
             if (in && character.pos[1] - s.groundY < 6.0f) character_apply_damage(20.0f);
             screen_shake_set_shake_mag(10.0f);
-            sfx(SCENE1_SFX_SLAM_BOSS, 1.0f);     // its thump as the blades erupt
+            sfx_at(SCENE1_SFX_SLAM_BOSS, 1.0f, (s.tri[0][0] + s.tri[1][0] + s.tri[2][0]) / 3.0f,
+                   (s.tri[0][1] + s.tri[1][1] + s.tri[2][1]) / 3.0f);     // its thump as the blades erupt, from the triangle
             s.step = 2; s.t = 0.0f;
         }
     } else if (s.t >= 0.5f) recover(1.6f, false);
@@ -1244,7 +1252,15 @@ void fallen_knight_update(Boss* b, float dt)
     case FK_STAGGER:
         // Down from the stagger: it gets up when the clip ends and the stagger is over (the kneel
         // keeps the stance's sword arm: the blade rides on the shoulder all the way down and up)
-        if (b->staggerT <= 0.0f && clip_done()) recover(FK_QUICK_REC, false);
+        // The clip is 3.5 s (BOSS_STAGGER_S): a longer stagger holds the kneel until the 0.8 s rise is due
+        if (b->staggerT > KNEEL_RISE_S && clip_time() > t3d_anim_get_length(&s.anims[FKA_KNEEL]) - KNEEL_RISE_S - 0.1f)
+            t3d_anim_set_time(&s.anims[FKA_KNEEL], t3d_anim_get_length(&s.anims[FKA_KNEEL]) - KNEEL_RISE_S - 0.1f);
+        if (b->staggerT <= 0.0f && clip_done()) {
+#ifdef HLE_AUTOPLAY
+            { extern float gameTime; debugf("[stagger] fk up at %.1f s\n", (double)gameTime); }
+#endif
+            recover(FK_QUICK_REC, false);
+        }
         break;
 
     case FK_RECOVER:

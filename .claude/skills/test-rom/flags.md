@@ -7,6 +7,9 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Second half / phase 2:** `HLE_DUMMY_HALF` (boss starts at 45% HP). `HLE_DRAGON_DARK` starts Shadowborne dark.
 - **Full fights that never die:** `HLE_TEST_BONUS` (+ `HLE_TEST_BONUS_SUN` / `_DRAGON`), `HLE_TEST_UNBOUND`, `HLE_TEST_STRIKE`, `HLE_TEST_CRUCIFIX`: refill the player below 60 HP, log `[dmg]`.
 - **One attack on a loop:** `HLE_FK_FORCE=1..9` (6 Triangle Slam, 7 Holy Slam, 8 Plunge, 9 Moon Blade), `HLE_SUN_FORCE=1..7` (`11` = lash into sweep), `HLE_DRAGON_FORCE=<DgState>`, `HLE_SUN_HITME` (a sword hit every 1.2 s, every third a finisher: the Sun's reactions), Unbound's `HLE_THROW_FORCE` and `HLE_SWEEP_FORCE` (the ground sweep at any range: the dummy stays close). `HLE_DRAGON_CYCLE`: every Shadowborne move in turn (a gallery, `[cycle]` lines).
+- **Long stagger:** `HLE_STAGGER_LONG` gives Crushing Blows outside the Tower; `[stagger]` lines log when each stagger starts, ends and the boss is up.
+- **Into phase 2:** `HLE_TEST_TWO_RUNS` (kill the Guardian, reach phase 2, twice); `HLE_2R_NOSKIP` lets the cutscenes play (about 3000 frames), `HLE_2R_LOCK` locks on before the kill, `HLE_2R_KILL_T=<frames>` fights that long first (topped up, moving, swinging: a real fight records far more blocks).
+- **Display lists:** `HLE_TEST_DL_CHECK` walks every task as the plugin will (into each `G_DL`) and logs any command this backend never emits (`[dlcheck] BAD`: Delta's plugin aborts on one), cache resets and replays while one is pending.
 - **Boss held still** (before/after shots that line up): `HLE_TEST_FREEZE_BOSS`. Boss AI is otherwise non-deterministic.
 - **Ending:** `HLE_TEST_ENDING`.
 - **Lock-on at the kill:** `HLE_DUMMY_LOCK_KILL` (with `HLE_TEST_DUMMY`): locked on and circling, the boss dies at 4 s; `[lockkill]` logs the camera.
@@ -34,7 +37,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Choices:** `HLE_LOG_CHOOSE` (Shadowborne: the distance, angle and candidate moves at each pick, then the pick).
 - **Boss hit:** `HLE_DRAGON_HITME` (Shadowborne takes a sword hit every 1.5 s, a finisher's every 6 s: the flinch; `[flinch]` with `HLE_LOG_MOVES`). The passive dummy and the bots never damage the boss.
 - **Rig:** `HLE_LOG_RIG` (Shadowborne, per move: worst leg reach, neck and torso stretch as drawn, the head's nearest pass of its own body).
-- **Hits:** `HLE_LOG_MOVES` (`[move]` then `[hit]`), `HLE_LOG_HURTBOX`, `HLE_LOG_HITVOL`, `HLE_FK_HITLOG`, `HLE_TEST_ARC_REACH`, `HLE_LOG_JUMPS`. Sound timing: `HLE_LOG_SFX` with `HLE_LOG_MOVES`.
+- **Hits:** `HLE_LOG_MOVES` (`[move]` then `[hit]`), `HLE_LOG_HURTBOX`, `HLE_LOG_HITVOL`, `HLE_FK_HITLOG`, `HLE_TEST_ARC_REACH`, `HLE_LOG_JUMPS`. Sound timing: `HLE_LOG_SFX` with `HLE_LOG_MOVES` (`[sfx] ms index d <distance heard from>`).
 - **Same pixels after a rewrite:** `HLE_TEST_T3D_EXACT`.
 - **HLE block replay** (hle/replay.c): `HLE_TEST_REPLAY_CHECK` runs every replayable block normally and compares it with its recording (display list, scratch, matrix sources, state left): `[hle] replay: ... check N ok M BAD` with `HLE_TEST_PERF`, `[replay] MISMATCH` on any difference. `HLE_NO_REPLAY` interprets every block (the reference for pixel comparisons). `HLE_TEST_VCACHE_VERIFY` checksums the source of every vertex/strip cache hit (`[vcache] CHANGED` if data cached as static was rewritten). With `HLE_TEST_PERF`: replay counts, replay time by part, time inside recorded blocks.
 - **Memory used before it's set:** `HLE_TEST_DIRTY_HEAP` fills freed heap with garbage at frames 400 and 900; compare shots with a clean run (it found the Fallen Warrior's unset matrix).

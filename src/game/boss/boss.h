@@ -318,6 +318,7 @@ void boss_update(Boss* boss);
 void boss_draw(Boss* boss);
 // A broken stagger meter: each boss's own stagger (false if it can't right now: airborne, mid-cast)
 bool boss_try_stagger(Boss* boss);
+float boss_stagger_s(void);     // BOSS_STAGGER_S, longer with Crushing Blows
 void boss_draw_ui(Boss* boss, void* viewport); // T3DViewport* but avoiding header dependency
 
 void boss_turn_towards_yaw(Boss *boss, float targetYaw, float maxTurn);
@@ -349,7 +350,7 @@ float boss_damage_scale(void);
 // The stagger meter, as in Elden Ring: a blow's stance damage, not its damage. This much fills it:
 // 12 plain sword hits (combo finishers and skills count for more); each boss scales it (boss_poise_scale)
 #define POISE_DAMAGE 48.0f
-#define BOSS_STAGGER_S 3.5f     // every boss stays down this long: the opening is the reward (no damage bonus)
+#define BOSS_STAGGER_S 3.5f     // every boss stays down this long (boss_stagger_s): the opening is the reward (no damage bonus)
 void boss_apply_hit(Boss* boss, float amount, float poise);
 // Full health for its current phase, as the Skills setting or a Tower run sizes it.
 void boss_set_full_health(Boss* boss);

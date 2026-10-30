@@ -428,10 +428,16 @@ uint32_t hle_vc_hits, hle_vc_misses, hle_vc_resets, hle_vc_peak, hle_vc_strip_hi
 #endif
 
 static uint32_t vc_gen_n;           // pool generations: a reset frees everything recorded with it
-uint32_t hle_vc_gen(void) { return vc_gen_n; }
+uint32_t hle_vc_gen(void) { return vc_gen_n + vc_reset_pending; }    // a pending reset already ends the generation: its lists may be overwritten later in the task
+#ifdef HLE_TEST_DL_CHECK
+bool hle_vc_pending(void) { return vc_reset_pending && vc_task != gsp_tasks; }
+#endif
 
 static void vc_reset_later(void)
 {
+#ifdef HLE_TEST_DL_CHECK
+    debugf("[vcache] reset pending at task %lu (used %lu)\n", gsp_tasks, vc_used);
+#endif
     memset(vc_tab, 0, sizeof(vc_tab));
     vc_reset_pending = true;
     vc_task = gsp_tasks;

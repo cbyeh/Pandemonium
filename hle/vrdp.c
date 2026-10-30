@@ -90,6 +90,29 @@ static void task_submit(void)
     hle_t3d_flush();
     *dl_ptr++ = (uint64_t)G_ENDDL << 56;
     uint32_t size = (uint8_t*)dl_ptr - (uint8_t*)dl_base;
+#ifdef HLE_TEST_DL_CHECK    // test aid: walk the task as the plugin will (into every G_DL); log commands this backend never emits
+    {
+        static uint32_t ntask, nbad;
+        uint32_t seg[16] = {0}, stack[10], *w = (uint32_t*)UncachedAddr(dl_base); int sp = 0, n = 0;
+        ntask++;
+        while (n++ < 200000) {
+            uint32_t w0 = w[0], w1 = w[1], op = w0 >> 24;
+            if (op == G_MOVEWORD && ((w0 >> 16) & 0xFF) == G_MW_SEGMENT) seg[(w0 & 0xFF) / 4 & 15] = w1 & 0xFFFFFF;
+            if (op == G_ENDDL) { if (!sp) break; w = (uint32_t*)stack[--sp]; continue; }
+            if (op == G_DL) {
+                uint32_t a = (seg[(w1 >> 24) & 15] + (w1 & 0xFFFFFF)) & 0xFFFFFF;
+                if (!((w0 >> 16) & 0xFF)) { if (sp == 10) { if (nbad++ < 20) debugf("[dlcheck] task %lu: G_DL stack overflow\n", ntask); break; } stack[sp++] = (uint32_t)(w + 2); }
+                w = (uint32_t*)(0xA0000000 | a); continue;
+            }
+            if (!(op == 0x00 || op == G_VTX || op == G_TRI1 || op == G_TRI2 || op >= 0xD7)) {
+                if (nbad++ < 20) debugf("[dlcheck] task %lu: BAD command %08lx %08lx at %08lx (depth %d)\n", ntask, w0, w1, (uint32_t)w, sp);
+                break;
+            }
+            w += 2;
+        }
+        if (ntask % 600 == 0) debugf("[dlcheck] %lu tasks, %lu bad\n", ntask, nbad);
+    }
+#endif
 
     // HLE emulators raise the DP interrupt twice per FULLSYNC (graphics plugin +
     // core), which confuses rdpq's handler; SYNC_FULL completion is emulated

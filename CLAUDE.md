@@ -21,6 +21,7 @@ N64 souls-like boss rush built with libdragon + tiny3d. Design numbers (balance,
 - Animation transitions are smooth, especially into and out of stagger.
 - Menus work the same with D-pad, stick and A, in every button layout.
 - Bonus boss sounds sit at the Guardian's loudness.
+- A move's impact sound is heard from where it lands, not from the boss: blasts, bursts, rain and eruptions use the boss's `sfx_at(id, vol, x, z)`; a beam or stream that moves is heard from its nearest point each frame (`audio_set_scene_sfx_dist` on the channel the sound started on, as Shadowborne's `beam_at`). Wind-ups, casts and launches stay at the boss. Timed from the boss, a long-range hit by the player played faint or silent (the falloff is silent past 200).
 - Looks upgrades should pay for themselves (no perf cost if avoidable).
 
 ## Working with the user
