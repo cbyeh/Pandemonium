@@ -94,6 +94,9 @@ static struct {
     float recT;             // this recovery's length
     float stareT;           // from here on in it, a longer pause: it stares the player down (recT if none)
     float pickJit;          // this chase's offset to when it picks its next move (+-0.2 s: no metronome)
+    int queued;             // a blow it has picked and is closing in to land (-1: none)
+    float queuedAt;         // since when (kept off 2 s, it takes a move that reaches instead)
+    float lastUsed[9];      // when each move last came (choose: the longer ago, the likelier)
     bool heavy;             // spent (after Holy Slam): hunched, sword down; else just breathing
     int bladeArc;           // its sword back up after that: 0 point-down, 1 out to its right, 2 onto the shoulder, 3 the clip's again
     float tiredW, breathPh; // the breathing pose's current weight, and its phase
@@ -280,6 +283,9 @@ static void swing_pace(float from, float strike, float wind)
 #ifndef FK_QUICK_REC
 #define FK_QUICK_REC 1.2f   // the breather after a quick move (the combo, up-down, splitter, a stagger)
 #endif
+#ifndef FK_PAUSE
+#define FK_PAUSE 0.35f      // added to every breather
+#endif
 #ifndef FK_REACH_PICK
 #define FK_REACH_PICK 0.5f  // in reach, it picks its next move this soon (0.7 s further off)
 #endif
@@ -295,6 +301,7 @@ static void recover(float t, bool heavy)
 #endif
     if (!heavy && t <= FK_QUICK_REC && r < 20) { enter(FK_CHASE); return; }
     enter(FK_RECOVER);
+    t += FK_PAUSE;      // (every move now comes round: the breathers a little longer for them)
     s.recT = s.stareT = t;
     s.heavy = heavy; s.bladeArc = 0;
     if (!heavy && r >= 80) s.recT += 1.0f;
@@ -621,6 +628,8 @@ void fallen_knight_begin(Boss* boss)
     boss->pos[1] = s.groundY + FK_DROP_HEIGHT;
     s.velY = 0.0f;
     s.cdCleave = 5.0f; s.cdHalfmoon = 12.0f; s.cdMoonblade = 9.0f; s.cdRoll = 0.0f; s.cdSplitter = 6.0f; s.cdUpdown = 3.0f; s.cdTri = 14.0f; s.cdHoly = 20.0f; s.cdPlunge = 8.0f;
+    s.queued = -1;
+    for (int i = 0; i < 9; i++) s.lastUsed[i] = get_ticks_ms() * 0.001f;     // (all equally fresh at the start)
     s.enraged = false;
     s.bladeW = 0.0f;
     s.beam2T = -1.0f;
@@ -1061,19 +1070,49 @@ static void choose(Boss *b, float dist)
     if (HLE_FK_FORCE == 4) { enter(FK_UPDOWN); play(FKA_ATTACK2, true); debugf("[fk] updown\n"); return; }
     if (HLE_FK_FORCE == 5) { enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); debugf("[fk] combo\n"); return; }
 #endif
-    if (s.cdHalfmoon <= 0.0f && dist < 70.0f) { s.cdHalfmoon = 16.0f; enter(FK_HALFMOON); play(FKA_HALFMOON, true); return; }
-    if (s.cdMoonblade <= 0.0f && dist > 40.0f) { s.cdMoonblade = 12.0f; enter(FK_MOONBLADE); return; }
-    if (s.enraged && s.cdHoly <= 0.0f && dist < 50.0f) { s.cdHoly = 20.0f; enter(FK_HOLYSLAM); play(FKA_ATTACK1, true); return; }
-    if (s.cdTri <= 0.0f && dist > 40.0f && dist < 140.0f) {
-        s.cdTri = 14.0f; enter(FK_TRISLAM); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.1f); return;
+    // Every move off its cooldown is a candidate at any range, the likelier the longer since it last
+    // came (1 + the seconds since, to 20): all of them come round, none twice running. One that must
+    // reach (the combo, up-down, cleave, halfmoon, holy slam) picked out of reach: it closes in first
+    enum { P_HALFMOON, P_MOONBLADE, P_HOLY, P_TRI, P_PLUNGE, P_SPLITTER, P_CLEAVE, P_UPDOWN, P_COMBO, P_N };
+    static const float REACH[P_N] = { 70.0f, 1e9f, 50.0f, 1e9f, 1e9f, 1e9f, 60.0f, FK_MELEE_RANGE + 8.0f, FK_MELEE_RANGE - 4.0f };
+    float now = get_ticks_ms() * 0.001f;
+    int m = s.queued;
+    bool farOnly = m >= 0 && now - s.queuedAt > 2.0f;     // kept off it 2 s (the player backing away): a move that reaches
+    if (farOnly) m = -1;
+    if (m < 0) {
+        float *cd[P_N] = { &s.cdHalfmoon, &s.cdMoonblade, &s.cdHoly, &s.cdTri, &s.cdPlunge, &s.cdSplitter, &s.cdCleave, &s.cdUpdown, NULL };
+        float w[P_N], tot = 0.0f;
+        for (int i = 0; i < P_N; i++) {
+            bool ok = (!cd[i] || *cd[i] <= 0.0f) && (i != P_HOLY || s.enraged) && (i != P_PLUNGE || dist >= 40.0f)    // (the plunge's leap needs room)
+                   && (!farOnly || REACH[i] > 1e8f);
+            w[i] = ok ? 1.0f + fminf(now - s.lastUsed[i], 19.0f) : 0.0f;
+            tot += w[i];
+        }
+#ifdef HLE_LOG_CHOOSE    // test aid: the distance and each candidate's weight at a pick
+        debugf("[choose] dist %.0f w %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f\n", (double)dist, (double)w[0], (double)w[1], (double)w[2], (double)w[3], (double)w[4], (double)w[5], (double)w[6], (double)w[7], (double)w[8]);
+#endif
+        static uint32_t x;              // its own rolls (xorshift32, seeded from the clock), as Shadowborne's
+        if (!x) x = (uint32_t)TICKS_READ() | 1u;
+        x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+        if (tot <= 0.0f) { s.queuedAt = now; return; }     // (none off cooldown that reaches: on after it)
+        float r = (x % 10000) / 10000.0f * tot;
+        m = 0;
+        while (m < P_N - 1 && (w[m] <= 0.0f || r >= w[m])) { r -= w[m]; m++; }
+        s.queued = m; s.queuedAt = now;
     }
-    if (s.cdPlunge <= 0.0f && dist > 50.0f && dist < 120.0f) {
-        s.cdPlunge = 14.0f; enter(FK_PLUNGE); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], 0.3f); return;
+    if (dist > REACH[m]) return;    // closing in on it
+    s.queued = -1; s.lastUsed[m] = now;
+    switch (m) {
+    case P_HALFMOON:  s.cdHalfmoon = 16.0f; enter(FK_HALFMOON); play(FKA_HALFMOON, true); break;
+    case P_MOONBLADE: s.cdMoonblade = 12.0f; enter(FK_MOONBLADE); break;
+    case P_HOLY:      s.cdHoly = 20.0f; enter(FK_HOLYSLAM); play(FKA_ATTACK1, true); break;
+    case P_TRI:       s.cdTri = 14.0f; enter(FK_TRISLAM); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.1f); break;
+    case P_PLUNGE:    s.cdPlunge = 14.0f; enter(FK_PLUNGE); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], 0.3f); break;
+    case P_SPLITTER:  s.cdSplitter = 11.0f; enter(FK_SPLITTER); break;
+    case P_CLEAVE:    s.cdCleave = 9.0f; enter(FK_CLEAVE); break;
+    case P_UPDOWN:    s.cdUpdown = 7.0f; enter(FK_UPDOWN); play(FKA_ATTACK2, true); break;
+    default:          enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); break;
     }
-    if (s.cdSplitter <= 0.0f && dist > 35.0f && dist < 130.0f) { s.cdSplitter = 11.0f; enter(FK_SPLITTER); return; }
-    if (s.cdCleave <= 0.0f && dist < 60.0f) { s.cdCleave = 9.0f; enter(FK_CLEAVE); return; }
-    if (s.cdUpdown <= 0.0f && dist < FK_MELEE_RANGE + 8.0f) { s.cdUpdown = 7.0f; enter(FK_UPDOWN); play(FKA_ATTACK2, true); return; }
-    if (dist < FK_MELEE_RANGE - 4.0f) { enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); return; }
 }
 
 void fallen_knight_update(Boss* b, float dt)
