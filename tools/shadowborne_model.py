@@ -365,17 +365,7 @@ for i in range(rig.NTAIL): place(SEG_CR + FLANK_CR if i < 2 else TSEG_CR, *seg_f
 TIP = crystal_tris([0, 0, 0], [0, 0, 16.0], 3.4)
 for sd_ in (-1, 1): TIP += crystal_tris([0, 0, 3.0], [sd_ * 6.0, 1.0, 8.0], 1.6)
 place(TIP, *seg_frame(P['tail%d' % rig.NTAIL], P['tail%d' % (rig.NTAIL + 1)], MESH, 16.0 / math.sqrt(rig.dot(rig.sub(P['tail%d' % (rig.NTAIL + 1)], P['tail%d' % rig.NTAIL]), rig.sub(P['tail%d' % (rig.NTAIL + 1)], P['tail%d' % rig.NTAIL])))), 'tail%d' % rig.NTAIL)
-# the old wing's crystals (build_wing: the elbow's, the wrist's, one on the forearm), placed in the
-# open wing's frame and carried to the bind pose on the forearm
-for sd_ in (-1, 1):
-    O_, s_ = WOPEN[sd_], WSIDE[sd_]; k_ = rig.WING_K
-    wx_, wy_, wz_ = rig.wing_frame(sd_, rig.REST_WING['raise_'], rig.REST_WING['sweep'])
-    to_ = lambda p: rig.add(O_['root'], rig.add(rig.add(rig.mul(wx_, p[0] * k_), rig.mul(wy_, p[1] * k_)), rig.mul(wz_, p[2] * k_)))
-    for base_, tip_, r_ in (([30, 6, 4], [31, 14, 8], 2.0), ([58, 10, -6], [63, 19, -4], 2.2), ([44, 8, -1], [46, 13, 2], 1.4)):
-        b_, t_ = to_(base_), to_(tip_)
-        for ring_, tp_ in crystal_tris(b_, t_, r_ * k_):
-            R_ = [carry(q_, 'fore' + s_, sd_) for q_ in ring_]; T_ = carry(tp_, 'fore' + s_, sd_)
-            place([(R_, T_)], [0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], 1, 1, 1, 'fore' + s_)
+# (no crystals on the wings: the user's call)
 cme = bpy.data.meshes.new("crystals"); cry_bm.to_mesh(cme)
 cobj = bpy.data.objects.new("crystals", cme); sc.collection.objects.link(cobj)
 idx = {v: i for i, v in enumerate(cry_bm.verts)}
