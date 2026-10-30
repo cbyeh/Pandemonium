@@ -10,6 +10,7 @@
 
 #include "fallen_knight.h"
 #include "character.h"
+#include "game_lighting.h"
 #include "globals.h"
 #include "fx/skill_fx.h"
 #include "fx/screen_shake.h"
@@ -72,6 +73,7 @@ static struct {
     int anim;
     float blendT, blendDur; // crossfade timer (0 = done), and its length
     T3DMat4FP *mat;
+    T3DModel *body;         // its body (tools/fw_knight_model.py): the knight's own mesh reshaped, on the knight's skeleton
     int swordBone;          // "Hand-Right": the blade runs along its -X
     int headBone;           // "Head": the body capsule's top while it kneels staggered
 
@@ -102,13 +104,26 @@ static struct {
     bool heavy;             // spent (after Holy Slam): hunched, sword down; else just breathing
     int bladeArc;           // its sword back up after that: 0 point-down, 1 out to its right, 2 onto the shoulder, 3 the clip's again
     float tiredW, breathPh; // the breathing pose's current weight, and its phase
-    T3DBone spineKeep, headKeep;    // the clip's own pose of the bones posed this frame (bone_pose)
+    T3DBone spineKeep, headKeep, waistKeep, armKeep;    // the clip's own pose of the bones turned this frame (bone_turn)
+    float spineRise;        // the breath's lift of the chest this frame (tired_pose)
     int spineBone;
     int armL[3];            // "UpperArm-Left", "LowerArm-Left", "Hand-Left": brought to the hilt (grip_pose)
     float gripW;            // how far its left hand is on the hilt: both hands on the sword in its big moves
     float gripFit;          // how well the hilt is placed for it (reach, ahead of the body), eased
     T3DBone gripKeep[3];    // the clip's own pose of those, put back after drawing
     float beam2T, beam2O[3], beam2V[3], beam2Life;  // a Moon Blade cross's second beam, after the first (< 0: none)
+    // Life (life_*): a layer of turns on the waist, spine, head and free arm over the clips
+    int waistBone;
+    float kv[16], kc[16], ko[16];   // the layer's channels (L_*) this frame, a cut's carry, as applied
+    int kState, kStep;
+    float chainW;           // the waist and spine's share of the layer: none in a swing (its blade is read from the pose)
+    float lookYaw, lookPitch, lookW;    // the head on the player, a beat late
+    float flinch[3], flinchV[3];        // a blow taken: the head's pitch and yaw, the spine's pitch (sprung)
+    int hitSeen;
+    float fidgetT; int fidgetK;     // a fidget under way (time left, which)
+    float yawPrev, yawRate;
+    float cryT;             // the war cry's pose (time since; < 0 none)
+    float dtLast;           // the last update's step (the cape steps with it)
 } s;
 
 // ---- Helpers ----
@@ -175,6 +190,87 @@ static void move(Boss *b, float vx, float vz, float dt)
 }
 
 static inline float clamp01f(float x) { return x < 0.0f ? 0.0f : x > 1.0f ? 1.0f : x; }
+
+// ---- Life: keyframed turns over the clips ----
+// The clips are the knight's own; what they lack is the boss's body language: a lean into its
+// turns, a coil before a skill and a heave after it, the head on you, a flinch at a blow, fidgets
+// in its breathers. Channels (radians; the waist's rise in glTF units), keyed like Shadowborne's.
+// The waist and spine carry the sword arm, so their share (chainW) is nothing in a swing: its
+// blade, read from the pose, lands exactly as before; the head and the free arm move any time
+enum { L_WR, L_WP, L_SP, L_SY, L_SR, L_HP, L_HY, L_HR, L_AP, L_AR, L_N };
+#define L_CHAIN(ch) ((ch) <= L_SR)
+
+typedef struct { uint8_t ch, n; const float *k; } Track;
+typedef struct { const Track *tr; uint8_t n; } Clip;
+#define TR(ch, ...) { ch, sizeof((const float[]){ __VA_ARGS__ }) / sizeof(float) / 2, (const float[]){ __VA_ARGS__ } }
+#define CLIP(name, ...) static const Track name##_tr[] = { __VA_ARGS__ }; static const Clip name = { name##_tr, sizeof(name##_tr) / sizeof(Track) }
+
+static float key_slope(const float *k, int n, int i)
+{
+    if (i <= 0 || i >= n - 1) return 0.0f;
+    float a = (k[2 * i + 1] - k[2 * i - 1]) / fmaxf(k[2 * i] - k[2 * i - 2], 1e-4f);
+    float b = (k[2 * i + 3] - k[2 * i + 1]) / fmaxf(k[2 * i + 2] - k[2 * i], 1e-4f);
+    return a * b <= 0.0f ? 0.0f : 0.5f * (a + b);      // a key at a peak holds there (clamped tangents)
+}
+static float key_eval(const Track *tr, float t)
+{
+    const float *k = tr->k;
+    int n = tr->n;
+    if (t <= k[0]) return k[1];
+    if (t >= k[2 * n - 2]) return k[2 * n - 1];
+    int i = 0;
+    while (t >= k[2 * i + 2]) i++;
+    float h = k[2 * i + 2] - k[2 * i], u = (t - k[2 * i]) / h, u2 = u * u, u3 = u2 * u;
+    return (2 * u3 - 3 * u2 + 1) * k[2 * i + 1] + (u3 - 2 * u2 + u) * h * key_slope(k, n, i)
+         + (-2 * u3 + 3 * u2) * k[2 * i + 3] + (u3 - u2) * h * key_slope(k, n, i + 1);
+}
+// Clip c at t (s), its keys stretched by scale, mirrored (side -1: the yaws and rolls), weighted by w
+static void key_play(const Clip *c, float t, float scale, float side, float w)
+{
+    t /= fmaxf(scale, 1e-3f);
+    for (int i = 0; i < c->n; i++) {
+        int ch = c->tr[i].ch;
+        float v = key_eval(&c->tr[i], t) * w;
+        if (ch == L_SY || ch == L_SR || ch == L_HY || ch == L_HR) v *= side;
+        s.kv[ch] += v;
+    }
+}
+static void key_loop(const Clip *c, float u, float w) { key_play(c, u - floorf(u), 1.0f, 1.0f, w); }
+
+// Turns a bone after the clip, for this frame's matrices only: pitch round its parent's side axis
+// (+ leans it forward), yaw round its up, roll round its forward, and raised `rise` (its parent's
+// units). `keep` saves the clip's own pose, put back by bone_unpose right after t3d_skeleton_update:
+// left in the bone, it leaked into the next frame and the crossfades (the knight's clips don't
+// write Spine1's forward offset: it crept 20 units)
+static void bone_turn(int bone, float pitch, float yaw, float roll, float rise, T3DBone *keep)
+{
+    keep->parentIdx = 0xFFFF;       // nothing to put back
+    if (bone < 0) return;
+    T3DBone *h = &s.skel.bones[bone];
+    if (h->parentIdx == 0xFFFF || (fabsf(pitch) + fabsf(yaw) + fabsf(roll) < 1e-4f && fabsf(rise) < 1e-4f)) return;
+    *keep = *h;
+    const T3DMat4x3 *P = &s.skel.bones[h->parentIdx].matrix;     // last frame's, as blade_pose
+    const float ang[3] = { roll, yaw, pitch };      // round the parent's forward (x), up (y), side (z)
+    float up[3], lu = 0.0f;
+    for (int i = 0; i < 3; i++) { up[i] = P->m[i][1]; lu += up[i] * up[i]; }
+    if (lu < 1e-8f) return;
+    for (int a = 2; a >= 0; a--) {
+        if (fabsf(ang[a]) < 1e-4f) continue;
+        float ax[3], l = 0.0f;
+        for (int i = 0; i < 3; i++) { ax[i] = P->m[i][a]; l += ax[i] * ax[i]; }
+        if (l < 1e-8f) continue;
+        l = 1.0f / sqrtf(l);
+        for (int i = 0; i < 3; i++) ax[i] *= l;
+        T3DQuat r, q;
+        t3d_quat_from_rotation(&r, ax, ang[a]);
+        t3d_quat_mul(&q, &r, &h->rotation);
+        t3d_quat_normalize(&q);
+        h->rotation = q;
+    }
+    lu = 1.0f / sqrtf(lu);
+    for (int i = 0; i < 3; i++) h->position.v[i] += up[i] * lu * rise;
+    h->hasChanged = true;
+}
 
 static void enter(FkState st)
 {
@@ -358,33 +454,6 @@ static void quat_rotate(const T3DQuat *q, const float v[3], float out[3])
     out[2] = v[2] + x[3] * t[2] + (x[0] * t[1] - x[1] * t[0]);
 }
 
-/** Poses a bone after the clip, for this frame's matrices only: turned by `ang` round the boss's side
- *  axis (+ leans it forward) and raised `rise` (its parent's units). `keep` saves the clip's own pose,
- *  put back by bone_unpose right after t3d_skeleton_update: left in the bone, it leaked into the next
- *  frame and the crossfades (the knight's clips don't write Spine1's forward offset: it crept 20 units) */
-static void bone_pose(int bone, float ang, float rise, T3DBone *keep)
-{
-    keep->parentIdx = 0xFFFF;       // nothing to put back
-    if (bone < 0) return;
-    T3DBone *h = &s.skel.bones[bone];
-    if (h->parentIdx == 0xFFFF || (fabsf(ang) < 1e-4f && fabsf(rise) < 1e-4f)) return;
-    *keep = *h;
-    const T3DMat4x3 *P = &s.skel.bones[h->parentIdx].matrix;     // last frame's, as blade_pose
-    float side[3], up[3], ls = 0.0f, lu = 0.0f;
-    for (int i = 0; i < 3; i++) { side[i] = P->m[i][2]; up[i] = P->m[i][1]; ls += side[i] * side[i]; lu += up[i] * up[i]; }    // model space: side +Z, up +Y
-    if (ls < 1e-8f || lu < 1e-8f) return;
-    ls = 1.0f / sqrtf(ls); lu = 1.0f / sqrtf(lu);
-    if (fabsf(ang) > 1e-4f) {
-        for (int i = 0; i < 3; i++) side[i] *= ls;
-        T3DQuat r, q;
-        t3d_quat_from_rotation(&r, side, ang);
-        t3d_quat_mul(&q, &r, &h->rotation);
-        t3d_quat_normalize(&q);
-        h->rotation = q;
-    }
-    for (int i = 0; i < 3; i++) h->position.v[i] += up[i] * lu * rise;
-    h->hasChanged = true;
-}
 
 static void bone_unpose(int bone, const T3DBone *keep)
 {
@@ -405,13 +474,13 @@ static void tired_pose(float dt)
     float want = (s.state == FK_RECOVER && s.t < s.recT - 0.3f) ? 1.0f : 0.0f;
     float rate = want > s.tiredW ? 3.0f : 3.5f;
     s.tiredW += fmaxf(-rate * dt, fminf(rate * dt, want - s.tiredW));
-    s.spineKeep.parentIdx = s.headKeep.parentIdx = 0xFFFF;
+    s.spineRise = 0.0f;
     if (s.tiredW <= 0.0f) return;
     s.breathPh += dt * 2.0f * T3D_PI * (s.heavy ? 1.3f : 0.55f);      // spent ~80 breaths a minute, else ~33
     float w = s.tiredW * s.tiredW * (3.0f - 2.0f * s.tiredW), br = 0.5f + 0.5f * sinf(s.breathPh), hv = s.heavy ? 1.0f : 0.0f;
     float h = s.spineBone >= 0 ? t3d_vec3_len(&s.skel.bones[s.spineBone].position) : 0.0f;     // the spine's height above the waist
-    bone_pose(s.spineBone, w * hv * (0.42f + 0.1f * br), w * h * FK_BREATH_RISE * br, &s.spineKeep);
-    bone_pose(s.headBone, w * (hv * 0.2f - 0.05f * br), 0.0f, &s.headKeep);
+    s.kv[L_SP] += w * hv * (0.42f + 0.1f * br); s.spineRise = w * h * FK_BREATH_RISE * br;
+    s.kv[L_HP] += w * (hv * 0.2f - 0.05f * br);
 }
 
 /** Turns the sword hand (after the clip and its crossfade) so the blade points along bladeDir, by bladeW */
@@ -572,6 +641,209 @@ static void grip_unpose(void)
     }
 }
 
+// ---- Life: the clips ----
+
+// A breather: its weight shifting from foot to foot, the head settling (a loop over 4.2 s)
+CLIP(BREATHER,
+    TR(L_SR, 0, 0, 0.25f, 0.04f, 0.5f, 0, 0.75f, -0.04f, 1, 0),
+    TR(L_WR, 0, 0, 0.3f, 0.02f, 0.6f, -0.015f, 1, 0),
+    TR(L_HR, 0, 0, 0.4f, 0.04f, 0.8f, -0.03f, 1, 0));
+// Halfmoon: coiled ever tighter round the sword out at its side, sunk low, eyes up on you; the
+// slash unwinds it past straight and it settles (the crescent leaves at 1.6 s)
+CLIP(HALFMOON,
+    TR(L_SY, 0, 0, 0.4f, -0.15f, 1.4f, -0.3f, 1.55f, -0.35f, 1.68f, 0.25f, 1.9f, 0.15f, 2.6f, 0),
+    TR(L_WR, 0, 0, 0.4f, -0.12f, 1.5f, -0.2f, 1.68f, -0.05f, 2.2f, 0),
+    TR(L_SP, 0, 0, 0.4f, 0.1f, 1.5f, 0.18f, 1.68f, 0.05f, 2.4f, 0),
+    TR(L_HP, 0, 0, 1.5f, -0.12f, 1.7f, 0, 2.4f, 0),
+    TR(L_SR, 0, 0, 1.6f, 0, 1.7f, 0.12f, 2.2f, 0),
+    TR(L_AR, 0, 0, 0.4f, 0.3f, 1.55f, 0.35f, 1.7f, 0.1f, 2.4f, 0));
+// Cleave: bowed over the sword as it plants and sinks, then flung up and back as it rips it free
+CLIP(CLEAVE,
+    TR(L_SP, 0, 0, 0.3f, 0.15f, 0.85f, 0.3f, 0.95f, -0.15f, 1.3f, -0.05f, 1.9f, 0),
+    TR(L_WR, 0, 0, 0.3f, -0.05f, 0.85f, -0.15f, 0.95f, 0.05f, 1.4f, 0),
+    TR(L_HP, 0, 0, 0.8f, -0.15f, 0.95f, -0.25f, 1.5f, 0),
+    TR(L_AP, 0, 0, 0.85f, -0.2f, 1.0f, 0.3f, 1.6f, 0));
+// The splitter: a hop back, landing heavy; each of its three swings thrown from the hips (clip
+// time, stretched to each swing's strike)
+CLIP(SPLIT_BACK,
+    TR(L_WR, 0, 0, 0.2f, -0.08f, 0.45f, 0.03f, 0.6f, 0),
+    TR(L_SP, 0, 0, 0.25f, -0.1f, 0.45f, 0.08f, 0.6f, 0),
+    TR(L_HP, 0, 0, 0.3f, 0.08f, 0.6f, 0));
+CLIP(SPLIT_CUT,
+    TR(L_SY, 0, 0, 0.4f, 0.12f, 0.55f, -0.18f, 0.8f, -0.05f),
+    TR(L_SP, 0, 0, 0.45f, -0.06f, 0.6f, 0.1f, 0.85f, 0),
+    TR(L_WR, 0, 0, 0.5f, 0, 0.58f, -0.06f, 0.85f, 0));
+// The overhead slam (clip time, AttackCharged from its raise): arched back as the blade goes up,
+// then everything behind the blow, the knees giving as it bites the floor
+CLIP(SLAM,
+    TR(L_SP, 1.72f, 0, 1.85f, -0.2f, 1.95f, -0.25f, 2.02f, 0.25f, 2.2f, 0.15f, 2.35f, 0.05f),
+    TR(L_WR, 1.72f, 0, 1.9f, 0.05f, 2.02f, -0.2f, 2.2f, -0.1f, 2.35f, 0),
+    TR(L_HP, 1.72f, 0, 1.9f, -0.2f, 2.02f, 0.1f, 2.3f, 0));
+// The Holy Slam's gathering: drawn up and back under the raised blade, head thrown back, held,
+// then the slam (from the gathering's start)
+CLIP(HOLY,
+    TR(L_SP, 0, 0, 0.3f, -0.15f, 1.0f, -0.22f, 1.05f, -0.2f, 1.25f, 0.3f, 1.5f, 0.2f),
+    TR(L_WR, 0, 0, 1.0f, 0.06f, 1.25f, -0.25f, 1.5f, -0.15f),
+    TR(L_HP, 0, 0, 0.5f, -0.25f, 1.0f, -0.3f, 1.25f, 0.1f, 1.6f, 0.05f));
+// A landing from a leap: the weight taken through its knees and back (from the touch)
+CLIP(LAND,
+    TR(L_WR, 0, 0, 0.08f, -0.25f, 0.35f, -0.05f, 0.6f, 0),
+    TR(L_SP, 0, 0, 0.08f, 0.25f, 0.4f, 0.05f, 0.7f, 0),
+    TR(L_HP, 0, 0, 0.1f, 0.15f, 0.5f, 0),
+    TR(L_AR, 0, 0, 0.1f, 0.35f, 0.5f, 0));
+// The war cry at half health: a hunch, then reared back roaring, the free arm flung out (from it)
+CLIP(WARCRY,
+    TR(L_SP, 0, 0, 0.15f, 0.12f, 0.4f, -0.3f, 1.3f, -0.28f, 1.7f, 0),
+    TR(L_HP, 0, 0, 0.15f, 0.15f, 0.4f, -0.35f, 1.3f, -0.3f, 1.7f, 0),
+    TR(L_AR, 0, 0, 0.4f, 0.6f, 1.3f, 0.5f, 1.7f, 0),
+    TR(L_AP, 0, 0, 0.4f, -0.3f, 1.3f, -0.3f, 1.7f, 0),
+    TR(L_WR, 0, 0, 0.15f, -0.08f, 0.4f, 0.04f, 1.7f, 0),
+    TR(L_HY, 0.4f, 0, 0.5f, 0.05f, 0.6f, -0.05f, 0.7f, 0.04f, 0.8f, -0.04f, 0.9f, 0));
+// Fidgets in a breather: the neck cracked one way then the other; the shoulders rolled; the off
+// hand flexed
+CLIP(FID_NECK,
+    TR(L_HR, 0, 0, 0.15f, 0.3f, 0.3f, 0.28f, 0.42f, -0.05f, 0.55f, -0.3f, 0.7f, -0.28f, 0.85f, 0),
+    TR(L_HP, 0, 0, 0.2f, 0.06f, 0.6f, 0.06f, 0.85f, 0));
+CLIP(FID_SHOULDER,
+    TR(L_SR, 0, 0, 0.3f, 0.1f, 0.6f, -0.08f, 0.9f, 0),
+    TR(L_SY, 0, 0, 0.3f, -0.08f, 0.6f, 0.06f, 0.9f, 0),
+    TR(L_SP, 0, 0, 0.3f, -0.06f, 0.9f, 0));
+CLIP(FID_HAND,
+    TR(L_AP, 0, 0, 0.25f, -0.4f, 0.6f, -0.35f, 0.9f, 0),
+    TR(L_AR, 0, 0, 0.25f, 0.2f, 0.6f, 0.15f, 0.9f, 0),
+    TR(L_HY, 0, 0, 0.3f, 0.25f, 0.6f, 0.2f, 0.9f, 0));
+
+static bool melee_state(void)       // its blade is read from the pose: the waist and spine stay as the clip has them
+{
+    return s.state == FK_COMBO || s.state == FK_UPDOWN || s.state == FK_ROLLCUT || s.state == FK_PLUNGE || (s.state == FK_HOLYSLAM && s.step == 0);
+}
+
+static float landT = -1.0f;         // since its last landing (LAND)
+static uint32_t life_rng(void)      // its fidgets' own rolls (the fight's stay as they were)
+{
+    static uint32_t x;
+    if (!x) x = (uint32_t)TICKS_READ() | 1u;
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    return x;
+}
+
+/** This frame's layer: the move's clip, the head on the player, a flinch, a fidget, the lean into a turn */
+static void life_update(Boss *b, float dt)
+{
+    // a cut (a new move or the next step) keeps what was showing and fades it (no snap)
+    bool cut = s.state != s.kState || s.step != s.kStep;
+    s.kState = s.state; s.kStep = s.step;
+    if (dt > 0.0f) {
+        float yr = remainderf(b->rot[1] - s.yawPrev, 2.0f * T3D_PI) / dt;
+        s.yawRate += (yr - s.yawRate) * fminf(1.0f, 8.0f * dt);
+    }
+    s.yawPrev = b->rot[1];
+    float want = melee_state() ? 0.0f : 1.0f;
+    s.chainW += fmaxf(-8.0f * dt, fminf(8.0f * dt, want - s.chainW));
+
+    // the move's own
+    float clip = s.anim >= 0 ? clip_time() : 0.0f;
+    switch (s.state) {
+    case FK_HALFMOON: key_play(&HALFMOON, s.t, 1.0f, 1.0f, 1.0f); break;
+    case FK_CLEAVE:   key_play(&CLEAVE, s.t, 1.0f, 1.0f, 1.0f); break;
+    case FK_SPLITTER:
+        if (s.step == 0) key_play(&SPLIT_BACK, s.t, 1.0f, 1.0f, 1.0f);
+        else key_play(&SPLIT_CUT, clip, WIN[s.step - 1][0] / 0.55f, (s.step & 1) ? 1.0f : -1.0f, 1.0f);
+        break;
+    case FK_TRISLAM:  if (s.step == 0) key_play(&SLAM, clip, 1.0f, 1.0f, 1.0f); break;
+    case FK_HOLYSLAM: if (s.step == 1) key_play(&HOLY, s.t, 1.0f, 1.0f, 1.0f); break;
+    case FK_RECOVER:  key_loop(&BREATHER, s.t / 4.2f, clamp01f(s.t / 0.5f)); break;
+    case FK_STAGGER: {      // heaving while it kneels; it looks up at you before it rises
+        float br = sinf(s.t * 2.0f * T3D_PI * 0.9f);
+        s.kv[L_SP] += 0.06f * br; s.kv[L_HP] += -0.04f * br; s.kv[L_WR] += 0.02f * br;
+        break;
+    }
+    default: break;
+    }
+    if (landT >= 0.0f) { key_play(&LAND, landT, 1.0f, 1.0f, 1.0f); landT += dt; if (landT > 0.8f) landT = -1.0f; }
+    if (s.cryT >= 0.0f) { key_play(&WARCRY, s.cryT, 1.0f, 1.0f, 1.0f); s.cryT += dt; if (s.cryT > 1.8f) s.cryT = -1.0f; }
+
+    // the chase: leaning into its turns, the head leading them; running, it leans on
+    if (s.state == FK_CHASE) {
+        s.kv[L_SR] += fmaxf(-0.15f, fminf(0.15f, -s.yawRate * 0.06f));
+        s.kv[L_HY] -= fmaxf(-0.3f, fminf(0.3f, s.yawRate * 0.12f));
+        if (s.anim == FKA_RUN) s.kv[L_SP] += 0.08f;
+    }
+
+    // a fidget now and then in a long breather (about one in 3 s): one of three
+    if (s.state == FK_RECOVER && !s.heavy && s.fidgetT <= 0.0f && s.t > 0.6f && s.t < s.recT - 1.2f && (life_rng() % 1000) < (uint32_t)(dt * 330.0f)) {
+        s.fidgetT = 0.9f; s.fidgetK = life_rng() % 3;
+    }
+    if (s.fidgetT > 0.0f) {
+        if (s.state != FK_RECOVER) s.fidgetT = 0.0f;
+        else {
+            const Clip *f = s.fidgetK == 0 ? &FID_NECK : s.fidgetK == 1 ? &FID_SHOULDER : &FID_HAND;
+            key_play(f, 0.9f - s.fidgetT, 1.0f, 1.0f, 1.0f);
+            s.fidgetT -= dt;
+        }
+    }
+
+    // the head on the player, a beat late (most in a breather or the chase, a little in a swing)
+    float dx, dz;
+    to_player(b, &dx, &dz);
+    float rel = remainderf(atan2f(-dx, dz) - b->rot[1], 2.0f * T3D_PI);
+    float lw = s.state == FK_ROLL || s.state == FK_DEAD ? 0.0f : s.state == FK_STAGGER ? (b->staggerT < 1.2f ? 0.8f : 0.3f)
+             : (s.state == FK_CHASE || s.state == FK_RECOVER || s.state == FK_INTRO) ? 1.0f : 0.5f;
+    s.lookW += (lw - s.lookW) * fminf(1.0f, 4.0f * dt);
+    s.lookYaw += (fmaxf(-1.0f, fminf(1.0f, rel)) - s.lookYaw) * fminf(1.0f, 3.0f * dt);
+#ifdef HLE_FK_NOLOOK    // test aid: the head as the clips have it
+    s.lookW = 0.0f;
+#endif
+    s.kv[L_HY] -= s.lookYaw * 0.85f * s.lookW;     // (+ yaw turns it away from + rel)
+    s.kv[L_SY] -= s.lookYaw * 0.25f * s.lookW;
+    if (s.state == FK_STAGGER) s.kv[L_HP] -= 0.25f * s.lookW;     // up at you from its knee
+
+    // a blow taken: the head snapped back and away, the chest recoiling, sprung back
+    Boss *bb = b;
+    if (bb->hitSeq != s.hitSeen) {
+        if (s.state != FK_DEAD && s.state != FK_INTRO) {
+            float k = fmaxf(0.35f, fminf(1.0f, bb->hitWeight / 2.5f)), sd = rel > 0.0f ? 1.0f : -1.0f;
+            s.flinchV[0] -= 7.0f * k; s.flinchV[1] += sd * 5.0f * k; s.flinchV[2] -= 5.0f * k;
+#ifdef HLE_LOG_MOVES
+            debugf("[flinch] fk k %.2f state %d\n", (double)k, s.state);
+#endif
+        }
+        s.hitSeen = bb->hitSeq;
+    }
+    float h = fminf(dt, 0.05f);
+    for (int i = 0; i < 3; i++) {
+        s.flinchV[i] += (-140.0f * s.flinch[i] - 15.0f * s.flinchV[i]) * h;
+        s.flinch[i] += s.flinchV[i] * h;
+    }
+    s.kv[L_HP] += s.flinch[0]; s.kv[L_HY] += s.flinch[1]; s.kv[L_SP] += s.flinch[2];
+
+    float fade = expf(-14.0f * dt);
+    for (int ch = 0; ch < L_N; ch++) {
+        if (cut) s.kc[ch] = s.ko[ch] - s.kv[ch];
+        else s.kc[ch] *= fade;
+        s.ko[ch] = s.kv[ch] + s.kc[ch];
+        s.kv[ch] = 0.0f;
+    }
+}
+
+/** The layer onto the bones (after the clip's crossfade, before the blade and the grip) */
+static void life_apply(void)
+{
+    float c = s.chainW * s.chainW * (3.0f - 2.0f * s.chainW);
+    bone_turn(s.waistBone, s.ko[L_WP] * c, 0.0f, 0.0f, s.ko[L_WR] * c * 64.0f, &s.waistKeep);
+    bone_turn(s.spineBone, s.ko[L_SP] * c, s.ko[L_SY] * c, s.ko[L_SR] * c, s.spineRise, &s.spineKeep);
+    bone_turn(s.headBone, s.ko[L_HP], s.ko[L_HY], s.ko[L_HR], 0.0f, &s.headKeep);
+    bone_turn(s.armL[0], s.ko[L_AP], 0.0f, s.ko[L_AR], 0.0f, &s.armKeep);
+}
+
+static void life_unpose(void)
+{
+    bone_unpose(s.armL[0], &s.armKeep);
+    bone_unpose(s.headBone, &s.headKeep);
+    bone_unpose(s.spineBone, &s.spineKeep);
+    bone_unpose(s.waistBone, &s.waistKeep);
+}
+
 // ---- Lifetime ----
 
 void fallen_knight_free(void)
@@ -579,6 +851,7 @@ void fallen_knight_free(void)
     if (!s.ready) return;
     gpu_wait();
     for (int i = 0; i < FKA_COUNT; i++) t3d_anim_destroy(&s.anims[i]);
+    t3d_model_free(s.body);
     t3d_skeleton_destroy(&s.skel);
     t3d_skeleton_destroy(&s.skelBlend);
     free_uncached(s.mat);
@@ -595,11 +868,13 @@ void fallen_knight_begin(Boss* boss)
             t3d_anim_set_looping(&s.anims[i], ANIM_LOOP[i]);
             t3d_anim_set_playing(&s.anims[i], false);
         }
+        s.body = t3d_model_load("rom:/fallen_knight/fw_knight.t3dm");
         s.mat = malloc_uncached(sizeof(T3DMat4FP));
         memset(s.mat, 0, sizeof(T3DMat4FP));    // nothing drawn until the first update sets it (was whatever the heap held)
         s.swordBone = t3d_skeleton_find_bone(&s.skel, "Hand-Right");
         s.headBone = t3d_skeleton_find_bone(&s.skel, "Head");
         s.spineBone = t3d_skeleton_find_bone(&s.skel, "Spine1");
+        s.waistBone = t3d_skeleton_find_bone(&s.skel, "Waist");
         s.armL[0] = t3d_skeleton_find_bone(&s.skel, "UpperArm-Left");
         s.armL[1] = t3d_skeleton_find_bone(&s.skel, "LowerArm-Left");
         s.armL[2] = t3d_skeleton_find_bone(&s.skel, "Hand-Left");
@@ -650,6 +925,8 @@ void fallen_knight_begin(Boss* boss)
     s.enraged = false;
     s.bladeW = 0.0f;
     s.beam2T = -1.0f;
+    s.cryT = -1.0f; s.chainW = 1.0f; s.hitSeen = boss->hitSeq; s.lookYaw = s.lookW = 0.0f;
+    memset(s.ko, 0, sizeof(s.ko)); memset(s.kc, 0, sizeof(s.kc)); memset(s.flinch, 0, sizeof(s.flinch)); memset(s.flinchV, 0, sizeof(s.flinchV));
     enter(FK_INTRO);
 }
 
@@ -790,6 +1067,7 @@ static void moonblade_update(Boss *b, float dt)
     }
     if (b->pos[1] <= s.groundY && s.velY < 0.0f) {
         b->pos[1] = s.groundY;
+        landT = 0.0f;
         skill_fx_spawn_crown_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
         screen_shake_set_shake_mag(6.0f);
         sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);
@@ -1142,6 +1420,7 @@ void fallen_knight_update(Boss* b, float dt)
     if (!s.ready) return;
     if (b->damageFlashTimer > 0.0f) b->damageFlashTimer -= dt;
     s.t += dt;
+    s.dtLast = dt;
     s.cdCleave -= dt; s.cdHalfmoon -= dt; s.cdMoonblade -= dt; s.cdRoll -= dt; s.cdSplitter -= dt; s.cdUpdown -= dt; s.cdTri -= dt; s.cdHoly -= dt; s.cdPlunge -= dt;
     s.bladeTgt = 0.0f;      // a move that holds the blade asks again each frame (hold_blade)
 
@@ -1160,6 +1439,7 @@ void fallen_knight_update(Boss* b, float dt)
     // Half health: a war cry and a crimson burst (the fight's turn, like the others' breaks)
     if (!s.enraged && b->mode == BOSS_MODE_COMBAT && b->health > 0.0f && b->health <= b->maxHealth * 0.5f) {
         s.enraged = true;
+        s.cryT = 0.0f;
         sfx(SCENE1_SFX_WAR_CRY, 1.0f);
         screen_shake_set_shake_mag(6.0f);
     }
@@ -1187,7 +1467,7 @@ void fallen_knight_update(Boss* b, float dt)
             float p[3] = { b->pos[0], s.groundY, b->pos[2] };
             boss_ground_crush_spawn_sized(p[0], s.groundY + 0.25f, p[2], 1.0f);
             screen_shake_set_shake_mag(10.0f);
-            s.step = 1;
+            s.step = 1; landT = 0.0f;
         }
         if (s.anim == FKA_HERODROP && clip_done()) { play(FKA_IDLE, true); s.blendT = 0.0f; }    // HeroDrop ends on Idle's first frame
         break;      // waits, landed, until the intro cutscene ends (fallen_knight_skip_intro)
@@ -1319,13 +1599,28 @@ void fallen_knight_update(Boss* b, float dt)
         t3d_skeleton_blend(&s.skel, &s.skelBlend, &s.skel, k * k * (3.0f - 2.0f * k));     // eased in and out
     }
     tired_pose(dt);
+    life_update(b, dt);
+    life_apply();
     blade_pose(dt);
     grip_pose(dt);
     t3d_skeleton_update(&s.skel);
     grip_unpose();
-    bone_unpose(s.headBone, &s.headKeep);
-    bone_unpose(s.spineBone, &s.spineKeep);
+    life_unpose();
 
+#ifdef HLE_LOG_LOOK     // test aid: how far the head and the body each turn from the player (rad)
+    if (s.headBone >= 0 && s.mat) {
+        static int n;
+        if (++n % 20 == 0) {
+            float h0[3], h1[3], w0[3], w1[3];
+            mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.headBone], (float[3]){ 0, 0, 0 }, h0);
+            mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.headBone], (float[3]){ -64.0f, 0, 0 }, h1);     // the model faces -X
+            mat4fp_mul_point_f32_row3_colbasis(s.mat, h0, w0); mat4fp_mul_point_f32_row3_colbasis(s.mat, h1, w1);
+            float hx = w1[0] - w0[0], hz = w1[2] - w0[2], px = character.pos[0] - w0[0], pz = character.pos[2] - w0[2];
+            float head = remainderf(atan2f(-hx, hz) - atan2f(-px, pz), 2.0f * T3D_PI), body = remainderf(b->rot[1] - atan2f(-px, pz), 2.0f * T3D_PI);
+            debugf("[look] st %d head off %.2f body off %.2f lookYaw %.2f w %.2f\n", s.state, (double)head, (double)body, (double)s.lookYaw, (double)s.lookW);
+        }
+    }
+#endif
     float p[3] = { b->pos[0], b->pos[1], b->pos[2] };
     const float sc[3] = { FK_SCALE, FK_SCALE, FK_SCALE };
     const float rot[3] = { 0.0f, b->rot[1] + FK_YAW_OFFSET, 0.0f };
@@ -1378,16 +1673,32 @@ bool fallen_knight_hle_pose(const T3DSkeleton **sk, const T3DMat4FP **m)    // t
     return s.ready && s.mat;
 }
 #endif
+static bool fk_parts(void *user, const T3DObject *obj)     // the plume off: its horns stand in for it
+{
+    (void)user;
+    return !(obj->material && obj->material->name && !strcmp(obj->material->name, "cloth2"));
+}
+
 void fallen_knight_draw(Boss* b)
 {
     if (!s.ready || !b->visible) return;
-    // Dark crimson armour, brighter while it flashes from a hit. Its moves are told apart by its
-    // poses alone (no glows)
+    // A fallen champion: the knight reshaped (a horned, beaked helm, broader), in dark crimson with
+    // a dark blade, under the hall's light like the player (a hit flashes it red). Its moves are
+    // told apart by its poses alone (no glows)
     bool flash = b->damageFlashTimer > 0.0f;
-    t3d_light_set_ambient(flash ? (uint8_t[4]){ 255, 120, 120, 255 } : (uint8_t[4]){ 120, 45, 70, 255 });
+    uint8_t amb[4] = { colorAmbient[0], colorAmbient[1], colorAmbient[2], 255 };
+    t3d_light_set_ambient(flash ? (uint8_t[4]){ 255, 120, 120, 255 } : amb);
+    static const char *MATS[] = { "knight", "head", "chainmail", "cloth", "straps", "sword", "black" };
+    static const color_t COLS[] = { RGBA32(74, 20, 26, 255), RGBA32(74, 20, 26, 255), RGBA32(58, 52, 52, 255), RGBA32(44, 14, 18, 255),
+                                    RGBA32(58, 16, 20, 255), RGBA32(84, 80, 82, 255), RGBA32(20, 16, 18, 255) };
+    static bool tinted;     // (its own model: its colours set once)
+    if (!tinted) {
+        for (int i = 0; i < (int)(sizeof MATS / sizeof MATS[0]); i++) { T3DMaterial *m = t3d_model_get_material(s.body, MATS[i]); if (m) m->primColor = COLS[i]; }
+        tinted = true;
+    }
     t3d_matrix_set(gpu_mat(s.mat), true);
     T3DMat4FP *bones = gpu_skeleton_begin(&s.skel);
-    t3d_model_draw_skinned(characterModel, &s.skel);
+    t3d_model_draw_custom(s.body, (T3DModelDrawConf){ .matrices = gpu_skeleton_matrices(), .filterCb = fk_parts });
     gpu_skeleton_end(&s.skel, bones);
     t3d_light_set_ambient((uint8_t[4]){ 255, 255, 255, 255 });
 }
