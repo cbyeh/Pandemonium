@@ -46,9 +46,17 @@ void proc_mesh_frustum(const float base[3], float r0, float r1, float h, int sid
 // A molten sun with a fiery iris and slit pupil looking down -y, or +z with
 // `facingZ`. `hot` shifts it to crimson and white.
 void proc_mesh_eye_sphere(float radius, bool facingZ, bool hot);
+// Its parts, to move apart (the Shackled Sun's face): the ball, the iris, the slit pupil
+void proc_mesh_sun_ball(float radius, bool facingZ, bool hot);
+void proc_mesh_eye_iris(float radius, bool facingZ, bool hot);
+void proc_mesh_eye_pupil(float radius, bool facingZ, bool hot);
+// A quarter eyelid (x >= 0, y >= 0) over a +z eye, shut; mirror it for the other three
+void proc_mesh_eye_lid(float radius, bool hot);
 // Flame tongues round a disc of `radius` facing +z, up to `reach` long (see
-// proc_mesh_draw_glow: their dark tips fade out).
+// proc_mesh_draw_glow: their dark sides and tips fade out).
 void proc_mesh_corona(float radius, int tongues, float reach, int seed, bool hot);
+// Loops of flame arching off the same disc's rim, up to `height` high
+void proc_mesh_prominences(float radius, int loops, float height, int seed, bool hot);
 void proc_mesh_end(ProcMesh *out);
 
 void proc_mesh_set_transform(ProcMesh *m, const float scale, const float rot[3], const float pos[3]);

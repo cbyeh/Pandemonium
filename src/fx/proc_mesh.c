@@ -10,7 +10,7 @@
 // The build scratch (43 KB), static: not on the heap. Freed after each build it left a hole in
 // the middle of the heap that a fight's later buffers fell into wherever it happened to be, and
 // Shadowborne's frame took up to 2.6 ms more RSP time in some layouts (Ares)
-#define PM_MAX_TRIS   900           // the largest, the Shackled Sun's eye: ~720 before its degenerate ones go
+#define PM_MAX_TRIS   900           // the largest, the ending's whole sun (ball, iris, pupil): 812 before its degenerate ones go
 #define PM_UNIT       8.0f          // stored at 1/8 unit precision (int16 positions)
 
 typedef struct { int16_t p[3][3]; uint32_t c[3]; int16_t st[3][2]; } PmTri;     // a colour and UV per corner
@@ -231,6 +231,8 @@ static float hash01(int a, int b)
     return (float)((h ^ (h >> 16)) & 0xFFFF) / 65535.0f;
 }
 
+static float clamp01f(float x) { return x < 0.0f ? 0.0f : x > 1.0f ? 1.0f : x; }
+
 static uint32_t mix_rgb(const int a[3], const int b[3], float t, float k)
 {
     int c[3];
@@ -251,7 +253,8 @@ static void tri_unlit_uv(const float a[3], const float b[3], const float c[3], c
     for (int i = 0; i < 3; i++) {
         for (int k = 0; k < 3; k++) t->p[i][k] = (int16_t)lrintf(v[i][k] * PM_UNIT);
         int r = col[i] >> 24, g = (col[i] >> 16) & 0xFF, bl = (col[i] >> 8) & 0xFF, m = r > g ? (r > bl ? r : bl) : (g > bl ? g : bl);
-        t->c[i] = (col[i] & ~0xFFu) | (uint32_t)m;      // alpha follows brightness, as proc_mesh_tri's unlit faces
+        // alpha follows brightness, as proc_mesh_tri's unlit faces, unless given (not 0xFF)
+        t->c[i] = (col[i] & 0xFF) != 0xFF ? col[i] : (col[i] & ~0xFFu) | (uint32_t)m;
         t->st[i][0] = st_px(uv[i][0]); t->st[i][1] = st_px(uv[i][1]);
     }
 }
@@ -270,98 +273,202 @@ static void eye_patch_point(float u, float v, float r, bool facingZ, float out[3
     eye_point(u / l, v / l, 1.0f / l, r, facingZ, out);
 }
 
-void proc_mesh_eye_sphere(float radius, bool facingZ, bool hot)
+// (textured, the flat texel: proc_mesh_uv's clear corner)
+static void tri_unlit3(const float a[3], const float b[3], const float c[3], uint32_t ca, uint32_t cb, uint32_t cc)
 {
-    // Molten body: it always faces the player, so the limb darkening is baked in,
-    // white-gold at the eye through orange to a deep red rim; mottled granulation
-    // and a few dark spots
-    enum { LAT = 14, LON = 20 };
+    const float f = s_uvAlong > 0.0f ? PM_FLAT_ST / 32.0f : 0.0f;
+    tri_unlit_uv(a, b, c, (uint32_t[3]){ ca, cb, cc }, (const float[3][2]){ { f, f }, { f, f }, { f, f } });
+}
+
+// The molten surface at a point `cosPolar` round from the eye: it always faces the player, so the
+// limb darkening is baked in, white-gold at the eye through orange to a deep red rim
+static uint32_t sun_surface(float cosPolar, bool hot, float g)
+{
     static const int RIM[3] = { 170, 34, 10 }, MID[3] = { 240, 100, 25 }, CORE[3] = { 255, 232, 165 };
     static const int RIM_H[3] = { 170, 14, 26 }, MID_H[3] = { 235, 45, 40 }, CORE_H[3] = { 255, 236, 220 };
-    // Each corner coloured by its own latitude (shared by the quads round it); the granulation is
-    // the texture's (proc_mesh_uv: `around` pixels round it, `along` down from the eye to the back)
-    for (int i = 0; i < LAT; i++) {
-        float a[2] = { T3D_PI * powf((float)i / LAT, 1.3f), T3D_PI * powf((float)(i + 1) / LAT, 1.3f) };
-        uint32_t c[2];
-        float lift = s_uvAlong > 0.0f ? 1.06f : 1.0f;      // textured: the granulation (mean ~0.87) darkens it (more and it pales)
-        for (int e = 0; e < 2; e++) {
-            float k = (cosf(a[e]) + 0.7f) / 1.7f;   // the back still glows (seen from above)
-            k = k < 0 ? 0 : k > 1 ? 1 : k;
-            c[e] = k < 0.55f ? mix_rgb(hot ? RIM_H : RIM, hot ? MID_H : MID, k / 0.55f, lift)
-                             : mix_rgb(hot ? MID_H : MID, hot ? CORE_H : CORE, (k - 0.55f) / 0.45f, lift);
-        }
+    float k = clamp01f((cosPolar + 0.7f) / 1.7f);   // the back still glows (seen from above)
+    return k < 0.55f ? mix_rgb(hot ? RIM_H : RIM, hot ? MID_H : MID, k / 0.55f, g)
+                     : mix_rgb(hot ? MID_H : MID, hot ? CORE_H : CORE, (k - 0.55f) / 0.45f, g);
+}
+
+// A colour along a ramp of n stops at t (0..1)
+static uint32_t ramp(const int (*c)[3], int n, float t, float k)
+{
+    float x = clamp01f(t) * (n - 1);
+    int i = (int)x; if (i > n - 2) i = n - 2;
+    return mix_rgb(c[i], c[i + 1], x - i, k);
+}
+
+void proc_mesh_sun_ball(float radius, bool facingZ, bool hot)
+{
+    // Every corner its own colour, shared by the quads round it: one smooth gradient, mottled
+    // in soft blotches; its veins are the texture's (proc_mesh_uv: `around` pixels round it,
+    // `along` from the eye to the back)
+    enum { LAT = 10, LON = 20 };     // rings close at the eye, wide over the back (the RSP's cost is in the vertices)
+    uint32_t col[LAT + 1][LON];
+    float a[LAT + 1];
+    for (int i = 0; i <= LAT; i++) {
+        a[i] = T3D_PI * powf((float)i / LAT, 1.4f);
+        for (int j = 0; j < LON; j++)
+            col[i][j] = sun_surface(cosf(a[i]), hot, 1.0f + 0.16f * (hash01(i, j) - 0.5f) * sinf(a[i]));
+    }
+    for (int i = 0; i < LAT; i++)
         for (int j = 0; j < LON; j++) {
-            float b0 = 2.0f * T3D_PI * j / LON, b1 = 2.0f * T3D_PI * (j + 1) / LON;
-            float p[4][3];
-            eye_point(sinf(a[0]) * cosf(b0), sinf(a[0]) * sinf(b0), cosf(a[0]), radius, facingZ, p[0]);
-            eye_point(sinf(a[1]) * cosf(b0), sinf(a[1]) * sinf(b0), cosf(a[1]), radius, facingZ, p[1]);
-            eye_point(sinf(a[1]) * cosf(b1), sinf(a[1]) * sinf(b1), cosf(a[1]), radius, facingZ, p[2]);
-            eye_point(sinf(a[0]) * cosf(b1), sinf(a[0]) * sinf(b1), cosf(a[0]), radius, facingZ, p[3]);
-            float u0 = s_uvAround * j / LON, u1 = s_uvAround * (j + 1) / LON, v0 = s_uvAlong * a[0] / T3D_PI, v1 = s_uvAlong * a[1] / T3D_PI;
-            tri_unlit_uv(p[0], p[1], p[2], (uint32_t[3]){ c[0], c[1], c[1] }, (const float[3][2]){ { u0, v0 }, { u0, v1 }, { u1, v1 } });
-            tri_unlit_uv(p[0], p[2], p[3], (uint32_t[3]){ c[0], c[1], c[0] }, (const float[3][2]){ { u0, v0 }, { u1, v1 }, { u1, v0 } });
+            int j1 = (j + 1) % LON;
+            float b0 = 2.0f * T3D_PI * j / LON, b1 = 2.0f * T3D_PI * (j + 1) / LON, p[4][3];
+            eye_point(sinf(a[i]) * cosf(b0), sinf(a[i]) * sinf(b0), cosf(a[i]), radius, facingZ, p[0]);
+            eye_point(sinf(a[i + 1]) * cosf(b0), sinf(a[i + 1]) * sinf(b0), cosf(a[i + 1]), radius, facingZ, p[1]);
+            eye_point(sinf(a[i + 1]) * cosf(b1), sinf(a[i + 1]) * sinf(b1), cosf(a[i + 1]), radius, facingZ, p[2]);
+            eye_point(sinf(a[i]) * cosf(b1), sinf(a[i]) * sinf(b1), cosf(a[i]), radius, facingZ, p[3]);
+            float u0 = s_uvAround * j / LON, u1 = s_uvAround * (j + 1) / LON, v0 = s_uvAlong * a[i] / T3D_PI, v1 = s_uvAlong * a[i + 1] / T3D_PI;
+            tri_unlit_uv(p[0], p[1], p[2], (uint32_t[3]){ col[i][j], col[i + 1][j], col[i + 1][j1] }, (const float[3][2]){ { u0, v0 }, { u0, v1 }, { u1, v1 } });
+            tri_unlit_uv(p[0], p[2], p[3], (uint32_t[3]){ col[i][j], col[i + 1][j1], col[i][j1] }, (const float[3][2]){ { u0, v0 }, { u1, v1 }, { u1, v0 } });
         }
-    }
-    // Iris: rings of fire round a slit pupil, just above the surface
-    enum { SEG = 16 };
-    static const float RR[5] = { 0.5f, 0.4f, 0.3f, 0.2f, 0.12f };
-    static const int IR[4][3] = { { 150, 20, 6 }, { 255, 90, 15 }, { 255, 170, 50 }, { 255, 225, 120 } };
-    static const int IR_H[4][3] = { { 120, 0, 10 }, { 255, 40, 40 }, { 255, 140, 120 }, { 255, 230, 220 } };
-    for (int k = 0; k < 4; k++)
+}
+
+void proc_mesh_eye_iris(float radius, bool facingZ, bool hot)
+{
+    // Rings of fire blending into each other, from the surface's own colour at the edge through a
+    // dark limbal ring to white-gold at the middle
+    enum { SEG = 16, NR = 5 };
+    static const float RR[NR] = { 0.58f, 0.5f, 0.36f, 0.2f, 0.0f };
+    static const int IR[NR - 1][3] = { { 0 }, { 140, 18, 6 }, { 245, 105, 22 }, { 255, 200, 90 } };
+    static const int IR_H[NR - 1][3] = { { 0 }, { 115, 0, 12 }, { 245, 60, 50 }, { 255, 185, 165 } };
+    float rs = radius * 1.012f;
+    for (int k = 0; k + 1 < NR; k++)
         for (int j = 0; j < SEG; j++) {
-            float b0 = 2.0f * T3D_PI * j / SEG, b1 = 2.0f * T3D_PI * (j + 1) / SEG;
-            float p[4][3];
-            float rs = radius * 1.012f;
-            eye_patch_point(RR[k] * cosf(b0), RR[k] * 1.15f * sinf(b0), rs, facingZ, p[0]);
-            eye_patch_point(RR[k + 1] * cosf(b0), RR[k + 1] * 1.15f * sinf(b0), rs, facingZ, p[1]);
-            eye_patch_point(RR[k + 1] * cosf(b1), RR[k + 1] * 1.15f * sinf(b1), rs, facingZ, p[2]);
-            eye_patch_point(RR[k] * cosf(b1), RR[k] * 1.15f * sinf(b1), rs, facingZ, p[3]);
-            const int *col = hot ? IR_H[k] : IR[k];
-            proc_mesh_quad(p[0], p[1], p[2], p[3], proc_rgb(col[0], col[1], col[2]), true);
+            float b[2] = { 2.0f * T3D_PI * j / SEG, 2.0f * T3D_PI * (j + 1) / SEG }, p[4][3];
+            uint32_t c[4];
+            for (int e = 0; e < 4; e++) {
+                int ring = k + (e == 1 || e == 2), side = e >= 2;
+                float u = RR[ring] * cosf(b[side]), v = RR[ring] * 1.15f * sinf(b[side]);
+                eye_patch_point(u, v, rs, facingZ, p[e]);
+                const int *ic = ring == NR - 1 ? (hot ? (const int[3]){ 255, 248, 240 } : (const int[3]){ 255, 250, 215 }) : (hot ? IR_H : IR)[ring];
+                c[e] = ring == 0 ? sun_surface(1.0f / sqrtf(1.0f + u * u + v * v), hot, 1.0f) : proc_rgb(ic[0], ic[1], ic[2]);
+            }
+            if (k + 2 < NR) { tri_unlit3(p[0], p[1], p[2], c[0], c[1], c[2]); tri_unlit3(p[0], p[2], p[3], c[0], c[2], c[3]); }
+            else tri_unlit3(p[0], p[1], p[3], c[0], c[1], c[3]);      // the last ring closes on the middle
         }
-    // the inner disc, then the slit (a pointed lens) over it
-    for (int j = 0; j < SEG; j++) {
-        float b0 = 2.0f * T3D_PI * j / SEG, b1 = 2.0f * T3D_PI * (j + 1) / SEG, p[3][3];
-        eye_patch_point(0, 0, radius * 1.012f, facingZ, p[0]);
-        eye_patch_point(RR[4] * cosf(b1), RR[4] * 1.15f * sinf(b1), radius * 1.012f, facingZ, p[1]);
-        eye_patch_point(RR[4] * cosf(b0), RR[4] * 1.15f * sinf(b0), radius * 1.012f, facingZ, p[2]);
-        proc_mesh_tri(p[0], p[1], p[2], hot ? proc_rgb(255, 245, 235) : proc_rgb(255, 245, 200), true);
-    }
+}
+
+void proc_mesh_eye_pupil(float radius, bool facingZ, bool hot)
+{
+    // The slit (a pointed lens), darkest down its middle
     enum { SL = 8 };
+    uint32_t edge = hot ? proc_rgb(110, 0, 8) : proc_rgb(70, 8, 3), mid = hot ? proc_rgb(40, 0, 4) : proc_rgb(8, 2, 1);
+    float rs = radius * 1.02f;
     for (int j = 0; j < SL; j++) {
         float v0 = -0.42f + 0.84f * j / SL, v1 = -0.42f + 0.84f * (j + 1) / SL;
         float w0 = 0.07f * sqrtf(fmaxf(0.0f, 1.0f - (v0 / 0.42f) * (v0 / 0.42f)));
         float w1 = 0.07f * sqrtf(fmaxf(0.0f, 1.0f - (v1 / 0.42f) * (v1 / 0.42f)));
-        float p[4][3], rs = radius * 1.02f;
-        eye_patch_point(-w0, v0, rs, facingZ, p[0]); eye_patch_point(w0, v0, rs, facingZ, p[1]);
-        eye_patch_point(w1, v1, rs, facingZ, p[2]); eye_patch_point(-w1, v1, rs, facingZ, p[3]);
-        proc_mesh_quad(p[0], p[1], p[2], p[3], hot ? proc_rgb(50, 0, 4) : proc_rgb(12, 3, 2), true);
+        float p[6][3];
+        eye_patch_point(-w0, v0, rs, facingZ, p[0]); eye_patch_point(0, v0, rs, facingZ, p[1]); eye_patch_point(w0, v0, rs, facingZ, p[2]);
+        eye_patch_point(-w1, v1, rs, facingZ, p[3]); eye_patch_point(0, v1, rs, facingZ, p[4]); eye_patch_point(w1, v1, rs, facingZ, p[5]);
+        for (int h = 0; h < 2; h++) {     // columns -w, 0, +w: edge, middle, edge
+            uint32_t ca = h ? mid : edge, cb = h ? edge : mid;
+            tri_unlit3(p[h], p[h + 1], p[h + 4], ca, cb, cb);
+            tri_unlit3(p[h], p[h + 4], p[h + 3], ca, cb, ca);
+        }
     }
+}
+
+void proc_mesh_eye_sphere(float radius, bool facingZ, bool hot)
+{
+    proc_mesh_sun_ball(radius, facingZ, hot);
+    proc_mesh_eye_iris(radius, facingZ, hot);
+    proc_mesh_eye_pupil(radius, facingZ, hot);
+}
+
+// c with alpha a (0..1): kept as given by tri_unlit_uv (0xFE at most: 0xFF means "by brightness")
+static uint32_t with_alpha(uint32_t c, float a) { return (c & ~0xFFu) | (uint32_t)(clamp01f(a) * 254.0f); }
+
+void proc_mesh_eye_lid(float radius, bool hot)
+{
+    // A quarter lid (x >= 0, y >= 0) of darker molten skin, shut: its edge on the eye's level line.
+    // Point (psi round the side, theta up over the top) = (sin psi, cos psi sin theta, cos psi cos theta).
+    // A deep red rim at the edge, orange over the lid; drawn as a glow, opaque well past the iris
+    // (0.52 up, so a shut lid hides it) and fading out into the ball over its far side and corner
+    enum { NP = 3, NT = 5 };
+    static const float TH[NT] = { 0.0f, 0.12f, 0.35f, 0.6f, 0.85f };
+    static const int LID[3][3] = { { 150, 30, 8 }, { 215, 80, 22 }, { 240, 130, 50 } };
+    static const int LID_H[3][3] = { { 140, 8, 22 }, { 215, 40, 40 }, { 240, 110, 95 } };
+    const float PSI = 1.0f, rs = radius * 1.05f;
+    float p[NP + 1][NT][3];
+    uint32_t c[NP + 1][NT];
+    for (int i = 0; i <= NP; i++) {
+        float ps = PSI * i / NP;
+        for (int t = 0; t < NT; t++) {
+            float th = TH[t];
+            p[i][t][0] = sinf(ps) * rs; p[i][t][1] = cosf(ps) * sinf(th) * rs; p[i][t][2] = cosf(ps) * cosf(th) * rs;
+            float al = clamp01f((0.85f - th) / 0.25f) * clamp01f((PSI - ps) / 0.6f);
+            c[i][t] = with_alpha(ramp(hot ? LID_H : LID, 3, th / 0.4f, 1.0f), al);
+        }
+    }
+    for (int i = 0; i < NP; i++)
+        for (int t = 0; t + 1 < NT; t++) {
+            tri_unlit3(p[i][t], p[i + 1][t], p[i + 1][t + 1], c[i][t], c[i + 1][t], c[i + 1][t + 1]);
+            tri_unlit3(p[i][t], p[i + 1][t + 1], p[i][t + 1], c[i][t], c[i + 1][t + 1], c[i][t + 1]);
+        }
 }
 
 void proc_mesh_corona(float radius, int tongues, float reach, int seed, bool hot)
 {
-    // Flame tongues round a disc facing +z, bright at the root and fading to the tip
-    // (drawn additively: dark is see-through)
+    // Flame tongues round a disc facing +z (proc_mesh_draw_glow): bright down the middle at the
+    // root, fading out to the sides and the tip, so they blur into one another instead of a ring
+    // of hard teeth
     enum { STEPS = 3 };
-    static const int COL[STEPS][3] = { { 255, 150, 40 }, { 190, 70, 10 }, { 90, 22, 0 } };
-    static const int COL_H[STEPS][3] = { { 255, 90, 80 }, { 200, 30, 30 }, { 90, 0, 10 } };
+    static const int COL[3][3] = { { 255, 200, 90 }, { 250, 120, 30 }, { 200, 50, 10 } };
+    static const int COL_H[3][3] = { { 255, 150, 120 }, { 240, 60, 50 }, { 180, 15, 25 } };
     for (int k = 0; k < tongues; k++) {
         float a = 2.0f * T3D_PI * (k + 0.5f * hash01(k, seed)) / tongues;
         float len = reach * (0.55f + 0.45f * hash01(seed, k));
-        float w = 2.0f * T3D_PI / tongues * 0.55f, bend = (hash01(k + 7, seed) - 0.5f) * 0.5f;
-        for (int st = 0; st < STEPS; st++) {
-            float t0 = (float)st / STEPS, t1 = (float)(st + 1) / STEPS;
-            float r0 = radius * 0.92f + len * t0, r1 = radius * 0.92f + len * t1;
-            float h0 = w * (1.0f - t0), h1 = w * (1.0f - t1);
-            float c0 = a + bend * t0, c1 = a + bend * t1;
-            float p[4][3] = {
-                { cosf(c0 - h0) * r0, sinf(c0 - h0) * r0, 0 }, { cosf(c0 + h0) * r0, sinf(c0 + h0) * r0, 0 },
-                { cosf(c1 + h1) * r1, sinf(c1 + h1) * r1, 0 }, { cosf(c1 - h1) * r1, sinf(c1 - h1) * r1, 0 },
-            };
-            const int *c = hot ? COL_H[st] : COL[st];
-            proc_mesh_quad(p[0], p[1], p[2], p[3], proc_rgb(c[0], c[1], c[2]), true);
+        float w = 2.0f * T3D_PI / tongues * 1.1f, bend = (hash01(k + 7, seed) - 0.5f) * 0.6f;
+        float p[STEPS + 1][3][3];
+        uint32_t c[STEPS + 1][3];
+        for (int st = 0; st <= STEPS; st++) {
+            float t = (float)st / STEPS, r = radius * 0.92f + len * t, h = w * (1.0f - t) * (1.0f - t * 0.3f), cc = a + bend * t * t;
+            for (int e = 0; e < 3; e++) {
+                float ang = cc + (e - 1) * h;
+                p[st][e][0] = cosf(ang) * r; p[st][e][1] = sinf(ang) * r; p[st][e][2] = 0.0f;
+            }
+            c[st][1] = with_alpha(ramp(hot ? COL_H : COL, 3, t, 1.0f), (1.0f - t) * (1.0f - t * 0.5f));
+            c[st][0] = c[st][2] = with_alpha(c[st][1], 0.0f);
         }
+        for (int st = 0; st < STEPS; st++)
+            for (int e = 0; e < 2; e++) {
+                tri_unlit3(p[st][e], p[st][e + 1], p[st + 1][e + 1], c[st][e], c[st][e + 1], c[st + 1][e + 1]);
+                tri_unlit3(p[st][e], p[st + 1][e + 1], p[st + 1][e], c[st][e], c[st + 1][e + 1], c[st + 1][e]);
+            }
+    }
+}
+
+void proc_mesh_prominences(float radius, int loops, float height, int seed, bool hot)
+{
+    // Loops of flame arching off the rim, in the disc facing +z: a glowing strand fading out at its edges
+    enum { SEGS = 6 };
+    uint32_t col = hot ? proc_rgb(255, 120, 95) : proc_rgb(255, 175, 60);
+    for (int k = 0; k < loops; k++) {
+        float a = 2.0f * T3D_PI * (k + 0.4f * hash01(k, seed + 3)) / loops;
+        float span = 0.2f + 0.16f * hash01(seed + 5, k), h = height * (0.6f + 0.4f * hash01(k + 11, seed));
+        float th = radius * 0.13f, P[SEGS + 1][3][3];
+        uint32_t mid[SEGS + 1];
+        for (int i = 0; i <= SEGS; i++) {
+            float t = (float)i / SEGS, ang = a + span * (2.0f * t - 1.0f), r = radius * 0.94f + h * sinf(T3D_PI * t);
+            float c[2] = { cosf(ang) * r, sinf(ang) * r };
+            // across the strand: the loop's normal, from its slope
+            float dr = h * T3D_PI * cosf(T3D_PI * t), da = 2.0f * span * r;
+            float tx = cosf(ang) * dr - sinf(ang) * da, ty = sinf(ang) * dr + cosf(ang) * da, tl = sqrtf(tx * tx + ty * ty);
+            float n[2] = { -ty / tl, tx / tl }, w = th * (0.6f + 0.4f * sinf(T3D_PI * t));
+            mid[i] = with_alpha(col, 0.4f + 0.6f * sinf(T3D_PI * t));    // brightest at the top
+            for (int e = 0; e < 3; e++) { P[i][e][0] = c[0] + n[0] * w * (e - 1); P[i][e][1] = c[1] + n[1] * w * (e - 1); P[i][e][2] = 0.0f; }
+        }
+        for (int i = 0; i < SEGS; i++)
+            for (int e = 0; e < 2; e++) {
+                uint32_t dark = with_alpha(col, 0.0f);
+                uint32_t a0 = e ? mid[i] : dark, a1 = e ? dark : mid[i], b0 = e ? mid[i + 1] : dark, b1 = e ? dark : mid[i + 1];
+                tri_unlit3(P[i][e], P[i][e + 1], P[i + 1][e + 1], a0, a1, b1);
+                tri_unlit3(P[i][e], P[i + 1][e + 1], P[i + 1][e], a0, b1, b0);
+            }
     }
 }
 

@@ -34,7 +34,7 @@ static bool s_ready;
 static float s_t;
 static int s_line;
 static ProcMesh s_throne, s_king, s_arms, s_gold, s_sun, s_dog;
-static sprite_t *s_sunTex;      // the Shackled Sun's granulation
+static sprite_t *s_sunTex;      // the Shackled Sun's veins
 static T3DModel *s_raysModel;
 static T3DMat4FP *s_raysMat;
 static ScrollParams s_raysScroll = { .xSpeed = 30.0f, .ySpeed = 0.0f, .scale = 64 };
@@ -194,10 +194,10 @@ static void build_dog(void)
 static void build_sun(void)
 {
     proc_mesh_begin();
-    proc_mesh_uv(96.0f, 48.0f);
+    proc_mesh_uv(128.0f, 64.0f);
     proc_mesh_eye_sphere(SUN_R, false, false);
     proc_mesh_end(&s_sun);
-    s_sunTex = sprite_load("rom:/shackled_sun/surface.i8.sprite");
+    s_sunTex = sprite_load("rom:/shackled_sun/veins.rgba16.sprite");
 }
 
 void ending_free(void)
