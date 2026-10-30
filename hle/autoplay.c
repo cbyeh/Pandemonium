@@ -1097,6 +1097,20 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 return;
             }
 #endif
+#ifdef HLE_DUMMY_LOCK_KILL  // locked on, circle the boss, kill it at 4 s: the camera after the death
+            {
+                if (tm < 4.0f) {
+                    if ((int)(tm * 60.0f) == 2) pressed->z = 1;
+                    in->btn.z = 1; in->stick_x = 70;
+                } else if (boss->state != BOSS_STATE_DEAD) boss_apply_damage(boss, boss->maxHealth * 2.0f);
+                if (tm > 3.5f && tm < 7.0f && frame % 3 == 0)
+                    debugf("[lockkill] t %.2f lock %d blend %.2f angX %.2f cam %.0f %.0f %.0f tgt %.0f %.0f %.0f\n", (double)tm, cameraLockOnActive,
+                           (double)cameraLockBlend, (double)cameraAngleX, (double)characterCamPos.v[0], (double)characterCamPos.v[1], (double)characterCamPos.v[2],
+                           (double)characterCamTarget.v[0], (double)characterCamTarget.v[1], (double)characterCamTarget.v[2]);
+                tm += deltaTime;
+                return;
+            }
+#endif
 #ifdef HLE_DUMMY_CAM      // the camera on the boss, from its front a little below (a pose check)
 #ifndef HLE_DUMMY_CAM_YAW // turned round the boss (1.57: from its side)
 #define HLE_DUMMY_CAM_YAW 0.0f

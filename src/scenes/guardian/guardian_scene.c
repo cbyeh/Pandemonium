@@ -1892,8 +1892,7 @@ void scene_update(void) {
             }
             s_bossRunActive = false;
 
-            cameraLockOnActive = false;
-            cameraLockBlend = 0.0f;
+            cameraLockOnActive = false;     // keep cameraLockBlend: the camera hands off from where the lock-on left it, as on a Z tap
             // Sync edge detectors so we don't immediately re-toggle due to a held button
             lastZPressed = joypad.btn.z;
             lastInteractAHeld = joypad.btn.a;
