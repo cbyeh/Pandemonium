@@ -713,6 +713,9 @@ void boss_update(Boss* boss)
 void boss_draw(Boss* boss)
 {
     if (!boss) return;
+#ifdef HLE_HIDE_BOSS    // test aid: the room as if empty (README skill GIFs)
+    return;
+#endif
     if (boss->phaseIndex == FALLEN_KNIGHT_PHASE) {
         fallen_knight_draw(boss);
         return;
@@ -742,6 +745,9 @@ void boss_draw_as_unbound(Boss* boss)
 
 void boss_draw_ui(Boss* boss, void* viewport)
 {
+#ifdef HLE_HIDE_BOSS
+    return;
+#endif
     if (!boss_is_combat_active(boss)) return;
     boss_render_debug(boss, viewport);
 }

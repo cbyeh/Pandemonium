@@ -1628,13 +1628,27 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         return;
     }
     int t = frame - start;
-#ifdef HLE_TEST_FREEZE_BOSS
+#if defined(HLE_TEST_FREEZE_BOSS) && !defined(HLE_SKILLS_BEHIND)    // HLE_SKILLS_BEHIND: the camera stays behind the knight (README GIFs)
     if (t < 40) in->btn.c_left = 1;     // orbit the camera to a side view
 #endif
+#ifdef HLE_SKILLS_BEHIND    // the follow camera, settled, held still from just before the first skill
+    {
+        static T3DVec3 pos, target;
+        if (t == 120) {     // pulled back and aimed higher: Moon Blade Dance's leap stays in frame
+            target = (T3DVec3){{ character.pos[0], character.pos[1] + 40.0f, character.pos[2] }};
+            for (int k = 0; k < 3; k++) pos.v[k] = character.pos[k] + (camPos.v[k] - character.pos[k]) * 1.4f;
+        }
+        if (t >= 120) { cameraLockOnActive = false; customCamPos = pos; customCamTarget = target; camera_mode_smooth(CAMERA_CUSTOM, 0.0f); }
+    }
+#endif
     if (t == 150) pressed->d_right = 1;
+#ifndef HLE_HIDE_BOSS   // (nothing to lock on to, and the leap straight up: the camera stays put)
     if (t == 160) { pressed->z = 1; in->btn.z = 1; }
+#endif
     if (t == 360) pressed->d_down = 1;
+#ifndef HLE_HIDE_BOSS
     if (t > 610 && t < 710) in->stick_x = -80;
+#endif
     if (t == 620) pressed->d_up = 1;
     if (t == 150 || t == 360 || t == 620) debugf("[skill] press at frame %d\n", frame);
     return;

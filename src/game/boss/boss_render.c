@@ -290,6 +290,9 @@ static void boss_draw_scrolling(Boss* boss, const T3DMat4FP *modelMat)
 // Draw only the shadow - should be called in a batched shadow pass with zbuf(false, false)
 void boss_draw_shadow(Boss* boss)
 {
+#ifdef HLE_HIDE_BOSS
+    return;
+#endif
     if (!boss || !boss->visible) return;
     if (!boss->dpl_shadow || !boss->shadowMat) return;
 
