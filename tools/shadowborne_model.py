@@ -289,8 +289,11 @@ for sd in (-1, 1):
             q = (A[j], A[j1], B[j1], B[j]) if B else (A[j], A[j1], T)
             uvs = [(u0, 0), (u1, 0), (u1, v1), (u0, v1)] if B else [(u0, 0), (u1, 0), ((u0 + u1) / 2, v1)]
             if sd < 0: q = q[::-1]; uvs = uvs[::-1]
-            f = wing_bm.faces.new(q); f.material_index = 0
-            for lp, uvv in zip(f.loops, uvs): lp[uvl].uv = uvv; lp[cl] = col
+            f = wing_bm.faces.new(q); f.material_index = 3      # (sb_bone: unlit, the old flat light baked in, like the horns)
+            nrm = rig.cross(rig.sub(open_pos[f.verts[1]], open_pos[f.verts[0]]), rig.sub(open_pos[f.verts[2]], open_pos[f.verts[0]]))
+            if sd < 0: nrm = rig.mul(nrm, -1.0)
+            c3 = shade(col, nrm)
+            for lp, uvv in zip(f.loops, uvs): lp[uvl].uv = uvv; lp[cl] = c3
     spike(O['root'], O['elbow'], 'arm' + s, 2.6 * k, 2.1 * k * 0.97, BONE_COL, 0.9)
     spike(O['elbow'], O['wrist'], 'fore' + s, 2.1 * k, 0.6 * k, BONE_COL, 0.9)
     claw = rig.add(O['wrist'], rig.add(rig.add(rig.mul(wx, 6 * k), rig.mul(wy, 3 * k)), rig.mul(wz, 6 * k)))
@@ -316,14 +319,31 @@ def crystal_tris(base, tip, r):
     a_ = rig.norm(rig.cross(d, u)); c_ = rig.cross(d, a_)
     ring = [rig.add(base, rig.add(rig.mul(a_, ca * r), rig.mul(c_, sa * r))) for ca, sa in ((1, 0), (0, 1), (-1, 0), (0, -1))]
     return [(ring, tip)]
-def place(crs, origin, x, y, z, sx, sy, sz, bone):
+from mathutils.bvhtree import BVHTree
+BODY_BVH = BVHTree.FromObject(body, bpy.context.evaluated_depsgraph_get())
+def snug(ring, tip, axis_a, axis_z):
+    # A crystal on the body moved along its outward line until its base sits 1.5 inside the surface
+    # (they were placed for the old tubes: on the new body some hovered off it)
+    base = [sum(q_[c] for q_ in ring) / 4.0 for c in range(3)]
+    q = rig.add(axis_a, rig.mul(axis_z, rig.dot(rig.sub(base, axis_a), axis_z)))
+    d = rig.sub(base, q); b = math.sqrt(rig.dot(d, d))
+    if b < 1e-3: return ring, tip
+    d = rig.mul(d, 1.0 / b)
+    hit = BODY_BVH.ray_cast(g2b(q), g2b(d) - g2b([0, 0, 0]), 200.0)
+    if hit[0] is None: return ring, tip
+    h = (hit[0] - g2b(q)).length
+    sh = rig.mul(d, (h - 1.5) - b)
+    return [rig.add(q_, sh) for q_ in ring], rig.add(tip, sh)
+def place(crs, origin, x, y, z, sx, sy, sz, bone, onbody=False):
     # each crystal's five points shared (its corners light and dark in turn, the tip lit: the facets'
     # old light and dark as a gradient; split corners cost a vertex each)
     for ring, tip in crs:
-        def mkv(p_):
-            w = rig.add(origin, rig.add(rig.add(rig.mul(x, p_[0] * sx), rig.mul(y, p_[1] * sy)), rig.mul(z, p_[2] * sz)))
+        W_ = lambda p_: rig.add(origin, rig.add(rig.add(rig.mul(x, p_[0] * sx), rig.mul(y, p_[1] * sy)), rig.mul(z, p_[2] * sz)))
+        wr, wt = [W_(q_) for q_ in ring], W_(tip)
+        if onbody: wr, wt = snug(wr, wt, origin, z)
+        def mkv(w):
             v = cry_bm.verts.new(g2b(w)); cvg[v] = bone; return v
-        R_ = [mkv(q_) for q_ in ring]; T_ = mkv(tip)
+        R_ = [mkv(q_) for q_ in wr]; T_ = mkv(wt)
         for i in range(4):
             f = cry_bm.faces.new((R_[i], R_[(i + 1) & 3], T_)); f.material_index = 2
             for lp in f.loops:
@@ -335,12 +355,13 @@ def seg_frame(a, b_, r, over):
     x = rig.norm(rig.cross(up, z)); y = rig.cross(z, x)
     return a, x, y, z, r / MESH, r / MESH, l * over / MESH
 SEG_CR = crystal_tris([0, MESH * 0.88, 3], [0, MESH * 1.95, -5], 4.0) + crystal_tris([0, MESH * 0.8, 11], [0, MESH * 1.55, 6], 3.0)
-for sd_ in (-1, 1): SEG_CR += crystal_tris([sd_ * MESH * 0.62, MESH * 0.6, 7], [sd_ * MESH * 1.15, MESH * 1.02, 2], 2.2)     # the flank ridges
+FLANK_CR = []
+for sd_ in (-1, 1): FLANK_CR += crystal_tris([sd_ * MESH * 0.62, MESH * 0.6, 7], [sd_ * MESH * 1.15, MESH * 1.02, 2], 2.2)     # the flank ridges (not under the wings: they pierced them)
 TSEG_CR = crystal_tris([0, MESH * 0.85, 6], [0, MESH * 1.8, -2], 3.5)
 for (a, b_, r, over, bone) in ((P['chest'], P['spine0'], 18.0, 1.2, 'chest'), (P['spine0'], P['spine1'], 17.5, 1.2, 'spine1'), (P['spine1'], P['hips'], 16.0, 1.25, 'hips')):
-    place(SEG_CR, *seg_frame(a, b_, r, over), bone)
-for i in range(rig.NNECK): place(SEG_CR, *seg_frame(P['neck%d' % i], P['neck%d' % (i + 1)], 11.0 - i * 1.2, 1.25), 'neck%d' % i)
-for i in range(rig.NTAIL): place(SEG_CR if i < 2 else TSEG_CR, *seg_frame(P['tail%d' % i], P['tail%d' % (i + 1)], 14.5 - i * 1.8, 1.2), 'tail%d' % i)
+    place(SEG_CR, *seg_frame(a, b_, r, over), bone, True)
+for i in range(rig.NNECK): place(SEG_CR + FLANK_CR, *seg_frame(P['neck%d' % i], P['neck%d' % (i + 1)], 11.0 - i * 1.2, 1.25), 'neck%d' % i, True)
+for i in range(rig.NTAIL): place(SEG_CR + FLANK_CR if i < 2 else TSEG_CR, *seg_frame(P['tail%d' % i], P['tail%d' % (i + 1)], 14.5 - i * 1.8, 1.2), 'tail%d' % i, True)
 TIP = crystal_tris([0, 0, 0], [0, 0, 16.0], 3.4)
 for sd_ in (-1, 1): TIP += crystal_tris([0, 0, 3.0], [sd_ * 6.0, 1.0, 8.0], 1.6)
 place(TIP, *seg_frame(P['tail%d' % rig.NTAIL], P['tail%d' % (rig.NTAIL + 1)], MESH, 16.0 / math.sqrt(rig.dot(rig.sub(P['tail%d' % (rig.NTAIL + 1)], P['tail%d' % rig.NTAIL]), rig.sub(P['tail%d' % (rig.NTAIL + 1)], P['tail%d' % rig.NTAIL])))), 'tail%d' % rig.NTAIL)
@@ -363,7 +384,7 @@ for bn in sorted(set(cvg.values())):
 cry_bm.free()
 
 # ---------------- materials (tiny3d reads fast64's data: written into the .glb below) ----------------
-for o, names in ((body, ['sb_body']), (wobj, ['sb_body', 'sb_memb']), (cobj, ['sb_body', 'sb_memb', 'sb_crystal'])):
+for o, names in ((body, ['sb_body']), (wobj, ['sb_body', 'sb_memb', 'sb_crystal', 'sb_bone']), (cobj, ['sb_body', 'sb_memb', 'sb_crystal'])):
     for n in names:
         m = bpy.data.materials.get(n) or bpy.data.materials.new(n)
         o.data.materials.append(m)
@@ -403,7 +424,7 @@ def f3d_crystal():     # unlit: its facets' shade times the tint the game sets (
 def f3d_membrane():    # the old membrane: its texture times its baked colour, unlit, opaque, both sides
     m = f3d("membrane.i8.png", 32, 32, False); m["f3d_mat"]["rdp_settings"]["g_lighting"] = False
     return m
-EXTRAS = {"sb_crystal": f3d_crystal(), "sb_body": f3d("scales.i8.png", 128, 32, True), "sb_memb": f3d_membrane()}
+EXTRAS = {"sb_bone": f3d("scales.i8.png", 128, 32, True), "sb_crystal": f3d_crystal(), "sb_body": f3d("scales.i8.png", 128, 32, True), "sb_memb": f3d_membrane()}
 d = open(OUT_GLB, 'rb').read()
 jl = struct.unpack('<I', d[12:16])[0]; js = json.loads(d[20:20 + jl]); rest_ = d[20 + jl:]
 for m in js.get('materials', []):
