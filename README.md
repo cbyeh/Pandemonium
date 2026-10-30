@@ -70,12 +70,10 @@ Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on th
 | Guardian Unbound | Fallen Warrior (Bonus) |
 |---|---|
 | <img src="docs/media/boss_guardian_unbound.png" width="400"> | <img src="docs/media/boss_fallen_warrior.png" width="400"> |
-| The Guardian, risen in gold, his sword floating over him: a barrage from the air. | A crimson knight with your own moves: combos, Halfmoon, Moon Blade, rolls and counters, a leaping plunge. |
+| The Guardian, risen in gold, his sword floating over him: a barrage from the air. | A crimson knight mirrors your image: he combos, Halfmoon, Moon Blade, rolls and counters, a leaping plunge. |
 | **The Shackled Sun (Bonus)** | **Shadowborne (Bonus)** |
 | <img src="docs/media/boss_shackled_sun.png" width="400"> | <img src="docs/media/boss_shadowborn.png" width="400"> |
-| A chained sun with an uncanny face: its chains lash and sweep, sunbrand crosses fly, and once unshackled it eclipses. | A crystal dragon on great wings: claws, stomps and a raking charge, a tail that punishes standing behind it, fire on the ground and from the air, and the dark beam in its second half. |
-
-The ending now plays live in the engine.
+| A chained sun with an uncanny face: its chains lash and sweep, sunbrand crosses fly, and once unshackled it eclipses. | A crystal dragon on great wings: claws, stomps, charges, lasers, throws fire, and strikes with its tail. |
 
 ## 2025 N64brew Game Jam - Pandemonium
 - December 1st - February 1st
@@ -164,7 +162,7 @@ HelloNewman:
 - Github: HellooooNewman
 - Discord: HelloNewman
 
-Aethrone
+Aethrone (cbyeh fork):
 - Github: Cbyeh
 - DIscord: Absinthefather
 
