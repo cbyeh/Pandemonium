@@ -73,7 +73,7 @@ Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on th
 | The Guardian, risen in gold, his sword floating over him: a barrage from the air. | A crimson knight with your own moves: combos, Halfmoon, Moon Blade, rolls and counters, a leaping plunge. |
 | **The Shackled Sun (Bonus)** | **Shadowborne (Bonus)** |
 | <img src="docs/media/boss_shackled_sun.png" width="400"> | <img src="docs/media/boss_shadowborn.png" width="400"> |
-| A chained sun with an uncanny face: its chains lash and sweep, sunbrand crosses fly, and once unshackled it eclipses. | A crystal dragon: claws, tail and bite, fire swept over the floor, strafes from the air, and the dark beam in its second half. |
+| A chained sun with an uncanny face: its chains lash and sweep, sunbrand crosses fly, and once unshackled it eclipses. | A crystal dragon on great wings: claws, stomps and a raking charge, a tail that punishes standing behind it, fire on the ground and from the air, and the dark beam in its second half. |
 
 The ending now plays live in the engine.
 
