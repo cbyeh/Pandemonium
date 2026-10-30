@@ -119,6 +119,7 @@ static struct {
     // Little life: a flinch at each blow taken, a shake-off after a landing or getting up, fidgets in
     // a pause (a tail thump, a paw scrape), a growl as it paces, the head following the player a beat late
     float prevHealth, shakeT, shakeNow, fidgetT, lookRel;
+    float downLen;          // this stagger's length (boss_stagger_s)
     int fidgetK;
     bool growled;
     bool followRanged;          // the backstep leads into a ranged attack
@@ -247,7 +248,7 @@ bool dragon_boss_stagger(Boss* b)
     if (!s.ready || s.state == DG_INTRO || s.state == DG_FLY || s.state == DG_DEAD || s.alt > 1.0f) return false;
     s.beamOn = false; s.glow = 0.0f; s.cone.on = false;
     enter(DG_DOWN);     // its legs give: a lurch, then down on its belly, head lolling (dg_down)
-    b->staggerT = BOSS_STAGGER_S;
+    b->staggerT = s.downLen = boss_stagger_s();
     return true;
 }
 
@@ -2465,7 +2466,7 @@ void dragon_boss_update(Boss* b, float dt)
     case DG_DOWN: {
         // A full stagger: a lurch, the legs buckle and it drops onto its belly, head lolling,
         // wings sprawled, tail limp; then it heaves itself up
-        float t = s.t, up = clamp01((t - (BOSS_STAGGER_S - 0.8f)) / 0.8f);     // it heaves itself up over the last 0.8 s
+        float t = s.t, up = clamp01((t - (s.downLen - 0.8f)) / 0.8f);     // it heaves itself up over the last 0.8 s
         if (t < 0.25f) { s.tNeckPitch = 0.8f; s.tCrouch = -3.0f; s.tJaw = 0.9f; s.tWingRaise = 0.8f; s.poseRate = 9.0f; }
         else {
             if (t >= 0.47f && t - dt < 0.47f) { screen_shake_set_shake_mag(10.0f); sfx_boom(); }    // the belly on the floor
@@ -2475,7 +2476,10 @@ void dragon_boss_update(Boss* b, float dt)
             s.tWingSweep = 0.2f; s.tRoll = 0.12f * fm_sinf(t * 1.9f) * (1.0f - up);      // sprawled, rocking as it tries to rise
             s.poseRate = t < 0.6f ? 6.0f : 3.0f;
         }
-        if (t >= BOSS_STAGGER_S) { enter(DG_IDLE); s.shakeT = 0.6f; }     // up, it shakes itself off
+#ifdef HLE_AUTOPLAY
+        if (t >= s.downLen) { extern float gameTime; debugf("[stagger] dg up at %.1f s\n", (double)gameTime); }
+#endif
+        if (t >= s.downLen) { enter(DG_IDLE); s.shakeT = 0.6f; }     // up, it shakes itself off
         break;
     }
 

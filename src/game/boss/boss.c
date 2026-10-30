@@ -561,7 +561,11 @@ static void boss_poise_update(Boss* boss, float dt)
 {
     if (boss->staggerT > 0.0f) {
         boss->staggerT -= dt;
-        if (boss->staggerT <= 0.0f) { boss->staggerT = 0.0f; boss->poise = 0.0f; }
+        if (boss->staggerT <= 0.0f) { boss->staggerT = 0.0f; boss->poise = 0.0f;
+#ifdef HLE_AUTOPLAY
+            debugf("[stagger] over at %.1f s\n", (double)gameTime);
+#endif
+        }
         return;
     }
     if (boss->mode != BOSS_MODE_COMBAT || boss->health <= 0.0f) { boss->poise = 0.0f; return; }
@@ -602,9 +606,11 @@ bool boss_try_stagger(Boss* boss)
             return false;
     }
     boss->pendingRequests |= 0x01;      // BOSS_REQ_STAGGER: boss_ai plays it
-    boss->staggerT = BOSS_STAGGER_S;
+    boss->staggerT = boss_stagger_s();
     return true;
 }
+
+float boss_stagger_s(void) { return BOSS_STAGGER_S * tower_mod_stagger_time(); }
 
 void boss_update(Boss* boss)
 {
@@ -807,7 +813,7 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
     if (boss->health < 0.0f) boss->health = 0.0f;
     if (boss->staggerT <= 0.0f) {      // the stagger meter
         // from the blow itself, not the damage: the same hits fill the same share on every floor,
-        // whatever the damage boons (Crushing Blows, a stagger boon, is the one that adds)
+        // whatever the damage boons
         boss->poise = fminf(1.0f, boss->poise + poise * tower_mod_poise() * boss_poise_scale(boss));
         boss->poiseIdleT = 0.0f;
     }

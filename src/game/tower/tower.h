@@ -114,6 +114,7 @@ float tower_rally_pool(void);           // health still to be won back (0 withou
 int   tower_mod_extra_mbd_waves(void);
 bool  tower_mod_try_unbroken(void);     // spends it: survive a lethal hit at 1 HP
 float tower_mod_poise(void);            // how fast the bosses' stagger meters fill
+float tower_mod_stagger_time(void);     // how long a staggered boss stays down
 float tower_mod_stagger_damage(void);   // damage taken by a staggered boss
 float tower_mod_perfect_window(void);   // seconds of a roll that count as a perfect dodge
 void  tower_on_perfect_dodge(void);

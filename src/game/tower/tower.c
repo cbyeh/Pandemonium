@@ -45,7 +45,7 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_CRESCENT_ECHO] = { "Moon Blade Dance+", "2 more waves", 1, TIER_RARE },
     [BOON_PHANTOM_STEP]  = { "Phantom Step",  "Easier perfect dodges, each heals 8%", 1, TIER_RARE },
     [BOON_RIPOSTE]       = { "Riposte",       "Perfect dodge: +50% damage", 1, TIER_RARE },
-    [BOON_CRUSHING_BLOWS]= { "Crushing Blows","Bosses stagger 40% sooner",    1, TIER_RARE },
+    [BOON_CRUSHING_BLOWS]= { "Crushing Blows","Staggers last 50% longer",     1, TIER_RARE },
     [BOON_EXECUTIONER]   = { "Executioner",   "Staggered bosses take +60%",   1, TIER_LEGENDARY },
     [BOON_STORM_BLADE]   = { "Storm Blade",   "Every 4th hit calls lightning", 1, TIER_LEGENDARY },
     [BOON_BLOOD_PACT]    = { "Blood Pact",    "+35% damage, potions -25%", 1, TIER_LEGENDARY },
@@ -749,11 +749,13 @@ float tower_mod_damage_taken(void)
     return m;
 }
 
-float tower_mod_poise(void)
+float tower_mod_poise(void) { return 1.0f; }
+float tower_mod_stagger_time(void)
 {
-    float m = 1.0f;
-    if (tower_boon_stacks(BOON_CRUSHING_BLOWS)) m *= 1.4f;
-    return m;
+#ifdef HLE_STAGGER_LONG     // test aid: Crushing Blows outside the Tower
+    return 1.5f;
+#endif
+    return tower_boon_stacks(BOON_CRUSHING_BLOWS) ? 1.5f : 1.0f;
 }
 float tower_mod_stagger_damage(void) { return tower_boon_stacks(BOON_EXECUTIONER) ? 1.6f : 1.0f; }
 float tower_mod_perfect_window(void) { return tower_boon_stacks(BOON_PHANTOM_STEP) ? 0.35f : 0.2f; }

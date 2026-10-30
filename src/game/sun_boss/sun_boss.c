@@ -676,9 +676,9 @@ bool sun_boss_stagger(Boss* b)
     if (!s.ready || s.state == SB_INTRO || s.state == SB_DIVE || s.state == SB_REST || s.state == SB_BREAK || s.state == SB_DEAD) return false;
     for (int k = 0; k < NCH; k++) s.ch[k].kin = s.ch[k].hot = false;
     enter(SB_REST);
-    s.t = 3.0f / speed_mult() - BOSS_STAGGER_S;     // on the floor for the stagger
+    b->staggerT = boss_stagger_s();
+    s.t = 3.0f / speed_mult() - b->staggerT;     // on the floor for the stagger
     s.downT = 0.0f;         // it falls from where it was: a bounce and a rocking on the floor
-    b->staggerT = BOSS_STAGGER_S;
     return true;
 }
 
@@ -1265,6 +1265,9 @@ void sun_boss_update(Boss* b, float dt)
             if (bt > 0.0f && bt - dt <= 0.0f) { screen_shake_set_shake_mag(9.0f); sfx_boom(); }
         } else
         b->pos[1] += (s.groundY + REST_H - b->pos[1]) * fminf(1.0f, dt * 8.0f);
+#ifdef HLE_AUTOPLAY
+        if (s.t > 3.0f / sm && s.downT >= 0.0f) { extern float gameTime; debugf("[stagger] sun up at %.1f s\n", (double)gameTime); }
+#endif
         if (s.t > 3.0f / sm) s.downT = -1.0f;
         if (s.t > 3.0f / sm) enter(SB_HOVER);
         break;
