@@ -145,7 +145,17 @@ static bool tailPrevOk;
 static inline float clamp01(float x) { return x < 0.0f ? 0.0f : x > 1.0f ? 1.0f : x; }
 static float smooth01(float u) { u = clamp01(u); return u * u * (3.0f - 2.0f * u); }
 static inline float ease(float cur, float to, float rate, float dt) { return cur + (to - cur) * fminf(1.0f, rate * dt); }
-static inline float frand(void) { return (rand_custom_u32() % 2001) / 1000.0f - 1.0f; }     // -1..1
+// Its own random numbers (xorshift32, seeded from the clock), for every roll it makes: rand_custom_u32 is a
+// 16-bit LCG the game steps in step with the frame, and its draws here came out far from uniform
+// (the first candidates in a list, the backstep and the swipe charge, got 2 in 100 picks, not 1 in 4)
+static uint32_t pick_rng(void)
+{
+    static uint32_t x;
+    if (!x) x = (uint32_t)TICKS_READ() | 1u;
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    return x;
+}
+static inline float frand(void) { return (pick_rng() % 2001) / 1000.0f - 1.0f; }     // -1..1
 static inline float len3(const float a[3]) { return sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]); }
 static inline void mad3(float o[3], const float a[3], const float d[3], float k) { for (int i = 0; i < 3; i++) o[i] = a[i] + d[i] * k; }
 static inline void lerp3(float o[3], const float a[3], const float b[3], float t) { for (int i = 0; i < 3; i++) o[i] = a[i] + (b[i] - a[i]) * t; }
@@ -213,10 +223,10 @@ static void enter(DgState st)
     if (st == DG_TAIL) s.passT = 0.0f;     // one tail per pass
     // Between attacks a pause; now and then (35%) a longer breather, its head low: an opening
 #ifndef HLE_DG_PAUSE
-#define HLE_DG_PAUSE 0.2f   // the recovery added to every pause (a longer opening: about 70% cost, not ~80%)
+#define HLE_DG_PAUSE 0.5f   // the recovery added to every pause (a longer opening: about 70% cost, not ~80%)
 #endif
-    if (st == DG_IDLE) { s.paceSg = (rand_custom_u32() & 1) ? 1.0f : -1.0f; s.growled = false; s.fidgetT = 0.0f; }
-    if (st == DG_IDLE) s.idleWait = ((rand_custom_u32() % 100 < 35) ? 3.3f + (rand_custom_u32() % 100) / 100.0f : 1.8f) + HLE_DG_PAUSE;
+    if (st == DG_IDLE) { s.paceSg = (pick_rng() & 1) ? 1.0f : -1.0f; s.growled = false; s.fidgetT = 0.0f; }
+    if (st == DG_IDLE) s.idleWait = ((pick_rng() % 100 < 35) ? 3.3f + (pick_rng() % 100) / 100.0f : 1.8f) + HLE_DG_PAUSE + (s.dark ? 0.45f : 0.0f);     // (the dark half's moves come faster: its pauses a little longer)
 #ifdef HLE_AUTOPLAY
     debugf("[dragon] state %d\n", st);
 #endif
@@ -227,7 +237,7 @@ static void enter(DgState st)
 static void passed_player(void)
 {
     s.passT = 3.0f;
-    s.passTail = rand_custom_u32() % 100 < 75;
+    s.passTail = pick_rng() % 100 < 75;
 }
 
 bool dragon_boss_stagger(Boss* b)
@@ -953,7 +963,7 @@ static void feet_update(float dt)
             s.swing[k] = 0.0f;
             f->p[1] = fmaxf(s.groundY, f->p[1] - 90.0f * dt);
             float dx = f->p[0] - rest[0], dz = f->p[2] - rest[2];
-            bool fidget = s.state == DG_IDLE && k < 2 && (rand_custom_u32() % 1000) < (uint32_t)(dt * 250.0f);   // ~1 in 4 s a paw
+            bool fidget = s.state == DG_IDLE && k < 2 && (pick_rng() % 1000) < (uint32_t)(dt * 250.0f);   // ~1 in 4 s a paw
             if ((fidget || dx * dx + dz * dz > 16.0f * 16.0f) && !s.feet[k ^ 1].moving) {
                 f->moving = true; f->t = 0.0f;
                 memcpy(f->from, f->p, sizeof(f->p));
@@ -1358,7 +1368,7 @@ static void tail_update(Boss *b, float dt)
     // The answer to standing behind it: it looks back over its shoulder at you, cocks the tail
     // out beside the hind leg on your side (its crystal blade glowing), the hips and spine
     // coiling, then scythes it in a wide fan across behind it to beside the other hind leg, its
-    // hips twisting into the blow: one swipe, from whichever side. Out of the tail's reach, it backs toward you as it coils. No spin: jump it, roll through,
+    // hips twisting into the blow: one swipe, from the side away from you toward you. Out of the tail's reach, it backs toward you as it coils. No spin: jump it, roll through,
     // or get out in front
     const float SWING = 0.45f, FAN = 1.95f, REACH = 105.0f;     // the fan: FAN each side of straight back
     float dx, dz;
@@ -1366,7 +1376,9 @@ static void tail_update(Boss *b, float dt)
     float rel = remainderf(atan2f(dx, dz) - b->rot[1], 2.0f * T3D_PI), sd = s.sweepSpan > 0.0f ? 1.0f : -1.0f;
     if (s.step == 0) {
         if (s.t < dt * 1.5f) {
-            float sg = (rand_custom_u32() & 1) ? 1.0f : -1.0f;      // from either side, right across through the player
+            // from the side away from the player, right across toward and through them
+            float pr = remainderf(atan2f(dx, dz) - b->rot[1] - T3D_PI, 2.0f * T3D_PI);   // the player from the tail's line
+            float sg = pr > 0.0f ? -1.0f : 1.0f;
             s.sweepFrom = sg * FAN; s.sweepSpan = -2.0f * sg * FAN;
             s.sweeps = 0;
             sd = s.sweepSpan > 0.0f ? 1.0f : -1.0f;
@@ -1439,7 +1451,7 @@ static void breath_update(Boss *b, float dt)
         s.tRear = 4.0f * smooth01(s.t / 0.7f); s.tLean = -3.0f; s.tWingRaise = 0.55f; s.tWingSweep = 0.3f; s.tTailUp = 0.1f;   // the chest swells: it breathes in
         s.glow = 0.5f + 0.5f * clamp01(s.t / 0.9f);
         if (s.t < dt * 1.5f) {
-            float sg = (rand_custom_u32() & 1) ? 1.0f : -1.0f;
+            float sg = (pick_rng() & 1) ? 1.0f : -1.0f;
             s.sweepFrom = atan2f(dx, dz) - 0.75f * sg; s.sweepSpan = 1.5f * sg;
             s.range = fminf(fmaxf(dist, 50.0f), 190.0f);     // out to where the player is (it's chosen to 200)
         }
@@ -1633,8 +1645,8 @@ static void beam_update(Boss *b, float dt)
         s.tRear = 5.0f; s.tWingSweep = 0.1f; s.tTailUp = 0.2f;
         s.glow = clamp01(s.t / CHARGE);
         if (s.t < dt * 1.5f) {
-            float sg = (rand_custom_u32() & 1) ? 1.0f : -1.0f;
-            s.sweeps = 1 + (int)(rand_custom_u32() % 3);
+            float sg = (pick_rng() & 1) ? 1.0f : -1.0f;
+            s.sweeps = 1 + (int)(pick_rng() % 3);
 #ifdef HLE_DG_SWEEPS    // test aid: always this many sweeps
             s.sweeps = HLE_DG_SWEEPS;
 #endif
@@ -1703,7 +1715,7 @@ static void skybeam_update(Boss *b, float dt)
         if (s.t < dt * 1.5f) {
             // A line across the player's front, through its own spot: the side and length that fit the hall
             float dx, dz, d = fmaxf(to_player(b, &dx, &dz), 1.0f), nx = dx / d, nz = dz / d, in = d - 100.0f;    // the line 100 out from the player
-            float sg = (rand_custom_u32() & 1) ? 1.0f : -1.0f;
+            float sg = (pick_rng() & 1) ? 1.0f : -1.0f;
             bool ok = false;
             for (int i = 0; i < 12 && !ok; i++) {
                 float sd = (i & 1) ? -sg : sg, L = 240.0f - 30.0f * (i >> 1);
@@ -1823,7 +1835,7 @@ static void triple_update(Boss *b, float dt)
     float wind = (s.step == 0 ? 1.2f : 0.7f) / (s.dark ? 1.15f : 1.0f);     // a long rear before the first (was 0.8)
     if (s.step == 0) {
         face_player(b, dt, 1.8f);
-        if (s.t < dt * 1.5f) s.sg = (rand_custom_u32() & 1) ? 1.0f : -1.0f;
+        if (s.t < dt * 1.5f) s.sg = (pick_rng() & 1) ? 1.0f : -1.0f;
     }
     if (s.step < 3) {
         float u = clamp01(s.t / wind);
@@ -1897,7 +1909,7 @@ static void sweep_update(Boss *b, float dt)
     float sm = s.dark ? 1.15f : 1.0f, to[3];
     s.tCrouch = 8.0f; s.tNeckReach = 1.1f;
     if (s.step == 0) {
-        if (s.t < dt * 1.5f) { s.sg = (rand_custom_u32() & 1) ? 1.0f : -1.0f; sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.6f); }
+        if (s.t < dt * 1.5f) { s.sg = (pick_rng() & 1) ? 1.0f : -1.0f; sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.6f); }
         face_player(b, dt, 1.5f);
         float u = smooth01(s.t / (WIND * 0.6f));
         s.tNeckPitch = -0.6f; s.tNeckYaw = -s.sg * HALF * 0.7f * u; s.tJaw = 0.35f; s.poseRate = 4.0f;
@@ -2086,7 +2098,7 @@ static void enter_ranged(Boss *b, float dist, float rel)
     }
     if (s.dark) pick[n++] = DG_ORBS;
     if (!n) { enter(DG_IDLE); s.idleWait = 0.8f; return; }
-    DgState st = pick[rand_custom_u32() % n];
+    DgState st = pick[pick_rng() % n];
     if (st == DG_TRIPLE) s.cdTriple = 13.0f; else if (st == DG_BREATH) s.cdBreath = 9.0f; else if (st == DG_SNIPE) s.cdSnipe = 10.0f;
     else if (st == DG_SWEEP) s.cdSweep = 15.0f; else if (st == DG_BEAM) s.cdBeam = 18.0f; else s.cdOrbs = 13.0f;
     enter(st);
@@ -2104,7 +2116,7 @@ static void backstep_update(Boss *b, float dt)
 {
     if (s.t < dt * 1.5f && s.step == 0) {      // most often as far as it can, sometimes (40%) a short hop
         float room = backstep_room(b);
-        s.bsDist = fmaxf(rand_custom_u32() % 100 < 40 && room >= 55.0f ? fminf(room, 55.0f + rand_custom_u32() % 25) : room, 30.0f);
+        s.bsDist = fmaxf(pick_rng() % 100 < 40 && room >= 55.0f ? fminf(room, 55.0f + pick_rng() % 25) : room, 30.0f);
     }
     // Harmless, and quick: it sinks onto its haunches, wings flaring, and springs back off its
     // forelegs with one great beat of the wings, head high and eyes on you, the tail swung up to
@@ -2114,7 +2126,7 @@ static void backstep_update(Boss *b, float dt)
     const float DIST = s.bsDist;
     face_player(b, dt, 2.5f);
     if (s.step == 0) {
-        if (s.t < dt * 1.5f) { s.followRanged = rand_custom_u32() % 100 < 75; sfx(SCENE1_SFX_BOSS_STEP1, 0.8f); }
+        if (s.t < dt * 1.5f) { s.followRanged = pick_rng() % 100 < 75; sfx(SCENE1_SFX_BOSS_STEP1, 0.8f); }
         s.tCrouch = 8.0f; s.tLean = -4.0f; s.tNeckPitch = 0.3f; s.tNeckReach = 0.85f; s.tJaw = 0.2f;
         s.tWingRaise = 0.85f; s.tWingSpan = 0.95f; s.tWingSweep = 0.1f; s.tTailUp = 0.25f; s.poseRate = 12.0f;
         if (s.t >= SINK) {
@@ -2273,34 +2285,52 @@ static void choose(Boss *b, float dist, float rel)
     return;
 #endif
     bool front = fabsf(rel) < 0.7f, behind = fabsf(rel) > 2.0f;
-    if (behind && dist < 150.0f && s.cdTail <= 0.0f) { s.cdTail = 3.5f; enter(DG_TAIL); return; }
-    // Close in front: now and then it springs back out of reach (a ranged attack mostly follows),
-    // or claws (half of those the heavy one-sided stomp) before the whip or the fire get a turn
-    uint32_t coin = rand_custom_u32() % 100;
-    if (front && dist < 80.0f && s.cdBackstep <= 0.0f && coin < 45 && backstep_room(b) >= 70.0f) { s.cdBackstep = 6.0f; enter(DG_BACKSTEP); return; }
-    if (front && dist < 85.0f && s.cdClaw <= 0.0f && coin >= 22 && coin < 70) { s.cdClaw = 3.0f; enter(coin < 45 ? DG_STOMP : DG_CLAW); return; }
-    if (dist > 30.0f && dist < 115.0f && s.cdWhip <= 0.0f) { s.cdWhip = 11.0f; enter(DG_WHIP); return; }   // any side
+    if (behind && dist < 150.0f && s.cdTail <= 0.0f) { s.cdTail = 3.5f; enter(DG_TAIL); return; }     // the answer to standing behind it
+    // Every move that suits where the player is (and is off its cooldown) is a candidate, picked
+    // at random by weight: the chase (the backstep, the swipe charge) weighs most, so the player
+    // runs after it about half the time, and every other attack still gets its turns (a fixed
+    // order starved the ones lower down: the bite and the charge never came)
+    struct { DgState st; float *cd, cdv, w; } c[20];
+    int n = 0;
+#define CAND(cond, ST, CD, CDV, W) do { if (cond) { c[n].st = ST; c[n].cd = &s.CD; c[n].cdv = CDV; c[n].w = W; n++; } } while (0)
+    const float CHASE = 7.0f;
+    CAND(front && dist < 110.0f && s.cdBackstep <= 0.0f && backstep_room(b) >= 70.0f, DG_BACKSTEP, cdBackstep, 3.5f, CHASE);
+    CAND(front && dist > 60.0f && dist < 200.0f && s.cdSwipe <= 0.0f && room_ahead(b, dist + 20.0f), DG_SWIPE, cdSwipe, 3.5f, CHASE);
+    CAND(front && dist < 85.0f && s.cdClaw <= 0.0f, DG_CLAW, cdClaw, 3.0f, 1.0f);
+    CAND(front && dist < 85.0f && s.cdClaw <= 0.0f, DG_STOMP, cdClaw, 3.5f, 0.8f);
+    CAND(front && dist < 100.0f && s.cdBite <= 0.0f, DG_BITE, cdBite, 5.0f, 1.0f);
+    CAND(dist > 30.0f && dist < 115.0f && s.cdWhip <= 0.0f, DG_WHIP, cdWhip, 11.0f, 1.0f);    // any side
     if (s.dark) {
-        if (s.cdNova <= 0.0f && dist < 110.0f) { s.cdNova = 16.0f; enter(DG_NOVA); return; }
+        CAND(s.cdNova <= 0.0f && dist < 110.0f, DG_NOVA, cdNova, 16.0f, 1.5f);
         // (closer, the player is under its chin, where the beam can't reach: it raked over them)
-        if (s.cdBeam <= 0.0f && front && dist > 110.0f) { s.cdBeam = 18.0f; enter(DG_BEAM); return; }
-        if (s.cdOrbs <= 0.0f) { s.cdOrbs = 13.0f; enter(DG_ORBS); return; }
+        CAND(s.cdBeam <= 0.0f && front && dist > 110.0f, DG_BEAM, cdBeam, 18.0f, 1.5f);
+        CAND(s.cdOrbs <= 0.0f, DG_ORBS, cdOrbs, 13.0f, 1.0f);
     }
-    if (s.cdFly <= 0.0f && dist > 70.0f) {      // in the dark half: half the time a sky beam instead, gliding or hovering
-        uint32_t r = rand_custom_u32() % 4;
-        s.cdFly = 22.0f; enter(!s.dark || r < 2 ? DG_FLY : r == 2 ? DG_SKYBEAM : DG_HOVER); return;
-    }
-    if (front && dist > 170.0f && s.cdSnipe <= 0.0f) { s.cdSnipe = 10.0f; enter(DG_SNIPE); return; }
-    // Mid range, half the time: the swipe charge, on past the player (then the tail)
-    if (front && dist > 60.0f && dist < 170.0f && s.cdSwipe <= 0.0f && coin < 75 && room_ahead(b, dist + 20.0f)) { s.cdSwipe = 6.0f; enter(DG_SWIPE); return; }
-    if (front && dist > 55.0f && dist < 160.0f && s.cdSweep <= 0.0f) { s.cdSweep = 15.0f; enter(DG_SWEEP); return; }
-    if (front && dist > 40.0f && dist < 140.0f && s.cdCone <= 0.0f) { s.cdCone = 14.0f; enter(DG_CONE); return; }
-    if (front && dist > 60.0f && dist < 170.0f && s.cdSwipe <= 0.0f && room_ahead(b, dist + 20.0f)) { s.cdSwipe = 6.0f; enter(DG_SWIPE); return; }
-    if (front && dist < 85.0f && s.cdClaw <= 0.0f) { s.cdClaw = 2.5f; enter(coin < 35 ? DG_STOMP : DG_CLAW); return; }
-    if (front && dist < 100.0f && s.cdBite <= 0.0f) { s.cdBite = 5.0f; enter(DG_BITE); return; }
-    if (front && dist > 110.0f && dist < 260.0f && s.cdTriple <= 0.0f) { s.cdTriple = 13.0f; enter(DG_TRIPLE); return; }
-    if (front && dist > 70.0f && dist < 200.0f && s.cdBreath <= 0.0f) { s.cdBreath = 9.0f; enter(DG_BREATH); return; }
-    if (front && dist > 140.0f && s.cdCharge <= 0.0f && room_ahead(b, 100.0f)) { s.cdCharge = 8.0f; enter(DG_CHARGE); return; }
+    CAND(s.cdFly <= 0.0f && dist > 70.0f, DG_FLY, cdFly, 22.0f, 1.0f);       // (in the dark half: often a sky beam or the hover instead)
+    CAND(front && dist > 170.0f && s.cdSnipe <= 0.0f, DG_SNIPE, cdSnipe, 10.0f, 1.0f);
+    CAND(front && dist > 55.0f && dist < 160.0f && s.cdSweep <= 0.0f, DG_SWEEP, cdSweep, 15.0f, 1.0f);
+    CAND(front && dist > 40.0f && dist < 140.0f && s.cdCone <= 0.0f, DG_CONE, cdCone, 14.0f, 1.0f);
+    CAND(front && dist > 110.0f && dist < 260.0f && s.cdTriple <= 0.0f, DG_TRIPLE, cdTriple, 13.0f, 1.0f);
+    CAND(front && dist > 70.0f && dist < 200.0f && s.cdBreath <= 0.0f, DG_BREATH, cdBreath, 9.0f, 1.0f);
+    CAND(front && dist > 140.0f && s.cdCharge <= 0.0f && room_ahead(b, 100.0f), DG_CHARGE, cdCharge, 8.0f, 1.0f);
+#undef CAND
+#ifdef HLE_LOG_CHOOSE    // test aid: what it saw when it chose, and its candidates
+    { char buf[96]; int o = 0; for (int i = 0; i < n && o < 80; i++) o += snprintf(buf + o, sizeof buf - o, "%d ", c[i].st); buf[o] = 0;
+      debugf("[choose] dist %.0f rel %.2f | %s\n", (double)dist, (double)rel, buf); }
+#endif
+    if (!n) return;     // nothing suits: it keeps walking in (the idle) and tries again
+    float tot = 0.0f;
+    for (int i = 0; i < n; i++) tot += c[i].w;
+    float r = (pick_rng() % 10000) / 10000.0f * tot;
+    int k = 0;
+    while (k < n - 1 && r >= c[k].w) { r -= c[k].w; k++; }
+    *c[k].cd = c[k].cdv;
+#ifdef HLE_LOG_CHOOSE
+    debugf("[choose] picked %d (r %.2f of %.2f)\n", c[k].st, (double)r, (double)tot);
+#endif
+    DgState st = c[k].st;
+    if (st == DG_FLY && s.dark) { uint32_t q = pick_rng() % 4; st = q < 2 ? DG_FLY : q == 2 ? DG_SKYBEAM : DG_HOVER; }
+    enter(st);
 }
 
 void dragon_boss_update(Boss* b, float dt)
@@ -2384,7 +2414,7 @@ void dragon_boss_update(Boss* b, float dt)
             float d = turn_toward(b, atan2f(dx, dz) + off, 1.6f * sm, dt);
             if (fabsf(d) < 0.6f) move_by(b, s.F[0] * 24.0f * sm * dt, s.F[2] * 24.0f * sm * dt);
             s.tNeckYaw = fminf(fmaxf(s.lookRel * 0.85f, -1.1f), 1.1f);
-            if (!s.growled) { s.growled = true; if (rand_custom_u32() % 100 < 60) sfx(SCENE1_SFX_DRAGON_GROWL, 0.8f); }     // a low growl as it starts to prowl
+            if (!s.growled) { s.growled = true; if (pick_rng() % 100 < 60) sfx(SCENE1_SFX_DRAGON_GROWL, 0.8f); }     // a low growl as it starts to prowl
         } else {
             float d = turn_toward(b, atan2f(dx, dz), (wait >= 1.8f && s.t >= wait - 0.8f ? 2.2f : 0.7f) * sm, dt);    // (back round from its pacing)
             if (dist > 75.0f && fabsf(d) < 0.8f) move_by(b, s.F[0] * 30.0f * sm * dt, s.F[2] * 30.0f * sm * dt);
@@ -2400,8 +2430,8 @@ void dragon_boss_update(Boss* b, float dt)
                 s.tCrouch = 1.5f + 1.5f * br; s.tNeckPitch = 0.04f * br; s.poseRate = 3.0f;
                 // Standing in a pause, now and then (about once in 3 s) a fidget: the tail lifted and
                 // slapped down on the floor, or a forepaw lifted and scraped back across it
-                if (!pace && s.fidgetT <= 0.0f && s.t > 0.6f && s.t < wait - 1.2f && (rand_custom_u32() % 1000) < (uint32_t)(dt * 330.0f)) {
-                    s.fidgetT = 1.0f; s.fidgetK = rand_custom_u32() % 3;
+                if (!pace && s.fidgetT <= 0.0f && s.t > 0.6f && s.t < wait - 1.2f && (pick_rng() % 1000) < (uint32_t)(dt * 330.0f)) {
+                    s.fidgetT = 1.0f; s.fidgetK = pick_rng() % 3;
                 }
                 if (s.fidgetT > 0.0f) {
                     float u = 1.0f - s.fidgetT, was = u - dt;
