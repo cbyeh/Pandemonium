@@ -80,7 +80,7 @@ static struct {
     float wingG;                                        // the wings' size: they grow as they spread (WING_FOLDED folded)
     rspq_block_t *block, *blockUnlit;                   // the body's draw (lit), the membranes' and crystals' (unlit), recorded once: the bones' matrices set each frame
     float wingFold, tWingFold;                          // 1 folded along its back .. 0 spread
-    sprite_t *texScales, *texMemb;      // tools/boss_textures.py
+    sprite_t *texScales;                // tools/boss_textures.py (the head, jaw, throat and feet; the skinned body loads its own)
     T3DMat4FP *mats;
     int matRing, mi;
     DgState state;
@@ -223,7 +223,7 @@ static void enter(DgState st)
     if (st == DG_TAIL) s.passT = 0.0f;     // one tail per pass
     // Between attacks a pause; now and then (35%) a longer breather, its head low: an opening
 #ifndef HLE_DG_PAUSE
-#define HLE_DG_PAUSE 0.5f   // the recovery added to every pause (a longer opening: about 70% cost, not ~80%)
+#define HLE_DG_PAUSE 0.5f   // the recovery added to every pause (the light half 0.45 more)
 #endif
     if (st == DG_IDLE) { s.paceSg = (pick_rng() & 1) ? 1.0f : -1.0f; s.growled = false; s.fidgetT = 0.0f; }
     if (st == DG_IDLE) s.idleWait = ((pick_rng() % 100 < 35) ? 3.3f + (pick_rng() % 100) / 100.0f : 1.8f) + HLE_DG_PAUSE + (s.dark ? 0.0f : 0.45f);     // (the light half pauses longer; the dark half presses on)
@@ -679,7 +679,7 @@ void dragon_boss_free(void)
     gpu_wait();
     ProcMesh *all[] = { &s.mThroat, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.flame, &s.mOrb, &s.mIce, &s.mCone };
     for (unsigned i = 0; i < sizeof(all) / sizeof(all[0]); i++) proc_mesh_free(all[i]);
-    sprite_free(s.texScales); sprite_free(s.texMemb);
+    sprite_free(s.texScales);
     rspq_block_free(s.block); rspq_block_free(s.blockUnlit);
     t3d_model_free(s.model);
     free_uncached(s.mats);
@@ -710,7 +710,6 @@ void dragon_boss_begin(Boss* boss)
         build_glow(&s.mIce, proc_rgb(110, 170, 255), proc_rgb(225, 240, 255));     // the crystal beam, before the dark
         build_cone();
         s.texScales = sprite_load("rom:/dragon_boss/scales.i8.sprite");
-        s.texMemb = sprite_load("rom:/dragon_boss/membrane.i8.sprite");
         s.mats = malloc_uncached(sizeof(T3DMat4FP) * MAT_RING * MAT_MAX);
         s.ready = true;
     }
@@ -1377,7 +1376,6 @@ static void tail_update(Boss *b, float dt)
             float pr = remainderf(atan2f(dx, dz) - b->rot[1] - T3D_PI, 2.0f * T3D_PI);   // the player from the tail's line
             float sg = pr > 0.0f ? -1.0f : 1.0f;
             s.sweepFrom = sg * FAN; s.sweepSpan = -2.0f * sg * FAN;
-            s.sweeps = 0;
             sd = s.sweepSpan > 0.0f ? 1.0f : -1.0f;
         }
         s.tNeckYaw = rel > 0.0f ? 1.1f : -1.1f; s.tNeckPitch = 0.2f;    // a look back at you
