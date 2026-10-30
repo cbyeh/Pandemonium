@@ -3,7 +3,7 @@ meshes' vertex colours:
 
   assets/dragon_boss/scales.i8.png    Shadowborne's scale map, 128x32, once round each tube (scales())
   assets/dragon_boss/membrane.i8.png  its wing membranes: creased leather with veins
-  assets/shackled_sun/surface.i8.png  the Shackled Sun's granulation: boiling cells, dark lanes
+  assets/shackled_sun/veins.rgba16.png  the Shackled Sun's veins: thin, branching, red on white (colour), 64x32
 
 The others are 32x32. Every texture tiles both ways and is rolled so its brightest spot is at texels 1..3 x 1..3: unlit faces (crystals, eyes,
 the sun's iris) all sample texel (2, 2), so they keep their colour (proc_mesh_uv).
@@ -37,6 +37,23 @@ def write_png(path, img):
     with open(path, "wb") as f:
         f.write(png)
     print(f"{path}: mean {a.mean() / 255:.2f}, min {a.min()}, max {a.max()}")
+
+
+def write_png_rgb(path, img):
+    """img: (h, w, 3) in 0..1."""
+    a = np.clip(np.rint(img * 255.0), 0, 255).astype(np.uint8)
+    raw = b"".join(b"\0" + a[y].tobytes() for y in range(a.shape[0]))
+
+    def chunk(tag, data):
+        c = tag + data
+        return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", a.shape[1], a.shape[0], 8, 2, 0, 0, 0))
+    png += chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(png)
+    print(f"{path}: mean {a.mean() / 255:.2f}")
 
 
 def grid():
@@ -200,19 +217,42 @@ def membrane():
     return bright_corner(np.clip(img, 0, 1))
 
 
-def surface():
-    # Granulation: bright cells of rising plasma, dark lanes between
-    X, Y, d1, d2, idx = cells(21, 36, 0.95)
-    edge = d2 - d1
-    # (light: it glows, and the ending's sun is seen close up, its white-gold core dimmed by darker lanes)
-    v = 1.0 - 0.16 * (d1 / 4.0) ** 2 - 0.05 * np.vectorize(lambda k: hash01(k, 5))(idx)
-    v = np.where(edge < 1.2, 0.72 + 0.2 * edge / 1.2, v)
-    img = down(v) * noise(23, 0.02)
-    return bright_corner(np.clip(img, 0, 1))
+VW, VH = 64, 32     # the veins: round the ball twice, down it twice (RGBA16, 4 KB: TMEM)
+
+
+def veins():
+    # Thin red veins wandering over white (multiplied by the sun's gradient: dark red on gold):
+    # a few trunks, each a random walk that turns a little at every step and forks now and then,
+    # its branches thinner and fainter; wrapped both ways, so it tiles
+    rng = np.random.default_rng(31)
+    xs = (np.arange(VW * SS) + 0.5) / SS
+    ys = (np.arange(VH * SS) + 0.5) / SS
+    X, Y = np.meshgrid(xs, ys)
+    ink = np.zeros_like(X)                  # 0..1: how much vein covers the texel
+    stack = [(rng.random() * VW, rng.random() * VH, rng.random() * 2 * np.pi, 1.0, 46) for _ in range(7)]
+    while stack:
+        x, y, a, w, n = stack.pop()
+        for _ in range(n):
+            a += rng.normal(0.0, 0.45)
+            x, y = (x + np.cos(a) * 0.7) % VW, (y + np.sin(a) * 0.7) % VH
+            dx = (X - x + VW / 2) % VW - VW / 2
+            dy = (Y - y + VH / 2) % VH - VH / 2
+            r = 0.32 + 0.33 * w                     # half-width (texels): trunks under a texel and a half wide
+            ink = np.maximum(ink, w * np.clip(1.0 - np.hypot(dx, dy) / r, 0.0, 1.0) ** 0.7)
+            if w > 0.35 and rng.random() < 0.06:    # a fork, thinner, off to one side
+                stack.append((x, y, a + rng.choice((-1, 1)) * rng.uniform(0.6, 1.2), w * 0.65, int(n * 0.6)))
+            w *= 0.993
+    ink = ink.reshape(VH, SS, VW, SS).mean(axis=(1, 3))
+    ink[0:5, 0:5] = 0.0      # unlit faces (the ending's iris) sample texel (2, 2): left clear
+    vein = np.array([0.5, 0.08, 0.04])      # times the gradient: (255, 232, 165) -> dark red
+    base = np.ones(3)
+    img = base[None, None, :] * (1.0 - ink[..., None]) + vein[None, None, :] * ink[..., None]
+    print(f"  veins cover {np.mean(ink > 0.3) * 100:.0f}% of the texels")
+    return img
 
 
 if __name__ == "__main__":
     write_png(os.path.join(ROOT, "dragon_boss", "scales.i8.png"), scales())
     write_png(os.path.join(ROOT, "dragon_boss", "membrane.i8.png"), membrane())
-    write_png(os.path.join(ROOT, "shackled_sun", "surface.i8.png"), surface())
+    write_png_rgb(os.path.join(ROOT, "shackled_sun", "veins.rgba16.png"), veins())
     sys.exit(0)

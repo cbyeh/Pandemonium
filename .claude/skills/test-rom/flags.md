@@ -26,7 +26,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **LLE reference shots:** `~/n64/emu/ref/make_lle_refs.sh` (angrylion + cxd4 via `run_lle.sh`).
 
 ## Measure
-- **FPS / CPU:** `HLE_LOG_FPS` (`[fps]` every 2 s, per-part ms, tri/vert counts; meant for Ares). `HLE_TEST_PERF` (rsp-hle CPU %, audio queue, worst frame). GPU: `HLE_PROF_SERIAL`, `_DRAGON`, `_BOSS`, `_WAITEND`.
+- **FPS / CPU:** `HLE_LOG_FPS` (`[fps]` every 2 s, per-part ms, tri/vert counts; meant for Ares). `HLE_TEST_PERF` (rsp-hle CPU %, audio queue, worst frame). GPU: `HLE_PROF_SERIAL`, `_DRAGON` (also the Shackled Sun's parts: `[sunprof]`), `_BOSS`, `_WAITEND`.
 - **Pacing:** `HLE_LOG_HITCH`, `HLE_LOG_JITTER`, `HLE_LOG_LATENCY`. `HLE_TEST_TASKS` checks one graphics task per frame (catches black-frame flicker shots can't).
 - **Memory:** `HLE_TEST_BONUS` logs the lowest free heap.
 - **Choices:** `HLE_LOG_CHOOSE` (Shadowborne: the distance, angle and candidate moves at each pick, then the pick).
