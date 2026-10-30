@@ -17,7 +17,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - No timescale, fast-forward or RNG seed aid exists (boss order seeds from the clock). Speed up by skipping to the state above, not by running faster.
 
 ## Capture
-- **Cameras:** `HLE_DUMMY_SIDECAM` (`HLE_SIDECAM_K`), `HLE_DUMMY_CAM` (`HLE_DUMMY_CAM_YAW` turns it round the boss, 1.57 = side; `HLE_DUMMY_CAM_DIST`, 120), `CAM_NEAR`, `CAM_HIGH`, `CAM_PORTRAIT` (`HLE_PORTRAIT_D/H/LOOK/TURN`). `HLE_SKIN_GATE` poses skins at the fog gate.
+- **Cameras:** `HLE_DUMMY_SIDECAM` (`HLE_SIDECAM_K`), `HLE_DUMMY_CAM` (`HLE_DUMMY_CAM_YAW` turns it round the boss, 1.57 = side; `HLE_DUMMY_CAM_DIST`, 120), `CAM_NEAR`, `CAM_HIGH`, `CAM_PORTRAIT` (`HLE_PORTRAIT_D/H/LOOK/TURN`, `HLE_PORTRAIT_FLIPX` for the Shackled Sun, whose front is the other way; with `HLE_SUN_FORCE=9` it only hovers, its face at rest). `HLE_SKIN_GATE` poses skins at the fog gate.
 - **Clean README shots:** `HLE_SHOT_CLEAN` / `HLE_NO_HUD`.
 - **Frame-exact video:** shot every frame, `run.sh rom "$(seq -s, 900 1 1100)"` (comma list, not a range), then
   `ffmpeg -framerate 30 -pattern_type glob -i '*.png' -vf scale=640:-2,format=yuv420p -c:v libx264 -crf 18 out.mp4`. Lower `-framerate` or `setpts=4*PTS` for slow motion.

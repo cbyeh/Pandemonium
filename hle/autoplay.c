@@ -1133,7 +1133,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
                 float a = boss->rot[1] + HLE_PORTRAIT_TURN, cx = 0, cz = 0;
                 for (int i = 0; i < 16; i++, a += 0.39f) {
+#ifdef HLE_PORTRAIT_FLIPX   // a boss whose front is (+sin, +cos) of its yaw (the Shackled Sun)
+                    cx = boss->pos[0] + sinf(a) * HLE_PORTRAIT_D; cz = boss->pos[2] + cosf(a) * HLE_PORTRAIT_D;
+#else
                     cx = boss->pos[0] - sinf(a) * HLE_PORTRAIT_D; cz = boss->pos[2] + cosf(a) * HLE_PORTRAIT_D;
+#endif
                     float hx = (cx + boss->pos[0]) * 0.5f, hz = (cz + boss->pos[2]) * 0.5f;
                     if (scene_bounds_check_room(cx, character.pos[1], cz) && scene_bounds_check_room(hx, character.pos[1], hz)) break;
                 }
