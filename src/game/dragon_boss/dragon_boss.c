@@ -226,7 +226,7 @@ static void enter(DgState st)
 #define HLE_DG_PAUSE 0.5f   // the recovery added to every pause (a longer opening: about 70% cost, not ~80%)
 #endif
     if (st == DG_IDLE) { s.paceSg = (pick_rng() & 1) ? 1.0f : -1.0f; s.growled = false; s.fidgetT = 0.0f; }
-    if (st == DG_IDLE) s.idleWait = ((pick_rng() % 100 < 35) ? 3.3f + (pick_rng() % 100) / 100.0f : 1.8f) + HLE_DG_PAUSE + (s.dark ? 0.45f : 0.0f);     // (the dark half's moves come faster: its pauses a little longer)
+    if (st == DG_IDLE) s.idleWait = ((pick_rng() % 100 < 35) ? 3.3f + (pick_rng() % 100) / 100.0f : 1.8f) + HLE_DG_PAUSE + (s.dark ? 0.0f : 0.45f);     // (the light half pauses longer; the dark half presses on)
 #ifdef HLE_AUTOPLAY
     debugf("[dragon] state %d\n", st);
 #endif
