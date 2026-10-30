@@ -41,12 +41,14 @@ void audio_hold_paths(const char *const *paths, int count);
 // The scene's sounds at these indices play from their held copies (loaded now if not yet)
 void audio_scene_hold_sfx(const int *indices, int count);
 
-// Play a scene-local SFX index
-void audio_play_scene_sfx_dist(
+// Play a scene-local SFX index: the channel it plays on (-1 if none)
+int audio_play_scene_sfx_dist(
     int sceneSfxIndex,
     float baseVolume,
     float distance
 );
+// A sound still playing on `ch` (audio_play_scene_sfx_dist's) heard from `distance` now (a moving source)
+void audio_set_scene_sfx_dist(int ch, int sceneSfxIndex, float distance);
 
 void audio_stop_all_sfx(void);
 

@@ -347,12 +347,21 @@ static void hb_move_end(void)     // the move's closest pass of each blow it cou
 
 // At the Guardian's level and with his falloff (boss_play_attack_sfx: the distance to the player);
 // they played at a fixed 0.85 with none, as his at melee range but up to 3x his further off
-static void sfx(int id, float vol)
+static int sfx(int id, float vol)
 {
     Boss *b = boss_get_instance();
     float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
+    return audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+}
+// A ranged move's impact, heard from where it lands (from the dragon, a blast by the player at
+// range was faint or silent)
+static void sfx_at(int id, float vol, float x, float z)
+{
+    float dx = character.pos[0] - x, dz = character.pos[2] - z;
     audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
 }
+static int beamCh = -1;     // the beam's sound: heard from the beam as it moves (beam_at)
+static void sfx_beam(void) { beamCh = sfx(SCENE1_SFX_DARK_BEAM, 1.0f); }
 static void sfx_boom(void) { sfx(SCENE1_SFX_BOSS_SMASH2, 1.0f); }
 static void sfx_swing(void) { sfx(SCENE1_SFX_BOSS_SWING3, 1.0f); }
 static void sfx_lunge(void) { sfx(SCENE1_SFX_BOSS_LUNGE, 1.0f); }
@@ -840,7 +849,7 @@ static void hazards_update(float dt)
         if (!e->on) continue;
         float was = e->t;
         e->t -= dt;
-        if (was > 0.2f && e->t <= 0.2f && ((i & 1) || s.state == DG_SNIPE)) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);    // every other one: they come five a second
+        if (was > 0.2f && e->t <= 0.2f && ((i & 1) || s.state == DG_SNIPE)) sfx_at(SCENE1_SFX_ROCK_BLAST, 0.7f, e->p[0], e->p[1]);    // every other one: they come five a second
         if (e->t > 0.0f) continue;
         e->on = false;
         float p[3] = { e->p[0], s.groundY, e->p[1] };
@@ -869,7 +878,7 @@ static void hazards_update(float dt)
         HB_TOUCH(HB_BALLBURST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f);
         if (direct || burst_hits(p)) { HB_HIT(direct ? HB_BALL : HB_BALLBURST, direct ? axis_dist_pt(o->p) - 5.5f - 8.0f : sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage(12.0f); }
         screen_shake_set_shake_mag(4.0f);
-        sfx_boom();
+        sfx_at(SCENE1_SFX_BOSS_SMASH2, 1.0f, p[0], p[2]);     // (sfx_boom's)
     }
 }
 
@@ -883,6 +892,7 @@ static void beam_at(const float to[3], float w, float dmg, bool blasts, float dt
     memcpy(s.aim, to, sizeof(s.aim)); s.tAimK = 1.0f;
     s.beamOn = true; s.beamW = w; s.glow = 1.0f;
     float bg = fminf(axis_dist_seg(s.mouth, to) - w, axis_dist_pt(to) - 9.0f);
+    audio_set_scene_sfx_dist(beamCh, SCENE1_SFX_DARK_BEAM, axis_dist_seg(s.mouth, to));
     HB_TOUCH(HB_BEAM, bg - 8.0f);
     if (!s.hitDone && bg < PLAYER_R) { HB_HIT(HB_BEAM, bg - 8.0f); character_apply_damage(dmg); s.hitDone = true; }
     if (!blasts) return;
@@ -895,7 +905,10 @@ static void breathe(const float to[3], float speed, float life, float dt)
 {
     static float roarT;
     roarT -= dt;
-    if (roarT <= 0.0f || s.emit == 0.0f) { sfx(SCENE1_SFX_FIRE, 0.9f); roarT = 0.45f; }     // the torrent crackles on, from its first flames
+    if (roarT <= 0.0f || s.emit == 0.0f) {      // the torrent crackles on, from its first flames, heard from the stream
+        audio_play_scene_sfx_dist(SCENE1_SFX_FIRE, 0.9f * BONUS_SFX_VOL, axis_dist_seg(s.mouth, to));
+        roarT = 0.45f;
+    }
     s.emit -= dt;
     while (s.emit <= 0.0f) {
         s.emit += 0.03f;
@@ -1655,7 +1668,7 @@ static void beam_update(Boss *b, float dt)
             floor_point(b, s.sweepFrom, beam_reach(b, s.range), p);
             skill_fx_spawn_burst_warn(p, 0.0f);     // where it will begin
         }
-        if (s.t >= CHARGE) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(6.0f); }
+        if (s.t >= CHARGE) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; sfx_beam(); screen_shake_set_shake_mag(6.0f); }
     } else if (s.step == 1) {
         float u = clamp01(s.t / SWEEP), a = s.sweepFrom + s.sweepSpan * u * u * (3.0f - 2.0f * u);   // eased in and out
         float to[3];
@@ -1685,7 +1698,7 @@ static void beam_update(Boss *b, float dt)
         s.tJaw = 0.7f; s.tNeckPitch = 0.5f; s.tCrouch = 4.0f; s.tWingRaise = 0.65f; s.poseRate = 5.0f;
         turn_toward(b, s.sweepFrom, 0.8f, dt);
         s.glow = 0.45f + 0.55f * smooth01(s.t / RECHARGE) + 0.12f * fm_sinf(s.life * 26.0f);
-        if (s.t >= RECHARGE) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; s.hitDone = false; sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(6.0f); }
+        if (s.t >= RECHARGE) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; s.hitDone = false; sfx_beam(); screen_shake_set_shake_mag(6.0f); }
     } else {
         s.tCrouch = 6.0f; s.tNeckPitch = -0.5f; s.tJaw = 0.4f; s.poseRate = 3.0f;    // it settles, head low...
         if (s.t >= 0.5f) { enter(DG_IDLE); s.idleWait = 3.0f; }      // ...into a breather, panting: the opening it pays for the beam
@@ -1748,7 +1761,7 @@ static void skybeam_update(Boss *b, float dt)
         s.tNeckPitch = -0.5f; s.tJaw = 0.8f; s.poseRate = 4.0f;
         s.tNeckYaw = fminf(fmaxf(remainderf(atan2f(off[0], off[1]) - b->rot[1], 2.0f * T3D_PI), -1.3f), 1.3f);
         s.glow = 0.6f + 0.4f * clamp01(s.t / BANK) + 0.15f * fm_sinf(s.life * 24.0f);
-        if (s.t >= BANK) { s.step = 2; s.t = 0.0f; s.emit = 0.0f; sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(5.0f); }
+        if (s.t >= BANK) { s.step = 2; s.t = 0.0f; s.emit = 0.0f; sfx_beam(); screen_shake_set_shake_mag(5.0f); }
     } else if (s.step <= 3) {
         // The glide: eased along the line over the rake and the glide after it, sinking as it goes
         float tt = s.t + (s.step == 3 ? RAKE : 0.0f), k = smooth01(tt / (RAKE + GLIDE));
@@ -1808,7 +1821,7 @@ static void snipe_update(Boss *b, float dt)
         memcpy(s.aim, s.target, sizeof(s.aim)); s.tAimK = 1.0f;
         s.tNeckPitch = 0.05f; s.tNeckReach = 1.15f; s.tJaw = 0.9f; s.tCrouch = 3.0f;
         s.glow = 1.0f + 0.3f * fm_sinf(s.life * 30.0f);
-        if (s.t >= 0.45f) { s.step = 2; s.t = 0.0f; sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(5.0f); blast_spawn(s.target); }
+        if (s.t >= 0.45f) { s.step = 2; s.t = 0.0f; sfx_beam(); screen_shake_set_shake_mag(5.0f); blast_spawn(s.target); }
     } else if (s.step == 2) {
         s.tNeckReach = 1.15f; s.tJaw = 1.0f; s.tCrouch = 3.0f; s.tNeckPitch = 0.1f;
         beam_at(s.target, 2.5f, 22.0f, false, dt);
@@ -1947,7 +1960,7 @@ static void cone_fire(Boss *b)
         float p[3] = { s.cone.p[0], s.groundY + 2.0f, s.cone.p[1] }, v[3] = { fm_sinf(a) * dd / 0.33f, 0.0f, fm_cosf(a) * dd / 0.33f };
         flame_spawn(p, v, 0.45f, 13.0f + 3.0f * frand(), false);
     }
-    sfx(SCENE1_SFX_FIRE, 1.0f);
+    sfx_at(SCENE1_SFX_FIRE, 1.0f, s.cone.p[0], s.cone.p[1]);
     sfx_lunge();
     screen_shake_set_shake_mag(4.0f);
 }
@@ -2027,7 +2040,7 @@ static void hover_update(Boss *b, float dt)
             floor_point(b, s.sweepFrom, s.range, to);
             memcpy(s.aim, to, sizeof(s.aim)); s.tAimK = smooth01((s.t - RISE) / (CHARGE * 0.7f));
         }
-        if (s.t >= RISE + CHARGE) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; s.hitDone = false; sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(5.0f); }
+        if (s.t >= RISE + CHARGE) { s.step = 1; s.t = 0.0f; s.emit = 0.0f; s.hitDone = false; sfx_beam(); screen_shake_set_shake_mag(5.0f); }
     } else if (s.step == 1 || s.step == 3) {   // a sweep: left to right, then back
         s.alt = ALT + bob; s.flapRate = 7.0f;
         float u = smooth01(s.t / SWEEP), a = s.sweepFrom + s.sweepSpan * (s.step == 1 ? u : 1.0f - u);
@@ -2052,7 +2065,7 @@ static void hover_update(Boss *b, float dt)
         lerp3(s.aim, s.beamP, to, smooth01(s.t / (RECHARGE * 0.8f))); s.tAimK = 1.0f;
         s.tNeckPitch = -0.3f; s.tJaw = 0.6f; s.poseRate = 5.0f;
         s.glow = 0.5f + 0.5f * smooth01(s.t / RECHARGE) + 0.12f * fm_sinf(s.life * 26.0f);
-        if (s.t >= RECHARGE) { s.step = 3; s.t = 0.0f; s.emit = 0.0f; s.hitDone = false; sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(5.0f); }
+        if (s.t >= RECHARGE) { s.step = 3; s.t = 0.0f; s.emit = 0.0f; s.hitDone = false; sfx_beam(); screen_shake_set_shake_mag(5.0f); }
     } else if (s.step == 4) {   // sinks and lands
         s.glow = 0.5f * (1.0f - clamp01(s.t / 0.4f));
         s.flapRate = 6.0f;

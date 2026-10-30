@@ -200,6 +200,13 @@ static void sfx(int id, float vol)
     float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
     audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
 }
+// A ranged move's impact, heard from where it lands (from the boss, one by the player at range
+// was faint or silent)
+static void sfx_at(int id, float vol, float x, float z)
+{
+    float dx = character.pos[0] - x, dz = character.pos[2] - z;
+    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+}
 static void swing_sfx(void) { sfx(SCENE1_SFX_SWING_BOSS, 1.0f); }
 
 /** The drawn blade in world space, from the last pose: guard to tip, as the knight model has it
@@ -883,7 +890,8 @@ static void trislam_update(Boss *b, float dt)
             }
             if (in && character.pos[1] - s.groundY < 6.0f) character_apply_damage(20.0f);
             screen_shake_set_shake_mag(10.0f);
-            sfx(SCENE1_SFX_SLAM_BOSS, 1.0f);     // its thump as the blades erupt
+            sfx_at(SCENE1_SFX_SLAM_BOSS, 1.0f, (s.tri[0][0] + s.tri[1][0] + s.tri[2][0]) / 3.0f,
+                   (s.tri[0][1] + s.tri[1][1] + s.tri[2][1]) / 3.0f);     // its thump as the blades erupt, from the triangle
             s.step = 2; s.t = 0.0f;
         }
     } else if (s.t >= 0.5f) recover(1.6f, false);

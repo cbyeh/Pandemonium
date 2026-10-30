@@ -444,21 +444,21 @@ void audio_stop_music_fade(float durationSec)
  * ============================================================================
  */
 
-void audio_play_scene_sfx_dist(int sceneSfxIndex, float baseVolume, float distance)
+int audio_play_scene_sfx_dist(int sceneSfxIndex, float baseVolume, float distance)
 {
-    if (globalMute || pauseMuted) return;
+    if (globalMute || pauseMuted) return -1;
 
-    if (sceneSfxIndex < 0 || sceneSfxIndex >= sceneCount) return;
-    if (!sceneLoaded[sceneSfxIndex]) return;
+    if (sceneSfxIndex < 0 || sceneSfxIndex >= sceneCount) return -1;
+    if (!sceneLoaded[sceneSfxIndex]) return -1;
 
     baseVolume = clamp01(baseVolume);
     if (distance < 0.0f) distance = 0.0f;
 
     SfxSlot *slot = sfx_find_free_slot();
 #ifdef HLE_LOG_SFX
-    debugf("[sfx] %lu %d%s\n", (unsigned long)get_ticks_ms(), sceneSfxIndex, slot ? "" : " (no free channel)");
+    debugf("[sfx] %lu %d d %.0f%s\n", (unsigned long)get_ticks_ms(), sceneSfxIndex, (double)distance, slot ? "" : " (no free channel)");
 #endif
-    if (!slot) return;
+    if (!slot) return -1;
 
     slot->inUse = true;
     slot->sceneIndex = sceneSfxIndex;
@@ -472,6 +472,15 @@ void audio_play_scene_sfx_dist(int sceneSfxIndex, float baseVolume, float distan
     apply_stereo_volume(slot->ch, finalVol);
 
     wav64_play(sceneHeld[sceneSfxIndex] ? sceneHeld[sceneSfxIndex] : &sceneWavs[sceneSfxIndex], slot->ch);
+    return slot->ch;
+}
+
+void audio_set_scene_sfx_dist(int ch, int sceneSfxIndex, float distance)
+{
+    if (ch < 0 || ch >= MIXER_NUM_CHANNELS || !ch_is_sfx_eligible(ch)) return;
+    SfxSlot *slot = &sfxSlots[ch];
+    if (!slot->inUse || slot->sceneIndex != sceneSfxIndex) return;     // finished, the channel since reused
+    slot->distance = fmaxf(distance, 0.0f);     // (sfx_update_volumes applies it)
 }
 
 void audio_stop_all_sfx(void)

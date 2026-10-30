@@ -169,6 +169,13 @@ static void sfx(int id, float vol)
     float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
     audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
 }
+// A ranged move's impact, heard from where it lands (from the boss, one by the player at range
+// was faint or silent)
+static void sfx_at(int id, float vol, float x, float z)
+{
+    float dx = character.pos[0] - x, dz = character.pos[2] - z;
+    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+}
 static void sfx_boom(void) { sfx(SCENE1_SFX_BOSS_SMASH1, 1.0f); }
 static void sfx_cast(void) { sfx(SCENE1_SFX_BOSS_SWING2, 1.0f); }
 static void sfx_chain(int k) { sfx(k ? SCENE1_SFX_CHAIN2 : SCENE1_SFX_CHAIN1, 1.0f); }
@@ -425,7 +432,7 @@ static void rain_tick(float dt)
         if (s.rainT[i] < 0.0f) continue;
         float was = s.rainT[i];
         s.rainT[i] -= dt;
-        if (!(i & 1) && was >= 0.2f && s.rainT[i] < 0.2f) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);     // loud 0.2 s on, as it erupts (every other: they come 0.12 s apart)
+        if (!(i & 1) && was >= 0.2f && s.rainT[i] < 0.2f) sfx_at(SCENE1_SFX_ROCK_BLAST, 0.7f, s.rainPos[i][0], s.rainPos[i][1]);     // loud 0.2 s on, as it erupts (every other: they come 0.12 s apart)
         if (s.rainT[i] < 0.0f) {
             float p[3] = { s.rainPos[i][0], s.groundY, s.rainPos[i][1] };
             skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, p, (float[3]){ 0, 0, 0 }, hurt(14.0f), 1, 0.0f, 0.9f, false);
@@ -657,7 +664,15 @@ static void eclipse_update(Boss *b, float dt)
     }
     for (int w = 0; w < s.step; w++) {      // the marks spark again halfway down
         float tl = EC_RISE + w * EC_GAP + EC_FLY;
-        if (s.t >= tl && s.t - dt < tl) sfx_boom();     // the flares landing
+        if (s.t >= tl && s.t - dt < tl) {   // the flares landing: heard from the nearest
+            int k = 0;
+            for (int i = 1; i < EC_N[w]; i++) {
+                float ax = character.pos[0] - s.ecPos[w][i][0], az = character.pos[2] - s.ecPos[w][i][1];
+                float bx = character.pos[0] - s.ecPos[w][k][0], bz = character.pos[2] - s.ecPos[w][k][1];
+                if (ax * ax + az * az < bx * bx + bz * bz) k = i;
+            }
+            sfx_at(SCENE1_SFX_BOSS_SMASH1, 1.0f, s.ecPos[w][k][0], s.ecPos[w][k][1]);     // (sfx_boom's)
+        }
         float tw = EC_RISE + w * EC_GAP + EC_FLY * 0.5f;
         if (s.t >= tw && s.t - dt < tw)
             for (int i = 0; i < EC_N[w]; i++)
