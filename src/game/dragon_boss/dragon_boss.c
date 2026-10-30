@@ -226,6 +226,11 @@ static bool move_by(Boss *b, float dx, float dz)
 #ifdef HLE_LOG_HURTBOX
 static void hb_move_end(void);
 #endif
+#ifdef HLE_LOG_MOVE_MS
+static volatile uint32_t vi_n;
+static void vi_tick(void) { vi_n++; }
+void dragon_vi_start(void) { register_VI_handler(vi_tick); }     // (from boot: the count is Mupen's frame number)
+#endif
 static void enter(DgState st)
 {
 #ifdef HLE_LOG_MOVES     // test aid: each move as it starts (the hits after it are its: [hit])
@@ -233,6 +238,9 @@ static void enter(DgState st)
 #endif
 #ifdef HLE_LOG_HURTBOX
     hb_move_end();
+#endif
+#ifdef HLE_LOG_MOVE_MS   // test aid: the VI frame each move starts on (Mupen's shot numbers: lines up before/after videos)
+    debugf("[movems] %d %lu\n", st, (unsigned long)vi_n);
 #endif
     s.state = st; s.t = 0.0f; s.step = 0; s.hitDone = false; tailPrevOk = false;
     if (st != DG_IDLE) s.heavyRest = false;
@@ -957,6 +965,16 @@ static float key_eval(const Track *tr, float t)
          + (-2 * u3 + 3 * u2) * k[2 * i + 3] + (u3 - u2) * h * key_slope(k, n, i + 1);
 }
 
+// How strongly each channel's keys play: the body language read across the hall (authored at
+// 1, too subtle to see at a distance). Less on what carries a blow (the tail's swing, the neck's
+// reach and pitch) or would throw a limb out of the body (the shoulders, the wing over the other)
+static const float KGAIN[K_N] = {
+    [K_NPITCH] = 1.5f, [K_NYAW] = 1.8f, [K_NREACH] = 1.0f, [K_JAW] = 1.8f, [K_TAIL] = 1.5f, [K_TAILUP] = 2.2f,
+    [K_CROUCH] = 2.5f, [K_REAR] = 2.0f, [K_ROLL] = 2.0f, [K_BEND] = 2.0f, [K_LEAN] = 2.5f, [K_WRAISE] = 2.2f,
+    [K_WSWEEP] = 2.0f, [K_WFOLD] = 1.0f, [K_SHW] = 1.6f, [K_SHO] = 1.6f, [K_HEAD] = 2.5f, [K_NECKS] = 2.2f,
+    [K_HIPS] = 2.5f, [K_WDIFF] = 1.8f, [K_ALT] = 1.6f,
+};
+
 // Plays clip c at time t (s) on its keys stretched by `scale` (a windup made shorter or longer),
 // mirrored for a move on its left (side -1), weighted by w
 static void key_play(const Clip *c, float t, float scale, float side, float w)
@@ -965,7 +983,7 @@ static void key_play(const Clip *c, float t, float scale, float side, float w)
     for (int i = 0; i < c->n; i++) {
         const Track *tr = &c->tr[i];
         int ch = tr->ch;
-        float v = key_eval(tr, t) * w;
+        float v = key_eval(tr, t) * w * KGAIN[ch];
         if (ch == K_NYAW || ch == K_TAIL || ch == K_ROLL || ch == K_BEND || ch == K_WDIFF) v *= side;
         s.kv[ch] += v;
     }
@@ -1030,7 +1048,7 @@ CLIP(CLAW_WIND,
     TR(K_WDIFF, 0, 0, 0.5f, 0.22f, 0.66f, -0.08f),
     TR(K_TAIL, 0, 0, 0.5f, -0.15f, 0.66f, 0.12f),
     TR(K_HIPS, 0, 0, 0.5f, -0.5f, 0.66f, 1.2f),
-    TR(K_LEAN, 0, 0, 0.5f, -1.5f, 0.66f, 2.0f));
+    TR(K_LEAN, 0, 0, 0.5f, -1.5f, 0.66f, 0));     // (level as it strikes: the arc is thrown from the chest)
 // ...the blow taken up through the body and settled (the 0.3 s between swipes, the 0.7 s after)
 CLIP(CLAW_HIT,
     TR(K_CROUCH, 0, 2.5f, 0.08f, 3.2f, 0.3f, 0.4f, 0.5f, 0),
@@ -1041,7 +1059,7 @@ CLIP(CLAW_HIT,
     TR(K_WDIFF, 0, -0.08f, 0.2f, 0.04f, 0.4f, 0),
     TR(K_TAIL, 0, 0.12f, 0.2f, 0.18f, 0.5f, 0),
     TR(K_HIPS, 0, 1.2f, 0.12f, 0.4f, 0.3f, -0.3f, 0.5f, 0),
-    TR(K_LEAN, 0, 2.0f, 0.1f, 2.5f, 0.4f, 0),
+    TR(K_LEAN, 0, 0, 0.1f, 2.5f, 0.4f, 0),
     TR(K_WRAISE, 0, 0, 0.06f, 0.12f, 0.3f, 0));
 
 // The bite: a flinch of the head toward you, then the neck coils back like a snake's (0.6 s)...
@@ -1055,15 +1073,15 @@ CLIP(BITE_WIND,
     TR(K_TAILUP, 0, 0, 0.5f, 0.15f, 0.6f, 0.15f));
 // ...uncoils into the snap, the hind legs kicking it on (0.2 s)...
 CLIP(BITE_LUNGE,
-    TR(K_NECKS, 0, 0.25f, 0.1f, -0.12f, 0.2f, -0.1f),
-    TR(K_HEAD, 0, 0.1f, 0.12f, -0.1f, 0.2f, 0),
+    TR(K_NECKS, 0, 0.25f, 0.08f, 0, 0.2f, 0),       // (level by the snap: the jaws land where they always did)
+    TR(K_HEAD, 0, 0.1f, 0.08f, 0, 0.2f, 0),
     TR(K_CROUCH, 0, 2.2f, 0.1f, -1.0f, 0.2f, -1.0f),
     TR(K_HIPS, 0, -1.2f, 0.1f, 1.5f, 0.2f, 1.5f),
     TR(K_TAILUP, 0, 0.15f, 0.12f, -0.1f),
     TR(K_WRAISE, 0, 0.15f, 0.1f, 0.25f));
 // ...and worries what it caught, a shake of the head, as it settles (0.9 s)
 CLIP(BITE_REC,
-    TR(K_NECKS, 0, -0.1f, 0.4f, 0.02f, 0.7f, 0),
+    TR(K_NECKS, 0, 0, 0.12f, -0.12f, 0.4f, 0.02f, 0.7f, 0),
     TR(K_NYAW, 0, 0, 0.12f, 0.12f, 0.24f, -0.1f, 0.36f, 0.06f, 0.5f, 0),
     TR(K_HEAD, 0, 0, 0.15f, -0.1f, 0.4f, 0.03f, 0.7f, 0),
     TR(K_CROUCH, 0, -1.0f, 0.15f, 1.5f, 0.5f, 0.3f, 0.9f, 0),
@@ -1691,6 +1709,15 @@ static void rig(Boss *b, float dt)
     s.chest[1] = base + BODY_H + 2.0f - s.crouch + breath + s.rear + 0.35f * (s.shLift[0] + s.shLift[1]) + 1.2f * gaitF;     // `rear`: up on its hind legs
     mad3(s.hips, b->pos, s.F, HIPS_Z);
     s.hips[1] = base + BODY_H - s.crouch * 0.6f + 0.3f * breath + gaitH + s.ko[K_HIPS];
+    {   // the torso keeps its length (within 5%): the hips slide along the body, not the back stretched
+        const float L = CHEST_Z - HIPS_Z;
+        float dx = s.hips[0] - s.chest[0], dz = s.hips[2] - s.chest[2], dy = s.hips[1] - s.chest[1], h = sqrtf(dx * dx + dz * dz);
+        float l = sqrtf(h * h + dy * dy), lt = fminf(fmaxf(l, 0.95f * L), 1.05f * L);
+        if (lt != l && h > 1.0f) {
+            float hn = sqrtf(fmaxf(lt * lt - dy * dy, 0.25f * L * L)) / h;
+            s.hips[0] = s.chest[0] + dx * hn; s.hips[2] = s.chest[2] + dz * hn;
+        }
+    }
     // The spine bows sideways between them (`bend`; a turn bows it out behind the head)
     float bend = s.bend + fminf(fmaxf(-s.yawRate * (fl ? 4.0f : 6.0f), -6.0f), 6.0f);
     for (int j = 0; j < 2; j++) {
@@ -3364,7 +3391,7 @@ void dragon_boss_draw(Boss* b)
     DPROF(1);
 #endif
     put(s.dark ? &s.mHeadDark : &s.mHead, s.head, s.hx, s.hy, s.hz, 1.0f, 1.0f, 1.0f);
-    float hinge[3], jy[3], jz[3], ca = fm_cosf(s.jaw * 0.7f), sa = fm_sinf(s.jaw * 0.7f);
+    float hinge[3], jy[3], jz[3], ja = fminf(fmaxf(s.jaw, 0.0f), 1.25f) * 0.7f, ca = fm_cosf(ja), sa = fm_sinf(ja);     // (never past its widest gape)
     mad3(hinge, s.head, s.hz, 6.0f);
     mad3(hinge, hinge, s.hy, -2.5f);
     for (int m = 0; m < 3; m++) { jz[m] = s.hz[m] * ca - s.hy[m] * sa; jy[m] = s.hy[m] * ca + s.hz[m] * sa; }

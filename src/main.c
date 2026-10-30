@@ -58,6 +58,9 @@ static void attach_frame(uint32_t *waited)
 
 int main(void)
 {
+#ifdef HLE_LOG_MOVE_MS
+    { extern void dragon_vi_start(void); dragon_vi_start(); }
+#endif
 #if defined(HLE_BUILD) || defined(HLE_AUTOPLAY)
     debug_init_isviewer();
     debugf("[hle] main\n");

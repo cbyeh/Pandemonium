@@ -30,6 +30,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **FPS / CPU:** `HLE_LOG_FPS` (`[fps]` every 2 s, per-part ms, tri/vert counts; meant for Ares). `HLE_TEST_PERF` (rsp-hle CPU %, audio queue, worst frame). GPU: `HLE_PROF_SERIAL`, `_DRAGON` (also the Shackled Sun's parts: `[sunprof]`), `_BOSS`, `_WAITEND`.
 - **Pacing:** `HLE_LOG_HITCH`, `HLE_LOG_JITTER`, `HLE_LOG_LATENCY`. `HLE_TEST_TASKS` checks one graphics task per frame (catches black-frame flicker shots can't).
 - **Memory:** `HLE_TEST_BONUS` logs the lowest free heap.
+- **Move starts on Mupen's frame numbers:** `HLE_LOG_MOVE_MS` (Shadowborne: `[movems] <state> <VI frame>`, counted from boot; shot `N` is VI frame `N`): line up before/after videos of builds that drift apart.
 - **Choices:** `HLE_LOG_CHOOSE` (Shadowborne: the distance, angle and candidate moves at each pick, then the pick).
 - **Boss hit:** `HLE_DRAGON_HITME` (Shadowborne takes a sword hit every 1.5 s, a finisher's every 6 s: the flinch; `[flinch]` with `HLE_LOG_MOVES`). The passive dummy and the bots never damage the boss.
 - **Rig:** `HLE_LOG_RIG` (Shadowborne, per move: worst leg reach, neck and torso stretch as drawn, the head's nearest pass of its own body).
