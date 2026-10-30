@@ -68,6 +68,10 @@ enum { K_NPITCH, K_NYAW /*S*/, K_NREACH, K_JAW, K_TAIL /*S*/, K_TAILUP, K_CROUCH
        K_HIPS,      // the hips' height
        K_WDIFF /*S*/,   // the working side's wing raised over the other's
        K_ALT,       // the body's height off the floor (only in the air)
+       K_TAILC /*S*/,   // the tail curled toward its tip (each link bent a little more than the last)
+       K_WCURL,     // the wing fingers' outer joints curled under (the inner finger first, the outer last)
+       K_WSPREAD,   // the fingers fanned apart (+) or drawn together (-)
+       K_WFORE,     // the forearm folded in on its own (a cupped, half-closed wing)
        K_N };
 
 typedef struct { float p[3], from[3], t; bool moving; } Foot;
@@ -121,6 +125,7 @@ static struct {
     float kv[K_N], ko[K_N], kc[K_N];
     int kState, kStep, kK;      // kK: the working front leg (K_SHW)
     float prowl;                // eased in as it paces: low, head down and eyes up
+    int gaitI;                  // the walk's next foot (GAIT_SEQ)
     // The rig, rebuilt each frame
     float F[3], R[3], chest[3], hips[3], neck[NNECK + 1][3], tl[NTAIL + 1][3];
     float head[3], hx[3], hy[3], hz[3], mouth[3], shoulder[4][3], foot[4][3];
@@ -972,7 +977,7 @@ static const float KGAIN[K_N] = {
     [K_NPITCH] = 1.5f, [K_NYAW] = 1.8f, [K_NREACH] = 1.0f, [K_JAW] = 1.8f, [K_TAIL] = 1.5f, [K_TAILUP] = 2.2f,
     [K_CROUCH] = 2.5f, [K_REAR] = 2.0f, [K_ROLL] = 2.0f, [K_BEND] = 2.0f, [K_LEAN] = 2.5f, [K_WRAISE] = 2.2f,
     [K_WSWEEP] = 2.0f, [K_WFOLD] = 1.0f, [K_SHW] = 1.6f, [K_SHO] = 1.6f, [K_HEAD] = 2.5f, [K_NECKS] = 2.2f,
-    [K_HIPS] = 2.5f, [K_WDIFF] = 1.8f, [K_ALT] = 1.6f,
+    [K_HIPS] = 2.5f, [K_WDIFF] = 1.8f, [K_ALT] = 1.6f, [K_TAILC] = 1.5f, [K_WCURL] = 1.5f, [K_WSPREAD] = 1.5f, [K_WFORE] = 1.5f,
 };
 
 // Plays clip c at time t (s) on its keys stretched by `scale` (a windup made shorter or longer),
@@ -991,6 +996,26 @@ static void key_play(const Clip *c, float t, float scale, float side, float w)
 
 // A looping clip (keys over 0..1) at phase u
 static void key_loop(const Clip *c, float u, float side, float w) { key_play(c, u - floorf(u), 1.0f, side, w); }
+
+// The last moments of the layer for the channels that travel along a chain (the tail's links, the
+// wing's fingers): each link plays what the one before it played a beat earlier
+enum { KH_TAIL, KH_TAILUP, KH_TAILC, KH_WCURL, KH_N };
+#define KH_LEN 32
+static struct { float dt, v[KH_N]; } kHist[KH_LEN];
+static int kHead;
+static void key_hist_push(float dt)
+{
+    kHead = (kHead + 1) % KH_LEN;
+    kHist[kHead].dt = dt;
+    kHist[kHead].v[KH_TAIL] = s.ko[K_TAIL]; kHist[kHead].v[KH_TAILUP] = s.ko[K_TAILUP];
+    kHist[kHead].v[KH_TAILC] = s.ko[K_TAILC]; kHist[kHead].v[KH_WCURL] = s.ko[K_WCURL];
+}
+static float key_past(int j, float delay)      // channel j as it was `delay` s ago
+{
+    int i = kHead;
+    for (int n = 0; n < KH_LEN - 1 && delay > 0.0f; n++) { delay -= kHist[i].dt; i = (i + KH_LEN - 1) % KH_LEN; }
+    return kHist[i].v[j];
+}
 
 static float *key_field(int ch)
 {
@@ -1022,6 +1047,7 @@ static void key_apply(float dt)
         float *f = key_field(ch);
         if (f) *f += s.ko[ch];
     }
+    key_hist_push(dt);
 }
 
 // The clips. Each is timed to its move's step (the times its windup and blow already have) and
@@ -1030,6 +1056,9 @@ static void key_apply(float dt)
 
 // Standing: its weight shifting from side to side, the head nodding, a wing resettled now and then (a loop)
 CLIP(IDLE_LOOP,
+    TR(K_TAILC, 0, 0, 0.35f, 0.12f, 0.7f, -0.08f, 1, 0),
+    TR(K_WCURL, 0, 0, 0.6f, 0, 0.66f, 0.25f, 0.74f, 0, 1, 0),
+    TR(K_WSPREAD, 0, 0, 0.62f, 0, 0.68f, 0.3f, 0.78f, 0, 1, 0),
     TR(K_ROLL, 0, 0, 0.25f, 0.03f, 0.5f, 0, 0.75f, -0.03f, 1, 0),
     TR(K_HIPS, 0, 0, 0.3f, 0.6f, 0.55f, -0.3f, 0.8f, 0.4f, 1, 0),
     TR(K_HEAD, 0, 0, 0.2f, 0.05f, 0.45f, -0.04f, 0.7f, 0.06f, 0.9f, -0.02f, 1, 0),
@@ -1040,6 +1069,8 @@ CLIP(IDLE_LOOP,
 // The claw (0.66 s windup: the strike at its end). The paw's side heaves up, the head lifts to
 // watch, the wing on that side rises and the tail swings away; then all of it drives down into the blow
 CLIP(CLAW_WIND,
+    TR(K_WCURL, 0, 0, 0.5f, 0.2f, 0.66f, 0),
+    TR(K_TAILC, 0, 0, 0.5f, -0.1f, 0.66f, 0.1f),
     TR(K_CROUCH, 0, 0, 0.12f, 1.5f, 0.5f, -1.0f, 0.6f, -1.2f, 0.66f, 2.5f),
     TR(K_ROLL, 0, 0, 0.5f, 0.07f, 0.6f, 0.08f, 0.66f, -0.03f),
     TR(K_HEAD, 0, 0, 0.15f, -0.05f, 0.5f, 0.14f, 0.6f, 0.16f, 0.66f, -0.12f),
@@ -1051,6 +1082,7 @@ CLIP(CLAW_WIND,
     TR(K_LEAN, 0, 0, 0.5f, -1.5f, 0.66f, 0));     // (level as it strikes: the arc is thrown from the chest)
 // ...the blow taken up through the body and settled (the 0.3 s between swipes, the 0.7 s after)
 CLIP(CLAW_HIT,
+    TR(K_TAILC, 0, 0.1f, 0.25f, 0.15f, 0.5f, 0),
     TR(K_CROUCH, 0, 2.5f, 0.08f, 3.2f, 0.3f, 0.4f, 0.5f, 0),
     TR(K_ROLL, 0, -0.03f, 0.15f, 0.01f, 0.4f, 0),
     TR(K_HEAD, 0, -0.12f, 0.1f, -0.16f, 0.3f, 0.04f, 0.5f, 0),
@@ -1064,6 +1096,7 @@ CLIP(CLAW_HIT,
 
 // The bite: a flinch of the head toward you, then the neck coils back like a snake's (0.6 s)...
 CLIP(BITE_WIND,
+    TR(K_TAILC, 0, 0, 0.5f, 0.12f, 0.6f, 0.15f),
     TR(K_HEAD, 0, 0, 0.1f, -0.08f, 0.4f, 0.15f, 0.55f, 0.2f, 0.6f, 0.1f),
     TR(K_NECKS, 0, 0, 0.12f, -0.05f, 0.45f, 0.22f, 0.6f, 0.25f),
     TR(K_CROUCH, 0, 0, 0.1f, -0.5f, 0.45f, 1.5f, 0.6f, 2.2f),
@@ -1081,6 +1114,7 @@ CLIP(BITE_LUNGE,
     TR(K_WRAISE, 0, 0.15f, 0.1f, 0.25f));
 // ...and worries what it caught, a shake of the head, as it settles (0.9 s)
 CLIP(BITE_REC,
+    TR(K_TAILC, 0, 0.15f, 0.3f, -0.05f, 0.6f, 0),
     TR(K_NECKS, 0, 0, 0.12f, -0.12f, 0.4f, 0.02f, 0.7f, 0),
     TR(K_NYAW, 0, 0, 0.12f, 0.12f, 0.24f, -0.1f, 0.36f, 0.06f, 0.5f, 0),
     TR(K_HEAD, 0, 0, 0.15f, -0.1f, 0.4f, 0.03f, 0.7f, 0),
@@ -1092,6 +1126,7 @@ CLIP(BITE_REC,
 // The tail fan (side: the swing's way). Coiled: the tail drawn further back, the hips sunk, the
 // wing on the swing's side dropped (0.65 s); the swing whips through and past its end (0.45 s); settles (0.6 s)
 CLIP(TAIL_COIL,
+    TR(K_TAILC, 0, 0, 0.6f, -0.25f),
     TR(K_TAIL, 0, 0, 0.45f, -0.15f, 0.6f, -0.25f, 0.65f, -0.2f),
     TR(K_HIPS, 0, 0, 0.5f, -1.2f, 0.65f, -1.5f),
     TR(K_HEAD, 0, 0, 0.3f, 0.08f, 0.65f, 0.05f),
@@ -1099,6 +1134,7 @@ CLIP(TAIL_COIL,
     TR(K_WDIFF, 0, 0, 0.5f, -0.15f, 0.65f, -0.2f),
     TR(K_TAILUP, 0, 0, 0.45f, 0.15f, 0.6f, 0.2f, 0.65f, 0.1f));
 CLIP(TAIL_SWING,
+    TR(K_TAILC, 0, -0.25f, 0.15f, 0.1f, 0.35f, 0.3f, 0.45f, 0.2f),
     TR(K_TAIL, 0, -0.2f, 0.12f, 0, 0.35f, 0.2f, 0.45f, 0.15f),
     TR(K_HIPS, 0, -1.5f, 0.15f, 1.0f, 0.45f, 0.3f),
     TR(K_WDIFF, 0, -0.2f, 0.15f, 0.2f, 0.45f, 0.1f),
@@ -1107,6 +1143,7 @@ CLIP(TAIL_SWING,
     TR(K_CROUCH, 0, 1.5f, 0.2f, 0.5f, 0.45f, 0.5f),
     TR(K_TAILUP, 0, 0.1f, 0.15f, -0.05f, 0.45f, 0));
 CLIP(TAIL_REC,
+    TR(K_TAILC, 0, 0.2f, 0.3f, -0.08f, 0.6f, 0),
     TR(K_TAIL, 0, 0.15f, 0.25f, -0.05f, 0.6f, 0),
     TR(K_HIPS, 0, 0.3f, 0.3f, 0),
     TR(K_WDIFF, 0, 0.1f, 0.3f, 0),
@@ -1115,6 +1152,7 @@ CLIP(TAIL_REC,
 // The whip: coiled to spin, the tail's tip flicking like a scorpion's (0.8 s); the spin, the head
 // leading it round and the tail laid flat to scythe (0.6 s); dizzy after, its head wobbling (0.8 s)
 CLIP(WHIP_WIND,
+    TR(K_TAILC, 0, 0, 0.6f, 0.2f, 0.8f, 0.25f),
     TR(K_CROUCH, 0, 0, 0.6f, 1.5f, 0.8f, 2.0f),
     TR(K_HEAD, 0, 0, 0.2f, 0.1f, 0.7f, -0.05f),
     TR(K_TAILUP, 0, 0, 0.3f, 0.1f, 0.45f, 0.02f, 0.6f, 0.15f, 0.8f, 0.1f),
@@ -1122,12 +1160,14 @@ CLIP(WHIP_WIND,
     TR(K_WRAISE, 0, 0, 0.6f, 0.1f, 0.8f, 0.15f),
     TR(K_HIPS, 0, 0, 0.7f, -1.0f, 0.8f, -1.0f));
 CLIP(WHIP_SPIN,
+    TR(K_TAILC, 0, 0.25f, 0.15f, -0.2f, 0.6f, 0),
     TR(K_TAILUP, 0, 0.1f, 0.1f, -0.2f, 0.6f, 0),
     TR(K_NYAW, 0, -0.25f, 0.15f, 0.2f, 0.6f, 0.1f),
     TR(K_HIPS, 0, -1.0f, 0.15f, 1.0f, 0.6f, 0),
     TR(K_CROUCH, 0, 2.0f, 0.2f, 0, 0.6f, 1.0f),
     TR(K_ROLL, 0, 0, 0.3f, -0.06f, 0.6f, 0));
 CLIP(WHIP_DIZZY,
+    TR(K_TAILC, 0, 0, 0.3f, 0.1f, 0.8f, 0),
     TR(K_NYAW, 0, 0.1f, 0.2f, -0.12f, 0.4f, 0.08f, 0.6f, -0.04f, 0.8f, 0),
     TR(K_HEAD, 0, 0, 0.2f, -0.1f, 0.5f, 0.03f, 0.8f, 0),
     TR(K_ROLL, 0, 0, 0.25f, 0.04f, 0.5f, -0.03f, 0.8f, 0),
@@ -1160,6 +1200,8 @@ CLIP(BREATH_END,
 // (0.9 s); a bounding gallop, hips and neck pumping against each other (a loop at the stride);
 // the skid: braking on its forelegs, the hindquarters and tail flung up, the wings flared (0.6 s)
 CLIP(CHARGE_ROAR,
+    TR(K_WSPREAD, 0, 0, 0.3f, 0.6f, 0.8f, 0.5f, 0.9f, 0),
+    TR(K_WCURL, 0, 0, 0.3f, 0.25f, 0.8f, 0.2f, 0.9f, 0),
     TR(K_HEAD, 0, 0, 0.12f, -0.12f, 0.3f, 0.1f, 0.9f, 0.05f),
     TR(K_NECKS, 0, 0, 0.12f, -0.1f, 0.3f, 0.2f, 0.8f, 0.15f, 0.9f, 0),
     TR(K_CROUCH, 0, 0, 0.12f, 1.5f, 0.3f, -1.0f, 0.75f, -0.5f, 0.9f, 2.0f),
@@ -1173,6 +1215,8 @@ CLIP(GALLOP,
     TR(K_WRAISE, 0, 0.05f, 0.5f, -0.05f, 1, 0.05f),
     TR(K_TAILUP, 0, -0.05f, 0.5f, 0.05f, 1, -0.05f));
 CLIP(SKID,
+    TR(K_TAILC, 0, 0, 0.15f, 0.25f, 0.4f, -0.1f, 0.6f, 0),
+    TR(K_WSPREAD, 0, 0, 0.1f, 0.5f, 0.4f, 0),
     TR(K_LEAN, 0, 0, 0.1f, 3.0f, 0.4f, 0),
     TR(K_HIPS, 0, 0, 0.12f, 2.5f, 0.35f, -0.5f, 0.6f, 0),
     TR(K_NECKS, 0, 0, 0.15f, -0.15f, 0.4f, 0.05f, 0.6f, 0),
@@ -1183,6 +1227,9 @@ CLIP(SKID,
 
 // The dark takes it: a cringe, then it rears into the roar and holds it (2.4 s)
 CLIP(ROAR,
+    TR(K_WSPREAD, 0, 0, 0.35f, 0.7f, 2.0f, 0.6f, 2.4f, 0),
+    TR(K_WCURL, 0, 0, 0.35f, 0, 0.5f, 0.3f, 2.0f, 0.25f, 2.4f, 0),
+    TR(K_TAILC, 0, 0, 0.35f, 0.2f, 1.0f, -0.15f, 1.6f, 0.15f, 2.4f, 0),
     TR(K_CROUCH, 0, 0, 0.15f, 2.0f, 0.3f, -1.0f, 2.0f, -1.0f, 2.4f, 0),
     TR(K_NECKS, 0, 0, 0.15f, -0.15f, 0.35f, 0.25f, 2.0f, 0.2f, 2.4f, 0),
     TR(K_HEAD, 0, 0, 0.15f, -0.15f, 0.35f, 0.2f, 2.0f, 0.15f, 2.4f, 0),
@@ -1190,6 +1237,8 @@ CLIP(ROAR,
 
 // The nova: drawn in, hunched ever tighter round the dark (1.7 s), then flung open by the burst (1.0 s)
 CLIP(NOVA_GATHER,
+    TR(K_WFORE, 0, 0, 1.5f, 0.35f, 1.7f, -0.1f),
+    TR(K_WCURL, 0, 0, 1.5f, 0.4f, 1.7f, 0),
     TR(K_CROUCH, 0, 0, 1.2f, 1.5f, 1.6f, 2.5f, 1.7f, -2.0f),
     TR(K_NECKS, 0, 0, 1.2f, -0.1f, 1.6f, -0.2f, 1.7f, 0.25f),
     TR(K_HEAD, 0, 0, 1.5f, -0.15f, 1.7f, 0.2f),
@@ -1198,6 +1247,8 @@ CLIP(NOVA_GATHER,
     TR(K_HIPS, 0, 0, 1.6f, -1.0f, 1.7f, 1.0f),
     TR(K_TAILUP, 0, 0, 1.5f, 0.1f, 1.7f, 0.25f));
 CLIP(NOVA_BURST,
+    TR(K_WSPREAD, 0, 0.7f, 0.5f, 0.2f, 1, 0),
+    TR(K_WFORE, 0, -0.1f, 0.4f, 0),
     TR(K_CROUCH, 0, -2.0f, 0.15f, -1.0f, 0.6f, 0.5f, 1, 0),
     TR(K_NECKS, 0, 0.25f, 0.3f, 0.15f, 1, 0),
     TR(K_HEAD, 0, 0.2f, 0.4f, 0.05f, 1, 0),
@@ -1215,6 +1266,7 @@ CLIP(ORBS,
 // The dark beam: rears and arches as it gathers, settling into a brace (1.4 s); the beam's kick
 // (2.0 s); gathering again (0.6 s); spent, panting (0.5 s)
 CLIP(BEAM_CHARGE,
+    TR(K_WSPREAD, 0, 0, 1.0f, 0.4f, 1.4f, 0.5f),
     TR(K_NECKS, 0, 0, 0.2f, -0.08f, 1.0f, 0.2f, 1.3f, 0.28f, 1.4f, 0.1f),
     TR(K_HEAD, 0, 0, 0.2f, -0.1f, 1.1f, 0.15f, 1.4f, 0.2f),
     TR(K_CROUCH, 0, 0, 0.2f, 1.0f, 1.0f, -0.5f, 1.3f, -1.0f, 1.4f, 1.5f),
@@ -1222,6 +1274,7 @@ CLIP(BEAM_CHARGE,
     TR(K_WSWEEP, 0, 0, 1.0f, -0.15f, 1.4f, -0.2f),
     TR(K_HIPS, 0, 0, 1.2f, -1.0f, 1.4f, -0.5f));
 CLIP(BEAM_FIRE,
+    TR(K_WSPREAD, 0, 0.5f, 0.5f, 0.3f, 2.0f, 0.3f),
     TR(K_CROUCH, 0, 1.5f, 0.1f, 2.5f, 0.4f, 0.5f),
     TR(K_HIPS, 0, -0.5f, 0.12f, 1.0f, 0.5f, 0),
     TR(K_NECKS, 0, 0.1f, 0.08f, -0.12f, 0.4f, 0),
@@ -1246,6 +1299,7 @@ CLIP(SNIPE_AIM,
     TR(K_TAILUP, 0, 0, 0.6f, -0.08f, 1.1f, -0.1f),
     TR(K_WSWEEP, 0, 0, 1.0f, 0.1f, 1.1f, 0.1f));
 CLIP(SNIPE_LOCK,
+    TR(K_TAILC, 0, 0, 0.1f, 0.08f, 0.2f, -0.08f, 0.3f, 0.08f, 0.45f, 0),
     TR(K_CROUCH, 0, 2.0f, 0.45f, 2.5f),
     TR(K_HIPS, 0, 1.0f, 0.45f, 1.2f),
     TR(K_WSWEEP, 0, 0.1f, 0.45f, 0.1f),
@@ -1268,6 +1322,7 @@ CLIP(SNIPE_END,
 // The triple spit, each shot (0.7 s, stretched to its windup): the neck coils back and whips
 // forward, the body heaving behind it; after the last, settling (0.7 s)
 CLIP(SPIT,
+    TR(K_TAILC, 0, 0, 0.5f, -0.06f, 0.62f, 0.08f, 0.7f, 0),
     TR(K_NECKS, 0, 0, 0.45f, 0.2f, 0.52f, 0.25f, 0.6f, -0.1f, 0.7f, -0.15f),
     TR(K_HEAD, 0, 0, 0.45f, 0.12f, 0.52f, 0.15f, 0.62f, -0.12f, 0.7f, -0.1f),
     TR(K_CROUCH, 0, 0, 0.45f, -0.5f, 0.55f, 1.5f, 0.7f, 2.0f),
@@ -1283,6 +1338,8 @@ CLIP(SPIT_END,
 // The heavy turn (1 s, stretched to its length; side: the turn's way): the head, then the chest,
 // then the hips come round, rolled into the turn; a heavy footfall at its end
 CLIP(TURN,
+    TR(K_TAILC, 0, 0, 0.4f, -0.15f, 0.8f, 0.1f, 1, 0),
+    TR(K_BEND, 0, 0, 0.25f, 2.0f, 0.7f, 1.0f, 1, 0),
     TR(K_HIPS, 0, 0, 0.3f, -0.8f, 0.7f, -0.5f, 1, 0),
     TR(K_ROLL, 0, 0, 0.25f, 0.05f, 0.7f, 0.03f, 0.9f, -0.02f, 1, 0),
     TR(K_NECKS, 0, 0, 0.2f, 0.08f, 0.8f, 0.04f, 1, 0),
@@ -1293,6 +1350,7 @@ CLIP(TURN,
 // Kalameet's ground fire: a stalking crouch, hips high and head by the floor (1.2 s); the stream's
 // kick, then held (2.3 s); a cough as it lifts its head (1.0 s)
 CLIP(SWEEP_WIND,
+    TR(K_TAILC, 0, 0, 1.2f, 0.12f),
     TR(K_HIPS, 0, 0, 0.3f, 1.0f, 1.0f, 1.5f, 1.2f, 1.5f),
     TR(K_NECKS, 0, 0, 0.6f, -0.1f, 1.2f, -0.12f),
     TR(K_WSWEEP, 0, 0, 0.8f, 0.1f, 1.2f, 0.15f),
@@ -1306,6 +1364,7 @@ CLIP(SWEEP_FIRE,
     TR(K_WSWEEP, 0, 0.15f, 2.3f, 0.15f),
     TR(K_TAILUP, 0, 0.15f, 2.3f, 0.1f));
 CLIP(SWEEP_END,
+    TR(K_TAILC, 0, 0.12f, 0.6f, 0),
     TR(K_HIPS, 0, 0.8f, 0.5f, 0),
     TR(K_NECKS, 0, -0.1f, 0.4f, 0.02f, 1, 0),
     TR(K_HEAD, 0, 0, 0.2f, -0.1f, 0.6f, 0.03f, 1, 0),
@@ -1316,6 +1375,7 @@ CLIP(SWEEP_END,
 
 // Kalameet's fire cone. Rearing: a dip to load the hind legs, up, the tail braced on the floor (0.8 s)...
 CLIP(CONE_REAR,
+    TR(K_WSPREAD, 0, 0, 0.4f, 0.4f, 0.8f, 0.3f),
     TR(K_CROUCH, 0, 0, 0.12f, 2.0f, 0.35f, -1.0f, 0.8f, -1.0f),
     TR(K_HIPS, 0, 0, 0.12f, -1.0f, 0.6f, -2.0f, 0.8f, -2.0f),
     TR(K_NECKS, 0, 0, 0.12f, -0.1f, 0.4f, 0.2f, 0.8f, 0.25f),
@@ -1325,6 +1385,7 @@ CLIP(CONE_REAR,
     TR(K_WSWEEP, 0, 0, 0.4f, -0.1f, 0.8f, -0.15f));
 // ...down on its forefeet (the quake 0.15 s in), the wings bounced up by it (0.45 s)...
 CLIP(CONE_PLANT,
+    TR(K_WSPREAD, 0, 0.3f, 0.2f, 0.6f, 0.45f, 0.1f),
     TR(K_CROUCH, 0, -1.0f, 0.12f, -0.5f, 0.18f, 3.0f, 0.3f, 1.5f, 0.45f, 0.5f),
     TR(K_HIPS, 0, -2.0f, 0.15f, -1.0f, 0.2f, 1.5f, 0.45f, 0),
     TR(K_NECKS, 0, 0.25f, 0.15f, 0.15f, 0.2f, -0.05f, 0.45f, 0.1f),
@@ -1355,6 +1416,7 @@ CLIP(CONE_REST,
 // back (0.5 s, stretched to the hop), the hind legs reaching for the floor; landing, hind feet
 // then fore, each a jolt through it (0.45 s)
 CLIP(BS_SINK,
+    TR(K_WSPREAD, 0, 0, 0.24f, 0.4f),
     TR(K_CROUCH, 0, 0, 0.18f, 2.0f, 0.24f, 2.5f),
     TR(K_HIPS, 0, 0, 0.2f, -1.5f),
     TR(K_NECKS, 0, 0, 0.15f, -0.1f, 0.24f, -0.05f),
@@ -1362,12 +1424,15 @@ CLIP(BS_SINK,
     TR(K_TAILUP, 0, 0, 0.2f, 0.1f),
     TR(K_WRAISE, 0, 0, 0.15f, 0.15f, 0.24f, 0.25f));
 CLIP(BS_AIR,
+    TR(K_WSPREAD, 0, 0.4f, 0.2f, 0.7f, 0.5f, 0),
     TR(K_NECKS, 0, -0.05f, 0.15f, 0.15f, 0.4f, 0.1f, 0.5f, 0),
     TR(K_HEAD, 0, 0.12f, 0.3f, 0.05f, 0.5f, 0),
     TR(K_HIPS, 0, -1.5f, 0.1f, 1.0f, 0.4f, 0, 0.5f, -1.0f),
     TR(K_TAILUP, 0, 0.1f, 0.2f, 0.25f, 0.5f, 0),
     TR(K_CROUCH, 0, 2.5f, 0.1f, 0));
 CLIP(BS_LAND,
+    TR(K_WSPREAD, 0, 0, 0.1f, 0.4f, 0.45f, 0),
+    TR(K_TAILC, 0, 0, 0.15f, 0.15f, 0.45f, 0),
     TR(K_CROUCH, 0, 0, 0.08f, 1.5f, 0.15f, 0.5f, 0.22f, 1.5f, 0.45f, 0),
     TR(K_HIPS, 0, -1.0f, 0.06f, 0.5f, 0.3f, 0),
     TR(K_NECKS, 0, 0, 0.1f, -0.1f, 0.3f, 0.05f, 0.45f, 0),
@@ -1379,6 +1444,7 @@ CLIP(BS_LAND,
 // higher still, the head down and eyes up, the tail's tip twitching (0.85 s); the rake, a bound
 // off the hind legs (0.32 s, then the gallop); the skid: SKID
 CLIP(SWIPE_WIND,
+    TR(K_TAILC, 0, 0, 0.5f, 0.12f, 0.7f, -0.05f, 0.85f, 0.1f),
     TR(K_CROUCH, 0, 0, 0.15f, 1.0f, 0.6f, 0, 0.85f, 1.5f),
     TR(K_HIPS, 0, 0, 0.5f, 0.8f, 0.85f, 1.2f),
     TR(K_ROLL, 0, 0, 0.6f, 0.04f, 0.8f, 0.06f, 0.85f, 0.03f),
@@ -1401,6 +1467,9 @@ CLIP(SWIPE_RAKE,
 // wing flung high, the jaws snarling, held a beat at the top; brought down with everything (1.0 s);
 // the weight landing through it and settling, a snarl (0.9 s)
 CLIP(STOMP_WIND,
+    TR(K_WCURL, 0, 0, 0.8f, 0.35f, 1.0f, 0),
+    TR(K_WSPREAD, 0, 0, 0.8f, 0.5f, 1.0f, 0.2f),
+    TR(K_TAILC, 0, 0, 0.85f, -0.15f, 1.0f, 0.2f),
     TR(K_CROUCH, 0, 0, 0.15f, 1.5f, 0.75f, -1.5f, 0.9f, -2.0f, 0.93f, -2.0f, 1.0f, 3.5f),
     TR(K_ROLL, 0, 0, 0.15f, -0.04f, 0.75f, 0.08f, 0.9f, 0.1f, 1.0f, -0.04f),
     TR(K_SHW, 0, 0, 0.15f, -1.0f, 0.8f, 3.0f, 0.92f, 4.0f, 1.0f, -1.0f),
@@ -1412,6 +1481,8 @@ CLIP(STOMP_WIND,
     TR(K_TAIL, 0, 0, 0.85f, -0.12f, 1.0f, 0.15f),
     TR(K_LEAN, 0, 0, 0.9f, -1.0f, 1.0f, 2.5f));
 CLIP(STOMP_HIT,
+    TR(K_WSPREAD, 0, 0.2f, 0.1f, 0.6f, 0.5f, 0),
+    TR(K_TAILC, 0, 0.2f, 0.3f, 0.25f, 0.7f, 0),
     TR(K_CROUCH, 0, 3.5f, 0.08f, 4.5f, 0.35f, 1.0f, 0.9f, 0),
     TR(K_ROLL, 0, -0.04f, 0.15f, 0.02f, 0.5f, 0),
     TR(K_SHW, 0, -1.0f, 0.2f, 0.5f, 0.5f, 0),
@@ -1427,6 +1498,8 @@ CLIP(STOMP_HIT,
 // Staggered: a lurch, the hindquarters going first, the chest hitting the floor with a bounce of
 // the wings and tail (from 0 s); heaving itself up, forelegs first, then the hind (its last 0.8 s)
 CLIP(DOWN_FALL,
+    TR(K_WSPREAD, 0, 0, 0.45f, 0, 0.5f, 0.6f, 0.8f, 0.3f, 1.2f, 0.2f),
+    TR(K_WCURL, 0, 0, 0.5f, 0, 0.9f, 0.3f),
     TR(K_HEAD, 0, 0, 0.1f, 0.2f, 0.25f, 0.1f, 0.6f, 0),
     TR(K_NECKS, 0, 0, 0.1f, 0.15f, 0.3f, -0.1f, 0.6f, -0.2f, 1.2f, 0),
     TR(K_HIPS, 0, 0, 0.2f, 0, 0.38f, -3.0f, 0.55f, 1.0f, 0.75f, 0),
@@ -1434,6 +1507,8 @@ CLIP(DOWN_FALL,
     TR(K_WRAISE, 0, 0, 0.45f, 0, 0.5f, 0.25f, 0.65f, -0.05f, 0.8f, 0),
     TR(K_TAILUP, 0, 0, 0.45f, 0, 0.5f, 0.2f, 0.65f, 0));
 CLIP(DOWN_RISE,
+    TR(K_WSPREAD, 0, 0, 0.8f, -0.2f),
+    TR(K_WCURL, 0, 0, 0.8f, -0.3f),
     TR(K_HIPS, 0, 0, 0.3f, -2.0f, 0.55f, 1.0f, 0.8f, 0),
     TR(K_NECKS, 0, 0, 0.2f, 0.15f, 0.6f, 0.1f, 0.8f, 0),
     TR(K_HEAD, 0, 0, 0.3f, 0.12f, 0.8f, 0),
@@ -1442,6 +1517,9 @@ CLIP(DOWN_RISE,
 // Death: a last throe, the head flung up, then it sags and lies still but for a final twitch of the
 // wings and tail
 CLIP(DEATH,
+    TR(K_WSPREAD, 0, 0, 0.25f, 0.6f, 1.5f, 0.3f),
+    TR(K_WCURL, 0, 0, 1.0f, 0, 2.0f, 0.4f),
+    TR(K_TAILC, 0, 0, 0.3f, 0.3f, 1.5f, 0.1f),
     TR(K_CROUCH, 0, 0, 0.2f, -2.0f, 0.5f, 0),
     TR(K_NECKS, 0, 0, 0.25f, 0.25f, 0.6f, 0.2f, 1.2f, -0.1f, 2.0f, 0),
     TR(K_HEAD, 0, 0, 0.25f, 0.25f, 1.5f, 0),
@@ -1451,6 +1529,8 @@ CLIP(DEATH,
 
 // The intro: touching down (the impact through its legs, a wing bounce), then the roar (from the landing)
 CLIP(INTRO_LAND,
+    TR(K_WSPREAD, 0, 0, 0.06f, 0.6f, 0.5f, 0.3f, 2.5f, 0.4f, 3.0f, 0),
+    TR(K_TAILC, 0, 0, 0.1f, 0.25f, 0.6f, -0.1f, 1.2f, 0),
     TR(K_CROUCH, 0, 0, 0.08f, 4.0f, 0.4f, 1.0f, 0.8f, 0),
     TR(K_HIPS, 0, 0, 0.08f, 1.5f, 0.4f, -0.5f, 0.8f, 0),
     TR(K_WRAISE, 0, 0, 0.06f, 0.3f, 0.3f, -0.1f, 0.6f, 0),
@@ -1462,6 +1542,10 @@ CLIP(INTRO_LAND,
 // downstroke, the head held steady against it (it bobs the other way) and the tail flicking
 // against it. The wings' raise is read by wings_rig (FLAP_RAISE); the rest is the layer
 CLIP(FLAP,
+    TR(K_WSPREAD, 0, -0.3f, 0.3f, 0.6f, 0.6f, 0.2f, 0.85f, -0.4f, 1, -0.3f),
+    TR(K_WCURL, 0, 0.1f, 0.3f, 0, 0.7f, 0.35f, 1, 0.1f),
+    TR(K_WFORE, 0, 0.05f, 0.3f, 0, 0.7f, 0.15f, 1, 0.05f),
+    TR(K_TAILC, 0, 0, 0.5f, 0.05f, 1, 0),
     TR(K_ALT, 0, -2.0f, 0.18f, -0.5f, 0.4f, 2.5f, 0.65f, 1.2f, 1, -2.0f),
     TR(K_HEAD, 0, 0.05f, 0.4f, -0.06f, 1, 0.05f),
     TR(K_NECKS, 0, -0.04f, 0.4f, 0.05f, 1, -0.04f),
@@ -1481,6 +1565,7 @@ CLIP(GLIDE,
 // Taking off: down into a crouch, the wings raised for the first beat, then a spring up off all
 // four legs into it (from the start of the climb)
 CLIP(TAKEOFF,
+    TR(K_WSPREAD, 0, 0, 0.14f, 0.5f, 0.5f, 0),
     TR(K_CROUCH, 0, 0, 0.14f, 5.0f, 0.24f, -3.0f, 0.5f, 0),
     TR(K_HIPS, 0, 0, 0.14f, -1.5f, 0.24f, 1.0f, 0.5f, 0),
     TR(K_NECKS, 0, 0, 0.14f, -0.12f, 0.3f, 0.15f, 0.7f, 0),
@@ -1490,6 +1575,8 @@ CLIP(TAKEOFF,
 // Touching down from a flight: the weight taken through all four legs, the wings flung up by it
 // and folding in, the head ducking and coming back up (from the touch)
 CLIP(LANDING,
+    TR(K_WSPREAD, 0, 0, 0.08f, 0.6f, 0.4f, 0),
+    TR(K_WCURL, 0, 0, 0.3f, 0.3f, 0.6f, 0),
     TR(K_CROUCH, 0, 0, 0.08f, 5.0f, 0.3f, 2.0f, 0.6f, 0),
     TR(K_HIPS, 0, 0, 0.06f, -2.0f, 0.3f, 0.5f, 0.6f, 0),
     TR(K_NECKS, 0, 0, 0.1f, -0.2f, 0.35f, 0.05f, 0.6f, 0),
@@ -1506,7 +1593,7 @@ static void flight_keys(void)
     bool landing = (s.state == DG_FLY && s.step == 2) || (s.state == DG_SKYBEAM && s.step == 3) || (s.state == DG_HOVER && s.step == 4) || (s.state == DG_INTRO && s.alt > 0.0f);
     if (landing) {
         float w = clamp01((50.0f - s.alt) / 40.0f) * (s.alt > 0.0f ? 1.0f : 0.0f);
-        s.kv[K_REAR] += 4.0f * w; s.kv[K_WSWEEP] -= 0.25f * w; s.kv[K_TAILUP] -= 0.25f * w; s.kv[K_NECKS] += 0.15f * w; s.kv[K_HEAD] += 0.1f * w;
+        s.kv[K_REAR] += 4.0f * w; s.kv[K_WSWEEP] -= 0.25f * w; s.kv[K_WSPREAD] += 0.6f * w; s.kv[K_TAILUP] -= 0.25f * w; s.kv[K_NECKS] += 0.15f * w; s.kv[K_HEAD] += 0.1f * w;
     }
     if (s.state == DG_HOVER && s.step < 4 && s.alt > 4.0f) { s.kv[K_REAR] += 3.0f; s.kv[K_TAILUP] -= 0.3f; s.kv[K_NECKS] += 0.1f; s.kv[K_WSWEEP] -= 0.15f; }
     if (s.state == DG_FLY && s.step == 1) { s.kv[K_REAR] -= 2.0f; s.kv[K_NECKS] -= 0.1f; }     // nosing down over its fire
@@ -1525,11 +1612,25 @@ static void foot_rest(int k, float out[3])
     out[1] = s.groundY;
 }
 
+// The walk: a four-beat gait, each foot in turn (hind left, fore left, hind right, fore right, as a
+// big lizard or cat walks); each paw is drawn back, lifted, reached forward a little past its spot
+// and planted, the lift high and quick, the plant a settle (keyed paths over the step)
+static const int GAIT_SEQ[4] = { 2, 0, 3, 1 };
+static const Track FOOT_LIFT = TR(0, 0, 0, 0.15f, 0.55f, 0.45f, 1.0f, 0.75f, 0.6f, 0.92f, 0.1f, 1, 0);
+static const Track FOOT_REACH = TR(0, 0, 0, 0.12f, -0.06f, 0.45f, 0.5f, 0.8f, 1.04f, 1, 1);
+
 static void feet_update(float dt)
 {
     if (!s.feetReady) {
         for (int k = 0; k < 4; k++) { foot_rest(k, s.feet[k].p); s.feet[k].moving = false; }
         s.feetReady = true;
+    }
+    {   // the foot whose turn it is has nowhere to go while another does: its turn passes on
+        float r[3], need = 0.0f, mine;
+        for (int j = 0; j < 4; j++) { foot_rest(j, r); float dx = s.feet[j].p[0] - r[0], dz = s.feet[j].p[2] - r[2]; if (j != GAIT_SEQ[s.gaitI]) need = fmaxf(need, dx * dx + dz * dz); }
+        foot_rest(GAIT_SEQ[s.gaitI], r);
+        mine = (s.feet[GAIT_SEQ[s.gaitI]].p[0] - r[0]) * (s.feet[GAIT_SEQ[s.gaitI]].p[0] - r[0]) + (s.feet[GAIT_SEQ[s.gaitI]].p[2] - r[2]) * (s.feet[GAIT_SEQ[s.gaitI]].p[2] - r[2]);
+        if (!s.feet[GAIT_SEQ[s.gaitI]].moving && mine < 8.0f * 8.0f && need > 16.0f * 16.0f) s.gaitI = (s.gaitI + 1) & 3;
     }
     for (int k = 0; k < 4; k++) {
         Foot *f = &s.feet[k];
@@ -1557,18 +1658,23 @@ static void feet_update(float dt)
             f->t += dt / 0.3f;
             if (k < 2 && was < 0.75f && f->t >= 0.75f) sfx_step();     // loud 0.07 s on: as the paw lands
             float u = clamp01(f->t);
-            lerp3(f->p, f->from, rest, u);
-            s.swing[k] = fm_sinf(u * T3D_PI);
-            f->p[1] = s.groundY + s.swing[k] * 7.0f;
+            lerp3(f->p, f->from, rest, key_eval(&FOOT_REACH, u));
+            s.swing[k] = key_eval(&FOOT_LIFT, u);
+            f->p[1] = s.groundY + s.swing[k] * (k < 2 ? 8.0f : 6.0f);
             if (u >= 1.0f) f->moving = false;
         } else {
             s.swing[k] = 0.0f;
             f->p[1] = fmaxf(s.groundY, f->p[1] - 90.0f * dt);
             float dx = f->p[0] - rest[0], dz = f->p[2] - rest[2];
             bool fidget = s.state == DG_IDLE && k < 2 && (pick_rng() % 1000) < (uint32_t)(dt * 250.0f);   // ~1 in 4 s a paw
-            if ((fidget || dx * dx + dz * dz > 16.0f * 16.0f) && !s.feet[k ^ 1].moving) {
+            // its turn in the gait (or far behind: a turn on the spot, a shove), and no other paw just lifting
+            float d2 = dx * dx + dz * dz;
+            bool turn = GAIT_SEQ[s.gaitI] == k || d2 > 26.0f * 26.0f, lifting = false;
+            for (int j = 0; j < 4; j++) lifting |= j != k && s.feet[j].moving && s.feet[j].t < 0.45f;
+            if ((fidget || d2 > 16.0f * 16.0f) && turn && !lifting && !s.feet[k ^ 1].moving) {
                 f->moving = true; f->t = 0.0f;
                 memcpy(f->from, f->p, sizeof(f->p));
+                for (int j = 0; j < 4; j++) if (GAIT_SEQ[j] == k) s.gaitI = (j + 1) & 3;
             }
         }
         memcpy(s.foot[k], f->p, sizeof(f->p));
@@ -1616,7 +1722,7 @@ static void slerp_dir(const float a[3], const float b[3], float t, float o[3])
 // Each segment folds by its own amount (the arm, forearm and fingers apart: a beat runs down the
 // wing as a wave) and droops (the forearm and fingers bent down under the stroke); `curl` bends a
 // finger's outer joint on down
-typedef struct { float foldArm, foldFore, foldFing, droopFore, droopFing, curl[5]; } WingPose;
+typedef struct { float foldArm, foldFore, foldFing, droopFore, droopFing, curl[5], spread; } WingPose;
 static void droop(float d[3], float k) { d[1] -= k; norm3(d); }
 static void wing_local(const WingPose *w, float L[12][3])     // elbow, wrist, five knuckles, five fingertips (the root at 0)
 {
@@ -1626,10 +1732,11 @@ static void wing_local(const WingPose *w, float L[12][3])     // elbow, wrist, f
     slerp_dir(d, W_FOLD_FORE, clamp01(w->foldFore), dir); droop(dir, w->droopFore); mad3(L[1], L[0], dir, len3(d));
     for (int i = 0; i < 5; i++) {
         float f[3] = { W_TIPS[i][0] * WING_K - w0[0], W_TIPS[i][1] * WING_K - w0[1], W_TIPS[i][2] * WING_K - w0[2] }, l = len3(f);
-        slerp_dir(f, W_FOLD_FING[i], clamp01(w->foldFing), dir); droop(dir, w->droopFing * 0.6f); mad3(L[2 + i], L[1], dir, l * KNUCKLE);
+        float ff = clamp01(w->foldFing - w->spread * (i - 2) * 0.12f);     // (spread: the outer fingers open, the inner close: a fan)
+        slerp_dir(f, W_FOLD_FING[i], ff, dir); droop(dir, w->droopFing * 0.6f); mad3(L[2 + i], L[1], dir, l * KNUCKLE);
         // the outer joint folds further, curled down under the wing
         float fb[3] = { W_FOLD_FING[i][0] * 0.9f, W_FOLD_FING[i][1] - 0.75f, W_FOLD_FING[i][2] * 0.8f };
-        slerp_dir(f, fb, clamp01(w->foldFing), dir); droop(dir, w->droopFing);
+        slerp_dir(f, fb, ff, dir); droop(dir, w->droopFing);
         if (w->curl[i] > 0.001f) { float cd[3] = { dir[0], dir[1] - 0.8f, dir[2] }; slerp_dir(dir, cd, w->curl[i], dir); }
         mad3(L[7 + i], L[2 + i], dir, l * (1.0f - KNUCKLE));
     }
@@ -1651,13 +1758,15 @@ static void wings_rig(void)
     float L[12][3], ph0 = s.flapPh, f = s.flapOn;
     WingPose wp = {
         .foldArm  = s.wingFold + 0.10f * f * (0.5f - 0.5f * fm_sinf(ph0 - 0.3f)),
-        .foldFore = s.wingFold + 0.38f * f * (0.5f - 0.5f * fm_sinf(ph0 - 0.7f)),
+        .foldFore = s.wingFold + 0.38f * f * (0.5f - 0.5f * fm_sinf(ph0 - 0.7f)) + s.ko[K_WFORE],
         .foldFing = s.wingFold + 0.48f * f * (0.5f - 0.5f * fm_sinf(ph0 - 1.0f)),
         .droopFore = 0.30f * f * fm_sinf(ph0 - 0.8f),
         .droopFing = 0.50f * f * fm_sinf(ph0 - 1.3f),
     };
+    wp.spread = s.ko[K_WSPREAD];
     for (int i = 0; i < 5; i++)
-        wp.curl[i] = f * 0.35f * (0.5f + 0.5f * fm_sinf(ph0 - 1.2f - 0.15f * i)) + (1.0f - f) * 0.07f * (0.5f + 0.5f * fm_sinf(s.life * 1.3f + i * 0.7f));
+        wp.curl[i] = clamp01(f * 0.35f * (0.5f + 0.5f * fm_sinf(ph0 - 1.2f - 0.15f * i)) + (1.0f - f) * 0.07f * (0.5f + 0.5f * fm_sinf(s.life * 1.3f + i * 0.7f))
+                           + key_past(KH_WCURL, 0.03f * i));      // the keyed curl rippling out from the inner finger
     wing_local(&wp, L);
     s.wingG = 1.0f - (1.0f - WING_FOLDED) * clamp01(s.wingFold / WING_REST_FOLD);     // held in small, growing as they spread
     for (int j = 0; j < 12; j++) for (int m = 0; m < 3; m++) L[j][m] *= s.wingG;
@@ -1720,6 +1829,7 @@ static void rig(Boss *b, float dt)
     }
     // The spine bows sideways between them (`bend`; a turn bows it out behind the head)
     float bend = s.bend + fminf(fmaxf(-s.yawRate * (fl ? 4.0f : 6.0f), -6.0f), 6.0f);
+    bend += 2.5f * (s.swing[1] - s.swing[0]) + 1.5f * (s.swing[2] - s.swing[3]);     // the spine sways with the stride (a big lizard's walk)
     for (int j = 0; j < 2; j++) {
         lerp3(s.spine[j], s.chest, s.hips, (j + 1) / 3.0f);
         mad3(s.spine[j], s.spine[j], s.R, bend * 0.9f);
@@ -1754,10 +1864,15 @@ static void rig(Boss *b, float dt)
     // The tail trails back and down, swaying, a wave running down it to the tip; `tail` swings it
     // to a side, `tailLag` (sprung) is its follow-through as the body turns
     memcpy(s.tl[0], s.hips, sizeof(s.hips));
+    float curl = 0.0f;
     for (int i = 0; i < NTAIL; i++) {
-        float k = (float)(i + 1) / NTAIL;
-        float yi = yaw + T3D_PI + (fm_sinf(s.life * 1.4f - i * 0.7f) * (0.07f + 0.06f * k) + s.tail + s.tailLag * k) * k;
-        float pi = -0.12f - 0.05f * i + s.tailUp * (0.35f + 0.12f * i) + 0.05f * fm_sinf(s.life * 0.9f - i * 0.5f) * k;     // curled up, more toward the tip
+        float k = (float)(i + 1) / NTAIL, lag = 0.035f * i;
+        // the keyed swing and lift reach each link a beat after the one before (a whip down to the
+        // tip); the eased swing under them, the blow itself, stays whole
+        float sw = s.tail - s.ko[K_TAIL] + key_past(KH_TAIL, lag), up = s.tailUp - s.ko[K_TAILUP] + key_past(KH_TAILUP, lag);
+        curl += key_past(KH_TAILC, lag) * k;
+        float yi = yaw + T3D_PI + (fm_sinf(s.life * 1.4f - i * 0.7f) * (0.07f + 0.06f * k) + sw + s.tailLag * k) * k + curl;
+        float pi = -0.12f - 0.05f * i + up * (0.35f + 0.12f * i) + 0.05f * fm_sinf(s.life * 0.9f - i * 0.5f) * k;     // curled up, more toward the tip
         dir[0] = fm_sinf(yi) * fm_cosf(pi); dir[1] = fm_sinf(pi); dir[2] = fm_cosf(yi) * fm_cosf(pi);
         mad3(s.tl[i + 1], s.tl[i], dir, TAIL_SEG);
         if (s.tl[i + 1][1] < s.groundY + 3.0f) s.tl[i + 1][1] = s.groundY + 3.0f;
