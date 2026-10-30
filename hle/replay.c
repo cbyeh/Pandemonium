@@ -377,7 +377,7 @@ static void rp_end(void)
 
 __attribute__((unused)) static bool rp_replay(rp_rec_t *r)
 {
-#ifdef HLE_TEST_PERF
+#if defined(HLE_TEST_PERF) || defined(HLE_TEST_REPLAY_CHECK)
     uint32_t _t = TICKS_READ();
 #endif
     uint8_t *sc = gbi_alloc(r->scratch_bytes);
