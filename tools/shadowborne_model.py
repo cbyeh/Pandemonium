@@ -15,7 +15,11 @@ OUT_H = os.path.join(ROOT, "src/game/dragon_boss/shadowborne_bind.h")
 PREVIEW = "--preview" in sys.argv
 PREVIEW_DIR = "/tmp/sbmodel"
 
-def g2b(p): return Vector((p[0], -p[2], p[1]))         # game (x right, y up, z forward) -> Blender (z up, -y forward)
+def g2b(p): return Vector((p[0], -p[2], p[1]))
+# A mesh colour attribute's floats are linear (the importer turns them back to gamma, ^0.4545): what
+# the game is to draw, in its own 0-255 values, goes in as (v / 255)^2.2 (as they were, they came out
+# ~2.3x bright). (bmesh's colour layers take them as they are)
+def lin(c): return tuple((min(1.0, max(0.0, x)) ** 2.2) if i < 3 else x for i, x in enumerate(c))         # game (x right, y up, z forward) -> Blender (z up, -y forward)
 def b2g(v): return [v.x, v.z, -v.y]
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -127,7 +131,7 @@ def owner(p, legs=None):
     return best
 
 # one bone a vertex; the scale colours by how a vertex faces (the spine dark, the belly pale)
-SPINE, BACK, BELLY = (34, 26, 52), (54, 42, 68), (100, 82, 96)     # the old purple-black (lit, a little darker and more purple)
+SPINE, BACK, BELLY = (40, 36, 58), (58, 52, 68), (112, 98, 100)     # the old parts' own     # the old purple-black (lit, a little darker and more purple)
 def scale_col(nz):
     up = max(0.0, min(1.0, (nz - 0.45) / 0.55)); dn = max(0.0, min(1.0, (-nz - 0.05) / 0.75)); dn = dn * dn * (3 - 2 * dn)
     return tuple((BACK[m] + (SPINE[m] - BACK[m]) * up + (BELLY[m] - BACK[m]) * dn) / 255.0 for m in range(3))
@@ -195,7 +199,7 @@ for poly in me.polygons:
         ang = math.atan2(r.dot(yv), r.dot(xv)) / (2 * math.pi)
         dens = next((DENS[k] for k in DENS if bone.startswith(k)), 1.7)
         us.append([ang, along(o) * dens / 32.0])
-        col.data[li].color = (*scale_col(r.normalized().z if r.length > 1e-4 else 0.0), 1.0)     # by where it sits round its bone (normals at the branches are unreliable)
+        col.data[li].color = lin((*scale_col(r.normalized().z if r.length > 1e-4 else 0.0), 1.0))     # by where it sits round its bone (normals at the branches are unreliable)
     u0 = us[0][0]
     for k, (u, vv) in enumerate(us):
         while u - u0 > 0.5: u -= 1.0
@@ -226,101 +230,75 @@ def carry(p, bone, sd):
 wing_bm = bmesh.new(); wvg = {}      # vertex -> bone
 uvl = wing_bm.loops.layers.uv.new("UV"); cl = wing_bm.loops.layers.color.new("Col")
 wing_faces_memb = []
-BONE_COL = (150 / 255, 140 / 255, 146 / 255, 1.0); MEMB = (44 / 255, 30 / 255, 60 / 255, 1.0); MEMB2 = (52 / 255, 34 / 255, 70 / 255, 1.0)     # shadow, not flesh
-LIMB = (54 / 255, 42 / 255, 68 / 255, 1.0)
+# The old wing (dragon_boss.c's build_wing, scaled up WING_K): bone spikes for the arm, forearm and
+# fingers (the scale map's belly-plate band: growth rings), an ivory claw at the wrist, the membrane
+# scalloped between the fingertips in two purples (its own texture, flat across the open wing), with
+# its old flat light baked into it (unlit: seen alike from both sides). Its points sit on the bones
+# (a finger's knuckle splits its spike and the membrane bends there); the edge on the body, on the arm
+SRGB = lambda r, g, b, a=1.0: (r / 255, g / 255, b / 255, a)
+BONE_COL = SRGB(150, 140, 146); IVORY = SRGB(232, 226, 210)
 open_pos = {}
-MEMB_ALPHA = {}
 for sd in (-1, 1):
     O, s = WOPEN[sd], WSIDE[sd]
+    k = rig.WING_K
     wx, wy, wz = rig.wing_frame(sd, rig.REST_WING['raise_'], rig.REST_WING['sweep'])
-    def local_xy(p):      # the membrane's UVs: flat in the open wing's plane
-        d = rig.sub(p, O['root']); return (rig.dot(d, wx) * 0.55 / 32.0, rig.dot(d, wz) * 0.55 / 32.0)
     def mk(p, bone):
         v = wing_bm.verts.new(g2b(carry(p, bone, sd))); wvg[v] = bone; open_pos[v] = p; return v
     fa = ['fing%sa%d' % (s, i) for i in range(5)]; fb = ['fing%sb%d' % (s, i) for i in range(5)]
-    root = mk(O['root'], 'chest'); back = mk(O['back'], 'chest')
+    def wl(p):      # a point in the open wing's own frame
+        d = rig.sub(p, O['root']); return (rig.dot(d, wx), rig.dot(d, wy), rig.dot(d, wz))
+    def shade(c, n):    # the old flat light (proc_mesh: 0.4 + 0.75 |n . key|, seen from either side)
+        l = math.sqrt(rig.dot(n, n)) or 1.0; dd = abs(n[0] * -0.45 + n[1] * 0.8 + n[2] * 0.4) / l
+        f = 0.4 + 0.75 * dd; return (min(1.0, c[0] * f), min(1.0, c[1] * f), min(1.0, c[2] * f), 1.0)
+    # --- the membrane
+    root = mk(O['root'], 'arm' + s); back = mk(O['back'], 'arm' + s)
     elbow = mk(O['elbow'], 'fore' + s); wrist = mk(O['wrist'], 'fore' + s)
     kn = [mk(O['knuckles'][i], fb[i]) for i in range(5)]
     tips = [mk(O['tips'][i], fb[i]) for i in range(5)]
-    for v_ in tips: MEMB_ALPHA[v_] = 0.5
-    for v_ in kn: MEMB_ALPHA[v_] = 0.8
-    W0 = O['wrist']
-    ref0 = rig.norm(rig.sub(O['tips'][0], W0))
-    def vein_uv(p):     # veins run out from the wrist along the fingers: u round the wrist (a panel half the map), v out from it
-        d = rig.sub(p, W0); x_, z_ = rig.dot(d, wx), rig.dot(d, wz)
-        r0x, r0z = rig.dot(ref0, wx), rig.dot(ref0, wz)
-        ang = math.atan2(x_ * r0z - z_ * r0x, x_ * r0x + z_ * r0z)
-        return (-ang / 0.32 * 0.5 * sd, math.sqrt(rig.dot(d, d)) / 34.0)
-    def lerp3(a, b, t): return [a[c] + (b[c] - a[c]) * t for c in range(3)]
-    # Each panel between two fingers: in from the wrist to the knuckles, then out to the tips, the
-    # trailing edge scalloped (two notches, the first deeper: torn, Kalameet), its middle billowed
-    # down a little (the membrane isn't flat); it folds at the knuckles
+    mids = []
+    for i in range(4):      # the edge between two fingertips sags in toward the wrist
+        m = [(O['tips'][i][c] + O['tips'][i + 1][c]) * 0.5 * 0.78 + O['wrist'][c] * 0.22 for c in range(3)]
+        mids.append(mk(m, fb[i]))
+    m45 = mk([(O['tips'][4][c] + O['back'][c]) * 0.5 * 0.8 + O['elbow'][c] * 0.2 for c in range(3)], 'fore' + s)
+    MEMB_C, MEMB_2 = (52, 42, 62), (64, 46, 72)
     tris = []
     for i in range(4):
-        e1 = lerp3(lerp3(O['tips'][i], O['tips'][i + 1], 0.33), lerp3(O['knuckles'][i], O['knuckles'][i + 1], 0.33), 0.34)
-        e2 = lerp3(lerp3(O['tips'][i], O['tips'][i + 1], 0.67), lerp3(O['knuckles'][i], O['knuckles'][i + 1], 0.67), 0.22)
-        bl = lerp3(lerp3(O['knuckles'][i], O['knuckles'][i + 1], 0.5), lerp3(O['tips'][i], O['tips'][i + 1], 0.5), 0.45)
-        span = math.sqrt(rig.dot(rig.sub(O['tips'][i], O['tips'][i + 1]), rig.sub(O['tips'][i], O['tips'][i + 1])))
-        bl = rig.add(bl, rig.mul(wy, -0.09 * span))
-        m1, m2, B = mk(e1, fb[i]), mk(e2, fb[i + 1]), mk(bl, fb[i])
-        MEMB_ALPHA[m1] = MEMB_ALPHA[m2] = 0.42; MEMB_ALPHA[B] = 0.66
-        tris += [(wrist, kn[i], kn[i + 1]), (B, kn[i], tips[i]), (B, tips[i], m1), (B, m1, m2), (B, m2, tips[i + 1]), (B, tips[i + 1], kn[i + 1]), (B, kn[i + 1], kn[i])]
-    # the last panel back to the body: the scalloped edge from the last fingertip to the flank
-    ma = mk(lerp3(lerp3(O['tips'][4], O['back'], 0.4), O['elbow'], 0.18), 'fore' + s)
-    mb = mk(lerp3(lerp3(O['tips'][4], O['back'], 0.75), O['elbow'], 0.12), 'chest')
-    MEMB_ALPHA[ma] = 0.5; MEMB_ALPHA[mb] = 0.65
-    tris += [(wrist, kn[4], elbow), (kn[4], tips[4], ma), (kn[4], ma, elbow), (elbow, ma, mb), (elbow, mb, back), (elbow, back, root)]
-    for k_, tri in enumerate(tris):
+        c1, c2 = (MEMB_C, MEMB_2) if i & 1 else (MEMB_2, MEMB_C)     # (the old pair of triangles a panel, each its purple)
+        tris += [((wrist, kn[i], kn[i + 1]), c1), ((kn[i], tips[i], mids[i]), c1), ((kn[i], mids[i], kn[i + 1]), c1), ((kn[i + 1], mids[i], tips[i + 1]), c2)]
+    tris += [((wrist, tips[4], elbow), MEMB_C), ((elbow, tips[4], m45), MEMB_2), ((elbow, m45, back), MEMB_C), ((elbow, back, root), MEMB_2)]
+    # (the last panel's tip-to-elbow triangle crosses the knuckle: split it there as the others)
+    tris[16] = ((wrist, kn[4], elbow), MEMB_C); tris.insert(17, ((kn[4], tips[4], elbow), MEMB_C))
+    for tri, col in tris:
         if sd < 0: tri = (tri[0], tri[2], tri[1])
         try: f = wing_bm.faces.new(tri)
         except ValueError: continue
         f.material_index = 1
-        uvs = [vein_uv(open_pos[lp.vert]) for lp in f.loops]
-        u0 = uvs[0][0]
-        for lp, (u, v) in zip(f.loops, uvs):
-            while u - u0 > 0.5: u -= 1.0
-            while u - u0 < -0.5: u += 1.0
-            # the shadow thins out toward the edge: near solid at the arm and body, see-through at the tips
-            a_ = MEMB_ALPHA.get(lp.vert, 0.9)
-            c_ = MEMB if k_ & 1 else MEMB2
-            lp[uvl].uv = (u, v); lp[cl] = (c_[0], c_[1], c_[2], a_)
-    # The wing's limbs: the arm and forearm tapered six-sided tubes in scaled skin, the finger
-    # joints thinner bone; each segment domed at both ends past its joint (they overlap there, as
-    # the knees did, so a bent joint shows no gap)
-    def limb(pa, pb, bone, r0, r1, sides, col, scaled, midring=True, caps=True):
+        P3 = [open_pos[v] for v in (f.verts[0], f.verts[1], f.verts[2])]
+        n = rig.cross(rig.sub(P3[1], P3[0]), rig.sub(P3[2], P3[0]))
+        c3 = shade(SRGB(*col), n)
+        for lp in f.loops:
+            x_, y_, z_ = wl(open_pos[lp.vert]); lp[uvl].uv = (x_ * 0.55 / 32.0, z_ * 0.55 / 32.0); lp[cl] = c3
+    # --- the bones: spikes (four-sided, tapering), a finger's split at its knuckle
+    def spike(pa, pb, bone, r0, r1, col, along):
         d = rig.norm(rig.sub(pb, pa)); a_ = rig.norm(rig.cross(d, wy if abs(rig.dot(d, wy)) < 0.9 else wz)); c_ = rig.cross(d, a_)
         L = math.sqrt(rig.dot(rig.sub(pb, pa), rig.sub(pb, pa)))
-        def ring(p, r): return [mk(rig.add(p, rig.add(rig.mul(a_, r * math.cos(j * 2 * math.pi / sides)), rig.mul(c_, r * math.sin(j * 2 * math.pi / sides)))), bone) for j in range(sides)]
-        rings = [ring(pa, r0), ring(rig.lerp(pa, pb, 0.5), (r0 + r1) * 0.5 * 1.06), ring(pb, r1)] if midring else [ring(pa, r0), ring(pb, r1)]
-        cap0 = mk(rig.sub(pa, rig.mul(d, r0 * 0.7)), bone); cap1 = mk(rig.add(pb, rig.mul(d, max(r1, 0.4) * 0.7)), bone)
-        vs = [0.0, 0.5, 1.0] if midring else [0.0, 1.0]
-        def face(q, uvs):
+        ring = lambda p, r: [mk(rig.add(p, rig.add(rig.mul(a_, r * math.cos(j * math.pi / 2)), rig.mul(c_, r * math.sin(j * math.pi / 2)))), bone) for j in range(4)]
+        A = ring(pa, r0); B = ring(pb, r1) if r1 > 0.01 else None; T = mk(pb, bone) if B is None else None
+        for j in range(4):
+            j1 = (j + 1) % 4; u0, u1 = (92 + 2 * j) / 128.0, (94 + 2 * j) / 128.0; v1 = L * along / 32.0
+            q = (A[j], A[j1], B[j1], B[j]) if B else (A[j], A[j1], T)
+            uvs = [(u0, 0), (u1, 0), (u1, v1), (u0, v1)] if B else [(u0, 0), (u1, 0), ((u0 + u1) / 2, v1)]
             if sd < 0: q = q[::-1]; uvs = uvs[::-1]
             f = wing_bm.faces.new(q); f.material_index = 0
-            for lp, uvv in zip(f.loops, uvs): lp[uvl].uv = uvv if scaled else (0.0, 0.0); lp[cl] = col
-        for r in range(len(rings) - 1):
-            for j in range(sides):
-                j1 = (j + 1) % sides
-                u0, u1 = j / sides, (j + 1) / sides
-                v0, v1 = vs[r] * L * 3.2 / 32.0, vs[r + 1] * L * 3.2 / 32.0
-                face((rings[r][j], rings[r][j1], rings[r + 1][j1], rings[r + 1][j]), [(u0, v0), (u1, v0), (u1, v1), (u0, v1)])
-        for j in range(sides if caps else 0):
-            j1 = (j + 1) % sides
-            face((cap0, rings[0][j1], rings[0][j]), [(0.5, 0.0), ((j + 1) / sides, 0.0), (j / sides, 0.0)])
-            face((cap1, rings[-1][j], rings[-1][j1]), [(0.5, 1.0), (j / sides, 1.0), ((j + 1) / sides, 1.0)])
-    k = rig.WING_K
-    q = k / 1.75       # (the limbs as thick for their length as at the first size)
-    limb(O['root'], O['elbow'], 'arm' + s, 4.6 * q, 3.6 * q, 5, LIMB, True)
-    limb(O['elbow'], O['wrist'], 'fore' + s, 3.4 * q, 2.6 * q, 5, LIMB, True)
+            for lp, uvv in zip(f.loops, uvs): lp[uvl].uv = uvv; lp[cl] = col
+    spike(O['root'], O['elbow'], 'arm' + s, 2.6 * k, 2.1 * k * 0.97, BONE_COL, 0.9)
+    spike(O['elbow'], O['wrist'], 'fore' + s, 2.1 * k, 0.6 * k, BONE_COL, 0.9)
+    claw = rig.add(O['wrist'], rig.add(rig.add(rig.mul(wx, 6 * k), rig.mul(wy, 3 * k)), rig.mul(wz, 6 * k)))
+    spike(O['wrist'], claw, 'fore' + s, 1.0 * k, 0.0, IVORY, 0.9)
     for i in range(5):
-        limb(O['wrist'], O['knuckles'][i], fa[i], 2.5 * q, 1.9 * q, 4, BONE_COL, False, False, False)     # the finger bones: thick, ridged
-        limb(O['knuckles'][i], O['tips'][i], fb[i], 1.9 * q, 0.35, 4, BONE_COL, False, False, False)
-    # the hooked claw at the wrist (the thumb), curving forward and down
-    c0 = O['wrist']; c1 = rig.add(c0, rig.add(rig.mul(wy, 5.5 * q), rig.mul(wz, 4.0 * q))); c2 = rig.add(c1, rig.add(rig.mul(wy, -1.0 * q), rig.mul(wz, 6.5 * q)))
-    c3 = rig.add(c2, rig.add(rig.mul(wy, -4.5 * q), rig.mul(wz, 2.0 * q)))
-    limb(c0, c1, 'fore' + s, 2.3 * q, 1.8 * q, 4, BONE_COL, False, False, False)
-    limb(c1, c2, 'fore' + s, 1.8 * q, 1.1 * q, 4, BONE_COL, False, False, False)
-    limb(c2, c3, 'fore' + s, 1.1 * q, 0.2, 3, BONE_COL, False, False, False)
+        r0 = 1.2 * k; rk = r0 * (1 - rig.KNUCKLE)
+        spike(O['wrist'], O['knuckles'][i], fa[i], r0, rk, BONE_COL, 0.9)
+        spike(O['knuckles'][i], O['tips'][i], fb[i], rk, 0.0, BONE_COL, 0.9)
 wme = bpy.data.meshes.new("wings"); wing_bm.to_mesh(wme)
 wobj = bpy.data.objects.new("wings", wme); sc.collection.objects.link(wobj)
 bonenames = sorted(set(wvg.values()))
@@ -357,7 +335,7 @@ def seg_frame(a, b_, r, over):
     x = rig.norm(rig.cross(up, z)); y = rig.cross(z, x)
     return a, x, y, z, r / MESH, r / MESH, l * over / MESH
 SEG_CR = crystal_tris([0, MESH * 0.88, 3], [0, MESH * 1.95, -5], 4.0) + crystal_tris([0, MESH * 0.8, 11], [0, MESH * 1.55, 6], 3.0)
-# (the old flank ridges dropped: small, they cost what the spine row does)
+for sd_ in (-1, 1): SEG_CR += crystal_tris([sd_ * MESH * 0.62, MESH * 0.6, 7], [sd_ * MESH * 1.15, MESH * 1.02, 2], 2.2)     # the flank ridges
 TSEG_CR = crystal_tris([0, MESH * 0.85, 6], [0, MESH * 1.8, -2], 3.5)
 for (a, b_, r, over, bone) in ((P['chest'], P['spine0'], 18.0, 1.2, 'chest'), (P['spine0'], P['spine1'], 17.5, 1.2, 'spine1'), (P['spine1'], P['hips'], 16.0, 1.25, 'hips')):
     place(SEG_CR, *seg_frame(a, b_, r, over), bone)
@@ -366,12 +344,17 @@ for i in range(rig.NTAIL): place(SEG_CR if i < 2 else TSEG_CR, *seg_frame(P['tai
 TIP = crystal_tris([0, 0, 0], [0, 0, 16.0], 3.4)
 for sd_ in (-1, 1): TIP += crystal_tris([0, 0, 3.0], [sd_ * 6.0, 1.0, 8.0], 1.6)
 place(TIP, *seg_frame(P['tail%d' % rig.NTAIL], P['tail%d' % (rig.NTAIL + 1)], MESH, 16.0 / math.sqrt(rig.dot(rig.sub(P['tail%d' % (rig.NTAIL + 1)], P['tail%d' % rig.NTAIL]), rig.sub(P['tail%d' % (rig.NTAIL + 1)], P['tail%d' % rig.NTAIL])))), 'tail%d' % rig.NTAIL)
-WCR = crystal_tris([0, 0, 0], [1, 8, 4], 2.0)
+# the old wing's crystals (build_wing: the elbow's, the wrist's, one on the forearm), placed in the
+# open wing's frame and carried to the bind pose on the forearm
 for sd_ in (-1, 1):
-    W = WING[sd_]; s_ = WSIDE[sd_]
-    for j, (pt, nxt, bone, k) in enumerate(((W['elbow'], W['wrist'], 'fore' + s_, 1.0), (W['wrist'], W['knuckles'][0], 'fore' + s_, 1.1))):
-        d = rig.sub(nxt, pt); x = rig.norm(rig.cross(W['up'], d)); z = rig.cross(x, W['up'])
-        kk = rig.WING_K * k; place(WCR, pt, x, W['up'], z, kk, kk, kk, bone)
+    O_, s_ = WOPEN[sd_], WSIDE[sd_]; k_ = rig.WING_K
+    wx_, wy_, wz_ = rig.wing_frame(sd_, rig.REST_WING['raise_'], rig.REST_WING['sweep'])
+    to_ = lambda p: rig.add(O_['root'], rig.add(rig.add(rig.mul(wx_, p[0] * k_), rig.mul(wy_, p[1] * k_)), rig.mul(wz_, p[2] * k_)))
+    for base_, tip_, r_ in (([30, 6, 4], [31, 14, 8], 2.0), ([58, 10, -6], [63, 19, -4], 2.2), ([44, 8, -1], [46, 13, 2], 1.4)):
+        b_, t_ = to_(base_), to_(tip_)
+        for ring_, tp_ in crystal_tris(b_, t_, r_ * k_):
+            R_ = [carry(q_, 'fore' + s_, sd_) for q_ in ring_]; T_ = carry(tp_, 'fore' + s_, sd_)
+            place([(R_, T_)], [0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], 1, 1, 1, 'fore' + s_)
 cme = bpy.data.meshes.new("crystals"); cry_bm.to_mesh(cme)
 cobj = bpy.data.objects.new("crystals", cme); sc.collection.objects.link(cobj)
 idx = {v: i for i, v in enumerate(cry_bm.verts)}
@@ -417,12 +400,10 @@ def f3d_crystal():     # unlit: its facets' shade times the tint the game sets (
     m["f3d_mat"]["combiner1"] = {"name": "", "A": 4, "B": 8, "C": 3, "D": 7, "A_alpha": 7, "B_alpha": 7, "C_alpha": 7, "D_alpha": 6}
     m["f3d_mat"]["rdp_settings"]["g_lighting"] = False; m["f3d_mat"].pop("tex0")
     return m
-def f3d_shadow():      # the membrane: the smoke texture times its shade, see-through by its vertex alpha (blended)
-    m = f3d("membrane_shadow.i8.png", 32, 64, False)
-    m["f3d_mat"]["combiner1"].update({"A_alpha": 7, "B_alpha": 7, "C_alpha": 7, "D_alpha": 4})
-    m["f3d_mat"]["draw_layer"] = {"oot": 0, "sm64": 5}
+def f3d_membrane():    # the old membrane: its texture times its baked colour, unlit, opaque, both sides
+    m = f3d("membrane.i8.png", 32, 32, False); m["f3d_mat"]["rdp_settings"]["g_lighting"] = False
     return m
-EXTRAS = {"sb_crystal": f3d_crystal(), "sb_body": f3d("scales.i8.png", 128, 32, True), "sb_memb": f3d_shadow()}
+EXTRAS = {"sb_crystal": f3d_crystal(), "sb_body": f3d("scales.i8.png", 128, 32, True), "sb_memb": f3d_membrane()}
 d = open(OUT_GLB, 'rb').read()
 jl = struct.unpack('<I', d[12:16])[0]; js = json.loads(d[20:20 + jl]); rest_ = d[20 + jl:]
 for m in js.get('materials', []):

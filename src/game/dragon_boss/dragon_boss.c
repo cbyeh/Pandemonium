@@ -32,6 +32,8 @@
 #define LEG_L      19.0f        // each leg bone
 #define MESH       16.0f        // the segment and limb meshes are built 16 across, 16 long
 #define SB_SCALE   64.0f        // the skinned body's model units a world unit (the importer's base scale)
+#define WING_REST_FOLD 0.35f    // how far the wings fold held in (the old wings stayed open, only smaller)
+#define WING_FOLDED 0.45f       // the wings' size folded, to their full size spread (they grow as they open)
 #define WING_K     2.3f         // the great wings, this much bigger than the old pair (tools/shadowborne_rig.py)
 #define HIT_R      20.0f        // the hit capsule: wide enough for its legs at sword height (17 missed their outer 4)
 #define DROP_H     160.0f       // flies down from this high
@@ -75,7 +77,8 @@ static struct {
     float knee[4][3];                                   // the leg joints (solved in the rig)
     float wj[2][13][3], wup[2][3];                      // each great wing: root, elbow, wrist, five knuckles, five fingertips; its upper side
     float flapOn;                                       // eased in and out of flapping (the wing's joints ripple with the beat)
-    rspq_block_t *block;                                // the body's draw, recorded once: the bones' matrices set each frame
+    float wingG;                                        // the wings' size: they grow as they spread (WING_FOLDED folded)
+    rspq_block_t *block, *blockUnlit;                   // the body's draw (lit), the membranes' and crystals' (unlit), recorded once: the bones' matrices set each frame
     float wingFold, tWingFold;                          // 1 folded along its back .. 0 spread
     sprite_t *texScales, *texMemb;      // tools/boss_textures.py
     T3DMat4FP *mats;
@@ -546,6 +549,9 @@ static void sb_frame(const float h[3], const float t[3], const float ref[3], flo
     for (int r = 0; r < 3; r++) { M[r * 3 + 0] = x[r]; M[r * 3 + 1] = y[r]; M[r * 3 + 2] = z[r]; }
 }
 
+static bool sb_lit(void *u, const T3DObject *o) { (void)u; return o->material && !strcmp(o->material->name, "sb_body"); }
+static bool sb_unlit(void *u, const T3DObject *o) { return !sb_lit(u, o); }
+
 // Each bone's bind rotation as seen from the frame the rig will build for it: the rig's frame
 // times this is the bone's rotation (whatever roll the model gave it)
 static void sb_load(void)
@@ -566,9 +572,14 @@ static void sb_load(void)
             for (int c = 0; c < 3; c++) s.bindK[i][r * 3 + c] = Fb[0 * 3 + r] * m->m[c][0] + Fb[1 * 3 + r] * m->m[c][1] + Fb[2 * 3 + r] * m->m[c][2];
     }
     t3d_skeleton_destroy(&sk);
-    gpu_block_begin();      // (its matrices: the skeleton segment, set before each run)
-    t3d_model_draw_custom(s.model, (T3DModelDrawConf){ .matrices = gpu_skeleton_matrices() });
+    // (its matrices: the skeleton segment, set before each run). tiny3d lights every material: the
+    // membranes and crystals, unlit like the old parts, are their own draw under a plain white ambient
+    gpu_block_begin();
+    t3d_model_draw_custom(s.model, (T3DModelDrawConf){ .matrices = gpu_skeleton_matrices(), .filterCb = sb_lit });
     s.block = gpu_block_end();
+    gpu_block_begin();
+    t3d_model_draw_custom(s.model, (T3DModelDrawConf){ .matrices = gpu_skeleton_matrices(), .filterCb = sb_unlit });
+    s.blockUnlit = gpu_block_end();
 }
 
 static void tail_tip(float e[3]);
@@ -612,8 +623,9 @@ static void sb_draw(Boss *b)
         sb_points(b, i, h, t, &ref);
         sb_frame(h, t, ref, Ft);
         const float *K = s.bindK[i];
+        float g = i >= 24 ? s.wingG : 1.0f;     // a wing bone at the wing's size (uniform: nothing squashed)
         for (int r = 0; r < 3; r++)
-            for (int c = 0; c < 3; c++) M[r * 3 + c] = Ft[r * 3 + 0] * K[0 * 3 + c] + Ft[r * 3 + 1] * K[1 * 3 + c] + Ft[r * 3 + 2] * K[2 * 3 + c];
+            for (int c = 0; c < 3; c++) M[r * 3 + c] = (Ft[r * 3 + 0] * K[0 * 3 + c] + Ft[r * 3 + 1] * K[1 * 3 + c] + Ft[r * 3 + 2] * K[2 * 3 + c]) * g;
         T3DMat4 m = {{
             { M[0], M[3], M[6], 0 }, { M[1], M[4], M[7], 0 }, { M[2], M[5], M[8], 0 },
             { (h[0] - b->pos[0]) * SB_SCALE, (h[1] - b->pos[1]) * SB_SCALE, (h[2] - b->pos[2]) * SB_SCALE, 1 },
@@ -629,13 +641,18 @@ static void sb_draw(Boss *b)
     // real light: the body shades as it bends. The hall has no other lights: put back after
     static const T3DVec3 KEY = {{ -0.45f / 1.0136f, 0.8f / 1.0136f, 0.4f / 1.0136f }};
     t3d_light_set_ambient((uint8_t[4]){ 107, 107, 107, 255 });
+    static const T3DVec3 FILL = {{ 0.45f / 1.0136f, -0.8f / 1.0136f, -0.4f / 1.0136f }};     // (and its faint bounce from the other side, 0.14)
     t3d_light_set_directional(0, (uint8_t[4]){ 184, 184, 184, 255 }, &KEY);
-    t3d_light_set_count(1);
+    t3d_light_set_directional(1, (uint8_t[4]){ 36, 36, 36, 255 }, &FILL);
+    t3d_light_set_count(2);
 #ifdef HLE_LOG_FPS
     uint32_t t1 = TICKS_READ();
 #endif
     t3d_segment_set(T3D_SEGMENT_SKELETON, bm);
     rspq_block_run(s.block);
+    t3d_light_set_count(0);
+    t3d_light_set_ambient((uint8_t[4]){ 255, 255, 255, 255 });
+    rspq_block_run(s.blockUnlit);
 #ifdef HLE_LOG_FPS
     tb += t1 - t0; tm += TICKS_READ() - t1;
     if (++n == 120) { debugf("[sbcpu] bones %.2f model %.2f ms\n", TICKS_TO_US(tb / 120) / 1000.0, TICKS_TO_US(tm / 120) / 1000.0); tb = tm = n = 0; }
@@ -653,7 +670,7 @@ void dragon_boss_free(void)
     ProcMesh *all[] = { &s.mThroat, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.flame, &s.mOrb, &s.mIce, &s.mCone };
     for (unsigned i = 0; i < sizeof(all) / sizeof(all[0]); i++) proc_mesh_free(all[i]);
     sprite_free(s.texScales); sprite_free(s.texMemb);
-    rspq_block_free(s.block);
+    rspq_block_free(s.block); rspq_block_free(s.blockUnlit);
     t3d_model_free(s.model);
     free_uncached(s.mats);
     memset(&s, 0, sizeof(s));
@@ -714,7 +731,7 @@ void dragon_boss_begin(Boss* boss)
     s.feetReady = false;
     s.neckReach = s.tNeckReach = 1.0f;
     s.wingSpan = 1.0f; s.wingRaise = 0.3f; s.wingSweep = 0.0f;     // (flying in: as it always did)
-    s.wingFold = s.tWingFold = 0.0f;
+    s.wingFold = s.tWingFold = 0.0f; s.wingG = 1.0f;
     s.yawPrev = boss->rot[1]; s.altPrev = DROP_H; s.tailLag = s.tailV = 0.0f; s.passT = 0.0f;
     s.cdBackstep = 6.0f; s.cdSwipe = 7.0f;
     s.prevHealth = boss->health; s.shakeT = 0.0f; s.lookRel = 0.0f;
@@ -1025,6 +1042,8 @@ static void wings_rig(void)
     for (int i = 0; i < 5; i++)
         wp.curl[i] = f * 0.35f * (0.5f + 0.5f * fm_sinf(ph0 - 1.2f - 0.15f * i)) + (1.0f - f) * 0.07f * (0.5f + 0.5f * fm_sinf(s.life * 1.3f + i * 0.7f));
     wing_local(&wp, L);
+    s.wingG = 1.0f - (1.0f - WING_FOLDED) * clamp01(s.wingFold / WING_REST_FOLD);     // held in small, growing as they spread
+    for (int j = 0; j < 12; j++) for (int m = 0; m < 3; m++) L[j][m] *= s.wingG;
     for (int w = 0; w < 2; w++) {
         float sd = w ? 1.0f : -1.0f, ph = s.flapPh;
         float flap = 0.25f + 0.6f * fm_sinf(ph - 0.35f * fm_cosf(ph));      // a quick downstroke, a slower recovery
@@ -2315,7 +2334,7 @@ void dragon_boss_update(Boss* b, float dt)
     s.tNeckPitch = 0.0f; s.tNeckYaw = fminf(fmaxf(s.lookRel * 0.75f, -0.85f), 0.85f); s.tNeckReach = 1.0f;
     s.tJaw = 0.05f; s.tWingRaise = 0.25f; s.tWingSpan = 0.7f; s.tTail = 0.0f; s.tCrouch = 0.0f;
     s.tClaw[0] = s.tClaw[1] = 0.0f; s.tAimK = 0.0f; s.tRear = 0.0f; s.tTailUp = 0.0f; s.poseRate = 6.0f; s.flapRate = 0.0f;
-    s.tRoll = 0.0f; s.tShLift[0] = s.tShLift[1] = 0.0f; s.tBend = 0.0f; s.tLean = 0.0f; s.tWingSweep = 0.0f; s.tClawHi = 0.0f; s.tSwipeAmt = 0.0f;
+    s.tRoll = 0.0f; s.tShLift[0] = s.tShLift[1] = 0.0f; s.tBend = 0.0f; s.tLean = 0.0f; s.tWingSweep = 0.45f; s.tClawHi = 0.0f; s.tSwipeAmt = 0.0f;
 
     if (b->state == BOSS_STATE_DEAD && s.state != DG_DEAD) { enter(DG_DEAD); clear_hazards(); }
     if (!s.dark && s.state != DG_DEAD && s.state != DG_INTRO && b->health <= b->maxHealth * 0.5f) {
@@ -2501,7 +2520,8 @@ void dragon_boss_update(Boss* b, float dt)
     s.lean = ease(s.lean, s.tLean, pr, dt);
     s.wingSweep = ease(s.wingSweep, s.tWingSweep, 3.0f, dt);
     // the great wings fold along its back when the moves hold them in (their old span), spread when out
-    s.tWingFold = clamp01((0.95f - s.tWingSpan) / 0.25f);
+    // (as the old wings: held in small and swept back, mostly open; spread to their full size)
+    s.tWingFold = clamp01((0.95f - s.tWingSpan) / 0.25f) * WING_REST_FOLD;
     s.wingFold = ease(s.wingFold, s.tWingFold, 3.0f, dt);
     s.clawHi = ease(s.clawHi, s.tClawHi, 6.0f, dt);
     s.swipeAmt = ease(s.swipeAmt, s.tSwipeAmt, 10.0f, dt);
