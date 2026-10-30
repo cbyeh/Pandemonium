@@ -1107,8 +1107,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #define HLE_CAM_NEAR_D 80.0f
 #endif
                 float a = boss->rot[1] + HLE_CAM_NEAR_A;
-                customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * HLE_CAM_NEAR_D, boss->pos[1] + 28.0f, boss->pos[2] + cosf(a) * HLE_CAM_NEAR_D }};
-                customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + 18.0f, boss->pos[2] }};
+#ifndef HLE_CAM_NEAR_H      // its height, and the height it looks at (above the boss's root)
+#define HLE_CAM_NEAR_H 28.0f
+#define HLE_CAM_NEAR_LOOK 18.0f
+#endif
+                customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * HLE_CAM_NEAR_D, boss->pos[1] + HLE_CAM_NEAR_H, boss->pos[2] + cosf(a) * HLE_CAM_NEAR_D }};
+                customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + HLE_CAM_NEAR_LOOK, boss->pos[2] }};
                 camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
             }
 #endif

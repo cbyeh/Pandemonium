@@ -66,6 +66,7 @@ typedef enum Scene1Sfx
     SCENE1_SFX_ROLL_SWISH,      // generated: band-passed pink noise with a swell
     SCENE1_SFX_ARMOR_CLANK,     // CC0, rubberduck (metal_03)
     SCENE1_SFX_WAR_CRY,         // the grunt, deeper, with an echo
+    SCENE1_SFX_DRAGON_GROWL,    // the roar slowed, low-passed and rumbling (Shadowborne's pacing)
 
     SCENE1_SFX_COUNT
 } Scene1Sfx;
