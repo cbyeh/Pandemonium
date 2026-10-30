@@ -46,17 +46,35 @@ void proc_mesh_frustum(const float base[3], float r0, float r1, float h, int sid
 // A molten sun with a fiery iris and slit pupil looking down -y, or +z with
 // `facingZ`. `hot` shifts it to crimson and white.
 void proc_mesh_eye_sphere(float radius, bool facingZ, bool hot);
-// Its parts, to move apart (the Shackled Sun's face): the ball, the iris, the slit pupil
+// The ball alone (the eye sphere's)
 void proc_mesh_sun_ball(float radius, bool facingZ, bool hot);
-void proc_mesh_eye_iris(float radius, bool facingZ, bool hot);
-void proc_mesh_eye_pupil(float radius, bool facingZ, bool hot);
-// A quarter eyelid (x >= 0, y >= 0) over a +z eye, shut; mirror it for the other three
-void proc_mesh_eye_lid(float radius, bool hot);
-// Flame tongues round a disc of `radius` facing +z, up to `reach` long (see
-// proc_mesh_draw_glow: their dark sides and tips fade out).
-void proc_mesh_corona(float radius, int tongues, float reach, int seed, bool hot);
-// Loops of flame arching off the same disc's rim, up to `height` high
-void proc_mesh_prominences(float radius, int loops, float height, int seed, bool hot);
+// The Shackled Sun's human face, looking down +z. Its parts' frames: proc_mesh_face_frame (axes
+// x, y, z: +z out of the ball at (yaw, pitch)); the right side's (+x), mirrored in x for the left
+#define SUN_FACE_EYE_YAW     0.34f
+#define SUN_FACE_EYE_PITCH   0.1f
+#define SUN_FACE_EYE_W       0.24f     // an eye's half-width and half-height (tangent units)
+#define SUN_FACE_EYE_H       0.12f
+#define SUN_FACE_IRIS_R      0.105f
+#define SUN_FACE_PUPIL_R     0.042f
+#define SUN_FACE_MOUTH_PITCH -0.37f
+#define SUN_FACE_MOUTH_W     0.2f
+#define SUN_FACE_CHEEK_YAW   0.46f
+#define SUN_FACE_CHEEK_PITCH -0.19f
+void proc_mesh_face_frame(float yaw, float pitch, float F[3][3]);
+// The ball with what never moves: the eyes' whites, the nose, the cheeks' spirals
+void proc_mesh_sun_face(float radius, bool hot);
+// Both cheeks' blush (a glow: soft edges)
+void proc_mesh_face_blush(float radius, bool hot);
+// In an eye's frame: its iris (and glint), its round pupil, its upper lid shut (a glow; mirror it
+// in y for the lower), its brow
+void proc_mesh_face_iris(float radius, bool hot);
+void proc_mesh_face_pupil(float radius);
+void proc_mesh_face_lid(float radius, bool hot);
+void proc_mesh_face_brow(float radius);
+// In the mouth's frame: the right half of the upper or lower lip, the mouth's inside behind it (and the teeth)
+void proc_mesh_face_lip(float radius, bool upper, bool hot);
+// Rays round a disc facing +z: straight two-tone spikes and a ring, or wavy flames between them
+void proc_mesh_sun_rays(float radius, bool wavy, bool hot);
 void proc_mesh_end(ProcMesh *out);
 
 void proc_mesh_set_transform(ProcMesh *m, const float scale, const float rot[3], const float pos[3]);
@@ -71,6 +89,10 @@ void proc_mesh_draw_tinted(const ProcMesh *m, bool glow, color_t tint);
 void proc_mesh_draw_textured(const ProcMesh *m, sprite_t *tex, color_t tint);
 // The texture and combiner for textured proc meshes drawn by hand (T3D_FLAG_TEXTURED)
 void proc_mesh_tex_begin(sprite_t *tex);
+// Several drawn under one mode (as proc_mesh_draw_tinted / _textured), each with its own matrix
+void proc_mesh_batch_begin(bool glow, color_t tint, sprite_t *tex);
+void proc_mesh_batch_draw(const ProcMesh *m);
+void proc_mesh_batch_end(void);
 void proc_mesh_free(ProcMesh *m);
 
 static inline uint32_t proc_rgb(int r, int g, int b) { return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xFF; }

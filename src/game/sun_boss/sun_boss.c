@@ -56,17 +56,20 @@ typedef struct {
 
 #define RAIN_MAX 8
 
-enum { FACE_UP, FACE_LO, FACE_BROW, FACE_PW, FACE_PH, FACE_GX, FACE_GY };
-// lids open (rad up from the eye's level line), brow (+: angry, inner ends down), pupil width and
-// height, gaze (rad: toward the eye's +x, up)
-static const float FACE_REST[7] = { 0.62f, 0.55f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f };
+enum { FACE_UP, FACE_LO, FACE_BRAISE, FACE_BTILT, FACE_PW, FACE_PH, FACE_GX, FACE_GY, FACE_MOPEN, FACE_MCURVE, FACE_SNARL, FACE_N };
+// lids open (rad up/down from the eye's level line: 0.16 wide, 0.085 heavy, 0.035 a squint, < 0
+// shut), brows raised (rad) and tilted (+: angry, inner ends down), pupil width and height (1:
+// round), gaze (rad: toward +x, up), mouth open (rad), its corners (+: a smile), the upper lip
+// drawn up off the teeth. At rest: serene, heavy-lidded, the faintest smile
+static const float FACE_REST[FACE_N] = { 0.085f, 0.08f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.05f, 0.0f };
 
 static struct {
     bool ready;
-    ProcMesh ball[2], iris[2], pupil[2], lid[2], prom[2];     // [unshackled]: the face moves apart
+    ProcMesh ball[2], iris[2], lid[2], lipU[2], lipL[2], blush[2], rays[2][2];  // [unshackled]
+    ProcMesh pupil, brow;
+    float eyeF[3][3], mouthF[3][3];     // the right eye's and the mouth's frames (columns: their axes)
     sprite_t *texVeins;         // the ball's veins (tools/boss_textures.py)
     ProcMesh weight;
-    ProcMesh corona[2], coronaHot[2];   // two rings of flames, turning opposite ways
     T3DMat4FP *chainMat;           // MAT_RING * (1 + NCH): the links' origin, then the weights
     T3DVertPacked *linkVB[MAT_RING];
     rspq_block_t *linkBlock[MAT_RING];  // draws its buffer's links: the topology never changes
@@ -83,7 +86,8 @@ static struct {
     bool unshackled;
     float cdGlare, cdRain, cdCorona, cdDive, cdLash, cdSweep, cdSpiral, cdEmber;
     float aim;              // a volley's locked yaw (the crosses)
-    float face[7];          // the face, eased (FACE_*): lids, brow, pupil, gaze
+    float red;              // the ram's tell, eased: it glows blood red
+    float face[FACE_N];     // the face, eased
     float blinkIn, blinkT;  // the next blink, and the one under way (< 0: none)
     float rainT[RAIN_MAX], rainPos[RAIN_MAX][2];
     float diveTarget[2];
@@ -165,13 +169,14 @@ void sun_boss_free(void)
     if (!s.ready) return;
     gpu_wait();
     for (int h = 0; h < 2; h++) {
-        proc_mesh_free(&s.ball[h]); proc_mesh_free(&s.iris[h]); proc_mesh_free(&s.pupil[h]);
-        proc_mesh_free(&s.lid[h]); proc_mesh_free(&s.prom[h]);
+        proc_mesh_free(&s.ball[h]); proc_mesh_free(&s.iris[h]); proc_mesh_free(&s.lid[h]);
+        proc_mesh_free(&s.lipU[h]); proc_mesh_free(&s.lipL[h]); proc_mesh_free(&s.blush[h]);
+        proc_mesh_free(&s.rays[h][0]); proc_mesh_free(&s.rays[h][1]);
     }
+    proc_mesh_free(&s.pupil); proc_mesh_free(&s.brow);
     sprite_free(s.texVeins);
     for (int i = 0; i < MAT_RING; i++) { rspq_block_free(s.linkBlock[i]); free_uncached(s.linkVB[i]); }
     proc_mesh_free(&s.weight);
-    for (int i = 0; i < 2; i++) { proc_mesh_free(&s.corona[i]); proc_mesh_free(&s.coronaHot[i]); }
     free_uncached(s.chainMat);
     memset(&s, 0, sizeof(s));
 }
@@ -180,12 +185,21 @@ void sun_boss_begin(Boss* boss)
 {
     if (!s.ready) {
         for (int h = 0; h < 2; h++) {
-            proc_mesh_begin(); proc_mesh_uv(128.0f, 64.0f); proc_mesh_sun_ball(MESH_R, true, h); proc_mesh_end(&s.ball[h]);
-            proc_mesh_begin(); proc_mesh_eye_iris(MESH_R, true, h); proc_mesh_end(&s.iris[h]);
-            proc_mesh_begin(); proc_mesh_eye_pupil(MESH_R, true, h); proc_mesh_end(&s.pupil[h]);
-            proc_mesh_begin(); proc_mesh_eye_lid(MESH_R, h); proc_mesh_end(&s.lid[h]);
-            proc_mesh_begin(); proc_mesh_prominences(MESH_R, 5, MESH_R * 0.55f, 2, h); proc_mesh_end(&s.prom[h]);
+            proc_mesh_begin(); proc_mesh_uv(192.0f, 96.0f); proc_mesh_sun_face(MESH_R, h); proc_mesh_end(&s.ball[h]);
+            proc_mesh_begin(); proc_mesh_face_iris(MESH_R, h); proc_mesh_end(&s.iris[h]);
+            proc_mesh_begin(); proc_mesh_face_lid(MESH_R, h); proc_mesh_end(&s.lid[h]);
+            proc_mesh_begin(); proc_mesh_face_lip(MESH_R, true, h); proc_mesh_end(&s.lipU[h]);
+            proc_mesh_begin(); proc_mesh_face_lip(MESH_R, false, h); proc_mesh_end(&s.lipL[h]);
+            proc_mesh_begin(); proc_mesh_face_blush(MESH_R, h); proc_mesh_end(&s.blush[h]);
+            for (int w = 0; w < 2; w++) { proc_mesh_begin(); proc_mesh_sun_rays(MESH_R, w, h); proc_mesh_end(&s.rays[h][w]); }
         }
+        proc_mesh_begin(); proc_mesh_face_pupil(MESH_R); proc_mesh_end(&s.pupil);
+        proc_mesh_begin(); proc_mesh_face_brow(MESH_R); proc_mesh_end(&s.brow);
+        float F[3][3];
+        proc_mesh_face_frame(SUN_FACE_EYE_YAW, SUN_FACE_EYE_PITCH, F);
+        for (int r = 0; r < 3; r++) for (int c = 0; c < 3; c++) s.eyeF[r][c] = F[c][r];
+        proc_mesh_face_frame(0.0f, SUN_FACE_MOUTH_PITCH, F);
+        for (int r = 0; r < 3; r++) for (int c = 0; c < 3; c++) s.mouthF[r][c] = F[c][r];
         s.texVeins = sprite_load("rom:/shackled_sun/veins.rgba16.sprite");
         links_init();
         for (int i = 0; i < MAT_RING; i++) {
@@ -208,10 +222,6 @@ void sun_boss_begin(Boss* boss)
         proc_mesh_frustum((float[3]){ 0, -3.0f, 0 }, 5.0f, 3.6f, 6.0f, 6, proc_rgb(70, 60, 56));
         proc_mesh_box((float[3]){ 0, 3.6f, 0 }, (float[3]){ 1.2f, 1.0f, 1.2f }, proc_rgb(95, 82, 74));
         proc_mesh_end(&s.weight);
-        for (int i = 0; i < 2; i++) {
-            proc_mesh_begin(); proc_mesh_corona(MESH_R, i ? 8 : 12, MESH_R * (i ? 0.45f : 0.8f), i, false); proc_mesh_end(&s.corona[i]);
-            proc_mesh_begin(); proc_mesh_corona(MESH_R, i ? 8 : 12, MESH_R * (i ? 0.5f : 0.95f), i, true); proc_mesh_end(&s.coronaHot[i]);
-        }
         s.chainMat = malloc_uncached(sizeof(T3DMat4FP) * MAT_RING * (1 + NCH));
         s.ready = true;
     }
@@ -241,6 +251,7 @@ void sun_boss_begin(Boss* boss)
     s.cdFlare = 3.0f; s.cdRam = 8.0f; s.cdEclipse = 0.0f; s.flareAge = -1.0f; s.hugT = 0.0f; s.inhale = s.dark = 0.0f;
     s.cdGlare = 2.0f; s.cdRain = 6.0f; s.cdCorona = 10.0f; s.cdDive = 14.0f; s.cdLash = 4.0f; s.cdSweep = 9.0f; s.cdSpiral = 7.0f; s.cdEmber = 5.0f;
     memcpy(s.face, FACE_REST, sizeof(s.face));
+    s.red = 0.0f;
     s.blinkIn = 2.0f; s.blinkT = -1.0f;
     s.chainsReady = false;
     s.weights = true;
@@ -1036,66 +1047,71 @@ static void choose(Boss *b, float dist)
     }
 }
 
-// ---- The face: two lids of molten skin (each upper one a half, so the brow can tilt), the
-// iris and its slit. Every move has its own look ----
+// ---- The face: a human face on the ball, its two eyes (lids, iris, pupil), brows and lips
+// moving, and every move its own look ----
 static void face_update(const Boss *b, float dt)
 {
-    float f[7];
+    float f[FACE_N];
     memcpy(f, FACE_REST, sizeof(f));
-    float rate = 14.0f, sm = speed_mult();
+    float rate = 12.0f, sm = speed_mult();
     bool blinks = false;
     switch (s.state) {
-    case SB_GLARE:      // the crosses: a level squint down the lane, the slit thin
-        f[FACE_UP] = 0.3f; f[FACE_LO] = 0.34f; f[FACE_PW] = s.step ? 0.3f : 0.5f;
+    case SB_GLARE:      // the crosses: a level, narrow-eyed aim down the lane, the pupils slits, lips pressed thin
+        f[FACE_UP] = 0.035f; f[FACE_LO] = 0.045f; f[FACE_BRAISE] = -0.03f; f[FACE_PW] = s.step ? 0.3f : 0.45f; f[FACE_PH] = 1.15f; f[FACE_MCURVE] = -0.05f;
         break;
-    case SB_SPIRAL:     // its eye rolls round as the corona spins up
-        if (s.step == 0) { float w = s.t * 9.0f; f[FACE_GX] = 0.22f * cosf(w); f[FACE_GY] = 0.22f * sinf(w); f[FACE_UP] = 0.78f; f[FACE_LO] = 0.62f; }
+    case SB_SPIRAL:     // its eyes roll round, brows high, mouth a round O, as the rays spin up
+        if (s.step == 0) { float w = s.t * 9.0f; f[FACE_GX] = 0.07f * cosf(w); f[FACE_GY] = 0.07f * sinf(w);
+                           f[FACE_UP] = 0.14f; f[FACE_LO] = 0.11f; f[FACE_BRAISE] = 0.05f; f[FACE_MOPEN] = 0.07f; f[FACE_MCURVE] = -0.08f; }
         break;
-    case SB_EMBER:      // the pupil opens wide, hungry
-        if (s.t < 0.85f / sm + 0.2f) { f[FACE_PW] = 4.2f; f[FACE_PH] = 0.85f; f[FACE_UP] = 0.75f; f[FACE_LO] = 0.62f; }
+    case SB_EMBER:      // pupils blown wide, a hungry grin
+        if (s.t < 0.85f / sm + 0.2f) { f[FACE_PW] = f[FACE_PH] = 2.1f; f[FACE_UP] = 0.13f; f[FACE_LO] = 0.1f; f[FACE_MCURVE] = 0.22f; f[FACE_MOPEN] = 0.02f; f[FACE_SNARL] = 0.015f; }
         break;
-    case SB_CORONA:     // screwed shut, scowling, then wide as it bursts
-        if (s.step == 0) { f[FACE_UP] = -0.04f; f[FACE_LO] = -0.04f; f[FACE_BROW] = 0.3f; }
-        else if (s.t < 1.8f) { f[FACE_UP] = 0.95f; f[FACE_LO] = 0.78f; f[FACE_PW] = 0.5f; }
+    case SB_CORONA:     // screwed shut, brows crushed down, teeth clenched; then wide, screaming, as it bursts
+        if (s.step == 0) { f[FACE_UP] = f[FACE_LO] = -0.015f; f[FACE_BTILT] = 0.35f; f[FACE_BRAISE] = -0.05f; f[FACE_SNARL] = 0.03f; f[FACE_MCURVE] = -0.12f; }
+        else if (s.t < 1.8f) { f[FACE_UP] = 0.17f; f[FACE_LO] = 0.13f; f[FACE_BRAISE] = 0.06f; f[FACE_PW] = f[FACE_PH] = 0.6f; f[FACE_MOPEN] = 0.1f; f[FACE_SNARL] = 0.01f; }
         break;
-    case SB_DIVE:       // wide, staring down at where it will land
-        f[FACE_UP] = 0.86f; f[FACE_LO] = 0.7f; f[FACE_GY] = -0.3f; f[FACE_PW] = 0.6f;
+    case SB_DIVE:       // wide-eyed, staring down at where it will land, mouth agape
+        f[FACE_UP] = 0.16f; f[FACE_LO] = 0.12f; f[FACE_GY] = -0.08f; f[FACE_PW] = f[FACE_PH] = 0.65f; f[FACE_BRAISE] = 0.04f; f[FACE_MOPEN] = 0.04f;
         break;
-    case SB_RAM:        // a deep angry scowl
-        if (s.step < 2) { f[FACE_BROW] = 0.5f; f[FACE_UP] = 0.34f; f[FACE_LO] = 0.42f; }
+    case SB_RAM:        // red with rage: brows down in a V, eyes narrowed, teeth bared
+        if (s.step < 2) { f[FACE_BTILT] = 0.45f; f[FACE_BRAISE] = -0.04f; f[FACE_UP] = 0.05f; f[FACE_LO] = 0.06f; f[FACE_SNARL] = 0.035f; f[FACE_MOPEN] = 0.015f; f[FACE_MCURVE] = -0.15f; }
         break;
-    case SB_FLARE:      // wide, the pupil shrunk to a point
-        if (s.step == 0) { f[FACE_UP] = 0.9f; f[FACE_LO] = 0.72f; f[FACE_PW] = 0.5f; f[FACE_PH] = 0.28f; f[FACE_GY] = -0.1f; }
+    case SB_FLARE:      // alarm: eyes wide, pupils pinpricks, brows up and in, a gasp
+        if (s.step == 0) { f[FACE_UP] = 0.17f; f[FACE_LO] = 0.13f; f[FACE_PW] = f[FACE_PH] = 0.35f; f[FACE_BRAISE] = 0.06f; f[FACE_BTILT] = -0.25f; f[FACE_MOPEN] = 0.08f; f[FACE_GY] = -0.03f; }
         break;
-    case SB_ECLIPSE:    // the eye slowly closes as it darkens, then opens on the falling flares
-        if (s.t < EC_RISE) { f[FACE_UP] = f[FACE_LO] = -0.04f; rate = 3.0f; }
-        else if (s.t < EC_RISE + 2 * EC_GAP + EC_FLY + 0.3f) { f[FACE_UP] = 0.82f; f[FACE_LO] = 0.62f; f[FACE_PW] = 0.5f; }
+    case SB_ECLIPSE:    // its eyes slowly close as it darkens, a serene smile; then wide, grinning, on the falling flares
+        if (s.t < EC_RISE) { f[FACE_UP] = f[FACE_LO] = -0.015f; f[FACE_MCURVE] = 0.2f; rate = 2.5f; }
+        else if (s.t < EC_RISE + 2 * EC_GAP + EC_FLY + 0.3f) { f[FACE_UP] = 0.15f; f[FACE_LO] = 0.11f; f[FACE_MCURVE] = 0.25f; f[FACE_MOPEN] = 0.03f; f[FACE_SNARL] = 0.02f; }
         break;
-    case SB_LASH:       // a glance up at the chain about to rear
-        if (s.step == 0) { f[FACE_GX] = sinf(s.ch[s.lashChain].az) > 0.0f ? 0.42f : -0.42f; f[FACE_GY] = 0.3f; f[FACE_BROW] = 0.2f; }
+    case SB_LASH:       // a sly glance up at the chain about to rear, one brow's worth of menace, a smirk
+        if (s.step == 0) { f[FACE_GX] = sinf(s.ch[s.lashChain].az) > 0.0f ? 0.08f : -0.08f; f[FACE_GY] = 0.06f; f[FACE_BTILT] = 0.18f; f[FACE_MCURVE] = 0.12f; }
         break;
-    case SB_SWEEP:      // squinting down along the chain on the floor
-        if (s.step == 0) { f[FACE_GX] = sinf(s.sweepFrom - b->rot[1]) > 0.0f ? 0.3f : -0.3f; f[FACE_GY] = -0.26f; f[FACE_UP] = 0.36f; f[FACE_LO] = 0.3f; }
+    case SB_SWEEP:      // squinting down along the chain on the floor, a scowl
+        if (s.step == 0) { f[FACE_GX] = sinf(s.sweepFrom - b->rot[1]) > 0.0f ? 0.07f : -0.07f; f[FACE_GY] = -0.07f; f[FACE_UP] = 0.045f; f[FACE_LO] = 0.04f; f[FACE_BTILT] = 0.2f; f[FACE_MCURVE] = -0.15f; }
         break;
-    case SB_REST:       // knocked down: dazed, its eye wandering; else spent, heavy-lidded
-        if (s.downT >= 0.0f) { f[FACE_UP] = 0.22f; f[FACE_LO] = 0.36f; f[FACE_GX] = 0.15f * sinf(s.t * 3.0f); f[FACE_GY] = 0.08f * cosf(s.t * 2.2f); }
-        else { f[FACE_UP] = 0.32f; f[FACE_LO] = 0.45f; blinks = true; }
+    case SB_REST:       // knocked down: dazed, its eyes wandering, mouth slack; else spent, drowsy
+        if (s.downT >= 0.0f) { f[FACE_UP] = 0.05f; f[FACE_LO] = 0.06f; f[FACE_GX] = 0.05f * sinf(s.t * 3.0f); f[FACE_GY] = 0.03f * cosf(s.t * 2.2f);
+                               f[FACE_BRAISE] = 0.03f; f[FACE_BTILT] = -0.2f; f[FACE_MOPEN] = 0.035f; f[FACE_MCURVE] = -0.08f; }
+        else { f[FACE_UP] = 0.05f; f[FACE_LO] = 0.065f; f[FACE_MCURVE] = 0.0f; blinks = true; }
         break;
-    case SB_BREAK:      // raging free
-        f[FACE_UP] = 0.95f; f[FACE_LO] = 0.8f; f[FACE_BROW] = 0.4f; f[FACE_PW] = 0.4f;
+    case SB_BREAK:      // raging free: eyes wide, brows down, a roar
+        f[FACE_UP] = 0.16f; f[FACE_LO] = 0.12f; f[FACE_BTILT] = 0.4f; f[FACE_PW] = f[FACE_PH] = 0.55f; f[FACE_MOPEN] = 0.1f; f[FACE_SNARL] = 0.02f; f[FACE_MCURVE] = -0.1f;
         break;
     case SB_DEAD:
-        f[FACE_UP] = f[FACE_LO] = -0.04f; rate = 2.0f;
+        f[FACE_UP] = f[FACE_LO] = -0.015f; f[FACE_MOPEN] = 0.04f; f[FACE_MCURVE] = -0.05f; rate = 2.0f;
         break;
-    default:            // drifting: it watches the player, blinking now and then
+    default:            // drifting: serene, watching the player, blinking now and then
         blinks = true;
         break;
     }
-    if (s.rainTell > 0.0f) { f[FACE_GY] = 0.34f; f[FACE_UP] = 0.88f; f[FACE_LO] = 0.6f; }     // the rain: it looks up at the sky
-    for (int i = 0; i < 7; i++) s.face[i] += (f[i] - s.face[i]) * fminf(1.0f, dt * rate);
+    if (s.rainTell > 0.0f) { f[FACE_GY] = 0.09f; f[FACE_UP] = 0.16f; f[FACE_LO] = 0.1f; f[FACE_BRAISE] = 0.07f; f[FACE_MOPEN] = 0.05f; }  // the rain: it looks up to the sky
+    for (int i = 0; i < FACE_N; i++) s.face[i] += (f[i] - s.face[i]) * fminf(1.0f, dt * rate);
     // A blink: shut in 0.07 s, open in 0.13 (on top of the eased lids, never mid-tell)
     if (s.blinkT >= 0.0f) { s.blinkT += dt; if (s.blinkT > 0.2f) s.blinkT = -1.0f; }
     else if (blinks && (s.blinkIn -= dt) <= 0.0f) { s.blinkT = 0.0f; s.blinkIn = 1.8f + (rand_custom_u32() % 300) / 100.0f; }
+    // The ram: blood red, pulsing, as it rears and charges
+    float red = s.state == SB_RAM && s.step < 2 ? (s.step ? 1.0f : clamp01(s.t / (0.6f / sm))) : 0.0f;
+    s.red += (red - s.red) * fminf(1.0f, dt * 10.0f);
 }
 
 void sun_boss_update(Boss* b, float dt)
@@ -1338,8 +1354,6 @@ static void chains_draw(const Boss *b)
     rdpq_mode_pop();
 }
 
-#define WHITE_TINT RGBA32(255, 255, 255, 255)
-
 // m's matrix: the eye's (base) times a turn about its middle, L (rows: the images' x, y, z)
 static void face_mat(ProcMesh *m, const T3DMat4 *base, const float L[3][3])
 {
@@ -1360,34 +1374,56 @@ static void rot_x(float m[3][3], float a) { float c = fm_cosf(a), n = fm_sinf(a)
 static void rot_y(float m[3][3], float a) { float c = fm_cosf(a), n = fm_sinf(a); float r[3][3] = { { c, 0, n }, { 0, 1, 0 }, { -n, 0, c } }; memcpy(m, r, sizeof(r)); }
 static void rot_z(float m[3][3], float a) { float c = fm_cosf(a), n = fm_sinf(a); float r[3][3] = { { c, -n, 0 }, { n, c, 0 }, { 0, 0, 1 } }; memcpy(m, r, sizeof(r)); }
 
+// A part built in frame F (the right side's; mirrored in x for the left), turned by L in it,
+// drawn in the current batch
+static void face_part(ProcMesh *m, const T3DMat4 *base, const float F[3][3], bool left, const float L[3][3])
+{
+    float t[3][3];
+    m3_mul(t, F, L);
+    if (left) for (int c = 0; c < 3; c++) t[0][c] = -t[0][c];
+    face_mat(m, base, t);
+    proc_mesh_batch_draw(m);
+}
+
+// The moving parts: the opaque ones in one batch, then the soft-edged lids (and the blush) in another
 static void face_draw(const T3DMat4 *base, int h, color_t tint)
 {
     const float *f = s.face;
-    float gy[3][3], gx[3][3], gaze[3][3], m[3][3];
-    // the iris and its slit turn to look (round the ball's middle, so they stay on it)
-    rot_y(gx, f[FACE_GX]); rot_x(gy, -f[FACE_GY]); m3_mul(gaze, gx, gy);
-    face_mat(&s.iris[h], base, gaze);
-    proc_mesh_draw_tinted(&s.iris[h], false, tint);
-    float sc[3][3] = { { f[FACE_PW], 0, 0 }, { 0, f[FACE_PH], 0 }, { 0, 0, 1 } };
-    m3_mul(m, gaze, sc);
-    face_mat(&s.pupil[h], base, m);
-    proc_mesh_draw_tinted(&s.pupil[h], false, tint);
-    // The lids: one quarter mirrored four ways, opened by turning it up (or down) over the ball;
-    // the upper halves tilted by the brow. A blink shuts them on top of it all
-    float shut = s.blinkT < 0.0f ? 0.0f : s.blinkT < 0.07f ? s.blinkT / 0.07f : 1.0f - (s.blinkT - 0.07f) / 0.13f;
-    for (int k = 0; k < 4; k++) {
-        bool lower = k >= 2, left = k & 1;
-        float open = (lower ? f[FACE_LO] : f[FACE_UP]) * (1.0f - shut) - 0.04f * shut;
-        float o[3][3], z[3][3], t[3][3];
-        rot_x(o, -open);        // the shut edge (on the level line) up by `open`
-        rot_z(z, lower ? 0.0f : f[FACE_BROW]);
-        m3_mul(t, z, o);
-        // mirrored to its quarter, each a hair inside the last: no fighting where they overlap
-        float k1 = 1.0f - 0.003f * k, mir[3][3] = { { left ? -k1 : k1, 0, 0 }, { 0, lower ? -k1 : k1, 0 }, { 0, 0, k1 } };
-        m3_mul(m, mir, t);
-        face_mat(&s.lid[h], base, m);
-        proc_mesh_draw_tinted(&s.lid[h], true, tint);
+    float gx[3][3], gy[3][3], gaze[3][3], m[3][3], a[3][3], b[3][3];
+    proc_mesh_batch_begin(false, tint, NULL);
+    for (int side = 0; side < 2; side++) {
+        bool left = side;
+        // the eyes look the same way: the left one's gaze is mirrored back
+        rot_y(gx, left ? -f[FACE_GX] : f[FACE_GX]); rot_x(gy, -f[FACE_GY]); m3_mul(gaze, gx, gy);
+        face_part(&s.iris[h], base, s.eyeF, left, gaze);
+        float sc[3][3] = { { f[FACE_PW], 0, 0 }, { 0, f[FACE_PH], 0 }, { 0, 0, 1 } };
+        m3_mul(m, gaze, sc);
+        face_part(&s.pupil, base, s.eyeF, left, m);
+        rot_x(a, -f[FACE_BRAISE]); rot_z(b, f[FACE_BTILT]); m3_mul(m, b, a);
+        face_part(&s.brow, base, s.eyeF, left, m);
+        // lips: parted (the upper one drawn up off the teeth by the snarl), their corners up or down
+        rot_z(b, f[FACE_MCURVE]);
+        rot_x(a, -(0.4f * f[FACE_MOPEN] + f[FACE_SNARL])); m3_mul(m, b, a);
+        face_part(&s.lipU[h], base, s.mouthF, left, m);
+        rot_x(a, 0.6f * f[FACE_MOPEN]); m3_mul(m, b, a);
+        face_part(&s.lipL[h], base, s.mouthF, left, m);
     }
+    proc_mesh_batch_end();
+    // a blink shuts the lids on top of it all
+    float shut = s.blinkT < 0.0f ? 0.0f : s.blinkT < 0.07f ? s.blinkT / 0.07f : 1.0f - (s.blinkT - 0.07f) / 0.13f;
+    proc_mesh_batch_begin(true, tint, NULL);
+    proc_mesh_batch_draw(&s.blush[h]);
+    for (int side = 0; side < 2; side++) {
+        bool left = side;
+        // lids: the upper one turned up off the eye's level line (tilted with the brow), the lower one its mirror turned down
+        rot_x(a, -(f[FACE_UP] * (1.0f - shut) - 0.015f * shut)); rot_z(b, 0.5f * f[FACE_BTILT]); m3_mul(m, b, a);
+        face_part(&s.lid[h], base, s.eyeF, left, m);
+        rot_x(a, -(f[FACE_LO] * (1.0f - shut) - 0.015f * shut));
+        float mir[3][3] = { { 0.997f, 0, 0 }, { 0, -0.997f, 0 }, { 0, 0, 0.997f } };
+        m3_mul(m, mir, a);
+        face_part(&s.lid[h], base, s.eyeF, left, m);
+    }
+    proc_mesh_batch_end();
 }
 
 void sun_boss_draw(Boss* b)
@@ -1409,18 +1445,18 @@ void sun_boss_draw(Boss* b)
     t3d_mat4_from_srt_euler(&base, (float[3]){ scale / 8.0f, scale / 8.0f, scale / 8.0f }, (float[3]){ rock, yaw, 0.0f }, b->pos);
     proc_mesh_set_transform(&s.ball[h], scale, (float[3]){ rock, yaw, 0.0f }, b->pos);
 
-    // Corona: two rings of flame tongues behind the eye, turning opposite ways
+    // Its rays: the spikes (and ring) and the wavy flames between them, turning opposite ways
     static float spinAngle;
     spinAngle += deltaTime * 0.6f * s.raysSpin;
-    float fury = clamp01((s.raysSpin - 1.0f) / 6.0f);     // whirling: the flames lash in and out
-    float cs = scale * (1.0f + 0.05f * sinf(s.life * 7.0f) + fury * 0.08f * sinf(s.life * 23.0f)) * (1.0f - dying) * (1.0f + 0.45f * s.inhale);    // and its corona flares
-    ProcMesh *cor = s.unshackled ? s.coronaHot : s.corona;
-    for (int i = 0; i < 2; i++)
-        proc_mesh_set_transform(&cor[i], cs, (float[3]){ rock, yaw, i ? -spinAngle * 1.3f : spinAngle }, b->pos);
-    proc_mesh_set_transform(&s.prom[h], cs, (float[3]){ rock, yaw, -spinAngle * 0.7f }, b->pos);    // its loops of flame wheel the other way
+    float fury = clamp01((s.raysSpin - 1.0f) / 6.0f);     // whirling: the rays lash in and out
+    float cs = scale * (1.0f + 0.05f * sinf(s.life * 7.0f) + fury * 0.08f * sinf(s.life * 23.0f)) * (1.0f - dying) * (1.0f + 0.45f * s.inhale);    // and flare
+    proc_mesh_set_transform(&s.rays[h][0], cs, (float[3]){ rock, yaw, spinAngle }, b->pos);
+    proc_mesh_set_transform(&s.rays[h][1], cs, (float[3]){ rock, yaw, -spinAngle * 1.3f }, b->pos);
 
-    // eclipsed: the eye goes a dark violet, its corona still burning round it
-    color_t eyeTint = RGBA32((int)(255 * (1.0f - 0.78f * s.dark)), (int)(255 * (1.0f - 0.85f * s.dark)), (int)(255 * (1.0f - 0.6f * s.dark)), 255);
+    // The ram: blood red, pulsing; eclipsed, a dark violet, its rays still burning round it
+    float warn = s.red * (0.7f + 0.3f * sinf(s.life * 18.0f));
+    color_t tint = RGBA32(255, (int)(255 - 225 * warn), (int)(255 - 235 * warn), 255);
+    color_t eyeTint = RGBA32((int)(tint.r * (1.0f - 0.78f * s.dark)), (int)(tint.g * (1.0f - 0.85f * s.dark)), (int)(tint.b * (1.0f - 0.6f * s.dark)), 255);
 
 #ifdef HLE_LOG_CLOTH
     uint32_t t0 = TICKS_READ();
@@ -1430,29 +1466,30 @@ void sun_boss_draw(Boss* b)
     { static uint32_t sum; static int n; sum += TICKS_READ() - t0; if (++n == 120) { debugf("[chains] draw %lu us a frame\n", (unsigned long)(TICKS_TO_US(sum) / n)); sum = 0; n = 0; } }
 #endif
 #ifdef HLE_PROF_DRAGON   // test aid: RSP+RDP time of each part (its timers), each run alone
-    static uint32_t sp[4], spN;
+    static uint32_t sp[3], spN;
 #define SPROF(i) { sp[i] += gpu_prof_end(); gpu_prof_begin(); }
     gpu_prof_begin();
 #else
 #define SPROF(i)
 #endif
-    proc_mesh_draw_textured(&s.ball[h], s.texVeins, eyeTint);
-    SPROF(0);
-    // Fog off for the soft edges: tiny3d writes the fog into the vertices' alpha (as skill_fx)
-    t3d_fog_set_enabled(false);
-    face_draw(&base, h, eyeTint);
-    SPROF(1);
     if (dying < 1.0f) {
-        for (int i = 0; i < 2; i++) proc_mesh_draw_tinted(&cor[i], true, WHITE_TINT);
-        SPROF(2);
-        proc_mesh_draw_tinted(&s.prom[h], true, WHITE_TINT);
-        SPROF(3);
+        proc_mesh_batch_begin(false, tint, NULL);
+        for (int w = 0; w < 2; w++) proc_mesh_batch_draw(&s.rays[h][w]);
+        proc_mesh_batch_end();
     }
+    SPROF(0);
+    proc_mesh_draw_textured(&s.ball[h], s.texVeins, eyeTint);
+    SPROF(1);
+    // Fog off for the soft edges (the lids, the blush): tiny3d writes the fog into the vertices' alpha (as skill_fx)
+    t3d_fog_set_enabled(false);
+    proc_mesh_set_transform(&s.blush[h], scale, (float[3]){ rock, yaw, 0.0f }, b->pos);
+    face_draw(&base, h, eyeTint);
+    SPROF(2);
     t3d_fog_set_enabled(true);
 #ifdef HLE_PROF_DRAGON
     gpu_prof_end();
-    if (++spN == 120) { debugf("[sunprof] ball %.2f face %.2f corona %.2f loops %.2f ms\n", TICKS_TO_US(sp[0] / 120) / 1000.0, TICKS_TO_US(sp[1] / 120) / 1000.0,
-        TICKS_TO_US(sp[2] / 120) / 1000.0, TICKS_TO_US(sp[3] / 120) / 1000.0); memset(sp, 0, sizeof sp); spN = 0; }
+    if (++spN == 120) { debugf("[sunprof] rays %.2f ball %.2f face %.2f ms\n", TICKS_TO_US(sp[0] / 120) / 1000.0, TICKS_TO_US(sp[1] / 120) / 1000.0,
+        TICKS_TO_US(sp[2] / 120) / 1000.0); memset(sp, 0, sizeof sp); spN = 0; }
 #endif
 #undef SPROF
 }
