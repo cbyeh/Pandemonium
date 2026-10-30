@@ -234,7 +234,7 @@ wing_faces_memb = []
 # fingers (the scale map's belly-plate band: growth rings), an ivory claw at the wrist, the membrane
 # scalloped between the fingertips in two purples (its own texture, flat across the open wing), with
 # its old flat light baked into it (unlit: seen alike from both sides). Its points sit on the bones
-# (a finger's knuckle splits its spike and the membrane bends there); the edge on the body, on the arm
+# (a finger's knuckle splits its spike and the membrane bends there); its edge on the body, on the body
 SRGB = lambda r, g, b, a=1.0: (r / 255, g / 255, b / 255, a)
 BONE_COL = SRGB(150, 140, 146); IVORY = SRGB(232, 226, 210)
 open_pos = {}
@@ -251,7 +251,7 @@ for sd in (-1, 1):
         l = math.sqrt(rig.dot(n, n)) or 1.0; dd = abs(n[0] * -0.45 + n[1] * 0.8 + n[2] * 0.4) / l
         f = 0.4 + 0.75 * dd; return (min(1.0, c[0] * f), min(1.0, c[1] * f), min(1.0, c[2] * f), 1.0)
     # --- the membrane
-    root = mk(O['root'], 'arm' + s); back = mk(O['back'], 'arm' + s)
+    root = mk(O['root'], 'chest'); back = mk(O['back'], 'chest')      # the membrane's edge on the body stays on it (raised or grown, the wing never parts from the flank)
     elbow = mk(O['elbow'], 'fore' + s); wrist = mk(O['wrist'], 'fore' + s)
     kn = [mk(O['knuckles'][i], fb[i]) for i in range(5)]
     tips = [mk(O['tips'][i], fb[i]) for i in range(5)]
