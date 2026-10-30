@@ -278,6 +278,8 @@ typedef struct Boss {
     // Stagger meter: hits fill it (0..1), it drains when left alone; full, the boss staggers
     float poise, poiseIdleT, staggerT;     // staggerT > 0: staggered
     bool striking;                         // mid-swing, mid-blast or in the air: the stagger meter recovers slower
+    int hitSeq;                            // blows taken (a count: a new one is a new blow)
+    float hitWeight;                       // the last one's weight in plain sword hits (a combo's finisher or a skill: 2+)
 } Boss;
 
 // Intent/command struct - what AI wants to happen this frame

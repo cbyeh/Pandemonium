@@ -6,7 +6,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Straight to a boss:** `HLE_TEST_DUMMY HLE_DUMMY_BOSS=1..5` (Guardian, Unbound, Fallen Warrior, Sun, Shadowborne). Taps through menus, skips cutscenes; player is invincible and logs `[dummy]` damage over 120 s plus openings.
 - **Second half / phase 2:** `HLE_DUMMY_HALF` (boss starts at 45% HP). `HLE_DRAGON_DARK` starts Shadowborne dark.
 - **Full fights that never die:** `HLE_TEST_BONUS` (+ `HLE_TEST_BONUS_SUN` / `_DRAGON`), `HLE_TEST_UNBOUND`, `HLE_TEST_STRIKE`, `HLE_TEST_CRUCIFIX`: refill the player below 60 HP, log `[dmg]`.
-- **One attack on a loop:** `HLE_FK_FORCE=1..9` (6 Triangle Slam, 7 Holy Slam, 8 Plunge, 9 Moon Blade), `HLE_SUN_FORCE=1..7` (`11` = lash into sweep), `HLE_DRAGON_FORCE=<DgState>`, Unbound's `HLE_THROW_FORCE` and `HLE_SWEEP_FORCE` (the ground sweep at any range: the dummy stays close). `HLE_DRAGON_CYCLE`: every Shadowborne move in turn (a gallery, `[cycle]` lines).
+- **One attack on a loop:** `HLE_FK_FORCE=1..9` (6 Triangle Slam, 7 Holy Slam, 8 Plunge, 9 Moon Blade), `HLE_SUN_FORCE=1..7` (`11` = lash into sweep), `HLE_DRAGON_FORCE=<DgState>`, `HLE_SUN_HITME` (a sword hit every 1.2 s, every third a finisher: the Sun's reactions), Unbound's `HLE_THROW_FORCE` and `HLE_SWEEP_FORCE` (the ground sweep at any range: the dummy stays close). `HLE_DRAGON_CYCLE`: every Shadowborne move in turn (a gallery, `[cycle]` lines).
 - **Boss held still** (before/after shots that line up): `HLE_TEST_FREEZE_BOSS`. Boss AI is otherwise non-deterministic.
 - **Ending:** `HLE_TEST_ENDING`.
 - **Bot playtest:** `HLE_DUMMY_REAL` + `HLE_DUMMY_STRIKE` / `_ROLL`, `HLE_STRIKE_OPEN`, `HLE_STRIKE_STAMINA`; potions below 40%, prints `[bot] ... beaten/died`.

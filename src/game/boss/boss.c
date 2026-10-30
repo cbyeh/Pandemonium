@@ -792,6 +792,9 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
 {
     if (!boss || amount <= 0.0f) return;
     if (boss->mode != BOSS_MODE_COMBAT) return;
+    // its weight, before any boon: the damage or the stance damage, whichever is the more (a plain sword hit: 4 and 4)
+    boss->hitWeight = fmaxf(amount, poise * POISE_DAMAGE) / 4.0f;
+    boss->hitSeq++;
 
     if (tower_active()) {     // Tower run: damage boons and upgrades, and Bloodthirst's lifesteal
         if (tower_hit_impaired()) return;      // the Impaired curse: this one does nothing

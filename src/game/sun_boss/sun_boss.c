@@ -62,6 +62,17 @@ enum { FACE_UP, FACE_LO, FACE_BRAISE, FACE_BTILT, FACE_PW, FACE_PH, FACE_GX, FAC
 // round), gaze (rad: toward +x, up), mouth open (rad), its corners (+: a smile), the upper lip
 // drawn up off the teeth. At rest: serene, heavy-lidded, the faintest smile
 static const float FACE_REST[FACE_N] = { 0.085f, 0.08f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.05f, 0.0f };
+// Unshackled, a fixed manic grin: eyes wide, pupils small, teeth showing
+static const float FACE_REST2[FACE_N] = { 0.14f, 0.11f, 0.03f, 0.08f, 0.7f, 0.7f, 0.0f, 0.0f, 0.035f, 0.12f, 0.03f };
+// Reactions to a blow (the faces it pulls; blended over whatever it was doing)
+enum { RX_WINCE, RX_GRIMACE, RX_OH, RX_SCREAM, RX_SHOCK, RX_N };
+static const float FACE_RX[RX_N][FACE_N] = {
+    { 0.02f, 0.03f, 0.02f, -0.2f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, -0.12f, 0.0f },       // a wince: eyes squeezed, brows pinched, lips pressed
+    { 0.05f, 0.06f, -0.02f, 0.25f, 0.8f, 0.8f, 0.05f, -0.02f, 0.01f, -0.12f, 0.03f },  // a grimace: teeth bared, a glance away
+    { 0.15f, 0.12f, 0.05f, -0.1f, 0.8f, 0.8f, 0.0f, 0.0f, 0.05f, -0.05f, 0.0f },      // "oh": startled, a small round mouth
+    { -0.015f, -0.015f, 0.04f, -0.35f, 1.0f, 1.0f, 0.0f, 0.0f, 0.1f, -0.15f, 0.02f },  // big: screwed shut, screaming
+    { 0.17f, 0.13f, 0.07f, -0.15f, 0.35f, 0.35f, 0.0f, 0.0f, 0.09f, -0.08f, 0.0f },   // big: wide-eyed shock, pinprick pupils, agape
+};
 
 static struct {
     bool ready;
@@ -87,6 +98,9 @@ static struct {
     float cdGlare, cdRain, cdCorona, cdDive, cdLash, cdSweep, cdSpiral, cdEmber;
     float aim;              // a volley's locked yaw (the crosses)
     float red;              // the ram's tell, eased: it glows blood red
+    int hitSeen, rx;        // the blows it has reacted to, and the face it pulls for the last
+    float rxT, rxLen, jolt; // that reaction's time and length (< 0: none), its recoil (drawn only)
+    float saccadeT, saccade[2];   // unshackled, its eyes twitch: the next jump, the offset
     float face[FACE_N];     // the face, eased
     float blinkIn, blinkT;  // the next blink, and the one under way (< 0: none)
     float rainT[RAIN_MAX], rainPos[RAIN_MAX][2];
@@ -252,6 +266,7 @@ void sun_boss_begin(Boss* boss)
     s.cdGlare = 2.0f; s.cdRain = 6.0f; s.cdCorona = 10.0f; s.cdDive = 14.0f; s.cdLash = 4.0f; s.cdSweep = 9.0f; s.cdSpiral = 7.0f; s.cdEmber = 5.0f;
     memcpy(s.face, FACE_REST, sizeof(s.face));
     s.red = 0.0f;
+    s.hitSeen = boss->hitSeq; s.rxT = -1.0f; s.jolt = 0.0f; s.saccadeT = 0.0f; s.saccade[0] = s.saccade[1] = 0.0f;
     s.blinkIn = 2.0f; s.blinkT = -1.0f;
     s.chainsReady = false;
     s.weights = true;
@@ -1052,9 +1067,23 @@ static void choose(Boss *b, float dist)
 static void face_update(const Boss *b, float dt)
 {
     float f[FACE_N];
-    memcpy(f, FACE_REST, sizeof(f));
+    memcpy(f, s.unshackled ? FACE_REST2 : FACE_REST, sizeof(f));
     float rate = 12.0f, sm = speed_mult();
     bool blinks = false;
+    // Its eyes follow the player (and lead its turns: the body comes round after them), unless a move looks elsewhere
+    {
+        float dx, dz, d = to_player(b, &dx, &dz);
+        float rel = remainderf(atan2f(dx, dz) - b->rot[1], 2.0f * T3D_PI), up = atan2f(character.pos[1] + 12.0f - b->pos[1], fmaxf(d, 1.0f));
+        f[FACE_GX] = fmaxf(-0.09f, fminf(0.09f, rel * 0.8f));
+        f[FACE_GY] = fmaxf(-0.08f, fminf(0.06f, up * 0.6f));
+        if (s.unshackled) {     // and twitch, unshackled: a darting saccade now and then
+            if ((s.saccadeT -= dt) <= 0.0f) {
+                s.saccadeT = 0.25f + (rand_custom_u32() % 60) / 100.0f;
+                s.saccade[0] = ((int)(rand_custom_u32() % 5) - 2) * 0.012f; s.saccade[1] = ((int)(rand_custom_u32() % 3) - 1) * 0.01f;
+            }
+            f[FACE_GX] += s.saccade[0]; f[FACE_GY] += s.saccade[1];
+        }
+    }
     switch (s.state) {
     case SB_GLARE:      // the crosses: a level, narrow-eyed aim down the lane, the pupils slits, lips pressed thin
         f[FACE_UP] = 0.035f; f[FACE_LO] = 0.045f; f[FACE_BRAISE] = -0.03f; f[FACE_PW] = s.step ? 0.3f : 0.45f; f[FACE_PH] = 1.15f; f[FACE_MCURVE] = -0.05f;
@@ -1105,6 +1134,35 @@ static void face_update(const Boss *b, float dt)
         break;
     }
     if (s.rainTell > 0.0f) { f[FACE_GY] = 0.09f; f[FACE_UP] = 0.16f; f[FACE_LO] = 0.1f; f[FACE_BRAISE] = 0.07f; f[FACE_MOPEN] = 0.05f; }  // the rain: it looks up to the sky
+    // A blow taken: a face of its own, a small one (a plain hit) or a big one (a combo's finisher,
+    // a skill), and a recoil. Mid-move only its brows and mouth react, so the move's tell (its eyes) stays read
+    if (b->hitSeq != s.hitSeen) {
+        s.hitSeen = b->hitSeq;
+        bool big = b->hitWeight >= 2.0f;
+        if (s.state != SB_DEAD && s.state != SB_INTRO) {
+            int pick = rand_custom_u32() % (big ? 2 : 3);
+            if (big ? s.rx - RX_SCREAM == pick : s.rx == pick) pick = (pick + 1) % (big ? 2 : 3);    // not the same face twice running
+            s.rx = big ? RX_SCREAM + pick : pick;
+            s.rxT = 0.0f; s.rxLen = big ? 0.75f : 0.4f;
+            s.jolt = fmaxf(s.jolt, big ? 1.0f : 0.45f);
+#ifdef HLE_LOG_MOVES
+            debugf("[sunhit] weight %.1f: face %d\n", (double)b->hitWeight, s.rx);
+#endif
+        }
+    }
+    if (s.rxT >= 0.0f) {
+        s.rxT += dt;
+        // in fast (0.05 s), held, then let go over the last 40%
+        float k = clamp01(s.rxT / 0.05f) * clamp01((s.rxLen - s.rxT) / (0.4f * s.rxLen));
+        bool tell = !(s.state == SB_HOVER || s.state == SB_REST || s.state == SB_BREAK);
+        for (int i = 0; i < FACE_N; i++) {
+            bool eyes = i <= FACE_LO || (i >= FACE_PW && i <= FACE_GY);
+            if (!(tell && eyes)) f[i] += (FACE_RX[s.rx][i] - f[i]) * k;
+        }
+        rate = fmaxf(rate, 25.0f);       // a flinch is quick
+        if (s.rxT >= s.rxLen) s.rxT = -1.0f;
+    }
+    s.jolt = fmaxf(0.0f, s.jolt - dt * 2.5f);
     for (int i = 0; i < FACE_N; i++) s.face[i] += (f[i] - s.face[i]) * fminf(1.0f, dt * rate);
     // A blink: shut in 0.07 s, open in 0.13 (on top of the eased lids, never mid-tell)
     if (s.blinkT >= 0.0f) { s.blinkT += dt; if (s.blinkT > 0.2f) s.blinkT = -1.0f; }
@@ -1120,6 +1178,9 @@ void sun_boss_update(Boss* b, float dt)
     if (b->damageFlashTimer > 0.0f) b->damageFlashTimer -= dt;
     s.t += dt;
     s.life += dt;
+#ifdef HLE_SUN_HITME    // test aid: a sword hit every 1.2 s, every third one a finisher (the passive dummy never hits it)
+    { static float ht; static int n; if (b->mode == BOSS_MODE_COMBAT && (ht += dt) >= 1.2f) { ht = 0.0f; n++; boss_apply_hit(b, 0.01f, (n % 3 ? 1.0f : 2.5f) * 4.0f / POISE_DAMAGE); } }
+#endif
     float sm = speed_mult();
     s.cdGlare -= dt * sm; s.cdRain -= dt * sm; s.cdCorona -= dt * sm; s.cdDive -= dt * sm; s.cdLash -= dt * sm; s.cdSweep -= dt * sm;
     s.cdSpiral -= dt * sm; s.cdEmber -= dt * sm; s.cdFlare -= dt * sm; s.cdRam -= dt * sm; s.cdEclipse -= dt * sm;
@@ -1440,6 +1501,7 @@ void sun_boss_draw(Boss* b)
     float yaw = -b->rot[1];     // Tiny3D's yaw turns +z the other way round
     // Knocked down: it rocks side to side on the floor, settling (and squashes as it lands)
     float rock = s.state == SB_REST && s.downT > 0.25f ? 0.45f * sinf((s.downT - 0.25f) * 7.0f) * expf(-(s.downT - 0.25f) * 1.2f) : 0.0f;
+    rock -= 0.22f * s.jolt * s.jolt;      // a blow taken: it reels back (drawn only: hitboxes and lock-on stay put)
     int h = s.unshackled;
     T3DMat4 base;
     t3d_mat4_from_srt_euler(&base, (float[3]){ scale / 8.0f, scale / 8.0f, scale / 8.0f }, (float[3]){ rock, yaw, 0.0f }, b->pos);
