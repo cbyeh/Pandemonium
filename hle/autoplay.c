@@ -1494,11 +1494,32 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (boss && boss->mode == BOSS_MODE_COMBAT && boss->phaseIndex == 1) { phase = 1; t0 = frame; }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
-            if (t == 60) boss_apply_damage(boss, boss->maxHealth * 2.0f);
-            if (t > 60 && boss->phaseIndex == 2 && boss->mode == BOSS_MODE_COMBAT) {
+#ifdef HLE_2R_LOCK          // locked on at the kill, as a player usually is; the camera logged through the cutscene
+            if (t == 20) pressed->z = 1;
+            if (t >= 20 && t <= 60) in->btn.z = 1;
+            if (t % 15 == 0) debugf("[2rcam] t %d lock %d blend %.3f cam %.1f %.1f %.1f tgt %.1f %.1f %.1f lockTgt %.1f %.1f %.1f\n", t, cameraLockOnActive, (double)cameraLockBlend,
+                                    (double)characterCamPos.v[0], (double)characterCamPos.v[1], (double)characterCamPos.v[2],
+                                    (double)characterCamTarget.v[0], (double)characterCamTarget.v[1], (double)characterCamTarget.v[2],
+                                    (double)cameraLockOnTarget.v[0], (double)cameraLockOnTarget.v[1], (double)cameraLockOnTarget.v[2]);
+#endif
+#ifndef HLE_2R_KILL_T       // frames of phase 1 before the kill (a real fight records far more blocks)
+#define HLE_2R_KILL_T 60
+#endif
+#if HLE_2R_KILL_T > 60
+            if (t < HLE_2R_KILL_T) {
+                character.health = character.maxHealth;
+                in->stick_x = (t / 90) % 2 ? 60 : -60; in->stick_y = (t / 140) % 2 ? 40 : -40;
+                if (t % 25 == 0) { pressed->b = 1; in->btn.b = 1; }
+            }
+#endif
+            if (t == HLE_2R_KILL_T) boss_apply_damage(boss, boss->maxHealth * 2.0f);
+            if (t > HLE_2R_KILL_T && boss->phaseIndex == 2 && boss->mode == BOSS_MODE_COMBAT) {
                 debugf("[2r] run %d: phase 2 fight OK\n", run);
                 phase = 2; t0 = frame;
-            } else if (t > 90 && frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
+            }
+#ifndef HLE_2R_NOSKIP       // the cutscenes played out, as a player who doesn't skip them
+            else if (t > 90 && frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
+#endif
             if (t > 3000 && t % 300 == 0) debugf("[2r] run %d: phase 2 NOT started\n", run);
         } else if (phase == 2 && run == 1) {
             if (character_get_state() != CHAR_STATE_DEAD) { if (t % 10 == 0) character_apply_damage(50.0f); }

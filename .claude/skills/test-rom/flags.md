@@ -8,6 +8,8 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Full fights that never die:** `HLE_TEST_BONUS` (+ `HLE_TEST_BONUS_SUN` / `_DRAGON`), `HLE_TEST_UNBOUND`, `HLE_TEST_STRIKE`, `HLE_TEST_CRUCIFIX`: refill the player below 60 HP, log `[dmg]`.
 - **One attack on a loop:** `HLE_FK_FORCE=1..9` (6 Triangle Slam, 7 Holy Slam, 8 Plunge, 9 Moon Blade), `HLE_SUN_FORCE=1..7` (`11` = lash into sweep), `HLE_DRAGON_FORCE=<DgState>`, `HLE_SUN_HITME` (a sword hit every 1.2 s, every third a finisher: the Sun's reactions), Unbound's `HLE_THROW_FORCE` and `HLE_SWEEP_FORCE` (the ground sweep at any range: the dummy stays close). `HLE_DRAGON_CYCLE`: every Shadowborne move in turn (a gallery, `[cycle]` lines).
 - **Long stagger:** `HLE_STAGGER_LONG` gives Crushing Blows outside the Tower; `[stagger]` lines log when each stagger starts, ends and the boss is up.
+- **Into phase 2:** `HLE_TEST_TWO_RUNS` (kill the Guardian, reach phase 2, twice); `HLE_2R_NOSKIP` lets the cutscenes play (about 3000 frames), `HLE_2R_LOCK` locks on before the kill, `HLE_2R_KILL_T=<frames>` fights that long first (topped up, moving, swinging: a real fight records far more blocks).
+- **Display lists:** `HLE_TEST_DL_CHECK` walks every task as the plugin will (into each `G_DL`) and logs any command this backend never emits (`[dlcheck] BAD`: Delta's plugin aborts on one), cache resets and replays while one is pending.
 - **Boss held still** (before/after shots that line up): `HLE_TEST_FREEZE_BOSS`. Boss AI is otherwise non-deterministic.
 - **Ending:** `HLE_TEST_ENDING`.
 - **Lock-on at the kill:** `HLE_DUMMY_LOCK_KILL` (with `HLE_TEST_DUMMY`): locked on and circling, the boss dies at 4 s; `[lockkill]` logs the camera.
