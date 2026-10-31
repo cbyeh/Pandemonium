@@ -1241,7 +1241,7 @@ static const BonusDef BONUS_DEFS[] = {
         },
         .dropAt = 3,
         .line = {
-            { { -70, 20, -60 }, { -95, 18, 45 }, { -160, 14, 0 } },      // watched from where it will land
+            { { -80, 10, -40 }, { -55, 14, -28 }, { 0, 16, 0 } },        // the empty floor where it will land, the knight behind us: a voice from nowhere
             { { -138, 4, 22 }, { -136, 14, 24 }, { -160, 8, 0 } },       // up from the floor "where you stand"
             { { -170, 16, -70 }, { -160, 16, -62 }, { -135, 14, 0 } },   // the knight's profile, the empty hall ahead
             { { -58, 18, 16 }, { -34, 17, 8 }, { 0, 20, 0 } },           // pushing in on it: the challenge
