@@ -357,7 +357,9 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
     const float damp = 1.0f - (strands(sp) ? 2.4f : 0.9f) * h;   // per second, not per step (0.92 / 0.97 at 30 steps)
     float wind[CLOTH_COLS];     // a gust down each column (sinf is a software call: once a column, not a particle)
     for (int c = 0; c < cl->cols; c++) wind[c] = (14.0f + 10.0f * sinf(cl->time * 1.7f + c * 0.6f)) * k * h * h / cl->rows;
-    const float lift = cl->fall * 1.6f * h * h;   // falling, the air pushes it up, evenly (the hem pushed most, it folded): it rises above him
+    // falling, the air lifts it, evenly (the hem pushed most, it folded), never past 0.8 of its weight
+    // (stronger, it shot up and heaped at his head as he came down), and partly back: it floats up behind him
+    const float lift = fminf(cl->fall * 1.6f, 176.0f) * k * h * h;
     for (int r = 1; r < cl->rows; r++)
         for (int c = 0; c < cl->cols; c++) {
             float *p = PC(cl, c, r), *q = cl->q[r * cl->cols + c];
@@ -365,7 +367,7 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
             for (int i = 0; i < 3; i++) {
                 float v = (p[i] - q[i]) * damp;
                 q[i] = p[i];
-                p[i] += v + back[i] * gust;
+                p[i] += v + back[i] * (gust + lift);
             }
             p[1] += g + lift;
         }
