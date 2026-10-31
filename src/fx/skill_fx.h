@@ -62,6 +62,13 @@ void skill_fx_spawn_slash_hostile(const float pos[3], const float vel[3], float 
 // until it is close, then it flies straight: dodge it late
 void skill_fx_spawn_orb_hostile(const float pos[3], const float vel[3], float damage, float life, float homing);
 
+// The Fallen Warrior's fire trail: begin one, then add points along its path (yaw: its heading)
+// as it goes; each burns `burn` seconds then turns to smoke, the oldest first. Drawn as two lines
+// of fire either side of the path; `touches`: p within r of what still burns
+void skill_fx_fire_trail_begin(void);
+bool skill_fx_fire_trail_add(const float pos[3], float yaw, float burn);
+bool skill_fx_fire_trail_touches(const float p[3], float r);
+
 // Removes the bosses' effects, keeping the player's.
 void skill_fx_clear_hostile(void);
 

@@ -65,6 +65,21 @@ CLIPS = {
         ("AttackCharged", 1.25, 1.85, 0.6),
         ("AttackCharged", 1.85, 1.85, 0.3),
     ],
+    # The Fallen Warrior's fire lunge, keyed: from its stance down into the lunge on its left leg,
+    # the sword hand drawn back to the right hip with the blade level at you and the free hand
+    # out ahead (its tell, held to 0.55 s), then the thrust (0.55-0.67 s): shoulder, arm and
+    # blade level at the shoulder, leaning in, the free arm swung back; held to 0.95. Its legs
+    # (LEGS_FROM) step through as it skims: mid-stride by 0.75 s, landing on the right by 0.95.
+    # Then its recovery (0.95-1.55 s): the hand drawn in to the chest, the blade up before it,
+    # and back into the stance (the sword onto the shoulder; blended straight, it pivoted up at
+    # arm's length)
+    "Lunge": [
+        ("Idle", 0.0, 0.0, 0.05),
+        ("pose:lunge_draw", 0.0, 0.0, 0.5, 0.35),
+        ("pose:lunge", 0.0, 0.0, 0.4, 0.12),
+        ("pose:lunge_recover", 0.0, 0.0, 0.3, 0.25),
+        ("Idle", 0.0, 0.0, 0.3, 0.28),
+    ],
     "StaggerKneel": [
         ("pose:kneel", 0.0, 0.0, 2.7),
         ("Idle", 0.0, 0.0, 0.8, 0.8),
@@ -79,6 +94,14 @@ RETIRED = ["KnockdownKneel"]
 LEG_BONES = ["Root", "Foot_IK-Right", "Foot_IK-Left", "Waist", "UpperLeg-Right", "LowerLeg-Right",
              "Foot-Right", "UpperLeg-Left", "LowerLeg-Left", "Foot-Left"]
 LEGS_FROM = {
+    "Lunge": [
+        ("Idle", 0.0, 0.0, 0.05),
+        ("pose:lunge_draw", 0.0, 0.0, 0.5, 0.35),
+        ("pose:lunge_pass", 0.0, 0.0, 0.2, 0.2),
+        ("pose:lunge", 0.0, 0.0, 0.2, 0.2),
+        ("pose:lunge", 0.0, 0.0, 0.3, 0.01),
+        ("Idle", 0.0, 0.0, 0.3, 0.28),
+    ],
     "PlungeLeap": [
         ("AttackCharged", 1.25, 1.25, 0.05),
         ("pose:plunge_air", 0.0, 0.0, 0.5, 0.25),

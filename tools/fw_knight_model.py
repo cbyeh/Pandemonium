@@ -188,6 +188,17 @@ kp = [pr for m in J['meshes'] for pr in m['primitives'] if MATS[pr['material']] 
 _, kuv, _ = acc_rw(kp['attributes']['TEXCOORD_0']); _, kcol, _ = acc_rw(kp['attributes']['COLOR_0'])
 add_prim(ppos, pnrm, pidx, JOINTS.index(NODE['UpperArm-Left']), 'knight', kuv(0), kcol(0))
 
+# The sword on its own bone (IK_Hand.R, which nothing else is skinned to): the game sets it on the
+# hand each frame, and turns the sword in the grip for the lunge's thrust (fallen_knight.c sword_carry)
+SWORD_J = JOINTS.index(NODE['IK_Hand.R'])
+for m in J['meshes']:
+    for pr in m['primitives']:
+        if MATS[pr['material']] != 'sword': continue
+        n, _, jput = acc_rw(pr['attributes']['JOINTS_0'])
+        for k in range(n): jput(k, [SWORD_J, 0, 0, 0])
+        n, _, wput = acc_rw(pr['attributes']['WEIGHTS_0'])
+        for k in range(n): wput(k, [1.0, 0.0, 0.0, 0.0] if J['accessors'][pr['attributes']['WEIGHTS_0']]['componentType'] == 5126 else [255, 0, 0, 0])
+
 J.pop('animations', None)       # (it plays the knight's own)
 J['buffers'][0]['byteLength'] = len(BIN)
 while len(BIN) % 4: BIN.append(0)
