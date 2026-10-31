@@ -36,7 +36,7 @@ typedef struct {
 
 // Accessories: procedural meshes riding a bone (see acc_build)
 enum { ACC_WINGED_HELM = 1, ACC_BERSERK_HELM = 4, ACC_DRAGONSLAYER = 8,
-       ACC_NIGHTFARER_HELM = 16, ACC_SCARF = 32, ACC_CLAW_SHOT = 64 };
+       ACC_NIGHTFARER_HELM = 16, ACC_MANTLE = 32, ACC_CLAW_SHOT = 64 };
 
 typedef struct {
     const char *name;
@@ -58,21 +58,21 @@ static const SkinDef SKINS[SKIN_COUNT] = {
     [SKIN_WOLF_KNIGHT]      = { "Wolf Knight", .armor = C(112, 104, 100), .helm = C(146, 142, 146), .chain = C(165, 175, 196),
                                 .cloth = C(30, 52, 108), .hidePlume = true,
                                 .cl = { { CLOTH_CLOAK, C(42, 74, 152), true, 3.1f, 1.2f }, { CLOTH_PLUME, C(22, 22, 30), false, 3.6f, 0.4f } } },
-    // Guts: blackened plate, a spined wolf helm with burning eyes, a ragged black cloak, the Dragonslayer
+    // Guts: blackened plate, a spined wolf helm with burning eyes, a ragged black cloak over the shoulders and chest, the Dragonslayer
     [SKIN_BLACK_SWORDSMAN]  = { "Black Swordsman", .armor = C(58, 57, 63), .helm = C(52, 51, 58), .cloth = C(24, 22, 22),
                                 .chain = C(22, 22, 24), .hidePlume = true, .hideSword = true,
-                                .cl = { { CLOTH_CLOAK, C(26, 24, 27), true, 3.2f, 1.5f } }, .acc = ACC_BERSERK_HELM | ACC_DRAGONSLAYER },
-    // Malenia: brass plate, an olive pleated dress, a winged helm, a red ponytail over a crimson cape (it tapers)
+                                .cl = { { CLOTH_CLOAK, C(26, 24, 27), true, 3.2f, 1.5f } }, .acc = ACC_BERSERK_HELM | ACC_DRAGONSLAYER | ACC_MANTLE },
+    // Malenia: brass plate, an olive pleated dress, a winged helm, a red mane from under it over a crimson cape (it tapers)
     [SKIN_SCARLET_VALKYRIE] = { "Scarlet Valkyrie", .armor = C(196, 156, 82), .helm = C(208, 168, 92), .cloth = C(98, 80, 50),
                                 .chain = C(72, 60, 40), .hidePlume = true,
-                                .cl = { { CLOTH_HAIR, C(196, 64, 30), true, 3.4f, -0.45f }, { CLOTH_CLOAK, C(86, 12, 16), false, 2.3f, 1.8f, 0.3f } },
+                                .cl = { { CLOTH_HAIR, C(200, 50, 28), true, 2.0f, 0.45f }, { CLOTH_CLOAK, C(86, 12, 16), false, 2.3f, 1.8f, 0.3f } },
                                 .acc = ACC_WINGED_HELM },
-    // Nightfarer (Nightreign): a winged silver helm, a dark scarf, a royal-blue tabard and long coat,
+    // Nightfarer (Nightreign): a winged silver helm, a royal-blue coat across the shoulders and chest, a tabard,
     // the claw shot on his left forearm
     [SKIN_NIGHTFARER]           = { "Nightfarer", .armor = C(92, 96, 112), .helm = C(176, 180, 194), .cloth = C(30, 56, 150),
                                 .chain = C(58, 60, 72), .hidePlume = true,
                                 .cl = { { CLOTH_CLOAK, C(38, 66, 170), false, 3.2f, 0.75f } },
-                                .acc = ACC_NIGHTFARER_HELM | ACC_SCARF | ACC_CLAW_SHOT },
+                                .acc = ACC_NIGHTFARER_HELM | ACC_MANTLE | ACC_CLAW_SHOT },
 };
 
 static int  s_skin = SKIN_KNIGHT;
@@ -167,7 +167,7 @@ typedef struct {
     float time;
     T3DVertPacked *vb[RING];
     rspq_block_t *tris[RING];   // loads its buffer and draws the grid: recorded once (per width)
-    int trisCols;
+    int trisGrid;               // the grid they were built for: cols x 16 + rows
     float acc;                  // time gathered for the next step (it steps every other frame)
     int built;                  // the ring slot holding the vertices last built (-1: none)
     bool stepped;               // stepped this frame: drawn halfway from the last state (q) to p
@@ -196,8 +196,8 @@ static void cloth_anchors(Cloth *cl, const ClothSpec *sp)
             bone_world(B_SPINE, 1.25f - 0.7f * u * u + ((c & 1) ? 0.06f : 0.0f), 2.62f - sp->drop, 0.8f * u, cl->anchor[c]);
         else if (sp->kind == CLOTH_CLOAK)   // from round the hood, onto the pauldrons at the sides, pleated (it flares out from there)
             bone_world(B_SPINE, 0.95f - 0.95f * u * u + ((c & 1) ? 0.08f : 0.0f), 2.62f, 1.1f * u, cl->anchor[c]);
-        else if (sp->kind == CLOTH_HAIR)    // a ponytail from the back of the helm
-            bone_world(B_HEAD, 0.62f, 1.4f, 0.13f * u, cl->anchor[c]);
+        else if (sp->kind == CLOTH_HAIR)    // a mane from under the helm's back rim, at the nape
+            bone_world(B_HEAD, 0.4f + 0.18f * (1.0f - u * u), 0.85f, 0.5f * u, cl->anchor[c]);
         else {                              // a crest on top of the helm that arches up and back
             bone_world(B_HEAD, -0.15f + 0.25f * (u + 1.0f), 2.0f, 0.1f * u, cl->anchor[c]);
             bone_world(B_HEAD, 0.35f + 0.25f * (u + 1.0f), 2.55f, 0.12f * u, cl->anchor2[c]);
@@ -389,7 +389,7 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
                     link(PC(cl, c, r), PC(cl, c, r + 2), cl->bl[r][c], r == 0 ? 0.0f : SHARE1[r], strands(sp) ? 1.0f : 0.35f);
         int loose = sp->tattered ? cl->rows - 3 : cl->rows;   // tatters hang as free strands
         for (int r = 1; r < loose; r++)
-            for (int c = 0; c < cl->cols - 1; c++) link(PC(cl, c, r), PC(cl, c + 1, r), cl->hl[r], 0.5f, 1.0f);
+            for (int c = 0; c < cl->cols - 1; c++) link(PC(cl, c, r), PC(cl, c + 1, r), cl->hl[r], 0.5f, (sp->kind == CLOTH_HAIR && r > 1) ? 0.5f : 1.0f);
 #ifdef HLE_LOG_CLOTH
         uint32_t tc = TICKS_READ();
 #endif
@@ -468,7 +468,7 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat
             cl->vb[i] = malloc_uncached(sizeof(T3DVertPacked) * CLOTH_N);   // the outside, then the lining
         }
     }
-    if (cl->trisCols != cl->cols) {   // the grid's triangles never change: built once, not each frame
+    if (cl->trisGrid != cl->cols * 16 + cl->rows) {   // the grid's triangles never change: built once, not each frame
         gpu_wait();
         for (int k = 0; k < RING; k++) {
             if (cl->tris[k]) rspq_block_free(cl->tris[k]);
@@ -485,7 +485,7 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat
             }
             cl->tris[k] = gpu_block_end();
         }
-        cl->trisCols = cl->cols;
+        cl->trisGrid = cl->cols * 16 + cl->rows;
     }
     // Built every frame, the cloth stepping every other one (a step costs 1.5 ms): a step frame
     // shows halfway from the last step (Verlet keeps it in q), the next frame the step itself.
@@ -544,7 +544,7 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat
                 nv[0] *= nl; nv[1] *= nl; nv[2] *= nl;
                 // strands get a sheen down the middle, cloth darkens toward the hem and in its pleats (the
                 // odd columns, pinned further out: hanging smooth, the folds still read)
-                float bias = strands(sp) ? 0.85f + 0.3f * (c == cl->cols / 2) : (1.0f - 0.25f * r / cl->rows) * ((c & 1) ? 0.72f : 1.0f);
+                float bias = sp->kind == CLOTH_HAIR ? ((c & 1) ? 0.72f : 1.05f) : strands(sp) ? 0.85f + 0.3f * (c == cl->cols / 2) : (1.0f - 0.25f * r / cl->rows) * ((c & 1) ? 0.72f : 1.0f);
                 cl->col[i] = shade_tinted(tint, nv, bias);
             }
             const float *p = DC(c, r);
@@ -679,12 +679,12 @@ __attribute__((noinline, optimize("Os"))) static void acc_winged_helm(SkinColor 
     // in two leaves splayed a little so it reads from behind as well
     for (int side = -1; side <= 1; side += 2)
         for (int k = 0; k < 7; k++) {
-            float a = (96.0f - k * 9.0f) * (float)M_PI / 180.0f, len = 2.1f - 0.12f * k, w = 0.26f - 0.012f * k;
-            float bx = -0.72f + 0.13f * k, by = 1.84f + 0.03f * k;
+            float a = (96.0f - k * 9.0f) * (float)M_PI / 180.0f, len = 1.3f - 0.075f * k, w = 0.22f - 0.01f * k;
+            float bx = -0.72f + 0.13f * k, ox = bx + 0.34f, by = 1.07f + sqrtf(0.81f - ox * ox) - 0.3f;   // rooted in the dome
             float dx = cosf(a), dy = sinf(a), sz = side * 0.08f;     // a slight V, to read from behind
             float l[4][3], r[4][3];
             for (int i = 0; i < 4; i++) {
-                float t = i / 3.0f, ww = w * (1.0f - 0.7f * t), bend = 0.45f * t * t;   // tips curl back
+                float t = i / 3.0f, ww = w * (1.0f - 0.7f * t), bend = 0.28f * t * t;   // tips curl back
                 float px = bx + dx * len * t + bend, py = by + dy * len * t, pz = side * 0.05f + sz * t * len;
                 G(l[i], px - dy * ww, py + dx * ww, pz); G(r[i], px + dy * ww, py - dx * ww, pz);
             }
@@ -700,15 +700,15 @@ __attribute__((noinline, optimize("Os"))) static void acc_nightfarer_helm(SkinCo
     // flaring out from the helm a little
     for (int side = -1; side <= 1; side += 2)
         for (int k = 0; k < 5; k++) {
-            float a = (80.0f - k * 12.0f) * (float)M_PI / 180.0f, len = 1.7f - 0.14f * k, w = 0.28f - 0.02f * k;
-            float bx = -0.2f + 0.12f * k, by = 1.55f + 0.05f * k, bz = side * 0.62f;
+            float a = (62.0f - k * 12.0f) * (float)M_PI / 180.0f, len = 1.3f - 0.11f * k, w = 0.26f - 0.02f * k;
+            float bx = -0.15f + 0.12f * k, by = 1.15f + 0.05f * k, bz = side * 0.82f;
             float dx = cosf(a), dy = sinf(a);
             // each feather's face tilted 45 degrees outward, so the wing reads from behind too
             const float ci = 0.7071f, so = 0.7071f;
             float l[4][3], r[4][3];
             for (int i = 0; i < 4; i++) {
                 float t = i / 3.0f, ww = w * (1.0f - 0.6f * t), bend = 0.35f * t * t;
-                float px = bx + dx * len * t + bend, py = by + dy * len * t, pz = bz + side * 0.4f * t;
+                float px = bx + dx * len * t + bend, py = by + dy * len * t, pz = bz + side * 0.6f * t;
                 float wx = -dy * ww * ci, wy = dx * ww * ci, wz = side * ww * so;
                 G(l[i], px + wx, py + wy, pz + wz); G(r[i], px - wx, py - wy, pz - wz);
             }
@@ -741,20 +741,30 @@ __attribute__((noinline, optimize("Os"))) static void acc_claw_shot(void)
     }
 }
 
-__attribute__((noinline, optimize("Os"))) static void ring(float cx, float cy, float rx, float ry, float rz, float th0, float th1, int nt, int np, uint32_t col, float fluff)
+// A mantle in the cloak's colour: from close round the neck, down over the shoulders and across
+// the chest, its back over the cloak's pins (one piece with it). A hem dipping in front; ragged if
+// the cloak is. Static, in the spine's space: no cloth cost
+__attribute__((noinline, optimize("Os"))) static void acc_mantle(const ClothSpec *cloak)
 {
-    for (int j = 0; j < np; j++)
-        for (int i = 0; i < nt; i++) {
-            float t[2] = { th0 + (th1 - th0) * i / nt, th0 + (th1 - th0) * (i + 1) / nt };
-            float f[2] = { -1.4f + 2.8f * j / np, -1.4f + 2.8f * (j + 1) / np };
-            float q[4][3];
-            for (int k = 0; k < 4; k++) {
-                float th = t[(k == 1 || k == 2)], ph = f[k >= 2];
-                float fl = 1.0f + fluff * sinf(th * 13.0f + ph * 5.0f);
-                G(q[k], cx + rx * cosf(ph) * cosf(th) * fl, cy + ry * sinf(ph) * fl, rz * cosf(ph) * sinf(th) * fl);
-            }
-            proc_mesh_quad(q[0], q[1], q[2], q[3], col, false);
-        }
+    enum { NT = 16 };
+    float top[NT + 1][3], mid[NT + 1][3], hem[NT + 1][3];
+    for (int i = 0; i <= NT; i++) {
+        float th = -(float)M_PI + 2.0f * (float)M_PI * i / NT, c = cosf(th), sn = sinf(th);   // th 0: the back (+X)
+        float front = c < 0 ? c * c : 0.0f;                    // 1 at the chest
+        float rag = (cloak->tattered && (i & 1)) ? 0.14f : 0.0f;
+        G(top[i], -0.12f + 0.58f * c, 2.78f - 0.12f * front, 0.64f * sn);    // below the visor
+        G(mid[i], -0.08f + 0.9f * c, 2.6f - 0.1f * front, 1.06f * sn);     // over the shoulders, where the cloak pins
+        G(hem[i], -0.06f + 0.84f * c, 2.2f - 0.26f * front - rag, 1.0f * sn);   // tucked in onto the body: flush
+    }
+    SkinColor k = cloak->color;   // as dark as the lit cloak (shaded, it's darker than its colour)
+    k.r = k.r * 4 / 5; k.g = k.g * 4 / 5; k.b = k.b * 4 / 5;
+    uint32_t col = rgb(k);
+    k.r = k.r * 3 / 4; k.g = k.g * 3 / 4; k.b = k.b * 3 / 4;   // the neck's fold a shade darker
+    uint32_t fold = rgb(k);
+    for (int i = 0; i < NT; i++) {
+        proc_mesh_quad(top[i], top[i + 1], mid[i + 1], mid[i], fold, false);
+        proc_mesh_quad(mid[i], mid[i + 1], hem[i + 1], hem[i], col, false);
+    }
 }
 
 __attribute__((noinline, optimize("Os"))) static void acc_berserk_helm(SkinColor steel)
@@ -852,7 +862,7 @@ static void acc_build(void)
     ACC(ACC_BERSERK_HELM, B_HEAD, acc_berserk_helm(s->helm));
     ACC(ACC_DRAGONSLAYER, B_HAND_R, acc_dragonslayer((SkinColor)C(70, 68, 70)));
     ACC(ACC_NIGHTFARER_HELM, B_HEAD, acc_nightfarer_helm(s->helm));
-    ACC(ACC_SCARF, B_SPINE, ring(-0.1f, 2.66f, 1.2f, 0.36f, 1.28f, -2.6f, 2.6f, 16, 3, proc_rgb(48, 50, 60), 0.03f));
+    ACC(ACC_MANTLE, B_SPINE, acc_mantle(&s->cl[0]));
     ACC(ACC_CLAW_SHOT, B_FORE_L, acc_claw_shot());
     #undef ACC
 }
@@ -1010,8 +1020,8 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
         const ClothSpec *sp = &s->cl[k];
         Cloth *cl = &s_cloth[k];
         if (sp->kind == CLOTH_NONE) continue;
-        cl->cols = sp->kind == CLOTH_CLOAK ? CLOTH_COLS : 2;     // hair (a ponytail) and plumes: two strands
-        cl->rows = CLOTH_ROWS;
+        cl->cols = sp->kind == CLOTH_CLOAK ? CLOTH_COLS : sp->kind == CLOTH_HAIR ? 5 : 2;     // a mane: five locks; plumes: two strands
+        cl->rows = sp->kind == CLOTH_HAIR ? 6 : CLOTH_ROWS;     // the mane is short
 #ifdef HLE_LOG_CLOTH
         uint32_t ta = TICKS_READ();
 #endif
