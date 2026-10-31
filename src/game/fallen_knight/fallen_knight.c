@@ -2346,10 +2346,10 @@ void fallen_knight_draw(Boss* b)
     bool flash = b->damageFlashTimer > 0.0f;
     uint8_t amb[4] = { colorAmbient[0], colorAmbient[1], colorAmbient[2], 255 };
     t3d_light_set_ambient(flash ? (uint8_t[4]){ 255, 120, 120, 255 } : amb);
-    static const char *MATS[] = { "knight", "head", "chainmail", "cloth", "straps", "sword", "black", "lames", "iron" };
+    static const char *MATS[] = { "knight", "head", "chainmail", "cloth", "straps", "sword", "black", "lames", "dome" };
     static const color_t COLS[] = { RGBA32(100, 27, 34, 255), RGBA32(100, 27, 34, 255), RGBA32(128, 40, 48, 255), RGBA32(56, 18, 22, 255),
                                     RGBA32(78, 22, 27, 255), RGBA32(84, 80, 82, 255), RGBA32(20, 16, 18, 255),
-                                    RGBA32(84, 40, 32, 255), RGBA32(84, 80, 86, 255) };     // (the pauldron: its lames dark brownish red, its dome dark iron)
+                                    RGBA32(84, 40, 32, 255), RGBA32(70, 16, 20, 255) };     // (the pauldron: its lames dark brownish red, its dome dark red)
     static bool tinted;     // (its own model: its colours set once)
     if (!tinted) {
         for (int i = 0; i < (int)(sizeof MATS / sizeof MATS[0]); i++) { T3DMaterial *m = t3d_model_get_material(s.body, MATS[i]); if (m) m->primColor = COLS[i]; }

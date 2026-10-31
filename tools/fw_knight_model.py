@@ -13,7 +13,7 @@ What changes (model space, glTF units: the knight faces -x, y up, z its left):
   - a broader chest, a smooth warp of every part alike (plate, mail, cloth, straps) so no seam
     opens; the shoulders, arms, hands and sword where they were (its blows are read from the bones:
     they land as before)
-  - a great pauldron on the left shoulder (an iron dome and neck guard, three lames down the arm)
+  - a great pauldron on the left shoulder (a dark red dome and neck guard, three lames down the arm)
 """
 import json, math, os, struct
 
@@ -176,7 +176,7 @@ nhorn = len(pos)
 
 # ---------------- a pauldron on the left shoulder (the user's reference) ----------------
 # A big hammered dome over the shoulder with a guard standing up at its neck edge, flaring out (dark
-# iron), and three dark brownish red lames stepping down the upper arm, each
+# red), and three dark brownish red lames stepping down the upper arm, each
 # tucked under the one above, a ridge down its middle; all on the arm's bone (they swing with it)
 NC['MAT4'] = 16
 _, ibm, _ = acc_rw(J['skins'][0]['inverseBindMatrices'])
@@ -275,10 +275,10 @@ kp = [pr for m in J['meshes'] for pr in m['primitives'] if MATS[pr['material']] 
 _, kuv, _ = acc_rw(kp['attributes']['TEXCOORD_0']); _, kcol, _ = acc_rw(kp['attributes']['COLOR_0'])
 c0 = kcol(0)
 pcol = [[min(1.0, c0[m] * pshade[k]) for m in range(3)] + [c0[3]] for k in range(len(ppos))]
-# its own materials, copies of the knight's (the game tints them): the dome and guard dark iron, the lames dark brownish red
-for name in ('iron', 'lames'):
+# its own materials, copies of the knight's (the game tints them): the dome and guard dark red, the lames dark brownish red
+for name in ('dome', 'lames'):
     J['materials'].append(dict(J['materials'][MATS.index('knight')], name=name)); MATS.append(name)
-add_prim(ppos[:ncap], pnrm[:ncap], [i for i in pidx if i < ncap], JOINTS.index(NODE['UpperArm-Left']), 'iron', kuv(0), pcol[:ncap])     # on the arm (pinned to the chest, it was left behind the shoulder as the clips swing the arm forward)
+add_prim(ppos[:ncap], pnrm[:ncap], [i for i in pidx if i < ncap], JOINTS.index(NODE['UpperArm-Left']), 'dome', kuv(0), pcol[:ncap])     # on the arm (pinned to the chest, it was left behind the shoulder as the clips swing the arm forward)
 add_prim(ppos[ncap:], pnrm[ncap:], [i - ncap for i in pidx if i >= ncap], JOINTS.index(NODE['UpperArm-Left']), 'lames', kuv(0), pcol[ncap:])
 
 # The sword on its own bone (IK_Hand.R, which nothing else is skinned to): the game sets it on the
