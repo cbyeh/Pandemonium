@@ -42,6 +42,8 @@ typedef struct {
     uint32_t ncmds, scratch_bytes, nmtx, nreloc;
     uint32_t vc_gen;
     uint32_t ovl_mask;              // overlays whose state is in the signature
+    uint8_t skip;                   // RP_SKIP_*: parts of the state left as the block found them (not restored)
+    uint32_t exit_ofs[5];           // where each part starts in exit (after the counters), and its end
     // rdp cursor: relative bytes sent before the first absolute buffer switch
     uint32_t rdp_rel;
     bool rdp_abs;
@@ -75,6 +77,7 @@ static struct {
     rp_mtx_t mtx[512]; int nmtx;
     uint32_t rdp_rel; bool rdp_abs;
     uint8_t sig[RP_SIG_MAX] __attribute__((aligned(8))); uint32_t sig_len;
+    uint32_t sig_ofs[5];            // where each part (t3d, rdpq, vrdp, vrsp) starts in sig, and its end
     uint32_t e_entry, p3_entry, v3_entry;
     uint16_t slots_written;
     uint32_t pstack_written;
@@ -85,7 +88,7 @@ static struct {
 } rp;
 
 #if defined(HLE_TEST_PERF) || defined(HLE_TEST_REPLAY_CHECK)
-uint32_t hle_rp_stats[8], hle_rp_ticks[6];     // test aid: replay's signature, compare, scratch+matrices, list, state
+uint32_t hle_rp_stats[8], hle_rp_ticks[6], hle_rp_skip_rec[4], hle_rp_skip_rep[4];     // test aid: replay's signature, compare, scratch+matrices, list, state
 #define RP_MARK(i) do { uint32_t _n = TICKS_READ(); hle_rp_ticks[i] += _n - _t; _t = _n; } while (0)
 #else
 #define RP_MARK(i) do {} while (0)           // replays, recorded, unreplayable, no match, check ok, check bad
@@ -174,25 +177,68 @@ void hle_rp_mtx_(const void *dst, int k, uint32_t raw)
 // ---- State ----
 
 /** Everything a block's output depends on (normalized: no absolute counters or cursors). */
-static uint32_t rp_signature(uint8_t *out, uint32_t ovl_mask)
+static uint32_t rp_signature(uint8_t *out, uint32_t ovl_mask, uint32_t *ofs)
 {
     hle_st_t s = { out, false };
-    hle_t3d_state(&s, true);
-    hle_rdpq_state(&s);
-    hle_vrdp_state(&s, true);
-    hle_vrsp_state(&s, ovl_mask, true);
-    return s.p - out;
+    uint32_t o[5];
+    o[0] = 0;
+    hle_t3d_state(&s, true); o[1] = s.p - out;
+    hle_rdpq_state(&s); o[2] = s.p - out;
+    hle_vrdp_state(&s, true); o[3] = s.p - out;
+    hle_vrsp_state(&s, ovl_mask, true); o[4] = s.p - out;
+    if (ofs) memcpy(ofs, o, sizeof(o));
+    return o[4];
 }
 
-/** The state left: everything above plus what only matters after (written slots, pointer stack). */
-static uint32_t rp_exit_io(uint8_t *buf, bool load, uint32_t ovl_mask)
+/** Whether the state now is the one recording r started from (rp_signature's, compared as it's read). */
+static bool rp_matches(const rp_rec_t *r)
+{
+    hle_st_t s = { r->sig, false, true, false, r->sig + r->sig_len };
+    hle_t3d_state(&s, true);
+    if (s.diff) return false;
+    hle_rdpq_state(&s);
+    if (s.diff) return false;
+    hle_vrdp_state(&s, true);
+    if (s.diff) return false;
+    hle_vrsp_state(&s, r->ovl_mask, true);
+    return !s.diff && s.p == r->sig + r->sig_len;
+}
+
+/**
+ * The state left: everything above plus what only matters after (written slots, pointer stack).
+ * Saving, ofs gets where each part starts (and the end); loading, the parts in skip are passed
+ * over: a replay starts from the signature's state, so they would be written as they already are.
+ */
+#define RP_SKIP_T3D     1
+#define RP_SKIP_RDPQ    2
+#define RP_SKIP_VRSP    4           // all but the current overlay (not in signatures)
+static uint32_t rp_exit_io(uint8_t *buf, bool load, uint32_t ovl_mask, uint32_t *ofs, uint32_t skip, const uint32_t *skip_ofs)
 {
     hle_st_t s = { buf, load };
-    hle_t3d_state(&s, false);
-    hle_rdpq_state(&s);
+    uint32_t o[5];
+    o[0] = 0;
+    if (skip & RP_SKIP_T3D) s.p = buf + skip_ofs[1]; else hle_t3d_state(&s, false);
+    o[1] = s.p - buf;
+    if (skip & RP_SKIP_RDPQ) s.p = buf + skip_ofs[2]; else hle_rdpq_state(&s);
+    o[2] = s.p - buf;
     hle_vrdp_state(&s, false);
-    hle_vrsp_state(&s, ovl_mask, false);
-    return s.p - buf;
+    o[3] = s.p - buf;
+    if (skip & RP_SKIP_VRSP) { s.p = buf + skip_ofs[4] - 4; hle_vrsp_cur_ovl_io(&s); }
+    else hle_vrsp_state(&s, ovl_mask, false);
+    o[4] = s.p - buf;
+    if (ofs) memcpy(ofs, o, sizeof(o));
+    return o[4];
+}
+/** The parts of the state a block left as it found them: exit (ofs eo) against its signature (so). */
+static uint32_t rp_unchanged(const uint8_t *exit, const uint32_t *eo, const uint8_t *sig, const uint32_t *so)
+{
+    uint32_t m = 0;
+    // t3d: the same but for its last word (signatures: the slots in use; the state left: 0)
+    if (eo[1] - eo[0] == so[1] - so[0] && !memcmp(exit + eo[0], sig + so[0], so[1] - so[0] - 4)) m |= RP_SKIP_T3D;
+    if (eo[2] - eo[1] == so[2] - so[1] && !memcmp(exit + eo[1], sig + so[1], so[2] - so[1])) m |= RP_SKIP_RDPQ;
+    // vrsp: the same and then the current overlay (an int)
+    if (eo[4] - eo[3] == so[4] - so[3] + 4 && !memcmp(exit + eo[3], sig + so[3], so[4] - so[3])) m |= RP_SKIP_VRSP;
+    return m;
 }
 
 // ---- Recording ----
@@ -217,7 +263,7 @@ static void rp_begin(rp_block_t *b, int slot)
     hle_rp_cmds = 0;
     hle_vrdp_counters(&rp.e_entry, &rp.p3_entry, &rp.v3_entry);
     if (!hle_vrsp_rdp_synced()) rp.bad = true;
-    rp.sig_len = rp_signature(rp.sig, rp.ovl_mask);
+    rp.sig_len = rp_signature(rp.sig, rp.ovl_mask, rp.sig_ofs);
     assertf(rp.sig_len <= RP_SIG_MAX, "HLE replay: signature of %lu bytes", rp.sig_len);
 }
 
@@ -251,7 +297,12 @@ static void rp_end(void)
     uint32_t extra[6] = { e - rp.e_entry, p3 - rp.p3_entry, v3 - rp.v3_entry, (uint32_t)rp.zmin, rp.slots_written, rp.pstack_written };
     memcpy(rp_exit_buf, extra, sizeof(extra));
     uint32_t elen = sizeof(extra);
-    elen += rp_exit_io(rp_exit_buf + elen, false, rp.ovl_mask);
+    uint32_t eofs[5];
+    elen += rp_exit_io(rp_exit_buf + elen, false, rp.ovl_mask, eofs, 0, NULL);
+    uint32_t skip = rp_unchanged(rp_exit_buf + sizeof(extra), eofs, rp.sig, rp.sig_ofs);
+#ifdef HLE_NO_RESTORE_SKIP      // test aid: every part restored
+    skip = 0;
+#endif
     for (int k = 0; k < 16; k++) if (rp.slots_written & (1u << k)) elen += hle_t3d_slot_io(rp_exit_buf + elen, k, false);
     for (int k = 0; k < 32; k++) if (rp.pstack_written & (1u << k)) elen += hle_vrsp_pstack_io(rp_exit_buf + elen, k, false);
 
@@ -341,6 +392,10 @@ static void rp_end(void)
     r->ncmds = ncmds; r->scratch_bytes = sbytes; r->nmtx = rp.nmtx; r->nreloc = nreloc;
     r->vc_gen = hle_vc_gen();
     r->ovl_mask = rp.ovl_mask;
+    r->skip = skip; memcpy(r->exit_ofs, eofs, sizeof(eofs));
+#ifdef HLE_TEST_PERF
+    hle_rp_skip_rec[0]++; for (int i = 0; i < 3; i++) if (skip & (1 << i)) hle_rp_skip_rec[1 + i]++;
+#endif
     r->rdp_rel = rp.rdp_rel; r->rdp_abs = rp.rdp_abs;
     r->rdp_cur = rcur; r->rdp_sentinel = rsent; r->rdp_dp = rdp; r->rdp_syncfull = rsync;
     r->lru = ++rp_lru;
@@ -396,7 +451,22 @@ __attribute__((unused)) static bool rp_replay(rp_rec_t *r)
     uint32_t extra[6]; memcpy(extra, r->exit, sizeof(extra));
     hle_vrdp_counters_set(e + extra[0], p3 + extra[1], v3 + extra[2]);
     uint32_t len = sizeof(extra);
-    len += rp_exit_io(r->exit + len, true, r->ovl_mask);
+    len += rp_exit_io(r->exit + len, true, r->ovl_mask, NULL, r->skip, r->exit_ofs);
+#ifdef HLE_TEST_PERF
+    hle_rp_skip_rep[0]++; for (int i = 0; i < 3; i++) if (r->skip & (1 << i)) hle_rp_skip_rep[1 + i]++;
+#endif
+#ifdef HLE_TEST_RESTORE_CHECK   // test aid: the state now must be the one recorded as left (the skipped parts too)
+    {
+        static uint8_t now[RP_SIG_MAX + 1024] __attribute__((aligned(8)));
+        uint32_t no[5], ro[5]; memcpy(ro, r->exit_ofs, sizeof(ro));
+        rp_exit_io(now, false, r->ovl_mask, no, 0, NULL);
+        const uint8_t *ex = r->exit + sizeof(extra);
+        // vrdp's own part says whether the color image changed against the last signature built: not comparable here
+        bool ok = !memcmp(no, ro, sizeof(no)) && !memcmp(now, ex, no[2]) && !memcmp(now + no[3], ex + ro[3], no[4] - no[3]);
+        hle_rp_stats[6]++;
+        if (!ok) { hle_rp_stats[7]++; static int logged; if (logged++ < 20) debugf("[replay] RESTORE WRONG: skip %x, parts at %lu %lu %lu %lu\n", r->skip, (unsigned long)ro[1], (unsigned long)ro[2], (unsigned long)ro[3], (unsigned long)ro[4]); }
+    }
+#endif
     hle_t3d_zvalid_min((int)extra[3]);
     for (int k = 0; k < 16; k++) if (extra[4] & (1u << k)) len += hle_t3d_slot_io(r->exit + len, k, true);
     for (int k = 0; k < 32; k++) if (extra[5] & (1u << k)) len += hle_vrsp_pstack_io(r->exit + len, k, true);
@@ -437,8 +507,6 @@ bool hle_replay_call(uint32_t target, int slot)
     uint32_t _t = TICKS_READ();
 #endif
     uint32_t mask = hle_vrsp_loaded_mask();
-    static uint8_t sig[RP_SIG_MAX] __attribute__((aligned(8)));
-    uint32_t sig_len = 0, sig_mask = ~0u;
     uint32_t gen = hle_vc_gen();
     // most recently used first: a block drawn the same way each frame matches its first
     int order[RP_RECS];
@@ -450,9 +518,18 @@ bool hle_replay_call(uint32_t target, int slot)
     for (int oi = 0; oi < RP_RECS; oi++) {
         rp_rec_t *r = b->rec[order[oi]];
         if (!r || r->vc_gen != gen || (r->ovl_mask & ~mask)) continue;
-        if (r->ovl_mask != sig_mask) { sig_len = rp_signature(sig, r->ovl_mask); sig_mask = r->ovl_mask; RP_MARK(0); }
-        bool same = sig_len == r->sig_len && hle_st_equal(sig, r->sig, sig_len);
+        bool same = rp_matches(r);
         RP_MARK(1);
+#ifdef HLE_TEST_REPLAY_CHECK    // the match test against the full signature built and compared
+        {
+            static uint8_t full[RP_SIG_MAX] __attribute__((aligned(8)));
+            uint32_t n = rp_signature(full, r->ovl_mask, NULL);
+            bool want = n == r->sig_len && hle_st_equal(full, r->sig, n);
+            hle_rp_stats[6]++;
+            if (want != same) { hle_rp_stats[7]++; static int logged; if (logged++ < 20) debugf("[replay] MATCH TEST WRONG block %08lx: %d, signature says %d\n", b->addr, same, want); }
+            _t = TICKS_READ();
+        }
+#endif
         if (!same) continue;
         if (!hle_vrsp_rdp_synced() || (!r->rdp_abs && !hle_vrsp_rdp_room(r->rdp_rel))) continue;
         r->lru = ++rp_lru;
@@ -479,8 +556,9 @@ bool hle_replay_call(uint32_t target, int slot)
         static int logged;
         rp_rec_t *r = NULL;
         for (int i = 0; i < RP_RECS; i++) if (b->rec[i] && (!r || b->rec[i]->lru > r->lru)) r = b->rec[i];
+        static uint8_t sig[RP_SIG_MAX] __attribute__((aligned(8)));
         if (r && logged < 40) {
-            uint32_t n = rp_signature(sig, r->ovl_mask);
+            uint32_t n = rp_signature(sig, r->ovl_mask, NULL);
             uint32_t d = 0; while (d < n && d < r->sig_len && sig[d] == r->sig[d]) d++;
             if (d < n || n != r->sig_len) {
                 logged++;

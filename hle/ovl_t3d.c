@@ -926,6 +926,7 @@ void hle_t3d_seg_mask(uint8_t *state_copy, uint32_t state_start)
 {
     memset(state_copy + D(SEGMENT_TABLE) - state_start, 0, 32);
 }
+uint32_t hle_t3d_seg_addr(void) { return D(SEGMENT_TABLE); }
 void hle_t3d_seg_keep(uint8_t *img, bool restore)
 {
     static uint8_t seg[32];

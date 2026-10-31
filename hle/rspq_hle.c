@@ -1959,6 +1959,14 @@ void hle_perf_dump(uint32_t total)
     extern uint32_t hle_rp_stats[8];
     debugf("[hle]   replay: %lu replayed, %lu recorded, %lu unreplayable, %lu no match, check %lu ok %lu BAD\n", (unsigned long)hle_rp_stats[0],
            (unsigned long)hle_rp_stats[1], (unsigned long)hle_rp_stats[2], (unsigned long)hle_rp_stats[3], (unsigned long)hle_rp_stats[4], (unsigned long)hle_rp_stats[5]);
+    { extern uint32_t hle_rp_skip_rec[4], hle_rp_skip_rep[4];
+      debugf("[hle]   replay restore skips: recordings %lu (t3d %lu rdpq %lu vrsp %lu), replays %lu (t3d %lu rdpq %lu vrsp %lu)\n",
+        (unsigned long)hle_rp_skip_rec[0], (unsigned long)hle_rp_skip_rec[1], (unsigned long)hle_rp_skip_rec[2], (unsigned long)hle_rp_skip_rec[3],
+        (unsigned long)hle_rp_skip_rep[0], (unsigned long)hle_rp_skip_rep[1], (unsigned long)hle_rp_skip_rep[2], (unsigned long)hle_rp_skip_rep[3]);
+      memset(hle_rp_skip_rep, 0, 16); }
+#if defined(HLE_TEST_REPLAY_CHECK) || defined(HLE_TEST_RESTORE_CHECK)
+    debugf("[hle]   replay match test: %lu checked, %lu WRONG\n", (unsigned long)hle_rp_stats[6], (unsigned long)hle_rp_stats[7]);
+#endif
     memset(hle_rp_stats, 0, sizeof(hle_rp_stats));
     extern uint32_t hle_rp_ticks[6];
     debugf("[hle]   replay time: signature %lu%% compare %lu%% matrices %lu%% list %lu%% state %lu%%\n", (unsigned long)(hle_rp_ticks[0] * 100ULL / total),
@@ -2179,6 +2187,14 @@ void hle_vrsp_state(hle_st_t *s, uint32_t ovl_mask, bool sig)
         if (!(ovl_mask & (1u << i))) continue;
         // (only Tiny3D overlays are in the mask) the DMEM the port reads, segment table aside
         uint32_t lo, hi, lo2, hi2; hle_t3d_dmem_range(&lo, &hi, &lo2, &hi2);
+        if (s->cmp) {   // the segment table is zeros in the saved copy (not compared)
+            uint32_t seg = hle_t3d_seg_addr();
+            hle_st(s, vrsp_imgs[i] + lo, seg - lo);
+            s->p += 32;
+            hle_st(s, vrsp_imgs[i] + seg + 32, hi - seg - 32);
+            hle_st(s, vrsp_imgs[i] + lo2, hi2 - lo2);
+            continue;
+        }
         uint8_t *at = s->p;
         if (s->load) hle_t3d_seg_keep(vrsp_imgs[i], false);
         hle_st(s, vrsp_imgs[i] + lo, hi - lo);
@@ -2186,10 +2202,13 @@ void hle_vrsp_state(hle_st_t *s, uint32_t ovl_mask, bool sig)
         else hle_t3d_seg_mask(at, lo);          // kept as it is on load
         hle_st(s, vrsp_imgs[i] + lo2, hi2 - lo2);
     }
-    if (!sig) {
-        HLE_ST(s, vrsp_cur_ovl);
-        if (s->load && vrsp_cur_ovl) vrsp_load_overlay(vrsp_cur_ovl);
-    }
+    if (!sig) hle_vrsp_cur_ovl_io(s);
+}
+/** The current overlay, the last field of hle_vrsp_state's state left (restored even when the rest is skipped). */
+void hle_vrsp_cur_ovl_io(hle_st_t *s)
+{
+    HLE_ST(s, vrsp_cur_ovl);
+    if (s->load && vrsp_cur_ovl) vrsp_load_overlay(vrsp_cur_ovl);
 }
 const uint8_t *hle_vrsp_t3d_img(void)
 {
