@@ -179,7 +179,7 @@ static void sfx_at(int id, float vol, float x, float z)
     audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
 }
 static void sfx_boom(void) { sfx(SCENE1_SFX_BOSS_SMASH1, 1.0f); }
-static void sfx_cast(void) { sfx(SCENE1_SFX_BOSS_SWING2, 1.0f); }
+static void sfx_cast(void) { sfx(SCENE1_SFX_SUN_CAST, 1.0f); }
 static void sfx_chain(int k) { sfx(k ? SCENE1_SFX_CHAIN2 : SCENE1_SFX_CHAIN1, 1.0f); }
 
 static float speed_mult(void) { return s.unshackled ? 1.35f : 1.0f; }
@@ -616,7 +616,7 @@ static void ram_update(Boss *b, float dt)
 #endif
         if (hit) { s.hitDone = true; character_apply_damage(hurt(20.0f)); }
         if (k >= 1.0f || blocked) { s.step = 2; s.t = 0.0f; b->capsuleCollider.radius = SUN_R + 4.0f;
-                                    screen_shake_set_shake_mag(blocked ? 10.0f : 4.0f); if (blocked) sfx_boom(); }
+                                    screen_shake_set_shake_mag(blocked ? 10.0f : 4.0f); sfx(SCENE1_SFX_BOSS_SMASH1, blocked ? 1.0f : 0.5f); }   // the stop (a wall, a big one)
     } else {
         face_player(b, dt, 1.5f);
         b->pos[1] += (s.groundY + HOVER_H - b->pos[1]) * fminf(1.0f, dt * 3.0f);
@@ -1001,7 +1001,7 @@ static void sweep_update(Boss *b, float dt)
             s.hitDone = true;
             character_apply_damage(hurt(14.0f));
         }
-        if (k >= 1.0f) { s.step = 2; s.t = 0.0f; screen_shake_set_shake_mag(6.0f); }
+        if (k >= 1.0f) { s.step = 2; s.t = 0.0f; screen_shake_set_shake_mag(6.0f); sfx(SCENE1_SFX_BOSS_SMASH1, 0.6f); }    // the drag's end, heard
     } else {
         if (s.t > 0.1f) c->kin = false;
         if (s.t > 0.3f) c->hot = false;

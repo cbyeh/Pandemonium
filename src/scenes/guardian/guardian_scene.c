@@ -367,6 +367,7 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_FW_STEP3]    = "rom:/audio/sfx/hostile/fw_step3_22k.wav64",
     [SCENE1_SFX_FW_STEP4]    = "rom:/audio/sfx/hostile/fw_step4_22k.wav64",
     [SCENE1_SFX_FW_HURT]     = "rom:/audio/sfx/hostile/fw_hurt_22k.wav64",
+    [SCENE1_SFX_SUN_CAST]    = "rom:/audio/sfx/hostile/sun_cast_22k.wav64",
     [SCENE1_SFX_SUN_SWELL]   = "rom:/audio/sfx/hostile/sun_swell_22k.wav64",
     [SCENE1_SFX_SUN_BURST]   = "rom:/audio/sfx/hostile/sun_burst_22k.wav64",
     [SCENE1_SFX_SUN_RUSH]    = "rom:/audio/sfx/hostile/sun_rush_22k.wav64",

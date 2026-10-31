@@ -107,6 +107,11 @@ def mix(*parts):    # (sound, the volume the game played it at[, seconds in]): w
     return L.limit(y)
 
 
+def fade_in(x, secs=0.005):
+    y = x.copy(); f = min(len(y), int(secs * SR)); y[:f] *= np.linspace(0, 1, f)
+    return y
+
+
 def cut(x, secs):   # its first `secs`, faded out over the last 0.15
     y = x[:int(secs * SR)].copy(); f = min(len(y), int(0.15 * SR)); y[-f:] *= np.linspace(1, 0, f)
     return y
@@ -140,7 +145,7 @@ def main():
     out["hostile/wing_flyby"] = boss(verb(trim_tail(lead(pk("Enemies/ancient_dragon_flap_wings_03")))), -3)
     out["hostile/spell_cast"] = boss(verb(trim_tail(at(pk("Sorcery/dark_sorcery_cast_03"), 660))))
     out["hostile/dark_nova"] = boss(verb(trim_tail(at(pk("Sorcery/dark_sorcery_cast_01"), 6160))))
-    out["hostile/dark_beam"] = boss(verb(trim_tail(at(pk("Sorcery/dark_sorcery_cast_02"), 2640))))
+    out["hostile/dark_beam"] = boss(verb(trim_tail(lead(pk("Sorcery/dark_sorcery_cast_02")))))      # on the beam's first frame (it came 0.12 s late)
     out["hostile/rock_blast"] = boss(verb(trim_tail(at(pk("Sorcery/fire_sorcery_explode_02"), 5280))))
     out["hostile/fw_slice"] = boss(heavy(verb(lead(pk("Player/ashen_knight_heavy_attack_03")))))   # the Fallen Warrior's Moon Blade
     # The knight's: skills at his sword hits as heard; hurt at the old grunt's; potion, clank, roll as quiet as chosen
@@ -177,11 +182,14 @@ def main():
 
     # What plays together from one place, mixed into one sound (one channel, one of the scene's slots),
     # each part at the volume the game played it at
-    sw2, sm1 = orig("boss/boss_swing2"), orig("boss/boss_smash1")
+    # the Sun's cast: the Guardian's swing 2 from just before its attack (whole, it peaked 0.15 s after the shake)
+    sw2, sm1 = fade_in(lead(orig("boss/boss_swing2"))), orig("boss/boss_smash1")
+    kept["hostile/sun_cast"] = sw2
     out["hostile/sun_burst"] = mix((sm1, 1.0), (out["hostile/fire_sun"], 1.0))      # Flare's and Corona's ring of fire
     out["hostile/sun_rush"] = mix((sw2, 1.0), (rush, 1.0))                            # a ram: its cast and the rush
     out["hostile/sun_eclipse"] = mix((eclipse, 1.0), (roar, 0.9))
-    out["hostile/sun_break"] = mix((sm1, 1.0), (roar, 1.0), (kept["hostile/chain1"], 1.0, 0.5), (kept["hostile/chain2"], 1.0, 0.5))
+    out["hostile/sun_break"] = mix((sm1, 1.0), (roar, 1.0), (kept["hostile/chain1"], 1.0, 0.5), (kept["hostile/chain2"], 1.0, 0.5),
+                                   *((sm1, 0.5, 0.25 * k) for k in range(1, 6)))     # its quakes, every 0.25 s
     kept["hostile/sun_lash"] = mix((sw2, 1.0), (kept["hostile/chain1"], 1.0))
     kept["hostile/sun_sweep"] = mix((sw2, 1.0), (kept["hostile/chain2"], 1.0))
     kept["hostile/sun_rain"] = mix((sw2, 1.0), (kept["hostile/chain1"], 1.0), (kept["hostile/chain2"], 1.0))

@@ -80,6 +80,7 @@ static const float SPEED_DECAY_RATE = 4.0f;
 
 static const float ROLL_DURATION = 0.9f;
 static const float ROLL_DURATION_MOVING = 0.45f; // tune 0.45–0.70
+static const float ROLL_LAND_S = 0.39f;   // the Roll clip: down on the floor (its sound's peak then)
 static const float ROLL_MOVING_MAG      = 0.20f; // stick magnitude threshold
 
 // Invulnerability window inside the roll, expressed as normalized actionTimer
@@ -962,7 +963,9 @@ static inline void try_start_roll(const joypad_buttons_t* buttons, const StickIn
     characterState = CHAR_STATE_ROLLING;
     actionTimer = 0.0f;
     s_perfectThisRoll = false;
-    audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.5f, 0.0f);     // kept quiet
+#ifdef HLE_LOG_SFX
+    debugf("[roll] %lu starts\n", (unsigned long)get_ticks_ms());     // test aid: its sound comes as it lands (ROLL_LAND_S)
+#endif
 
     // Shorten roll when moving so we return to locomotion sooner (prevents long slide)
     float mag = stick ? stick->magnitude : 0.0f;
@@ -2015,7 +2018,9 @@ static inline void start_knockdown_breakaway_roll(void)
     characterState = CHAR_STATE_ROLLING;
     actionTimer = 0.0f;
     s_perfectThisRoll = false;
-    audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.5f, 0.0f);     // kept quiet
+#ifdef HLE_LOG_SFX
+    debugf("[roll] %lu starts\n", (unsigned long)get_ticks_ms());     // test aid: its sound comes as it lands (ROLL_LAND_S)
+#endif
 
     // Breakaway roll duration: pick whichever feels right.
     // If you want it snappier, use ROLL_DURATION_MOVING.
@@ -2051,6 +2056,13 @@ static inline void progress_action_timers(float dt, KnockdownBreakawayReq breaka
         T3DAnim* rollAnim = NULL;
         if (ANIM_ROLL >= 0 && ANIM_ROLL < character.animationCount) {
             rollAnim = character.animations[ANIM_ROLL];
+        }
+        // Its sound as it comes down onto the floor: the Roll clip's head drops from 1.9 to 0.4 by 0.40 s
+        // (the file's peak is at its start; quiet)
+        static float prevRollT;
+        if (rollAnim) {
+            if (prevRollT < ROLL_LAND_S && rollAnim->time >= ROLL_LAND_S) audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.5f, 0.0f);
+            prevRollT = rollAnim->time;
         }
         if (actionTimer > 0.05f && rollAnim && !rollAnim->isPlaying) {
             characterState = CHAR_STATE_NORMAL;

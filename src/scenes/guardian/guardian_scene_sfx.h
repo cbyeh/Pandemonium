@@ -86,6 +86,7 @@ typedef enum Scene1Sfx
     SCENE1_SFX_FW_HURT,         // its grunt as it staggers
     // The Shackled Sun's own
     // (sounds that play together from one place are mixed into one: tools/pack_sfx.py)
+    SCENE1_SFX_SUN_CAST,        // its cast (the Guardian's swing 2, from its attack)
     SCENE1_SFX_SUN_SWELL,       // Flare's and Corona's charge
     SCENE1_SFX_SUN_BURST,       // their ring of fire: the boom and the fire
     SCENE1_SFX_SUN_RUSH,        // a ram or dive (its cast and the rush), heard from it as it moves

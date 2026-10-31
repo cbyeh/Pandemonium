@@ -832,7 +832,7 @@ static void updown_update(Boss *b, float dt)
         if (clip >= w[1] || clip_done()) { s.step = 1; s.hitDone = false; play(FKA_CHARGED, true);
                                              t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.1f); }
     } else {
-        if (s.step == 1 && clip >= 1.95f && clip - dt < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);
+        { static float was; if (s.step == 1 && clip >= 1.95f && was < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.9f); was = clip; }    // (the clip runs at its own speed here: clip - dt missed it)
         if (s.step == 1 && clip >= 2.02f) {    // the blade meets the floor
             screen_shake_set_shake_mag(6.0f);
             s.step = 2;
@@ -859,7 +859,7 @@ static void trislam_update(Boss *b, float dt)
         face_player(b, dt, 3.0f);
         swing_pace(DN_FROM, W_DN[0], 1.0f);
         if (s.t <= dt) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);
-        if (clip >= 1.95f && clip - dt < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);     // its onset on the bite
+        { static float was; if (clip >= 1.95f && was < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.9f); was = clip; }     // its onset on the bite (clip - dt missed it when the clip ran fast)
         if (clip >= 2.02f) {    // the blade meets the floor: mark the triangle where the player stands
             float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
             screen_shake_set_shake_mag(8.0f);
@@ -1201,7 +1201,6 @@ void fallen_knight_update(Boss* b, float dt)
                 s.moveZ = (-dz / dist * back - dx / dist * side) * 70.0f;
                 enter(FK_ROLL);
                 play(FKA_ROLL, true);
-                sfx(SCENE1_SFX_FW_ROLL, 0.9f);
                 break;
             }
         }
@@ -1243,6 +1242,7 @@ void fallen_knight_update(Boss* b, float dt)
 
     case FK_ROLL:
         move(b, s.moveX, s.moveZ, dt);
+        if (s.t - dt < 0.39f && s.t >= 0.39f) sfx(SCENE1_SFX_FW_ROLL, 0.9f);     // as it comes down onto the floor (the knight's Roll clip)
         if (s.t > 0.55f) {
             if (s.counter) { enter(FK_ROLLCUT); play(FKA_ATTACK2, true); }
             else enter(FK_CHASE);
