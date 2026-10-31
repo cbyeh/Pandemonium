@@ -1207,16 +1207,23 @@ void scene_set_bonus_fight(BonusFight fight) { s_bonusFight = fight; }
 #define BONUS_LAND_S   2.0f             // the descent plays this long before the next line
 #define BONUS_HOLD_S   1.4f             // a line stays this long once typed
 
+// An intro shot relative to the spawn point (the player stands at x -160): the camera
+// drifts from p0 to p1 looking at tg until the next cut. p0[1] == 0: no cut, hold the last.
+typedef struct { float p0[3], p1[3], tg[3]; } BonusShot;
+
 // Each Bonus fight: its intro lines (the boss comes down before line `dropAt`), its
 // outro lines, and the boss it turns g_boss into. Lines follow each other as soon as
-// the previous one has been typed and held, so the timing follows the text.
+// the previous one has been typed and held, so the timing follows the text. Each line
+// cuts to its own shot (lines before the drop only until the light gathers), with the
+// gather and descent shots in between.
 typedef struct {
     const char *intro[6], *outro[4];
     int dropAt;
+    BonusShot line[6], gather, drop;
     void (*begin)(Boss*), (*skip)(Boss*);
     int phase;
     const char *music;
-    float camScale;     // the intro shots stand this much further off (0: 1, a boss of human size)
+    float camScale;     // the outro camera stands this much further off (0: 1, a boss of human size)
 } BonusDef;
 
 static const BonusDef BONUS_DEFS[] = {
@@ -1233,6 +1240,14 @@ static const BonusDef BONUS_DEFS[] = {
             "^Carry it, knight...~\n<better than I did.",
         },
         .dropAt = 3,
+        .line = {
+            { { -70, 20, -60 }, { -95, 18, 45 }, { -160, 14, 0 } },      // watched from where it will land
+            { { -138, 4, 22 }, { -136, 14, 24 }, { -160, 8, 0 } },       // up from the floor "where you stand"
+            { { -170, 16, -70 }, { -160, 16, -62 }, { -135, 14, 0 } },   // the knight's profile, the empty hall ahead
+            { { -58, 18, 16 }, { -34, 17, 8 }, { 0, 20, 0 } },           // pushing in on it: the challenge
+        },
+        .gather = { { -50, 6, 40 }, { -55, 22, 48 }, { 0, 70, 0 } },
+        .drop   = { { -42, 4, 18 }, { -36, 6, 12 }, { 0, 22, 0 } },      // low, looking up as it lands
         .begin = fallen_knight_begin, .skip = fallen_knight_skip_intro, .phase = FALLEN_KNIGHT_PHASE,
         .music = "rom:/audio/music/whispers_of_the_abyss-22k.wav64",  // "Whispers of the Abyss" by AlkaKrab
     },
@@ -1250,6 +1265,15 @@ static const BonusDef BONUS_DEFS[] = {
             ">Freeze in the dark,~\n^knight...~ <without me.",
         },
         .dropAt = 4,
+        .line = {
+            { { -120, 170, 30 }, { -140, 140, 16 }, { -160, 4, 0 } },    // from above: "walked beneath me"
+            { { -100, 14, 30 }, { -125, 16, 20 }, { -160, 14, 0 } },     // closing on the knight, the lit hall behind
+            { { -200, 10, 30 }, { -190, 10, 34 }, { -120, 160, 0 } },    // up into the dark where the chains hang
+            { { -135, 4, 20 }, { -138, 4, 14 }, { -160, 4, 0 } },        // down at the knight's feet
+            { { -80, 26, 4 }, { -46, 24, 2 }, { 0, 24, 0 } },            // pushing in on its face: BURN
+        },
+        .gather = { { -200, 6, -10 }, { -195, 4, -6 }, { 0, 90, 0 } },     // behind the knight, looking up
+        .drop   = { { -100, 20, -70 }, { -90, 22, -60 }, { 0, 40, 0 } },
         .begin = sun_boss_begin, .skip = sun_boss_skip_intro, .phase = SUN_BOSS_PHASE,
         .music = "rom:/audio/music/veil_of_eternal_nightfall-22k.wav64",    // "Veil of Eternal Nightfall" by AlkaKrab
     },
@@ -1265,6 +1289,14 @@ static const BonusDef BONUS_DEFS[] = {
             "^Leave me the dark,~\n^knight.~ <It is all\nI ever was.",
         },
         .dropAt = 3,
+        .line = {
+            { { 240, 50, -80 }, { 180, 44, -60 }, { -160, 10, 0 } },     // from the far dark, the knight small
+            { { -110, 12, -90 }, { -110, 14, 90 }, { -180, 12, 0 } },    // tracking across the knight
+            { { -200, 22, -16 }, { -194, 20, -12 }, { 0, 30, 0 } },      // over the knight's shoulder, the hall empty
+            { { -150, 10, 50 }, { -125, 14, 36 }, { 0, 70, 0 } },        // low, closing on its head: "let me feed"
+        },
+        .gather = { { -135, 4, 30 }, { -140, 5, 34 }, { -160, 30, 0 } },  // low on the knight, the dark above
+        .drop   = { { -40, 30, -200 }, { -60, 40, -170 }, { 0, 60, 0 } },    // side-on, wide for its wings
         .begin = dragon_boss_begin, .skip = dragon_boss_skip_intro, .phase = DRAGON_BOSS_PHASE,
         .music = "rom:/audio/music/shadowforge_convergence-22k.wav64",    // "Shadowforge Convergence" by AlkaKrab
         .camScale = 2.6f,
@@ -1416,12 +1448,34 @@ static void scene_tower_draft_update(void)
 }
 
 // An intro shot of the spawn point: positions and target are relative to it, scaled to the boss
-static void scene_bonus_shot(const BonusDef *d, const float p0[3], const float p1[3], const float tg[3])
+static void scene_bonus_shot(const BonusShot *s)
 {
-    float k = d->camScale > 0.0f ? d->camScale : 1.0f;
     cutscene_manager_set_camera_shot(&sceneContext,
-        (T3DVec3){{ BONUS_SPAWN_X + p0[0] * k, p0[1] * k, p0[2] * k }}, (T3DVec3){{ BONUS_SPAWN_X + p1[0] * k, p1[1] * k, p1[2] * k }},
-        (T3DVec3){{ BONUS_SPAWN_X + tg[0], tg[1] * (k > 1.0f ? 0.8f * k : 1.0f), tg[2] }});
+        (T3DVec3){{ BONUS_SPAWN_X + s->p0[0], s->p0[1], s->p0[2] }}, (T3DVec3){{ BONUS_SPAWN_X + s->p1[0], s->p1[1], s->p1[2] }},
+        (T3DVec3){{ BONUS_SPAWN_X + s->tg[0], s->tg[1], s->tg[2] }});
+}
+
+// The intro's cuts, in order: a shot per line, the gather and the descent
+static const BonusShot *s_cutShot[10];
+static float s_cutT[10];
+static int s_cutN, s_cut;
+
+static void scene_bonus_plan_cuts(const BonusDef *d)
+{
+    float gatherT = s_bonusDropT - BONUS_GATHER_S;
+    s_cutN = 0;
+    for (int i = 0; i < 6 && d->intro[i]; i++) {
+        if (i == d->dropAt) {
+            s_cutT[s_cutN] = gatherT; s_cutShot[s_cutN++] = &d->gather;
+            s_cutT[s_cutN] = s_bonusDropT; s_cutShot[s_cutN++] = &d->drop;
+        }
+        float t = i == 0 ? 0.0f : s_bonusLineT[i];
+        if (d->line[i].p0[1] > 0.0f && (i == 0 || i >= d->dropAt || t < gatherT)) {
+            s_cutT[s_cutN] = t; s_cutShot[s_cutN++] = &d->line[i];
+        }
+    }
+    scene_bonus_shot(s_cutShot[0]);
+    s_cut = 1;
 }
 
 static void scene_bonus_intro_update(bool aJustPressed)
@@ -1436,32 +1490,20 @@ static void scene_bonus_intro_update(bool aJustPressed)
     }
     scene_bonus_speak(d->intro, 6, t);
 
-    switch (s_bonusBeat) {
-    case 0:     // the empty hall; a voice from nowhere
-        cutscene_manager_update_camera(s_bonusDropT - BONUS_GATHER_S);
-        if (t >= s_bonusDropT - BONUS_GATHER_S) {     // looking up where crimson light gathers
-            scene_bonus_shot(d, (float[3]){ -62.0f, 8.0f, 38.0f }, (float[3]){ -50.0f, 12.0f, 24.0f }, (float[3]){ 0.0f, 70.0f, 0.0f });
-            s_bonusBeat = 1;
-        }
-        break;
-    case 1: {
-        cutscene_manager_update_camera(BONUS_GATHER_S);
-        static float pulse;
-        pulse -= deltaTime;
-        if (pulse <= 0.0f) {
-            pulse = 0.45f;
-        }
-        if (t >= s_bonusDropT) {     // it comes down from the dark
-            scene_bonus_begin_boss();
-            scene_bonus_shot(d, (float[3]){ -80.0f, 16.0f, -6.0f }, (float[3]){ -66.0f, 20.0f, 14.0f }, (float[3]){ 0.0f, 26.0f, 0.0f });
-            s_bonusBeat = 2;
-        }
-    } break;
-    default:
-        cutscene_manager_update_camera(3.0f);
+    if (s_bonusBeat == 0 && t >= s_bonusDropT) {     // it comes down from the dark
+        scene_bonus_begin_boss();
+        s_bonusBeat = 1;
+    }
+    if (s_cut < s_cutN && t >= s_cutT[s_cut]) {
+#ifdef HLE_AUTOPLAY
+        debugf("[cut] %d of %d at %.2f s (planned %.2f), ms %lu\n", s_cut, s_cutN, (double)t, (double)s_cutT[s_cut], (unsigned long)get_ticks_ms());
+#endif
+        scene_bonus_shot(s_cutShot[s_cut++]);
+    }
+    cutscene_manager_update_camera((s_cut < s_cutN ? s_cutT[s_cut] : s_bonusEndT) - s_cutT[s_cut - 1]);
+    if (s_bonusBeat) {
         boss_update(g_boss);
         if (t >= s_bonusEndT) scene_bonus_start_fight();
-        break;
     }
 }
 
@@ -1499,9 +1541,7 @@ void scene_init_cutscene(void)
             cutsceneTimer = 0.0f;
             audio_stop_music();
             audio_play_music("rom:/audio/music/boss_phase1_cutscene1-22k.wav64", false);   // as the Guardian's intro; the theme waits for the fight
-            cutscene_manager_set_camera_shot(&sceneContext,
-                (T3DVec3){{ -372.0f, 30.0f, 58.0f }}, (T3DVec3){{ -352.0f, 26.0f, 40.0f }},
-                (T3DVec3){{ BONUS_SPAWN_X, 24.0f, 0.0f }});
+            scene_bonus_plan_cuts(&BONUS_DEFS[s_bonusFight]);
         } break;
 
         case CUTSCENE_ENDING: {
