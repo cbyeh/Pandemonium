@@ -1689,7 +1689,7 @@ void fallen_knight_draw(Boss* b)
     uint8_t amb[4] = { colorAmbient[0], colorAmbient[1], colorAmbient[2], 255 };
     t3d_light_set_ambient(flash ? (uint8_t[4]){ 255, 120, 120, 255 } : amb);
     static const char *MATS[] = { "knight", "head", "chainmail", "cloth", "straps", "sword", "black" };
-    static const color_t COLS[] = { RGBA32(74, 20, 26, 255), RGBA32(74, 20, 26, 255), RGBA32(58, 52, 52, 255), RGBA32(44, 14, 18, 255),
+    static const color_t COLS[] = { RGBA32(74, 20, 26, 255), RGBA32(74, 20, 26, 255), RGBA32(96, 30, 36, 255), RGBA32(44, 14, 18, 255),
                                     RGBA32(58, 16, 20, 255), RGBA32(84, 80, 82, 255), RGBA32(20, 16, 18, 255) };
     static bool tinted;     // (its own model: its colours set once)
     if (!tinted) {
