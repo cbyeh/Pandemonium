@@ -1679,6 +1679,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         if (t == 10 || t == 28 || t == 46) { pressed->b = 1; in->btn.b = 1; }
 #elif HLE_TEST_SKILL_DMG == 1
         if (t == 10) pressed->d_up = 1;
+#ifdef HLE_MBD_KD   // a heavy hit HLE_MBD_KD frames into the dance (knocked down mid-air)
+        if (t == 10 + HLE_MBD_KD && cyc == 0) { debugf("[mbdkd] hit at frame %d, y %.1f\n", frame, (double)character.pos[1]); character_apply_damage(25.0f); }
+        if (cyc == 0 && t > 10 && t < 120) debugf("[mbdkd] f %d state %d y %.1f\n", frame, character_get_state(), (double)character.pos[1]);
+#endif
 #elif HLE_TEST_SKILL_DMG == 2
         if (t == 10) pressed->d_right = 1;
 #else

@@ -3399,7 +3399,19 @@ void character_apply_damage(float amount)
                 strongKnockbackActive = false;
             }
 
+            // Knocked out of a Moon Blade Dance: stop rising, and ease into the pose (no mid-air snap)
+            bool fromAir = airborne && character.skeleton && character.skeletonBlend;
+            if (velocityY > 0.0f) velocityY = 0.0f;
+            if (fromAir) skeleton_copy_pose_bones(character.skeletonBlend, character.skeleton);
             switch_to_action_animation_immediate(ANIM_KNOCKDOWN);
+            if (fromAir) {
+                skeleton_prime_from_pose(character.skeleton, character.skeletonBlend);
+                hasBlendSnapshot        = true;
+                character.isBlending    = true;
+                character.blendDuration = 0.12f;
+                character.blendTimer    = 0.0f;
+                character.blendFactor   = 0.0f;
+            }
         }
     } else {
         // Non-knockdown hits should not leave knockback running
