@@ -391,10 +391,20 @@ static void sfx_at(int id, float vol, float x, float z)
     float dx = character.pos[0] - x, dz = character.pos[2] - z;
     audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
 }
-static int beamCh = -1;     // the beam's sound: heard from the beam as it moves (beam_at)
-static float beamSndT;      // until it's played again: it repeats for as long as the beam is on
-#define BEAM_SND_EVERY 1.1f     // (the sound is 1.5 s: each overlaps the last)
-static void sfx_beam(void) { beamCh = sfx(SCENE1_SFX_DARK_BEAM, 1.0f); beamSndT = BEAM_SND_EVERY; }
+// The beam: its burst as it fires, from the dragon (a launch), and its hum while it's on, heard from
+// the beam's nearest point as it moves (beam_at). The burst alone, repeated, was lost under the
+// blasts it leaves at your feet
+static int humCh = -1;
+static float humD;          // where it's heard from (it loops: the file's own, the Makefile)
+static void sfx_beam(void) { sfx(SCENE1_SFX_DARK_BEAM, 1.0f); }
+static bool humming;        // beam_at ran this frame
+static void beam_sound_end(float dt)
+{
+    // Faded out over ~0.1 s as it's carried away (the falloff is silent past 200)
+    if (!humming && humCh >= 0 && (humD += 1800.0f * dt) < 200.0f) audio_set_scene_sfx_dist(humCh, SCENE1_SFX_BEAM_HUM, humD);
+    else if (!humming && humCh >= 0) { audio_stop_scene_sfx(humCh, SCENE1_SFX_BEAM_HUM); humCh = -1; }
+    humming = false;
+}
 static void sfx_boom(void) { sfx(SCENE1_SFX_BOSS_SMASH2, 1.0f); }
 static void sfx_swing(void) { sfx(SCENE1_SFX_BOSS_SWING3, 1.0f); }
 static void sfx_lunge(void) { sfx(SCENE1_SFX_BOSS_LUNGE, 1.0f); }
@@ -719,6 +729,7 @@ static void sb_draw(Boss *b)
 void dragon_boss_free(void)
 {
     if (!s.ready) return;
+    if (humCh >= 0) { audio_stop_scene_sfx(humCh, SCENE1_SFX_BEAM_HUM); humCh = -1; }     // (it loops)
     gpu_wait();
     ProcMesh *all[] = { &s.mThroat, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.flame, &s.mOrb, &s.mIce, &s.mCone };
     for (unsigned i = 0; i < sizeof(all) / sizeof(all[0]); i++) proc_mesh_free(all[i]);
@@ -885,7 +896,7 @@ static void hazards_update(float dt)
         if (!e->on) continue;
         float was = e->t;
         e->t -= dt;
-        if (was > 0.2f && e->t <= 0.2f && ((i & 1) || s.state == DG_SNIPE)) sfx_at(SCENE1_SFX_FIRE_DRAGON, 0.7f, e->p[0], e->p[1]);    // every other one: they come five a second
+        if (was > 0.2f && e->t <= 0.2f && ((i & 1) || s.state == DG_SNIPE)) sfx_at(SCENE1_SFX_FIRE_DRAGON, s.state == DG_SNIPE ? 0.7f : 0.45f, e->p[0], e->p[1]);    // every other one: they come five a second (under the beam's hum)
         if (e->t > 0.0f) continue;
         e->on = false;
         float p[3] = { e->p[0], s.groundY, e->p[1] };
@@ -929,8 +940,8 @@ static void beam_at(const float to[3], float w, float dmg, bool blasts, float dt
     s.beamOn = true; s.beamW = w; s.glow = 1.0f;
     float bg = fminf(axis_dist_seg(s.mouth, to) - w, axis_dist_pt(to) - 9.0f);
     float bd = axis_dist_seg(s.mouth, to);
-    if ((beamSndT -= dt) <= 0.0f) { beamCh = audio_play_scene_sfx_dist(SCENE1_SFX_DARK_BEAM, BONUS_SFX_VOL, bd); beamSndT = BEAM_SND_EVERY; }
-    else audio_set_scene_sfx_dist(beamCh, SCENE1_SFX_DARK_BEAM, bd);
+    if (!audio_set_scene_sfx_dist(humCh, SCENE1_SFX_BEAM_HUM, bd)) humCh = audio_play_scene_sfx_dist(SCENE1_SFX_BEAM_HUM, BONUS_SFX_VOL, bd);     // (or stopped: all sounds stopped, its channel taken)
+    humD = bd; humming = true;
     HB_TOUCH(HB_BEAM, bg - 8.0f);
     if (!s.hitDone && bg < PLAYER_R) { HB_HIT(HB_BEAM, bg - 8.0f); character_apply_damage(dmg); s.hitDone = true; }
     if (!blasts) return;
@@ -3374,6 +3385,7 @@ void dragon_boss_update(Boss* b, float dt)
     s.swipeAmt = ease(s.swipeAmt, s.tSwipeAmt, 10.0f, dt);
     // Flapping fades in and out; the raise it beats about stays eased
     breath_sound_end();
+    beam_sound_end(dt);
     float ph0 = s.flapPh;
     s.flapPh += dt * s.flapRate;
     // A beat heard at the top of each stroke, in the air (the wings at the top: phase pi/2)

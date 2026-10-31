@@ -127,6 +127,23 @@ def heavy(x):       # deeper and heavier: pitched down 0.82x, the low end lifted
     return ffmpeg(src, "asetrate=22050*0.82,aresample=22050,bass=g=5:f=110,lowpass=f=7000")
 
 
+def drone(parts, secs, xf=0.25):  # sustained bodies (start, end in s) of sounds, crossfaded in turn into one long steady sound
+    n = int(secs * SR); f = int(xf * SR); y = np.zeros(n + 2 * SR); i = k = 0
+    w = np.sqrt(np.linspace(0, 1, f))       # equal power
+    while i < n:
+        x, a, b = parts[k % len(parts)]; s = x[int(a * SR):int(b * SR)].copy(); k += 1
+        s = s / np.sqrt((s ** 2).mean()); s[:f] *= w; s[-f:] *= w[::-1]
+        y[i:i + len(s)] += s; i += len(s) - f
+    return cut(fade_in(y[:n], 0.08), secs)
+
+
+
+def loop(x, secs, xf=0.15):     # its first `secs`, the next `xf` crossfaded into its start: it repeats seamlessly
+    n, f = int(secs * SR), int(xf * SR); w = np.sqrt(np.linspace(0, 1, f)); y = x[:n].copy()
+    y[:f] = y[:f] * w + x[n:n + f] * w[::-1]
+    return y
+
+
 def main():
     P = pack_root(sys.argv[1])
     pk = lambda name: ffmpeg(os.path.join(P, name + ".wav"))
@@ -145,7 +162,9 @@ def main():
     out["hostile/wing_flyby"] = boss(verb(trim_tail(lead(pk("Enemies/ancient_dragon_flap_wings_03")))), -3)
     out["hostile/spell_cast"] = boss(verb(trim_tail(at(pk("Sorcery/dark_sorcery_cast_03"), 660))))
     out["hostile/dark_nova"] = boss(verb(trim_tail(at(pk("Sorcery/dark_sorcery_cast_01"), 6160))))
-    out["hostile/dark_beam"] = boss(verb(trim_tail(lead(pk("Sorcery/dark_sorcery_cast_02")))))      # on the beam's first frame (it came 0.12 s late)
+    out["hostile/dark_beam"] = trim_tail(boss(verb(trim_tail(lead(pk("Sorcery/dark_sorcery_cast_02"))))), -42)      # on the beam's first frame (it came 0.12 s late); its tail under the hum cut, room for beam_hum in the ROM
+    dc1, dc3 = pk("Sorcery/dark_sorcery_cast_01"), pk("Sorcery/dark_sorcery_cast_03")
+    out["hostile/beam_hum"] = loop(boss(heavy(verb(drone([(dc3, 0.3, 1.6), (dc1, 0.6, 1.45)], 2.8))), -3)[SR:], 0.75)    # Shadowborne's beam while it's on (the cast's body, held); looped by the game (Makefile), short so the ROM doesn't grow
     out["hostile/rock_blast"] = boss(verb(trim_tail(at(pk("Sorcery/fire_sorcery_explode_02"), 5280))))
     out["hostile/fw_slice"] = boss(heavy(verb(lead(pk("Player/ashen_knight_heavy_attack_03")))))   # the Fallen Warrior's Moon Blade
     # The knight's: skills at his sword hits as heard; hurt at the old grunt's; potion, clank, roll as quiet as chosen

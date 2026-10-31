@@ -97,6 +97,7 @@ typedef enum Scene1Sfx
     SCENE1_SFX_SUN_RAIN,        // the rain's tell: its cast and both chains
     SCENE1_SFX_DRAGON_RISE,     // Shadowborne's hover: its cast and roar
     SCENE1_SFX_DRAGON_STOMP,    // its stomp: the boom and its footfall
+    SCENE1_SFX_BEAM_HUM,        // its beam while it's on, heard from the beam (dark_beam is its start)
 
     SCENE1_SFX_COUNT
 } Scene1Sfx;

@@ -172,6 +172,7 @@ $(COLLISION_STAMP): $(COLLISION_DEPS)
 ifeq ($(MUSIC_MONO),1)
 $(FILESYSTEMDIR)/audio/music/%.wav64: WAV64_FLAGS += --wav-mono
 endif
+$(FILESYSTEMDIR)/audio/sfx/hostile/beam_hum_22k.wav64: WAV64_FLAGS += --wav-loop true --wav-resample 11025    # Shadowborne's beam: repeats until stopped; a low drone, so half the rate (and ROM)
 $(FILESYSTEMDIR)/%.wav64: $(ASSDIR)/%.wav
 	@mkdir -p $(dir $@)
 	@echo "    [AUDIO] $@"

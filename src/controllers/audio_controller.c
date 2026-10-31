@@ -265,7 +265,6 @@ void audio_scene_load_paths(const char *const *paths, int count)
 
         wav64_open(&sceneWavs[i], p);
         scenePaths[i] = p;
-        wav64_set_loop(&sceneWavs[i], false);
         sceneLoaded[i] = true;
     }
 }
@@ -288,7 +287,6 @@ void audio_hold_paths(const char *const *paths, int count)
     for (int k = 0; k < count && s_nHeld < (int)(sizeof s_held / sizeof s_held[0]); k++) {
         if (!paths[k] || held_find(paths[k])) continue;
         wav64_t *w = wav64_load(paths[k], &(wav64_loadparms_t){ .streaming_mode = WAV64_STREAMING_NONE });
-        wav64_set_loop(w, false);
         s_held[s_nHeld].path = paths[k]; s_held[s_nHeld].w = w; s_nHeld++;
     }
 }
@@ -505,12 +503,13 @@ int audio_play_scene_sfx_dist(int sceneSfxIndex, float baseVolume, float distanc
     return slot->ch;
 }
 
-void audio_set_scene_sfx_dist(int ch, int sceneSfxIndex, float distance)
+bool audio_set_scene_sfx_dist(int ch, int sceneSfxIndex, float distance)
 {
-    if (ch < 0 || ch >= MIXER_NUM_CHANNELS || !ch_is_sfx_eligible(ch)) return;
+    if (ch < 0 || ch >= MIXER_NUM_CHANNELS || !ch_is_sfx_eligible(ch)) return false;
     SfxSlot *slot = &sfxSlots[ch];
-    if (!slot->inUse || slot->sceneIndex != sceneSfxIndex) return;     // finished, the channel since reused
+    if (!slot->inUse || slot->sceneIndex != sceneSfxIndex) return false;     // finished, the channel since reused
     slot->distance = fmaxf(distance, 0.0f);     // (sfx_update_volumes applies it)
+    return true;
 }
 
 void audio_stop_scene_sfx(int ch, int sceneSfxIndex)

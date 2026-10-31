@@ -48,7 +48,7 @@ int audio_play_scene_sfx_dist(
     float distance
 );
 // A sound still playing on `ch` (audio_play_scene_sfx_dist's) heard from `distance` now (a moving source)
-void audio_set_scene_sfx_dist(int ch, int sceneSfxIndex, float distance);
+bool audio_set_scene_sfx_dist(int ch, int sceneSfxIndex, float distance);
 void audio_stop_scene_sfx(int ch, int sceneSfxIndex);   // stop one sound early (if it is still that sound)
 
 void audio_stop_all_sfx(void);

@@ -378,6 +378,7 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_SUN_RAIN]    = "rom:/audio/sfx/hostile/sun_rain_22k.wav64",
     [SCENE1_SFX_DRAGON_RISE] = "rom:/audio/sfx/hostile/dragon_rise_22k.wav64",
     [SCENE1_SFX_DRAGON_STOMP] = "rom:/audio/sfx/hostile/dragon_stomp_22k.wav64",
+    [SCENE1_SFX_BEAM_HUM]    = "rom:/audio/sfx/hostile/beam_hum_22k.wav64",
 };
 
 // The sounds heard all through a fight, held in memory (about 230 KB): the bosses' step, the
