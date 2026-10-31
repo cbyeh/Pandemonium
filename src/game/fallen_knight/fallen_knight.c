@@ -958,6 +958,7 @@ void fallen_knight_free(void)
     gpu_wait();
     for (int i = 0; i < FKA_COUNT; i++) t3d_anim_destroy(&s.anims[i]);
     t3d_model_free(s.body);
+    skill_fx_fire_texture(false);
     t3d_skeleton_destroy(&s.skel);
     t3d_skeleton_destroy(&s.skelBlend);
     free_uncached(s.mat);
@@ -975,6 +976,7 @@ void fallen_knight_begin(Boss* boss)
             t3d_anim_set_playing(&s.anims[i], false);
         }
         s.body = t3d_model_load("rom:/fallen_knight/fw_knight.t3dm");
+        skill_fx_fire_texture(true);     // its fire lunge's trail
         s.mat = malloc_uncached(sizeof(T3DMat4FP));
         memset(s.mat, 0, sizeof(T3DMat4FP));    // nothing drawn until the first update sets it (was whatever the heap held)
         s.swordBone = t3d_skeleton_find_bone(&s.skel, "Hand-Right");

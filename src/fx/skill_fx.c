@@ -810,6 +810,25 @@ static void draw_burst(const SkillFx *f)
     s_drawHostile = hostile;
 }
 
+// Its fire's heat (when loaded: the Fallen Warrior's fight): n64guy's CC0 "N64 Fire" (the Flat
+// loop, as intensity) running up through the tongues, its frames in step with the clock: a texel's
+// heat between the tongue's own colour (hot) and a deep red (cool), the tongue's shape and fade its
+// own. The two lines a half-tile apart along (never in step)
+static sprite_t *s_fireTex;
+static bool s_fireST;           // draw_fire_strip: give the strip's corners UVs
+void skill_fx_fire_texture(bool load)
+{
+    if (load && !s_fireTex) s_fireTex = sprite_load("rom:/fx/fire_flat.sprite");
+    else if (!load && s_fireTex) { rspq_wait(); sprite_free(s_fireTex); s_fireTex = NULL; }
+}
+
+static void vert_st(int vi, float s0, float t0)
+{
+    T3DVertPacked *v = &s_vb[vi >> 1];
+    int16_t ss = (int16_t)lroundf(s0 * 32.0f), tt = (int16_t)lroundf(t0 * 32.0f);     // 10.5 texels
+    if (vi & 1) { v->stB[0] = ss; v->stB[1] = tt; } else { v->stA[0] = ss; v->stA[1] = tt; }
+}
+
 /** The fire trail: per line a strip from the floor up to a ragged, flickering edge: tongues
  *  (FIRE_SUB to a stretch, each its own height, licking up and down and swaying) with low
  *  troughs between, over a yellow core strip. Lit, it rises in 0.15 s; burnt out, it fades to grey
@@ -846,9 +865,20 @@ static void draw_fire_strip(int i0, int n, float side, int layer)
             ct[v] = rgba((int)(230 - 140 * sm), (int)(50 + 35 * sm), (int)(12 + 70 * sm), (v & 1) ? 0.0f : a * 0.35f);
         }
     }
+    static float along[MAXV];
+    along[0] = side > 0.0f ? 16.0f : 0.0f;
+    for (int v = 1; v < nv; v++) along[v] = along[v - 1] + sqrtf((base[v][0] - base[v - 1][0]) * (base[v][0] - base[v - 1][0]) + (base[v][2] - base[v - 1][2]) * (base[v][2] - base[v - 1][2])) * 1.6f;
+    float rise = s_fireT * 40.0f;       // its heat rising through it
     for (int v = 0; v + 1 < nv; v += CHUNK - 1) {       // build_ribbon takes up to 34 at once
         int m = nv - v < CHUNK ? nv - v : CHUNK;
         build_ribbon(&top[v], &base[v], &ct[v], &cb[v], m);
+        if (s_fireST) {
+            int b0 = s_nverts - 2 * m;
+            for (int i = 0; i < m; i++) {
+                vert_st(b0 + 2 * i, along[v + i], rise - (top[v + i][1] - base[v + i][1]) * 2.0f);
+                vert_st(b0 + 2 * i + 1, along[v + i], rise);
+            }
+        }
     }
 }
 
@@ -856,6 +886,17 @@ static void draw_fire_trail(void)
 {
     bool hostile = s_drawHostile;
     s_drawHostile = false;      // fire's own colours
+    if (s_fireTex) {        // with its heat in it
+        build_flush();
+        surface_t all = sprite_get_pixels(s_fireTex), sub = surface_make_sub(&all, 0, ((int)(s_fireT * 30.0f) % 30) * 32, 32, 32);
+        rdpq_sync_pipe();
+        rdpq_mode_combiner(RDPQ_COMBINER1((SHADE, ENV, TEX0, ENV), (0, 0, 0, SHADE)));     // cool texels deep orange, hot ones the tongue's own
+        rdpq_set_env_color(RGBA32(215, 88, 16, 255));     // (deep red dimmed it all)
+        rdpq_mode_filter(FILTER_BILINEAR);
+        rdpq_tex_upload(TILE0, &sub, &(rdpq_texparms_t){ .s.repeats = REPEAT_INFINITE, .t.repeats = REPEAT_INFINITE });
+        t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_TEXTURED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
+        s_fireST = true;
+    }
     for (int i = 0; i < s_fireN; ) {
         int n = 1;
         while (i + n < s_fireN && s_fire[i + n].id == s_fire[i].id) n++;
@@ -863,6 +904,14 @@ static void draw_fire_trail(void)
             for (int side = -1; side <= 1; side += 2)
                 for (int layer = 0; layer < 2; layer++) draw_fire_strip(i, n, (float)side, layer);
         i += n;
+    }
+    if (s_fireST) {
+        build_flush();
+        s_fireST = false;
+        rdpq_sync_pipe();
+        rdpq_mode_filter(FILTER_POINT);
+        rdpq_mode_combiner(RDPQ_COMBINER_SHADE);
+        t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
     }
     s_drawHostile = hostile;
 }

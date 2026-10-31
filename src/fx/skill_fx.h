@@ -68,6 +68,8 @@ void skill_fx_spawn_orb_hostile(const float pos[3], const float vel[3], float da
 void skill_fx_fire_trail_begin(void);
 bool skill_fx_fire_trail_add(const float pos[3], float yaw, float burn);
 bool skill_fx_fire_trail_touches(const float p[3], float r);
+// Its fire's texture, loaded for the fight that uses it (the Fallen Warrior's) and freed after (else drawn untextured)
+void skill_fx_fire_texture(bool load);
 
 // Removes the bosses' effects, keeping the player's.
 void skill_fx_clear_hostile(void);
