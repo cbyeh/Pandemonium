@@ -2817,7 +2817,7 @@ static void hover_update(Boss *b, float dt)
     if (s.step == 0) {          // up, then the charge
         // its own tell (the Sky Beam also rises casting): a roar as it heaves itself straight up,
         // its wings pounding
-        if (s.t < dt * 1.5f) { sfx(SCENE1_SFX_SPELL_CAST_BOSS, 0.8f); sfx_roar(); s.flapPh = T3D_PI * 0.5f - 13.0f * 0.18f; }
+        if (s.t < dt * 1.5f) { sfx(SCENE1_SFX_DRAGON_RISE, 1.0f); s.flapPh = T3D_PI * 0.5f - 13.0f * 0.18f; }     // its cast and roar, one sound
         float u = smooth01(s.t / RISE);
         s.alt = (ALT + bob) * u;
         s.flapRate = s.t < RISE ? 13.0f : 7.0f;
@@ -3065,7 +3065,7 @@ static void stomp_update(Boss *b, float dt)
             c[1] = s.groundY + 6.0f;
             skill_fx_spawn_arc_hostile(c, -b->rot[1], 64.0f, 30.0f);
             screen_shake_set_shake_mag(11.0f);
-            sfx_boom(); sfx_step();
+            sfx(SCENE1_SFX_DRAGON_STOMP, 1.0f);    // the boom and its footfall, one sound
             s.crouch += 5.0f; s.wingKick = 0.25f;
             s.step = 1; s.t = 0.0f;
         }

@@ -367,10 +367,16 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_FW_STEP3]    = "rom:/audio/sfx/hostile/fw_step3_22k.wav64",
     [SCENE1_SFX_FW_STEP4]    = "rom:/audio/sfx/hostile/fw_step4_22k.wav64",
     [SCENE1_SFX_FW_HURT]     = "rom:/audio/sfx/hostile/fw_hurt_22k.wav64",
-    [SCENE1_SFX_SUN_ROAR]    = "rom:/audio/sfx/hostile/sun_roar_22k.wav64",
     [SCENE1_SFX_SUN_SWELL]   = "rom:/audio/sfx/hostile/sun_swell_22k.wav64",
+    [SCENE1_SFX_SUN_BURST]   = "rom:/audio/sfx/hostile/sun_burst_22k.wav64",
     [SCENE1_SFX_SUN_RUSH]    = "rom:/audio/sfx/hostile/sun_rush_22k.wav64",
     [SCENE1_SFX_SUN_ECLIPSE] = "rom:/audio/sfx/hostile/sun_eclipse_22k.wav64",
+    [SCENE1_SFX_SUN_BREAK]   = "rom:/audio/sfx/hostile/sun_break_22k.wav64",
+    [SCENE1_SFX_SUN_LASH]    = "rom:/audio/sfx/hostile/sun_lash_22k.wav64",
+    [SCENE1_SFX_SUN_SWEEP]   = "rom:/audio/sfx/hostile/sun_sweep_22k.wav64",
+    [SCENE1_SFX_SUN_RAIN]    = "rom:/audio/sfx/hostile/sun_rain_22k.wav64",
+    [SCENE1_SFX_DRAGON_RISE] = "rom:/audio/sfx/hostile/dragon_rise_22k.wav64",
+    [SCENE1_SFX_DRAGON_STOMP] = "rom:/audio/sfx/hostile/dragon_stomp_22k.wav64",
 };
 
 // The sounds heard all through a fight, held in memory (about 230 KB): the bosses' step, the

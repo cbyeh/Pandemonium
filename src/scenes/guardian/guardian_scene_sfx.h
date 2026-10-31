@@ -85,10 +85,17 @@ typedef enum Scene1Sfx
     SCENE1_SFX_FW_STEP4,
     SCENE1_SFX_FW_HURT,         // its grunt as it staggers
     // The Shackled Sun's own
-    SCENE1_SFX_SUN_ROAR,        // breaking free, and calling the eclipse
+    // (sounds that play together from one place are mixed into one: tools/pack_sfx.py)
     SCENE1_SFX_SUN_SWELL,       // Flare's and Corona's charge
-    SCENE1_SFX_SUN_RUSH,        // a ram or dive, heard from it as it moves
-    SCENE1_SFX_SUN_ECLIPSE,
+    SCENE1_SFX_SUN_BURST,       // their ring of fire: the boom and the fire
+    SCENE1_SFX_SUN_RUSH,        // a ram or dive (its cast and the rush), heard from it as it moves
+    SCENE1_SFX_SUN_ECLIPSE,     // the eclipse and its roar
+    SCENE1_SFX_SUN_BREAK,       // breaking free: the boom, its roar, the chains
+    SCENE1_SFX_SUN_LASH,        // the lash's and sweep's wind-ups: its cast and a chain
+    SCENE1_SFX_SUN_SWEEP,
+    SCENE1_SFX_SUN_RAIN,        // the rain's tell: its cast and both chains
+    SCENE1_SFX_DRAGON_RISE,     // Shadowborne's hover: its cast and roar
+    SCENE1_SFX_DRAGON_STOMP,    // its stomp: the boom and its footfall
 
     SCENE1_SFX_COUNT
 } Scene1Sfx;

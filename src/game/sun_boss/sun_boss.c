@@ -455,7 +455,7 @@ static void corona_update(Boss *b, float dt)
             skill_fx_spawn_arc_hostile(o, b->rot[1], 85.0f, hurt(22.0f));
             skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 85.0f, hurt(22.0f));
             screen_shake_set_shake_mag(12.0f);
-            sfx_boom(); sfx(SCENE1_SFX_FIRE_SUN, 1.0f);
+            sfx(SCENE1_SFX_SUN_BURST, 1.0f);    // the boom and its fire, one sound
             s.step = 1;
         }
     }
@@ -515,7 +515,7 @@ static void flare_update(Boss *b, float dt)
             skill_fx_spawn_arc_hostile(s.flarePos, s.flareYaw, FLARE_R, 0.0f);
             skill_fx_spawn_pillar_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
             screen_shake_set_shake_mag(9.0f);
-            sfx_boom(); sfx(SCENE1_SFX_FIRE_SUN, 1.0f);
+            sfx(SCENE1_SFX_SUN_BURST, 1.0f);    // the boom and its fire, one sound
             s.step = 1; s.t = 0.0f;
         }
     } else {
@@ -583,7 +583,7 @@ static void ram_update(Boss *b, float dt)
         float hy = s.t < WIND - LOCK ? HOVER_H + 4.0f : HOVER_H - 6.0f;    // rears as it pulls back, then dips: the eye at the player's height
         b->pos[1] += (s.groundY + hy - b->pos[1]) * fminf(1.0f, dt * 4.0f);
         if (s.t >= WIND) { s.step = 1; s.t = 0.0f; s.hitDone = false; s.ramFrom[0] = b->pos[0]; s.ramFrom[1] = b->pos[2];
-                           sfx_cast(); rushCh = sfx(SCENE1_SFX_SUN_RUSH, 1.0f); screen_shake_set_shake_mag(5.0f);
+                           rushCh = sfx(SCENE1_SFX_SUN_RUSH, 1.0f); screen_shake_set_shake_mag(5.0f);     // (its cast in it)
                            // charging, its body shoves the player where the eye meets it (not 4 out
                            // from it, the sword's margin): no shove without the hit
                            b->capsuleCollider.radius = SUN_R; }
@@ -642,7 +642,7 @@ static void eclipse_update(Boss *b, float dt)
     float hy = s.t < spent ? s.groundY + 70.0f : s.groundY + REST_H;
     b->pos[1] += (hy - b->pos[1]) * fminf(1.0f, dt * (s.t < spent ? 2.5f : 4.0f));
     s.raysSpin = fmaxf(s.raysSpin, s.t < spent ? 7.0f : 1.0f);
-    if (s.t <= dt) { sfx(SCENE1_SFX_SUN_ECLIPSE, 1.0f); sfx(SCENE1_SFX_SUN_ROAR, 0.9f); screen_shake_set_shake_mag(4.0f); }
+    if (s.t <= dt) { sfx(SCENE1_SFX_SUN_ECLIPSE, 1.0f); screen_shake_set_shake_mag(4.0f); }     // (its roar in it)
     if (s.step < 3 && s.t >= EC_RISE + s.step * EC_GAP) {
         int w = s.step, n = EC_N[w];
         float cx = w == 2 ? character.pos[0] : b->pos[0], cz = w == 2 ? character.pos[2] : b->pos[2];
@@ -903,7 +903,7 @@ static void lash_update(Boss *b, float dt)
         float k = clamp01(s.t / wind);
         c->kin = true; c->kk = 0.18f;
         chain_pose(b, c, s.strikeDir[0], s.strikeDir[1], T3D_PI * (1.0f + 0.82f * k), false);
-        if (s.t >= wind) { s.step = 1; s.t = 0.0f; sfx_cast(); sfx_chain(0); }
+        if (s.t >= wind) { s.step = 1; s.t = 0.0f; sfx(SCENE1_SFX_SUN_LASH, 1.0f); }      // its cast and a chain, one sound
     } else if (s.step == 1) {   // over the top and down onto the floor
         float k = clamp01(s.t / 0.2f);
         c->kk = 0.6f;
@@ -975,7 +975,7 @@ static void sweep_update(Boss *b, float dt)
         b->rot[1] = s.aim - (s.sweepSpan > 0.0f ? 1.0f : -1.0f) * 0.3f * k * k * (3.0f - 2.0f * k);
         c->kin = true; c->kk = 0.15f; c->hot = true;
         chain_pose(b, c, sinf(s.sweepFrom), cosf(s.sweepFrom), T3D_PI * 0.5f, true);
-        if (s.t >= WIND) { s.step = 1; s.t = 0.0f; s.hitDone = false; sfx_cast(); sfx_chain(1); }
+        if (s.t >= WIND) { s.step = 1; s.t = 0.0f; s.hitDone = false; sfx(SCENE1_SFX_SUN_SWEEP, 1.0f); }
     } else if (s.step == 1) {
         float k = clamp01(s.t / SWING), a0 = s.sweepFrom + s.sweepSpan * clamp01((s.t - dt) / SWING), a = s.sweepFrom + s.sweepSpan * k;
         c->kk = 0.5f;
@@ -1020,7 +1020,7 @@ static void choose(Boss *b, float dist)
     }
     if (HLE_SUN_FORCE == 12) { ram_start(b, s.unshackled ? 2 : 1); return; }
     if (HLE_SUN_FORCE == 13) { enter(SB_ECLIPSE); debugf("[sun] eclipse\n"); return; }
-    if (HLE_SUN_FORCE == 14) { if (s.cdRain > 0.0f) return; s.cdRain = 3.0f; rain_spawn(); sfx_cast(); s.t = -0.3f; s.rainTell = 0.9f; sfx_chain(0); sfx_chain(1); debugf("[sun] rain\n"); return; }   // 14 = the rain alone (no tell of its own before 2026-10-28)
+    if (HLE_SUN_FORCE == 14) { if (s.cdRain > 0.0f) return; s.cdRain = 3.0f; rain_spawn(); sfx(SCENE1_SFX_SUN_RAIN, 1.0f); s.t = -0.3f; s.rainTell = 0.9f; debugf("[sun] rain\n"); return; }   // 14 = the rain alone (no tell of its own before 2026-10-28)
     if (HLE_SUN_FORCE == 11) { lash_start(b, s.unshackled ? 2 : 1); return; }
     if (HLE_SUN_FORCE == 5 || HLE_SUN_FORCE == 7) { if (dist < FAR_DIST + 5.0f) return; }    // the ranged ones: it drifts out to range first
     else if (HLE_SUN_FORCE != 9) { float dx, dz, d = to_player(b, &dx, &dz);   // within reach of the player
@@ -1074,8 +1074,8 @@ static void choose(Boss *b, float dist)
     // At range: the crosses and the hunting ember (standing off is not safe)
     case M_GLARE:  s.cdGlare = s.unshackled ? 3.5f : 5.0f; enter(SB_GLARE); break;
     case M_EMBER:  s.cdEmber = s.unshackled ? 5.0f : 7.0f; enter(SB_EMBER); break;
-    case M_RAIN:   s.cdRain = s.unshackled ? 6.0f : 8.0f; rain_spawn(); sfx_cast(); s.t = -0.3f;
-                   s.rainTell = 0.9f; sfx_chain(0); sfx_chain(1); break;     // it shakes in its chains as the light falls
+    case M_RAIN:   s.cdRain = s.unshackled ? 6.0f : 8.0f; rain_spawn(); sfx(SCENE1_SFX_SUN_RAIN, 1.0f); s.t = -0.3f;
+                   s.rainTell = 0.9f; break;     // it shakes in its chains as the light falls (its cast and the chains, one sound)
     default: break;
     }
 }
@@ -1296,15 +1296,14 @@ void sun_boss_update(Boss* b, float dt)
         b->pos[1] += (s.groundY + HOVER_H + 10.0f - b->pos[1]) * fminf(1.0f, dt * 3.0f);
         s.raysSpin = 8.0f;
         if (s.weights && s.t >= 0.5f) {   // the weights burst and the chains whip free
-            s.weights = false;
-            sfx_chain(0); sfx_chain(1);
+            s.weights = false;      // (the chains heard in its break sound, 0.5 s in)
             for (int k = 0; k < NCH; k++)
                 for (int i = 1; i < NN; i++) s.ch[k].q[i][1] -= 0.6f * i;
             screen_shake_set_shake_mag(10.0f);
         }
         if (s.step < 6 && s.t >= s.step * 0.25f) {
             screen_shake_set_shake_mag(8.0f);
-            if (s.step == 0) { sfx_boom(); sfx(SCENE1_SFX_SUN_ROAR, 1.0f); }     // its roar as it breaks free
+            if (s.step == 0) sfx(SCENE1_SFX_SUN_BREAK, 1.0f);     // the boom, its roar, the chains whipping free 0.5 s on
             s.step++;
         }
         if (s.t > 2.0f) { b->mode = BOSS_MODE_COMBAT; s.cdCorona = 0.0f; s.cdEclipse = 6.0f; enter(SB_HOVER); }

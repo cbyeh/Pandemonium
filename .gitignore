@@ -75,7 +75,9 @@ assets/audio/sfx/hostile/fw_roll_22k.wav
 assets/audio/sfx/character/roll_swish_22k.wav
 assets/audio/sfx/character/armor_clank_22k.wav
 assets/audio/sfx/hostile/fw_hurt_22k.wav
-assets/audio/sfx/hostile/sun_roar_22k.wav
+assets/audio/sfx/hostile/sun_burst_22k.wav
+assets/audio/sfx/hostile/sun_break_22k.wav
+assets/audio/sfx/hostile/dragon_rise_22k.wav
 assets/audio/sfx/hostile/sun_swell_22k.wav
 assets/audio/sfx/hostile/sun_rush_22k.wav
 assets/audio/sfx/hostile/sun_eclipse_22k.wav

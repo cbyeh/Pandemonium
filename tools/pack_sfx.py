@@ -100,6 +100,13 @@ def heard(db, vol):     # the file's loudness that plays at `db` when the game p
     return db - 20 * np.log10(vol)
 
 
+def mix(*parts):    # (sound, the volume the game played it at[, seconds in]): what played together, as one sound
+    n = max(int(p[2] * SR if len(p) > 2 else 0) + len(p[0]) for p in parts); y = np.zeros(n)
+    for p in parts:
+        i = int(p[2] * SR) if len(p) > 2 else 0; y[i:i + len(p[0])] += p[0] * p[1]
+    return L.limit(y)
+
+
 def cut(x, secs):   # its first `secs`, faded out over the last 0.15
     y = x[:int(secs * SR)].copy(); f = min(len(y), int(0.15 * SR)); y[-f:] *= np.linspace(1, 0, f)
     return y
@@ -145,17 +152,16 @@ def main():
     out["fx/mbd_x"] = to_lufs(verb(lead(pk("Player/ashen_knight_heavy_attack_01")), ROOM), heard(hits, 0.55))     # Moon Blade Dance
     out["fx/cleave_beam"] = to_lufs(verb(lead(pk("Player/ashen_knight_light_attack_03")), ROOM), heard(hits, 0.45))  # Crescent Cleave
     # The Shackled Sun's own: its roar (a giant's, pitched up), the swell of a charge, a ram's rush, a darker eclipse
-    out["hostile/sun_roar"] = boss(verb(lead(pitch(pk("Enemies/giant_knight_roar_01"), 1.25))))
+    roar = boss(verb(lead(pitch(pk("Enemies/giant_knight_roar_01"), 1.25))))
     out["hostile/sun_swell"] = boss(verb(lead(pk("Sorcery/fire_sorcery_cast_03"))), -2)
-    out["hostile/sun_rush"] = boss(verb(cut(lead(pk("Sorcery/fire_sorcery_cast_02")), 0.9)))     # as long as a ram
-    out["hostile/sun_eclipse"] = boss(heavy(verb(lead(pk("Sorcery/dark_sorcery_cast_02")))))
+    rush = boss(verb(cut(lead(pk("Sorcery/fire_sorcery_cast_02")), 0.9)))     # as long as a ram
+    eclipse = boss(heavy(verb(lead(pk("Sorcery/dark_sorcery_cast_02")))))
     out["hostile/fw_hurt"] = boss(heavy(verb(lead(pk("Player/ashen_knight_hurt_01")))), -3)     # the Fallen Warrior's grunt as it staggers
     # Halfmoon Slash: the heavy attack at the start of the made sound (tools/halfmoon_sfx.py's), the whole at his hits
     hm = dry("halfmoon_slash_made")
     h3 = verb(lead(pk("Player/ashen_knight_heavy_attack_03")), ROOM)
     h3 = h3 * 10 ** ((L.loud(hm, SR) - 2 - L.loud(h3, SR)) / 20)
-    mix = np.zeros(max(len(hm), len(h3))); mix[:len(hm)] += hm; mix[:len(h3)] += h3
-    out["fx/halfmoon_slash"] = to_lufs(verb(mix, ROOM, -9), heard(hits, 1.0))
+    out["fx/halfmoon_slash"] = to_lufs(verb(mix((hm, 1.0), (h3, 1.0)), ROOM, -9), heard(hits, 1.0))
 
     # In the repo: the CC0 and made sounds, the same reverb over their dry sources
     kept["fx/spell_cast"] = to_lufs(verb(dry("spell_cast_rubberduck"), ROOM), heard(hits, 0.8))     # the perfect dodge
@@ -168,6 +174,19 @@ def main():
     kept["hostile/char_swing1"] = boss(verb(heavy(orig("character/char_swing1")), HALL, -9))    # the Fallen Warrior's swing
     for i in range(1, 5):   # its footfalls: the knight's, heavier, at the Guardian's
         kept[f"hostile/fw_step{i}"] = to_lufs(verb(heavy(orig(f"character/char_footstep_run{i}")), ROOM, -9), step)
+
+    # What plays together from one place, mixed into one sound (one channel, one of the scene's slots),
+    # each part at the volume the game played it at
+    sw2, sm1 = orig("boss/boss_swing2"), orig("boss/boss_smash1")
+    out["hostile/sun_burst"] = mix((sm1, 1.0), (out["hostile/fire_sun"], 1.0))      # Flare's and Corona's ring of fire
+    out["hostile/sun_rush"] = mix((sw2, 1.0), (rush, 1.0))                            # a ram: its cast and the rush
+    out["hostile/sun_eclipse"] = mix((eclipse, 1.0), (roar, 0.9))
+    out["hostile/sun_break"] = mix((sm1, 1.0), (roar, 1.0), (kept["hostile/chain1"], 1.0, 0.5), (kept["hostile/chain2"], 1.0, 0.5))
+    kept["hostile/sun_lash"] = mix((sw2, 1.0), (kept["hostile/chain1"], 1.0))
+    kept["hostile/sun_sweep"] = mix((sw2, 1.0), (kept["hostile/chain2"], 1.0))
+    kept["hostile/sun_rain"] = mix((sw2, 1.0), (kept["hostile/chain1"], 1.0), (kept["hostile/chain2"], 1.0))
+    out["hostile/dragon_rise"] = mix((out["hostile/spell_cast"], 0.8), (kept["boss/dragon_roar"], 1.0))   # Shadowborne's hover
+    kept["hostile/dragon_stomp"] = mix((orig("boss/boss_smash2"), 1.0), (orig("boss/boss_step1"), 1.0))
 
     for name, y in list(out.items()) + list(kept.items()):
         L.write(os.path.join(SFX, name + "_22k.wav"), y, SR)
