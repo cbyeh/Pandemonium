@@ -390,6 +390,7 @@ static const int s_heldSfx[] = {
     SCENE1_SFX_CHAR_ATTACK_HIT1, SCENE1_SFX_CHAR_ATTACK_HIT2, SCENE1_SFX_CHAR_ATTACK_HIT3,
     SCENE1_SFX_CHAR_ATTACK_HIT4, SCENE1_SFX_CHAR_ATTACK_HIT5, SCENE1_SFX_CHAR_ATTACK_HIT6,
     SCENE1_SFX_CHAR_FOOTSTEP_RUN1, SCENE1_SFX_CHAR_FOOTSTEP_RUN2, SCENE1_SFX_CHAR_FOOTSTEP_RUN3, SCENE1_SFX_CHAR_FOOTSTEP_RUN4,
+    SCENE1_SFX_BEAM_HUM,       // (it loops: streamed, it read the cartridge the whole beam)
 };
 
 // Loads the held sounds once, at boot (main): loading them as a fight started stalled it 220 ms
