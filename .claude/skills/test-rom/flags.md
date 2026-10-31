@@ -26,7 +26,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Frame-exact video:** shot every frame, `run.sh rom "$(seq -s, 900 1 1100)"` (comma list, not a range), then
   `ffmpeg -framerate 30 -pattern_type glob -i '*.png' -vf scale=640:-2,format=yuv420p -c:v libx264 -crf 18 out.mp4`. Lower `-framerate` or `setpts=4*PTS` for slow motion.
 - **Sheets / side-by-sides:** `-vf "scale=320:-1,tile=6x4" -frames:v 1`; `hstack`/`xstack` with `crop=...,scale=...:flags=neighbor`.
-- **Audio:** the emulator runs `--audio dummy`, so sound is never captured from it. Build A/B clips from the asset files with ffmpeg `concat` (old, 1 s `anullsrc`, new); loudness via `astats` / `volumedetect` / `ebur128`. `tools/boss_sfx_map.py` makes a page of every Bonus move's sounds (LUFS, gain); `tools/boss_sfx_levels.py` needs numpy (Blender's Python has it).
+- **Audio:** the emulator runs `--audio dummy`, so sound is never captured from it. Build A/B clips from the asset files with ffmpeg `concat` (old, 1 s `anullsrc`, new); loudness via `astats` / `volumedetect` / `ebur128`. `tools/boss_sfx_map.py` makes a page of every Bonus move's sounds (LUFS, gain); `tools/boss_sfx_levels.py` needs numpy (Blender's Python has it). Music loops: `tools/music_loop.py` (beat-grid loop points written as a WAV `smpl` loop; needs `--bpm`, see its header), `HLE_LOG_MUSICPOS` logs `[musicpos]` every 2 s (the jump back shows as the position dropping).
 - **LLE reference shots:** `~/n64/emu/ref/make_lle_refs.sh` (angrylion + cxd4 via `run_lle.sh`).
 
 ## Measure
@@ -35,7 +35,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Memory:** `HLE_TEST_BONUS` logs the lowest free heap.
 - **Move starts on Mupen's frame numbers:** `HLE_LOG_MOVE_MS` (Shadowborne: `[movems] <state> <VI frame>`, counted from boot; shot `N` is VI frame `N`): line up before/after videos of builds that drift apart.
 - **Choices:** `HLE_LOG_CHOOSE` (Shadowborne: the distance, angle and candidate moves at each pick, then the pick).
-- **Boss hit:** `HLE_DRAGON_HITME` (Shadowborne takes a sword hit every 1.5 s, a finisher's every 6 s: the flinch; `[flinch]` with `HLE_LOG_MOVES`). The passive dummy and the bots never damage the boss.
+- **Boss hit:** `HLE_FK_STAGGERME` (the Fallen Warrior staggered every 8 s, `[fk] staggered`), `HLE_DRAGON_HITME` (Shadowborne takes a sword hit every 1.5 s, a finisher's every 6 s: the flinch; `[flinch]` with `HLE_LOG_MOVES`). The passive dummy and the bots never damage the boss.
 - **Rig:** `HLE_LOG_RIG` (Shadowborne, per move: worst leg reach, neck and torso stretch as drawn, the head's nearest pass of its own body).
 - **Hits:** `HLE_LOG_MOVES` (`[move]` then `[hit]`), `HLE_LOG_HURTBOX`, `HLE_LOG_HITVOL`, `HLE_FK_HITLOG`, `HLE_TEST_ARC_REACH`, `HLE_LOG_JUMPS`. Sound timing: `HLE_LOG_SFX` with `HLE_LOG_MOVES` (`[sfx] ms index d <distance heard from>`).
 - **Same pixels after a rewrite:** `HLE_TEST_T3D_EXACT`.

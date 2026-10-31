@@ -93,6 +93,7 @@ typedef struct {
     int   sceneIndex;
     float baseVolMul;
     float distance; // last provided distance
+    uint32_t startMs;   // when it started (sfx_find_free_slot takes the oldest when all are busy)
 } SfxSlot;
 
 static SfxSlot sfxSlots[MIXER_NUM_CHANNELS];
@@ -166,7 +167,21 @@ static SfxSlot* sfx_find_free_slot(void)
         SfxSlot *slot = &sfxSlots[ch];
         if (!slot->inUse) return slot;
     }
-    return NULL;
+    // All busy: the longest-playing gives way (by then mostly its reverb's tail), so a new
+    // sound (the knight's grunt, a potion) is never the one lost
+    SfxSlot *oldest = NULL;
+    for (int ch = 0; ch < MIXER_NUM_CHANNELS; ch++) {
+        if (!ch_is_sfx_eligible(ch)) continue;
+        if (!oldest || sfxSlots[ch].startMs < oldest->startMs) oldest = &sfxSlots[ch];
+    }
+    if (oldest) {
+#ifdef HLE_LOG_SFX
+        debugf("[sfx] all busy: cut %d (%lu ms in)\n", oldest->sceneIndex, (unsigned long)(get_ticks_ms() - oldest->startMs));
+#endif
+        mixer_ch_stop(oldest->ch);
+        oldest->inUse = false;
+    }
+    return oldest;
 }
 
 static void sfx_update_volumes(void)
@@ -352,7 +367,14 @@ void audio_play_music(const char *path, bool loop)
     currentMusicLoop = loop;
 
     wav64_open(&currentMusic, path);
-    wav64_set_loop(&currentMusic, loop);
+    // A track with its own loop (tools/music_loop.py) keeps it; others loop whole
+    if (!loop || currentMusic.wave.loop_len == 0)
+        wav64_set_loop(&currentMusic, loop);
+#ifdef HLE_AUTOPLAY
+    debugf("[music] len %d loop %d..%d\n", (int)currentMusic.wave.len,
+           currentMusic.wave.loop_len ? (int)((currentMusic.wave.loop_end ? currentMusic.wave.loop_end : currentMusic.wave.len) - currentMusic.wave.loop_len) : -1,
+           (int)(currentMusic.wave.loop_end ? currentMusic.wave.loop_end : currentMusic.wave.len));
+#endif
 
     mixer_ch_set_freq(CHANNEL_MUSIC, currentMusic.wave.frequency);
 
@@ -405,6 +427,13 @@ void audio_resume_music(void)
 
 void audio_update_fade(float dt)
 {
+#ifdef HLE_LOG_MUSICPOS   // test aid: the music's play position every 2 s (shows the loop's jump back)
+    static float logT;
+    if (musicPlaying && (logT += dt) >= 2.0f) {
+        logT = 0.0f;
+        debugf("[musicpos] %lu %.2f s\n", (unsigned long)get_ticks_ms(), mixer_ch_get_pos(CHANNEL_MUSIC) / currentMusic.wave.frequency);
+    }
+#endif
     if (!musicFadingOut) return;
 
     musicFadeT += dt;
@@ -461,6 +490,7 @@ int audio_play_scene_sfx_dist(int sceneSfxIndex, float baseVolume, float distanc
     if (!slot) return -1;
 
     slot->inUse = true;
+    slot->startMs = get_ticks_ms();
     slot->sceneIndex = sceneSfxIndex;
     slot->baseVolMul = baseVolume;
     slot->distance = distance;
@@ -481,6 +511,15 @@ void audio_set_scene_sfx_dist(int ch, int sceneSfxIndex, float distance)
     SfxSlot *slot = &sfxSlots[ch];
     if (!slot->inUse || slot->sceneIndex != sceneSfxIndex) return;     // finished, the channel since reused
     slot->distance = fmaxf(distance, 0.0f);     // (sfx_update_volumes applies it)
+}
+
+void audio_stop_scene_sfx(int ch, int sceneSfxIndex)
+{
+    if (ch < 0 || ch >= MIXER_NUM_CHANNELS || !ch_is_sfx_eligible(ch)) return;
+    SfxSlot *slot = &sfxSlots[ch];
+    if (!slot->inUse || slot->sceneIndex != sceneSfxIndex) return;     // finished, the channel since reused
+    mixer_ch_stop(ch);
+    slot->inUse = false;
 }
 
 void audio_stop_all_sfx(void)

@@ -25,6 +25,8 @@
 #include "path_ribbon.h"
 #include "fx/skill_fx.h"     // the red warning burst where a sword will land
 #include "fx/lightning_fx.h"   // now using lightning_fx_system_* (scene owns init)
+#include "audio_controller.h"
+#include "../../../scenes/guardian/guardian_scene_sfx.h"
 
 // ============================================================
 // PERF / FEATURE TOGGLES
@@ -186,6 +188,14 @@ static bool gEnabled = true;
 static MsaPattern gPattern = MSA_PATTERN_GROUND_SWEEP;
 
 static MsaSword gSwords[MSA_MAX_SWORDS];
+
+// A sword's sound, heard from where it is. Past the falloff (silent at 200) it isn't started at
+// all: a barrage's far swords would only hold channels the player's own sounds need
+static void sword_sfx(int id, float vol, float x, float z)
+{
+    float dx = character.pos[0] - x, dz = character.pos[2] - z, d = sqrtf(dx * dx + dz * dz);
+    if (d < 200.0f) audio_play_scene_sfx_dist(id, vol, d);
+}
 
 static float gHitCd = 0.0f;
 static float gCollisionAcc = 0.0f;
@@ -902,6 +912,7 @@ void msa_update(float dt) {
                 gAerialAimTimer[i] -= dt;
                 if (gAerialAimTimer[i] <= 0.0f) {
                     s->state = SW_AERIAL_FLY;
+                    if (!gGlowSwordShape) sword_sfx(SCENE1_SFX_BOSS_SWING2, 0.8f, s->pos[0], s->pos[2]);  // the barrage's (the throw has its own)
                 }
                 continue;
             }
@@ -934,6 +945,7 @@ void msa_update(float dt) {
                          (double)fabsf(pdx * n[2] - pdz * n[0]) / fmaxf(1e-3f, sqrtf(n[0]*n[0] + n[2]*n[2])), old ? "hit" : "missed", hit ? "hits" : "misses"); }
 #endif
 
+                sword_sfx(SCENE1_SFX_BOSS_LAND2, 0.6f, tx, tz);     // it sticks
                 if (hit && gHitCd <= 0.0f) {
                     character_apply_damage(gGlowSwordShape ? DMG_SUMMONED : DMG_BODY);
                     gHitCd = BODY_HIT_GRACE;
@@ -1077,6 +1089,7 @@ void msa_update(float dt) {
 
                 // system strike call (no pointer)
                 lightning_fx_system_strike(s->spawnX, gFloorY, s->spawnZ, lightningYaw);
+                sword_sfx(SCENE1_SFX_BOSS_LAND2, 0.6f, s->spawnX, s->spawnZ);   // it lands
             }
         }
 
@@ -1088,6 +1101,13 @@ void msa_update(float dt) {
 
     if (gPhase == MSA_PHASE_POST_LAND) {
         if (gPhaseT >= LAND_PAUSE_SEC) {
+            // They set off together: one whoosh, from the nearest
+            int near = 0; float nd = 1e30f;
+            for (int i = 0; i < gCount; i++) {
+                float dx = character.pos[0] - gSwords[i].pos[0], dz = character.pos[2] - gSwords[i].pos[2];
+                if (dx * dx + dz * dz < nd) { nd = dx * dx + dz * dz; near = i; }
+            }
+            if (gCount > 0) sword_sfx(SCENE1_SFX_BOSS_SWING2, 0.9f, gSwords[near].pos[0], gSwords[near].pos[2]);
             for (int i = 0; i < gCount; i++) {
                 MsaSword *s = &gSwords[i];
                 s->state = SW_SCURVE;

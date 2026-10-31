@@ -183,7 +183,7 @@ static const float POST_BOSS_PROMPT_DIST  = 140.0f;   // show A prompt and allow
 static bool s_pendingBossLoopMusic = false;
 static const char *s_bossLoopMusicPath = "rom:/audio/music/boss_phase1-looping-22k.wav64";
 static const char *s_boss2LoopMusicPath = "rom:/audio/music/boss_phase2_cutscene2-22k.wav64";   // Guardian Unbound
-static const char *s_boss3LoopMusicPath = "rom:/audio/music/fallen_warrior_battle-22k.wav64";    // Fallen Warrior
+static const char *s_boss3LoopMusicPath = "rom:/audio/music/whispers_of_the_abyss-22k.wav64";    // Fallen Warrior
 static BonusFight s_bonusFight = BONUS_NONE;   // set by the title Bonus menu
 static bool  s_tower;             // set by the title Tower menu: the next scene_init climbs
 static bool  s_towerDraft;        // choosing a boon between floors
@@ -314,12 +314,11 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_BOSS_STEP1]  = "rom:/audio/sfx/boss/boss_step1_22k.wav64",
     [SCENE1_SFX_DRAGON_ROAR] = "rom:/audio/sfx/boss/dragon_roar_22k.wav64",
     [SCENE1_SFX_DRAGON_GROWL] = "rom:/audio/sfx/hostile/dragon_growl_22k.wav64",
-    [SCENE1_SFX_SPELL_WAVE]  = "rom:/audio/sfx/fx/spell_wave_22k.wav64",
     [SCENE1_SFX_SPELL_CAST]  = "rom:/audio/sfx/fx/spell_cast_22k.wav64",
     [SCENE1_SFX_BLADE_SLASH] = "rom:/audio/sfx/fx/halfmoon_slash_22k.wav64",    // Halfmoon Slash (tools/halfmoon_sfx.py)
     [SCENE1_SFX_HEAL]        = "rom:/audio/sfx/fx/heal_chime_22k.wav64",
     // the Bonus bosses' own, at the Guardian's level (tools/boss_sfx_levels.py)
-    [SCENE1_SFX_FIRE]        = "rom:/audio/sfx/hostile/fire_breath_22k.wav64",
+    [SCENE1_SFX_FIRE]        = "rom:/audio/sfx/hostile/fire_burst_22k.wav64",
     [SCENE1_SFX_DARK_BEAM]   = "rom:/audio/sfx/hostile/dark_beam_22k.wav64",
     [SCENE1_SFX_DARK_NOVA]   = "rom:/audio/sfx/hostile/dark_nova_22k.wav64",
     [SCENE1_SFX_ROCK_BLAST]  = "rom:/audio/sfx/hostile/rock_blast_22k.wav64",
@@ -349,10 +348,24 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_CHAR_FOOTSTEP_WALK3] = "rom:/audio/sfx/character/char_footstep_walk3_22k.wav64",
     [SCENE1_SFX_CHAR_FOOTSTEP_WALK4] = "rom:/audio/sfx/character/char_footstep_walk4_22k.wav64",
 
-    [SCENE1_SFX_CHAR_UMPH] = "rom:/audio/sfx/character/umph_22k.wav64",
+    [SCENE1_SFX_CHAR_UMPH]           = "rom:/audio/sfx/character/umph_22k.wav64",
     [SCENE1_SFX_ROLL_SWISH] = "rom:/audio/sfx/character/roll_swish_22k.wav64",
     [SCENE1_SFX_ARMOR_CLANK] = "rom:/audio/sfx/character/armor_clank_22k.wav64",
     [SCENE1_SFX_WAR_CRY] = "rom:/audio/sfx/hostile/war_cry_22k.wav64",
+    [SCENE1_SFX_FIRE_SUN]    = "rom:/audio/sfx/hostile/fire_sun_22k.wav64",
+    [SCENE1_SFX_FIRE_DRAGON] = "rom:/audio/sfx/hostile/fire_dragon_22k.wav64",
+    [SCENE1_SFX_BREATH]      = "rom:/audio/sfx/hostile/dragon_breath_22k.wav64",
+    [SCENE1_SFX_WING_FLAP]   = "rom:/audio/sfx/hostile/wing_flap_22k.wav64",
+    [SCENE1_SFX_WING_FLYBY]  = "rom:/audio/sfx/hostile/wing_flyby_22k.wav64",
+    [SCENE1_SFX_MBD_X]       = "rom:/audio/sfx/fx/mbd_x_22k.wav64",
+    [SCENE1_SFX_CLEAVE_BEAM] = "rom:/audio/sfx/fx/cleave_beam_22k.wav64",
+    [SCENE1_SFX_FW_SLICE]    = "rom:/audio/sfx/hostile/fw_slice_22k.wav64",
+    [SCENE1_SFX_FW_ROLL]     = "rom:/audio/sfx/hostile/fw_roll_22k.wav64",
+    [SCENE1_SFX_FW_STEP1]    = "rom:/audio/sfx/hostile/fw_step1_22k.wav64",
+    [SCENE1_SFX_FW_STEP2]    = "rom:/audio/sfx/hostile/fw_step2_22k.wav64",
+    [SCENE1_SFX_FW_STEP3]    = "rom:/audio/sfx/hostile/fw_step3_22k.wav64",
+    [SCENE1_SFX_FW_STEP4]    = "rom:/audio/sfx/hostile/fw_step4_22k.wav64",
+    [SCENE1_SFX_FW_HURT]     = "rom:/audio/sfx/hostile/fw_hurt_22k.wav64",
 };
 
 // The sounds heard all through a fight, held in memory (about 230 KB): the bosses' step, the
@@ -360,7 +373,7 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
 // uses most (its fight was the one still short of 60 fps). The game runs in 4 MB
 static const int s_heldSfx[] = {
     SCENE1_SFX_BOSS_STEP1, SCENE1_SFX_CHAR_SWING1,
-    SCENE1_SFX_BOSS_SMASH1, SCENE1_SFX_BOSS_SMASH2, SCENE1_SFX_BOSS_SWING3, SCENE1_SFX_FIRE,
+    SCENE1_SFX_BOSS_SMASH1, SCENE1_SFX_BOSS_SMASH2, SCENE1_SFX_BOSS_SWING3,
     SCENE1_SFX_CHAR_ATTACK_HIT1, SCENE1_SFX_CHAR_ATTACK_HIT2, SCENE1_SFX_CHAR_ATTACK_HIT3,
     SCENE1_SFX_CHAR_ATTACK_HIT4, SCENE1_SFX_CHAR_ATTACK_HIT5, SCENE1_SFX_CHAR_ATTACK_HIT6,
     SCENE1_SFX_CHAR_FOOTSTEP_RUN1, SCENE1_SFX_CHAR_FOOTSTEP_RUN2, SCENE1_SFX_CHAR_FOOTSTEP_RUN3, SCENE1_SFX_CHAR_FOOTSTEP_RUN4,
@@ -1209,7 +1222,7 @@ static const BonusDef BONUS_DEFS[] = {
         },
         .dropAt = 3,
         .begin = fallen_knight_begin, .skip = fallen_knight_skip_intro, .phase = FALLEN_KNIGHT_PHASE,
-        .music = "rom:/audio/music/fallen_warrior_battle-22k.wav64",  // CC0, "Battle Theme A" by cynicmusic
+        .music = "rom:/audio/music/whispers_of_the_abyss-22k.wav64",  // "Whispers of the Abyss" by AlkaKrab
     },
     [BONUS_SHACKLED_SUN] = {
         .intro = {
@@ -1226,7 +1239,7 @@ static const BonusDef BONUS_DEFS[] = {
         },
         .dropAt = 4,
         .begin = sun_boss_begin, .skip = sun_boss_skip_intro, .phase = SUN_BOSS_PHASE,
-        .music = "rom:/audio/music/shackled_sun_metal-22k.wav64",    // CC0, "Boss Battle #2 [Symphonic Metal]" by nene
+        .music = "rom:/audio/music/veil_of_eternal_nightfall-22k.wav64",    // "Veil of Eternal Nightfall" by AlkaKrab
     },
     [BONUS_SHADOWBORN] = {
         .intro = {
@@ -1241,7 +1254,7 @@ static const BonusDef BONUS_DEFS[] = {
         },
         .dropAt = 3,
         .begin = dragon_boss_begin, .skip = dragon_boss_skip_intro, .phase = DRAGON_BOSS_PHASE,
-        .music = "rom:/audio/music/shadowborn_pursuit-22k.wav64",    // CC0, "Determined Pursuit" by Emma_MA
+        .music = "rom:/audio/music/shadowforge_convergence-22k.wav64",    // "Shadowforge Convergence" by AlkaKrab
         .camScale = 2.6f,
     },
 };

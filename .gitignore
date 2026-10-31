@@ -58,3 +58,24 @@ assets/**/*.zip
 *.eeprom
 build-hle/
 !hle/ipl3/*.z64
+
+# Made from the Dark Fantasy Soulslike SFX Pack (its license forbids sharing the files): tools/pack_sfx.py
+assets/audio/sfx/hostile/fire_burst_22k.wav
+assets/audio/sfx/hostile/fire_sun_22k.wav
+assets/audio/sfx/hostile/fire_dragon_22k.wav
+assets/audio/sfx/hostile/dragon_breath_22k.wav
+assets/audio/sfx/hostile/wing_flap_22k.wav
+assets/audio/sfx/hostile/wing_flyby_22k.wav
+assets/audio/sfx/hostile/spell_cast_22k.wav
+assets/audio/sfx/hostile/dark_nova_22k.wav
+assets/audio/sfx/hostile/dark_beam_22k.wav
+assets/audio/sfx/hostile/rock_blast_22k.wav
+assets/audio/sfx/hostile/fw_slice_22k.wav
+assets/audio/sfx/hostile/fw_roll_22k.wav
+assets/audio/sfx/character/roll_swish_22k.wav
+assets/audio/sfx/character/armor_clank_22k.wav
+assets/audio/sfx/hostile/fw_hurt_22k.wav
+assets/audio/sfx/fx/heal_chime_22k.wav
+assets/audio/sfx/fx/mbd_x_22k.wav
+assets/audio/sfx/fx/cleave_beam_22k.wav
+assets/audio/sfx/fx/halfmoon_slash_22k.wav

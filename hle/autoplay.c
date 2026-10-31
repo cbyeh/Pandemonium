@@ -829,8 +829,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
             return;
         }
-        static const char *const music[] = { "rom:/audio/music/shadowborn_pursuit-22k.wav64", "rom:/audio/music/shackled_sun_metal-22k.wav64" };
-        const int nsfx = SCENE1_SFX_SWING_BOSS - SCENE1_SFX_DRAGON_ROAR + 1, total = nsfx + 2;
+        static const char *const music[] = { "rom:/audio/music/shadowforge_convergence-22k.wav64", "rom:/audio/music/veil_of_eternal_nightfall-22k.wav64",
+                                             "rom:/audio/music/whispers_of_the_abyss-22k.wav64" };
+        const int nsfx = SCENE1_SFX_COUNT - SCENE1_SFX_DRAGON_ROAR, total = nsfx + 3;
         int t = frame - start;
         // One at a time, 3.5 s apart. A sound counts as silent only if three tries in a row
         // start no channel (another sound ending in the same frame can hide one try)

@@ -23,8 +23,7 @@ typedef enum Scene1Sfx
 
     SCENE1_SFX_DRAGON_ROAR,     // CC0, "Deep Monster Roar" by trazzz123 (OpenGameArt)
 
-    // CC0, "80 CC0 RPG SFX" by rubberduck (OpenGameArt)
-    SCENE1_SFX_SPELL_WAVE,
+    // The knight's skills and the Bonus bosses' spells (the Dark Fantasy Soulslike pack; the chains CC0, rubberduck)
     SCENE1_SFX_SPELL_CAST,
     SCENE1_SFX_BLADE_SLASH,
     SCENE1_SFX_HEAL,
@@ -63,10 +62,28 @@ typedef enum Scene1Sfx
     SCENE1_SFX_CHAR_FOOTSTEP_WALK4,
 
     SCENE1_SFX_CHAR_UMPH,
-    SCENE1_SFX_ROLL_SWISH,      // generated: band-passed pink noise with a swell
-    SCENE1_SFX_ARMOR_CLANK,     // CC0, rubberduck (metal_03)
+    SCENE1_SFX_ROLL_SWISH,
+    SCENE1_SFX_ARMOR_CLANK,
     SCENE1_SFX_WAR_CRY,         // the grunt, deeper, with an echo
     SCENE1_SFX_DRAGON_GROWL,    // the roar slowed, low-passed and rumbling (Shadowborne's pacing)
+
+    // Each Bonus boss's fire its own (SCENE1_SFX_FIRE: the Fallen Warrior's), and Shadowborne's wings
+    SCENE1_SFX_FIRE_SUN,
+    SCENE1_SFX_FIRE_DRAGON,     // Shadowborne's fireballs and fire rain
+    SCENE1_SFX_BREATH,          // Shadowborne's breath: one long torrent, heard from the stream
+    SCENE1_SFX_WING_FLAP,       // a beat of its wings, in the air
+    SCENE1_SFX_WING_FLYBY,      // a pass overhead
+
+    // The knight's skills' own, and the Fallen Warrior's: the knight's sounds, deeper and heavier
+    SCENE1_SFX_MBD_X,           // Moon Blade Dance: each X
+    SCENE1_SFX_CLEAVE_BEAM,     // Crescent Cleave: each blade
+    SCENE1_SFX_FW_SLICE,        // the Fallen Warrior's Moon Blade: each slice
+    SCENE1_SFX_FW_ROLL,
+    SCENE1_SFX_FW_STEP1,
+    SCENE1_SFX_FW_STEP2,
+    SCENE1_SFX_FW_STEP3,
+    SCENE1_SFX_FW_STEP4,
+    SCENE1_SFX_FW_HURT,         // its grunt as it staggers
 
     SCENE1_SFX_COUNT
 } Scene1Sfx;

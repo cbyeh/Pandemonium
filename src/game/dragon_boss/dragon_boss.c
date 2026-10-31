@@ -391,7 +391,9 @@ static void sfx_at(int id, float vol, float x, float z)
     audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
 }
 static int beamCh = -1;     // the beam's sound: heard from the beam as it moves (beam_at)
-static void sfx_beam(void) { beamCh = sfx(SCENE1_SFX_DARK_BEAM, 1.0f); }
+static float beamSndT;      // until it's played again: it repeats for as long as the beam is on
+#define BEAM_SND_EVERY 1.1f     // (the sound is 1.5 s: each overlaps the last)
+static void sfx_beam(void) { beamCh = sfx(SCENE1_SFX_DARK_BEAM, 1.0f); beamSndT = BEAM_SND_EVERY; }
 static void sfx_boom(void) { sfx(SCENE1_SFX_BOSS_SMASH2, 1.0f); }
 static void sfx_swing(void) { sfx(SCENE1_SFX_BOSS_SWING3, 1.0f); }
 static void sfx_lunge(void) { sfx(SCENE1_SFX_BOSS_LUNGE, 1.0f); }
@@ -879,7 +881,7 @@ static void hazards_update(float dt)
         if (!e->on) continue;
         float was = e->t;
         e->t -= dt;
-        if (was > 0.2f && e->t <= 0.2f && ((i & 1) || s.state == DG_SNIPE)) sfx_at(SCENE1_SFX_ROCK_BLAST, 0.7f, e->p[0], e->p[1]);    // every other one: they come five a second
+        if (was > 0.2f && e->t <= 0.2f && ((i & 1) || s.state == DG_SNIPE)) sfx_at(SCENE1_SFX_FIRE_DRAGON, 0.7f, e->p[0], e->p[1]);    // every other one: they come five a second
         if (e->t > 0.0f) continue;
         e->on = false;
         float p[3] = { e->p[0], s.groundY, e->p[1] };
@@ -922,7 +924,9 @@ static void beam_at(const float to[3], float w, float dmg, bool blasts, float dt
     memcpy(s.aim, to, sizeof(s.aim)); s.tAimK = 1.0f;
     s.beamOn = true; s.beamW = w; s.glow = 1.0f;
     float bg = fminf(axis_dist_seg(s.mouth, to) - w, axis_dist_pt(to) - 9.0f);
-    audio_set_scene_sfx_dist(beamCh, SCENE1_SFX_DARK_BEAM, axis_dist_seg(s.mouth, to));
+    float bd = axis_dist_seg(s.mouth, to);
+    if ((beamSndT -= dt) <= 0.0f) { beamCh = audio_play_scene_sfx_dist(SCENE1_SFX_DARK_BEAM, BONUS_SFX_VOL, bd); beamSndT = BEAM_SND_EVERY; }
+    else audio_set_scene_sfx_dist(beamCh, SCENE1_SFX_DARK_BEAM, bd);
     HB_TOUCH(HB_BEAM, bg - 8.0f);
     if (!s.hitDone && bg < PLAYER_R) { HB_HIT(HB_BEAM, bg - 8.0f); character_apply_damage(dmg); s.hitDone = true; }
     if (!blasts) return;
@@ -930,15 +934,27 @@ static void beam_at(const float to[3], float w, float dmg, bool blasts, float dt
     if (s.emit <= 0.0f) { s.emit += 0.2f; blast_spawn(to); }
 }
 
+static int breathCh = -1;
+static bool breathing;      // breathe() ran this frame
+static void breath_sound_end(void)
+{
+    if (!breathing && breathCh >= 0) { audio_stop_scene_sfx(breathCh, SCENE1_SFX_BREATH); breathCh = -1; }
+    breathing = false;
+}
+
 // Breath: a stream of flames from the mouth toward `to`
 static void breathe(const float to[3], float speed, float life, float dt)
 {
+    // One long torrent from its first flames, heard from the stream as it moves; it stops with the
+    // flames (breath_sound_end), and starts again only if the breath outlasts it
     static float roarT;
     roarT -= dt;
-    if (roarT <= 0.0f || s.emit == 0.0f) {      // the torrent crackles on, from its first flames, heard from the stream
-        audio_play_scene_sfx_dist(SCENE1_SFX_FIRE, 0.9f * BONUS_SFX_VOL, axis_dist_seg(s.mouth, to));
-        roarT = 0.45f;
-    }
+    float d = axis_dist_seg(s.mouth, to);
+    if (roarT <= 0.0f || s.emit == 0.0f) {
+        breathCh = audio_play_scene_sfx_dist(SCENE1_SFX_BREATH, 0.9f * BONUS_SFX_VOL, d);
+        roarT = 3.5f;
+    } else audio_set_scene_sfx_dist(breathCh, SCENE1_SFX_BREATH, d);
+    breathing = true;
     s.emit -= dt;
     while (s.emit <= 0.0f) {
         s.emit += 0.03f;
@@ -2282,6 +2298,7 @@ static void fly_update(Boss *b, float dt)
                 len -= 20.0f;
             } while (len > -60.0f && !inside(s.flyTo[0], s.flyTo[1], 90.0f));
             s.step = 1; s.t = 0.0f; s.emit = 0.0f;
+            sfx(SCENE1_SFX_WING_FLYBY, 1.0f);       // the strafe: over the player and on past
         }
     } else if (s.step == 1) {
         s.flapRate = 9.0f;
@@ -2531,6 +2548,7 @@ static void skybeam_update(Boss *b, float dt)
         float x = P0[0] + D[0] * s.range * k, z = P0[2] + D[2] * s.range * k;
         if (inside(x, z, 40.0f)) { b->pos[0] = x; b->pos[2] = z; }
         s.flapRate = 0.0f; s.tWingRaise = 0.45f;        // wings held out, gliding
+        if (s.step == 2 && s.t < dt * 1.5f) sfx(SCENE1_SFX_WING_FLYBY, 1.0f);     // the glide past
         if (s.step == 2) {
             s.alt = ALT - DIP * smooth01(s.t / RAKE);
             float to[3] = { b->pos[0] + off[0] + D[0] * 10.0f, s.groundY, b->pos[2] + off[1] + D[2] * 10.0f };
@@ -2634,7 +2652,7 @@ static void triple_update(Boss *b, float dt)
             norm3(v);
             for (int m = 0; m < 3; m++) o->v[m] = v[m] * 115.0f;     // (was 190: slow enough to read and step out of)
             o->on = true;
-            sfx(SCENE1_SFX_FIRE, 1.0f);
+            sfx(SCENE1_SFX_FIRE_DRAGON, 1.0f);
             screen_shake_set_shake_mag(3.0f);
             s.glow = 0.3f;
             s.step++; s.t = 0.0f;
@@ -2733,7 +2751,7 @@ static void cone_fire(Boss *b)
         float p[3] = { s.cone.p[0], s.groundY + 2.0f, s.cone.p[1] }, v[3] = { fm_sinf(a) * dd / 0.33f, 0.0f, fm_cosf(a) * dd / 0.33f };
         flame_spawn(p, v, 0.45f, 13.0f + 3.0f * frand(), false);
     }
-    sfx_at(SCENE1_SFX_FIRE, 1.0f, s.cone.p[0], s.cone.p[1]);
+    sfx_at(SCENE1_SFX_BREATH, 1.0f, s.cone.p[0], s.cone.p[1]);
     sfx_lunge();
     screen_shake_set_shake_mag(4.0f);
 }
@@ -3348,7 +3366,13 @@ void dragon_boss_update(Boss* b, float dt)
     s.clawHi = ease(s.clawHi, s.tClawHi, 6.0f, dt);
     s.swipeAmt = ease(s.swipeAmt, s.tSwipeAmt, 10.0f, dt);
     // Flapping fades in and out; the raise it beats about stays eased
+    breath_sound_end();
+    float ph0 = s.flapPh;
     s.flapPh += dt * s.flapRate;
+    // A beat heard at the top of each stroke, in the air (the wings at the top: phase pi/2)
+    if (s.flapRate > 0.0f && s.alt > 4.0f && s.flapOn > 0.5f &&
+        floorf((ph0 - T3D_PI * 0.5f) / (2.0f * T3D_PI)) != floorf((s.flapPh - T3D_PI * 0.5f) / (2.0f * T3D_PI)))
+        sfx(SCENE1_SFX_WING_FLAP, 0.7f);
     s.flapAmt = ease(s.flapAmt, s.flapRate > 0.0f ? 1.0f : 0.0f, 5.0f, dt);
     s.flapOn = ease(s.flapOn, s.flapRate > 0.0f ? 1.0f : 0.0f, 5.0f, dt);
     s.wingRaise = ease(s.wingRaise, s.tWingRaise, 3.0f, dt);

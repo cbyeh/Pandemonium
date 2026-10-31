@@ -359,7 +359,7 @@ static void spiral_update(Boss *b, float dt)
     s.raysSpin = 4.0f + 4.0f * clamp01(s.t / WIND);
     if (s.t < WIND) {
         face_player(b, dt, 2.0f);
-        if (s.t - dt <= 0.0f) sfx(SCENE1_SFX_FIRE, 0.9f);
+        if (s.t - dt <= 0.0f) sfx(SCENE1_SFX_FIRE_SUN, 0.9f);
         s.aim = b->rot[1];
         return;
     }
@@ -398,7 +398,7 @@ static void ember_update(Boss *b, float dt)
         float v[3] = { sinf(a) * 38.0f + cosf(a) * side * 1.5f, 20.0f, cosf(a) * 38.0f - sinf(a) * side * 1.5f };
         skill_fx_next_shape(1.9f, CHARGE);
         skill_fx_spawn_orb_hostile(o, v, hurt(20.0f), fmaxf(3.6f, d / 40.0f + 1.5f), 2.4f);
-        sfx(SCENE1_SFX_FIRE, 0.8f);
+        sfx(SCENE1_SFX_FIRE_SUN, 0.8f);
 #ifdef HLE_AUTOPLAY
         debugf("[sun] ember %d at %.0f\n", s.step + 1, (double)d);
 #endif
@@ -503,7 +503,7 @@ static void flare_update(Boss *b, float dt)
             float a = b->rot[1] + k * (T3D_PI / 4.0f);
             skill_fx_spawn_burst_warn((float[3]){ b->pos[0] + sinf(a) * FLARE_R, s.groundY, b->pos[2] + cosf(a) * FLARE_R }, a);
         }
-        if (s.t <= dt) sfx(SCENE1_SFX_FIRE, 1.0f);
+        if (s.t <= dt) sfx(SCENE1_SFX_FIRE_SUN, 1.0f);
         if (s.t >= WIND) {
             s.flarePos[0] = b->pos[0]; s.flarePos[1] = s.groundY + 4.0f; s.flarePos[2] = b->pos[2];
             s.flareYaw = b->rot[1]; s.flareAge = 0.0f; s.flareHit = false;
