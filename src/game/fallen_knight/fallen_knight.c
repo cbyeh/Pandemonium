@@ -40,11 +40,11 @@ extern T3DModel* characterModel;       // the player's knight model (character.c
 
 enum {
     FKA_IDLE, FKA_WALK, FKA_RUN, FKA_ROLL, FKA_ATTACK1, FKA_ATTACK2, FKA_ATTACK3,
-    FKA_CHARGED, FKA_CLEAVE, FKA_HALFMOON, FKA_DEATH, FKA_BACKFLIP, FKA_KNEEL, FKA_BACKSTEP, FKA_HOLYRAISE, FKA_PLUNGELEAP, FKA_COUNT
+    FKA_CHARGED, FKA_CLEAVE, FKA_HALFMOON, FKA_DEATH, FKA_BACKFLIP, FKA_KNEEL, FKA_BACKSTEP, FKA_HOLYRAISE, FKA_PLUNGELEAP, FKA_HERODROP, FKA_COUNT
 };
 static const char *ANIM_NAMES[FKA_COUNT] = {
     "Idle", "Walk1", "Run", "Roll", "Attack1", "Attack2", "Attack3",
-    "AttackCharged", "SkillCleave", "SkillHalfmoon", "Death", "SkillBackflip", "StaggerKneel", "WalkBackwards", "HolyRaise", "PlungeLeap",
+    "AttackCharged", "SkillCleave", "SkillHalfmoon", "Death", "SkillBackflip", "StaggerKneel", "WalkBackwards", "HolyRaise", "PlungeLeap", "HeroDrop",
 };
 static const bool ANIM_LOOP[FKA_COUNT] = { true, true, true, [FKA_BACKSTEP] = true };
 
@@ -614,7 +614,8 @@ void fallen_knight_begin(Boss* boss)
 #endif
     }
     s.anim = -1;
-    play(FKA_IDLE, true);
+    play(FKA_HERODROP, true);     // the entrance: the fall, the superhero landing, the rise
+    s.blendT = 0.0f;
 
     boss->phaseIndex = FALLEN_KNIGHT_PHASE;
     boss->name = "Fallen Warrior";
@@ -648,6 +649,10 @@ void fallen_knight_skip_intro(Boss* boss)
 {
     if (!s.ready || s.state != FK_INTRO) return;
     boss->pos[1] = s.groundY;
+    if (s.anim == FKA_HERODROP) {     // a skip stands up over the idle's blend; a Tower floor (no intro) starts standing
+        play(FKA_IDLE, true);
+        if (s.t < 0.05f) s.blendT = 0.0f;
+    }
     boss->mode = BOSS_MODE_COMBAT;
     boss->state = BOSS_STATE_NEUTRAL;
     enter(FK_CHASE);
@@ -1163,16 +1168,18 @@ void fallen_knight_update(Boss* b, float dt)
     }
     switch (s.state) {
     case FK_INTRO:
-        // Falls from above in a crimson light, lands with a burst, then fights
+        // Falls from above, the blade down its back, into a superhero landing that cracks
+        // the floor; rises (HeroDrop), then fights
         b->pos[1] = s.groundY + FK_DROP_HEIGHT * fmaxf(0.0f, 1.0f - s.t / (FK_INTRO_TIME * 0.6f));
         face_player(b, dt, 10.0f);
         if (s.t >= FK_INTRO_TIME * 0.6f - 0.07f && s.t - dt < FK_INTRO_TIME * 0.6f - 0.07f) sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);   // onset on the landing
         if (s.step == 0 && b->pos[1] <= s.groundY) {
             float p[3] = { b->pos[0], s.groundY, b->pos[2] };
-            skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, p, (float[3]){ 0, 0, 0 }, 0.0f, 0, 1.0f, 1.0f, false);
+            boss_ground_crush_spawn_sized(p[0], s.groundY + 0.25f, p[2], 1.0f);
             screen_shake_set_shake_mag(10.0f);
             s.step = 1;
         }
+        if (s.anim == FKA_HERODROP && clip_done()) { play(FKA_IDLE, true); s.blendT = 0.0f; }    // HeroDrop ends on Idle's first frame
         break;      // waits, landed, until the intro cutscene ends (fallen_knight_skip_intro)
 
     case FK_CHASE: {

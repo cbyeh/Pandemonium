@@ -1247,7 +1247,7 @@ static const BonusDef BONUS_DEFS[] = {
             { { -58, 18, 16 }, { -34, 17, 8 }, { 0, 20, 0 } },           // pushing in on it: the challenge
         },
         .gather = { { -50, 6, 40 }, { -55, 22, 48 }, { 0, 70, 0 } },
-        .drop   = { { -42, 4, 18 }, { -36, 6, 12 }, { 0, 22, 0 } },      // low, looking up as it lands
+        .drop   = { { 70, 75, 22 }, { 55, 24, 16 }, { -90, 12, 0 } },    // behind it as it falls, the blade on its back, the knight beyond
         .begin = fallen_knight_begin, .skip = fallen_knight_skip_intro, .phase = FALLEN_KNIGHT_PHASE,
         .music = "rom:/audio/music/whispers_of_the_abyss-22k.wav64",  // "Whispers of the Abyss" by AlkaKrab
     },
@@ -1293,7 +1293,7 @@ static const BonusDef BONUS_DEFS[] = {
             { { 240, 50, -80 }, { 180, 44, -60 }, { -160, 10, 0 } },     // from the far dark, the knight small
             { { -110, 12, -90 }, { -110, 14, 90 }, { -180, 12, 0 } },    // tracking across the knight
             { { -200, 22, -16 }, { -194, 20, -12 }, { 0, 30, 0 } },      // over the knight's shoulder, the hall empty
-            { { -150, 10, 50 }, { -125, 14, 36 }, { 0, 70, 0 } },        // low, closing on its head: "let me feed"
+            { { -190, 14, 60 }, { -165, 18, 46 }, { 0, 82, 0 } },        // low, closing on its reared head: "let me feed"
         },
         .gather = { { -135, 4, 30 }, { -140, 5, 34 }, { -160, 30, 0 } },  // low on the knight, the dark above
         .drop   = { { -40, 30, -200 }, { -60, 40, -170 }, { 0, 60, 0 } },    // side-on, wide for its wings
@@ -2096,6 +2096,7 @@ static void scene_draw_hall(void)
     rdpq_mode_zbuf(false, false);
 
     t3d_matrix_push_pos(1);
+        boss_ground_crush_draw();       // a crack left by a landing (the Fallen Warrior's entrance)
         character_draw_shadow();
 
         if (g_boss) {

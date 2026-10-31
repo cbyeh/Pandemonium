@@ -65,6 +65,15 @@ CLIPS = {
         ("AttackCharged", 1.25, 1.85, 0.6),
         ("AttackCharged", 1.85, 1.85, 0.3),
     ],
+    # The Fallen Warrior's entrance: falling, the sword in one hand over its shoulder, the
+    # blade down its back, a knee tucked (to its landing at 1.44 s, FK_INTRO_TIME * 0.6);
+    # the superhero landing, its rear knee and free fist on the floor (eased in over the
+    # last of the fall, the legs reaching for the floor), held; then a slow rise
+    "HeroDrop": [
+        ("pose:hero_fall", 0.0, 0.0, 1.24),
+        ("pose:hero_land", 0.0, 0.0, 1.96, 0.26),
+        ("Idle", 0.0, 0.0, 1.3, 1.3),
+    ],
     "StaggerKneel": [
         ("pose:kneel", 0.0, 0.0, 2.7),
         ("Idle", 0.0, 0.0, 0.8, 0.8),
