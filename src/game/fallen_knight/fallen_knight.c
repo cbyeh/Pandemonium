@@ -83,6 +83,7 @@ static const float W_DN[2] = { 1.88f, 2.08f };
 static struct {
     bool ready;
     T3DSkeleton skel, skelBlend;
+    float blendSet;         // the fade play() chose, to fit to the pose on its first frame (0: done, or set by hand)
     T3DAnim anims[FKA_COUNT];
     int anim;
     float blendT, blendDur; // crossfade timer (0 = done), and its length
@@ -107,7 +108,7 @@ static struct {
     bool enraged;           // the war cry at half health
     float bladeTgt, bladeW; // the held blade pose (blade_pose): wanted and current weight
     float bladeDir[3];      // its direction: forward, side, up (the boss's frame)
-    float bladeCur[3], bladeTurn;   // the direction held now, turning toward bladeDir at bladeTurn rad/s
+    float bladeCur[3], bladeTurn, bladeVel;   // the direction held now, turning toward bladeDir at up to bladeTurn rad/s (bladeVel: its speed now)
     T3DQuat handBase, handPosed;
     float recT;             // this recovery's length
     float stareT;           // from here on in it, a longer pause: it stares the player down (recT if none)
@@ -142,6 +143,7 @@ static struct {
     float kv[16], kc[16], ko[16];   // the layer's channels (L_*) this frame, a cut's carry, as applied
     int kState, kStep;
     float chainW;           // the waist and spine's share of the layer: none in a swing (its blade is read from the pose)
+    float leanW, runW;      // the chase's lean into its turns, and the run's forward lean: eased on and off (they cut out as a move began)
     float lookYaw, lookPitch, lookW;    // the head on the player, a beat late
     float flinch[3], flinchV[3];        // a blow taken: the head's pitch and yaw, the spine's pitch (sprung)
     int hitSeen;
@@ -174,15 +176,106 @@ static inline void hle_commit(void) {}
 #endif
 
 #ifdef HLE_LOG_POP     // test aid: jolts in its motion, each laid to the clip or move change before it
-static struct { int fa, ta, fs, ts; float t, peak, yawPk, body, at, lateB, lateS; int pt, n; bool on; } pop;
+static struct { int fa, ta, fs, ts; float t, peak, yawPk, body, at, lateB, lateS, turn; int pt, n; bool on; } pop;
 static void pop_mark(int fa, int ta, int fs, int ts)
 {
     if (pop.on && pop.t <= 0.0f) { if (ta >= 0) { pop.ta = ta; if (pop.fa < 0) pop.fa = fa; } if (ts >= 0) { pop.ts = ts; if (pop.fs < 0) pop.fs = fs; } return; }     // the same frame: one change
-    if (pop.on) debugf("[pop] st %d>%d clip %d>%d peak %.0f pt %d yaw %.0f body %.0f at %.0f ms late %.0f %.0f\n", pop.fs, pop.ts, pop.fa, pop.ta, (double)pop.peak, pop.pt, (double)pop.yawPk, (double)pop.body, (double)(pop.at * 1000.0f), (double)pop.lateB, (double)pop.lateS);
+    if (pop.on) debugf("[pop] st %d>%d clip %d>%d peak %.0f pt %d yaw %.0f body %.0f at %.0f ms late %.0f %.0f turn %.2f fade %.2f\n", pop.fs, pop.ts, pop.fa, pop.ta, (double)pop.peak, pop.pt, (double)pop.yawPk, (double)pop.body, (double)(pop.at * 1000.0f), (double)pop.lateB, (double)pop.lateS, (double)pop.turn, (double)s.blendDur);
     pop.fa = ta >= 0 ? fa : -1; pop.ta = ta; pop.fs = ts >= 0 ? fs : -1; pop.ts = ts;
-    pop.t = 0.0f; pop.peak = 0.0f; pop.yawPk = 0.0f; pop.body = 0.0f; pop.at = 0.0f; pop.lateB = pop.lateS = 0.0f; pop.pt = -1; pop.on = true;
+    pop.t = 0.0f; pop.peak = 0.0f; pop.yawPk = 0.0f; pop.body = 0.0f; pop.at = 0.0f; pop.lateB = pop.lateS = pop.turn = 0.0f; pop.pt = -1; pop.on = true;
 }
 #endif
+
+// The pose a fade starts from carries on as it was moving, slowing to a stop (held still, a swing
+// or a step stopped dead for a frame): each bone's turn and travel over the last frame, from the
+// pose as the clips and fades made it (before the layers on top). No second clip played under it
+#define FK_MAXB 48
+#ifndef FK_FADE_TAU
+#define FK_FADE_TAU 0.08f   // how quickly the carried motion dies away (s)
+#endif
+static T3DQuat poseQ[2][FK_MAXB]; static T3DVec3 poseP[2][FK_MAXB]; static float poseDt; static int poseN;
+static float carryW[FK_MAXB][3], carryV[FK_MAXB][3];
+static int8_t fadeSgn[FK_MAXB];     // each bone's way round, fixed as the fade starts
+static T3DQuat fadeB[FK_MAXB];      // the clip's turn last frame, its sign kept continuous (a clip may give q or -q)
+
+static int bone_count(void) { int n = s.skel.skeletonRef->boneCount; return n < FK_MAXB ? n : FK_MAXB; }
+
+static void pose_record(float dt)
+{
+    int n = bone_count();
+    memcpy(poseQ[1], poseQ[0], sizeof(poseQ[0])); memcpy(poseP[1], poseP[0], sizeof(poseP[0]));
+    for (int i = 0; i < n; i++) { poseQ[0][i] = s.skel.bones[i].rotation; poseP[0][i] = s.skel.bones[i].position; }
+    poseDt = dt; if (poseN < 2) poseN++;
+}
+
+static void fade_carry_begin(void)
+{
+    memset(carryW, 0, sizeof(carryW)); memset(carryV, 0, sizeof(carryV)); memset(fadeSgn, 0, sizeof(fadeSgn));
+#ifndef HLE_FADE_FROZEN
+    if (poseN < 2 || poseDt <= 1e-4f) return;
+    for (int i = 0, n = bone_count(); i < n; i++) {
+        const T3DQuat *a = &poseQ[0][i], *b = &poseQ[1][i];
+        // the turn from last frame's to this: a * conj(b), the short way round
+        float w = a->v[3] * b->v[3] + a->v[0] * b->v[0] + a->v[1] * b->v[1] + a->v[2] * b->v[2];
+        float x = -a->v[3] * b->v[0] + a->v[0] * b->v[3] - a->v[1] * b->v[2] + a->v[2] * b->v[1];
+        float y = -a->v[3] * b->v[1] + a->v[1] * b->v[3] - a->v[2] * b->v[0] + a->v[0] * b->v[2];
+        float z = -a->v[3] * b->v[2] + a->v[2] * b->v[3] - a->v[0] * b->v[1] + a->v[1] * b->v[0];
+        if (w < 0.0f) { w = -w; x = -x; y = -y; z = -z; }
+        float sn = sqrtf(x * x + y * y + z * z);
+        if (sn > 1e-6f) {
+            float k = 2.0f * atan2f(sn, w) / sn / poseDt;
+            carryW[i][0] = x * k; carryW[i][1] = y * k; carryW[i][2] = z * k;
+        }
+        for (int c = 0; c < 3; c++) carryV[i][c] = (poseP[0][i].v[c] - poseP[1][i].v[c]) / poseDt;
+    }
+#endif
+}
+
+static void fade_carry(float dt)
+{
+    float decay = expf(-dt / FK_FADE_TAU);
+    for (int i = 0, n = bone_count(); i < n; i++) {
+        float *w = carryW[i], l = sqrtf(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
+        T3DBone *B = &s.skelBlend.bones[i];
+        if (l * dt > 1e-5f) {
+            T3DQuat r, q;
+            t3d_quat_from_rotation(&r, (float[3]){ w[0] / l, w[1] / l, w[2] / l }, l * dt);
+            t3d_quat_mul(&q, &r, &B->rotation); t3d_quat_normalize(&q);
+            B->rotation = q;
+        }
+        for (int c = 0; c < 3; c++) { B->position.v[c] += carryV[i][c] * dt; carryV[i][c] *= decay; w[c] *= decay; }
+    }
+}
+
+/** The pose faded from (skelBlend) into the clip's (skel), by k. As t3d_skeleton_blend, but each bone
+ *  goes the way round it took on the fade's first frame: the shorter way, chosen afresh each frame,
+ *  flipped side mid-fade where the clip turned a bone on through half a turn from where it came,
+ *  and the bone (an arm) jumped. The clip's turn is followed frame to frame (q and -q are the same
+ *  turn, and a clip may give either), the way round fixed against that */
+static void fade_blend(float k)
+{
+    int n = s.skel.skeletonRef->boneCount;
+    for (int i = 0; i < n; i++) {
+        T3DBone *B = &s.skel.bones[i];
+        const T3DBone *A = &s.skelBlend.bones[i];
+        const float *qa = A->rotation.v;
+        float qb[4] = { B->rotation.v[0], B->rotation.v[1], B->rotation.v[2], B->rotation.v[3] };
+        float wa = 1.0f - k;
+        if (i < FK_MAXB) {
+            if (fadeSgn[i]) {
+                const float *pb = fadeB[i].v;
+                if (pb[0] * qb[0] + pb[1] * qb[1] + pb[2] * qb[2] + pb[3] * qb[3] < 0.0f) for (int c = 0; c < 4; c++) qb[c] = -qb[c];
+            } else fadeSgn[i] = (qa[0] * qb[0] + qa[1] * qb[1] + qa[2] * qb[2] + qa[3] * qb[3]) < 0.0f ? -1 : 1;
+            memcpy(fadeB[i].v, qb, sizeof(qb));
+            wa *= fadeSgn[i];
+        } else if (qa[0] * qb[0] + qa[1] * qb[1] + qa[2] * qb[2] + qa[3] * qb[3] < 0.0f) wa = -wa;
+        for (int c = 0; c < 4; c++) B->rotation.v[c] = wa * qa[c] + k * qb[c];
+        t3d_quat_normalize(&B->rotation);
+        t3d_vec3_lerp(&B->position, &A->position, &B->position, k);
+        t3d_vec3_lerp(&B->scale, &A->scale, &B->scale, k);
+        B->hasChanged = true;
+    }
+}
 
 static void play(int a, bool restart)
 {
@@ -195,14 +288,23 @@ static void play(int a, bool restart)
     pop_mark(s.anim, a, s.state, -1);
 #endif
     t3d_skeleton_blend(&s.skelBlend, &s.skel, &s.skel, 0.0f);    // snapshot the current pose
+    fade_carry_begin();
+    if (s.anim >= 0) t3d_anim_set_playing(&s.anims[s.anim], false);
     // swings cut in fast (the blade's hits are read from the pose); going down, dying and
     // moving about ease over longer
-    s.blendDur = a == FKA_KNEEL ? 0.6f : a == FKA_LUNGE ? 0.3f : a == FKA_HOLYRAISE ? 0.4f : a == FKA_DEATH ? 0.35f : (a == FKA_IDLE || a == FKA_WALK || a == FKA_RUN || s.anim == FKA_ROLL) ? 0.3f : 0.15f;
+#ifndef FK_HALFMOON_FADE
+#define FK_HALFMOON_FADE 0.4f   // down into its crouch (the slash is 1.6 s on: time to sink into it)
+#endif
+    s.blendDur = a == FKA_KNEEL ? 0.6f : a == FKA_HALFMOON ? FK_HALFMOON_FADE : a == FKA_LUNGE ? 0.3f : a == FKA_HOLYRAISE ? 0.4f : a == FKA_DEATH ? 0.35f : (a == FKA_IDLE || a == FKA_WALK || a == FKA_RUN || a == FKA_STRAFE_L || a == FKA_STRAFE_R || a == FKA_BACKSTEP || s.anim == FKA_ROLL) ? 0.3f : 0.15f;
     s.blendT = s.blendDur;
-    if (s.anim >= 0) t3d_anim_set_playing(&s.anims[s.anim], false);
+    s.blendSet = s.blendDur;
+    // walk and run into each other in step: the new one at the same point of its stride
+    float phase = -1.0f;
+    if ((a == FKA_WALK || a == FKA_RUN) && (s.anim == FKA_WALK || s.anim == FKA_RUN) && a != s.anim)
+        phase = fmodf(t3d_anim_get_time(&s.anims[s.anim]) / t3d_anim_get_length(&s.anims[s.anim]), 1.0f);
     s.anim = a;
     t3d_anim_attach(&s.anims[a], &s.skel);
-    t3d_anim_set_time(&s.anims[a], 0.0f);
+    t3d_anim_set_time(&s.anims[a], phase >= 0.0f ? phase * t3d_anim_get_length(&s.anims[a]) : 0.0f);
     t3d_anim_set_speed(&s.anims[a], 1.0f);
     t3d_anim_set_playing(&s.anims[a], true);
 }
@@ -363,6 +465,8 @@ static void sfx_cam(int id, float vol)
 }
 
 static void quat_rotate(const T3DQuat *q, const float v[3], float out[3]);
+static void bone_world(int i, T3DQuat *q, float p[3]);
+static void quat_conj(T3DQuat *q);
 
 // The knight's grip, in the hand's space (model units): the handle crosses the palm, so with the
 // palm in and the blade along the arm the hand folds 90 degrees, fingers down. In the lunge's
@@ -406,23 +510,31 @@ static void pop_sample(float dt, float yaw)
     }
     { float t[3]; sword_seat((float[3]){ -522.0f, 69.0f, -68.0f }, t); mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.swordBone], t, p[6]); }
     float pk = 0.0f, bodyPk = 0.0f; int pt = -1;
+    float trA[NP] = { 0 }; (void)trA;
     float yv = remainderf(yaw - yaw0, 2.0f * T3D_PI) / dt, ya = fabsf(yv - yv0) / dt;
     for (int i = 0; i < NP; i++) {
         float v[3], a = 0.0f;
         for (int c = 0; c < 3; c++) { v[c] = (p[i][c] - p0[i][c]) / 64.0f / dt; float d = v[c] - v0[i][c]; a += d * d; p0[i][c] = p[i][c]; v0[i][c] = v[c]; }
         a = sqrtf(a) / dt;
+        trA[i] = a;
         if (warm >= 2 && a > pk) { pk = a; pt = i; }
         if (warm >= 2 && i < 6 && a > bodyPk) bodyPk = a;
     }
     yaw0 = yaw; yv0 = yv;
     if (warm < 2) { warm++; return; }
+#ifdef HLE_POP_TRACE     // test aid: frame by frame through changes into clip HLE_POP_TRACE (each point's accel, and the layers' weights)
+    if (pop.on && pop.ta == HLE_POP_TRACE) {
+        debugf("[poptr] %3.0f ms fade %.2f blade %.2f grip %.2f seat %.2f chain %.2f fit %.2f t %.2f | hR %.0f hL %.0f hd %.0f hip %.0f fL %.0f fR %.0f tip %.0f\n", (double)(pop.t * 1000.0f), (double)s.blendT, (double)s.bladeW, (double)s.gripW, (double)s.seatW, (double)s.chainW, (double)s.gripFit, (double)s.t,
+               (double)trA[0], (double)trA[1], (double)trA[2], (double)trA[3], (double)trA[4], (double)trA[5], (double)trA[6]);
+    }
+#endif
     if (pop.on) {
         pop.t += dt;
         if (pk > pop.peak) { pop.peak = pk; pop.pt = pt; pop.at = pop.t; }
         if (bodyPk > pop.body) pop.body = bodyPk;
         if (pop.t > 0.05f) { if (bodyPk > pop.lateB) pop.lateB = bodyPk; if (pk > pop.lateS) pop.lateS = pk; }     // past a hard cut's own jump
         if (ya > pop.yawPk) pop.yawPk = ya;
-        if (pop.t > 0.4f) { debugf("[pop] st %d>%d clip %d>%d peak %.0f pt %d yaw %.0f body %.0f at %.0f ms late %.0f %.0f\n", pop.fs, pop.ts, pop.fa, pop.ta, (double)pop.peak, pop.pt, (double)pop.yawPk, (double)pop.body, (double)(pop.at * 1000.0f), (double)pop.lateB, (double)pop.lateS); pop.on = false; }
+        if (pop.t > 0.4f) { debugf("[pop] st %d>%d clip %d>%d peak %.0f pt %d yaw %.0f body %.0f at %.0f ms late %.0f %.0f turn %.2f fade %.2f\n", pop.fs, pop.ts, pop.fa, pop.ta, (double)pop.peak, pop.pt, (double)pop.yawPk, (double)pop.body, (double)(pop.at * 1000.0f), (double)pop.lateB, (double)pop.lateS, (double)pop.turn, (double)s.blendDur); pop.on = false; }
     } else if (s.anim >= 0) {
         if (pk > clipPk[s.anim]) clipPk[s.anim] = pk;
         clipSum[s.anim] += pk; clipN[s.anim]++;
@@ -618,25 +730,43 @@ static void blade_pose(float dt)
     if (memcmp(&h->rotation, &s.handPosed, sizeof(T3DQuat)) == 0) { h->rotation = s.handBase; h->hasChanged = true; }
     if (s.bladeW <= 0.0f) return;
     s.handBase = h->rotation;
-    const T3DMat4x3 *P = &s.skel.bones[h->parentIdx].matrix;   // last frame's: the arm isn't posed here
+    // the arm as it is this frame (its matrix is last frame's: in a fade the arm moves fast, and
+    // the blade, aimed off a frame-old arm, shook)
+    T3DQuat pq, pqi; float pp[3];
+    bone_world(h->parentIdx, &pq, pp);
+    pqi = pq; quat_conj(&pqi);
     float clipDir[3];   // where the clip has the blade
     {
-        float cp[3], cm[3] = { 0 };
+        float cp[3], cm[3];
         quat_rotate(&h->rotation, (float[3]){ -1.0f, 0.0f, 0.0f }, cp);
-        for (int j = 0; j < 3; j++) for (int i = 0; i < 3; i++) cm[j] += cp[i] * P->m[i][j];
+        quat_rotate(&pq, cp, cm);
+#ifdef HLE_LOG_BLADEP   // test aid: this frame's arm against last frame's matrix (dot of the two blade directions; ~1 when still)
+        { const T3DMat4x3 *P = &s.skel.bones[h->parentIdx].matrix; float om[3] = { 0 };
+          for (int j = 0; j < 3; j++) for (int i = 0; i < 3; i++) om[j] += cp[i] * P->m[i][j];
+          vnorm(om); float nm[3] = { cm[0], cm[1], cm[2] }; vnorm(nm);
+          static int k; if (++k % 15 == 0) debugf("[bladep] dot %.4f fade %.2f\n", (double)(om[0] * nm[0] + om[1] * nm[1] + om[2] * nm[2]), (double)s.blendT); }
+#endif
         clipDir[0] = -cm[0]; clipDir[1] = cm[2]; clipDir[2] = cm[1]; vnorm(clipDir);
     }
     if (starting) {     // a slow turn starts from where the clip has the blade
         memcpy(s.bladeCur, clipDir, sizeof(clipDir));
+        s.bladeVel = 0.0f;
         if (s.bladeTurn < 1e8f) s.bladeW = 1.0f;    // it takes over where the blade is: no fade, nothing to jump
     }
     if (s.bladeArc == 2 && s.state == FK_RECOVER) {      // back onto the clip's blade, then let go of it there: nothing to jump
         memcpy(s.bladeDir, clipDir, sizeof(clipDir));
         if (s.bladeCur[0] * clipDir[0] + s.bladeCur[1] * clipDir[1] + s.bladeCur[2] * clipDir[2] > 0.995f) { s.bladeArc = 3; s.bladeW = 0.0f; return; }
     }
-    {   // turn toward the asked direction, at most bladeTurn rad/s, along the great circle
+    {   // turn toward the asked direction, at most bladeTurn rad/s, along the great circle; a slow turn
+        // eases up to speed and down onto it (at a constant speed it started and stopped dead, and the
+        // other hand on the hilt jerked with it)
         float *c = s.bladeCur, *t = s.bladeDir, dot = fmaxf(-1.0f, fminf(1.0f, c[0] * t[0] + c[1] * t[1] + c[2] * t[2]));
         float ang = acosf(dot), step = s.bladeTurn * dt;
+        if (s.bladeTurn < 1e8f) {
+            float acc = s.bladeTurn * 8.0f;     // full speed in 1/8 s
+            s.bladeVel = fminf(fminf(s.bladeTurn, sqrtf(2.0f * acc * ang)), s.bladeVel + acc * dt);
+            step = s.bladeVel * dt;
+        }
         if (ang <= step || ang < 1e-4f) memcpy(c, t, sizeof(float[3]));
         else {
             float k = sinf(step) / sinf(ang), k0 = cosf(step) - dot * k;
@@ -646,7 +776,8 @@ static void blade_pose(float dt)
     }
     float d[3] = { -s.bladeCur[0], s.bladeCur[2], s.bladeCur[1] };     // model space: forward is -X, side +Z
     float u[3], c[3], l = 0.0f;
-    for (int i = 0; i < 3; i++) { u[i] = P->m[i][0] * d[0] + P->m[i][1] * d[1] + P->m[i][2] * d[2]; l += u[i] * u[i]; }
+    quat_rotate(&pqi, d, u);
+    for (int i = 0; i < 3; i++) l += u[i] * u[i];
     if (l < 1e-8f) return;
     l = 1.0f / sqrtf(l);
     for (int i = 0; i < 3; i++) u[i] *= l;
@@ -698,6 +829,8 @@ static void grip_pose(float dt)
 {
     bool want = s.state == FK_HALFMOON || s.state == FK_UPDOWN || s.state == FK_TRISLAM || s.state == FK_PLUNGE
              || (s.state == FK_HOLYSLAM && s.step == 1);     // the Holy Slam: the blade raised high and brought down
+    // not while the fade into the move still swings the hilt round (the hand chased it and jerked): once it is most of the way
+    if (want && s.gripW <= 0.0f && s.blendT > 0.3f * s.blendDur) want = false;
     float rate = want ? 7.0f : 2.0f;    // onto the hilt in ~0.15 s, off it again over ~0.5 s
     s.gripW += fmaxf(-rate * dt, fminf(rate * dt, (want ? 1.0f : 0.0f) - s.gripW));
     for (int k = 0; k < 3; k++) s.gripKeep[k].parentIdx = 0xFFFF;
@@ -961,10 +1094,14 @@ static void life_update(Boss *b, float dt)
     if (s.cryT >= 0.0f) { key_play(&WARCRY, s.cryT, 1.0f, 1.0f, 1.0f); s.cryT += dt; if (s.cryT > 1.8f) s.cryT = -1.0f; }
 
     // the chase: leaning into its turns, the head leading them; running, it leans on
-    if (s.state == FK_CHASE) {
-        s.kv[L_SR] += fmaxf(-0.15f, fminf(0.15f, -s.yawRate * 0.06f));
-        s.kv[L_HY] -= fmaxf(-0.3f, fminf(0.3f, s.yawRate * 0.12f));
-        if (s.anim == FKA_RUN) s.kv[L_SP] += 0.08f;
+    {
+        float lw = s.state == FK_CHASE ? 1.0f : 0.0f, rw = (s.state == FK_CHASE && s.anim == FKA_RUN) ? 1.0f : 0.0f;
+        s.leanW += fmaxf(-5.0f * dt, fminf(5.0f * dt, lw - s.leanW));       // ~0.2 s either way
+        s.runW += fmaxf(-4.0f * dt, fminf(4.0f * dt, rw - s.runW));
+        float l = s.leanW * s.leanW * (3.0f - 2.0f * s.leanW), r = s.runW * s.runW * (3.0f - 2.0f * s.runW);
+        s.kv[L_SR] += l * fmaxf(-0.15f, fminf(0.15f, -s.yawRate * 0.06f));
+        s.kv[L_HY] -= l * fmaxf(-0.3f, fminf(0.3f, s.yawRate * 0.12f));
+        s.kv[L_SP] += r * 0.08f;
     }
 
     // a fidget now and then in a long breather (about one in 3 s): one of three
@@ -1103,7 +1240,7 @@ void fallen_knight_begin(Boss* boss)
         }
 #endif
     }
-    s.anim = -1;
+    s.anim = -1; poseN = 0;
     play(FKA_HERODROP, true);     // the entrance: the fall, the superhero landing, the rise
     s.blendT = 0.0f;
 
@@ -1982,11 +2119,46 @@ void fallen_knight_update(Boss* b, float dt)
 #ifdef HLE_POP_REF      // test aid: no crossfades (the clips' own motion, for HLE_LOG_POP to hold the changes to)
     s.blendT = 0.0f;
 #endif
+#ifndef FK_FIT_K
+#define FK_FIT_K 0.06f      // the fade's length per radian its chain (waist to the hand that turns most) has to turn
+#endif
+#ifndef FK_FIT_MAX
+#define FK_FIT_MAX 0.45f
+#endif
+    // A fade as long as the way it has to go: a big change of pose (the sword off its shoulder and
+    // low before it) eased over longer, so it never lurches there and stops; one that flows on
+    // (the combo's blows into each other) stays as quick as it was. Chosen on its first frame, the
+    // new clip at its real start (some are started part way in); one set by hand is kept
+    if (s.blendSet > 0.0f) {
+        if (s.blendDur == s.blendSet && s.blendT == s.blendSet) {
+            // (the sword arm's chain, or the other's: it comes onto the hilt in the two-handed moves)
+            static int chain[8] = { -2 };
+            static const char *CH[8] = { "Waist", "Spine1", "UpperArm-Right", "LowerArm-Right", "Hand-Right", "UpperArm-Left", "LowerArm-Left", "Hand-Left" };
+            if (chain[0] == -2) for (int i = 0; i < 8; i++) chain[i] = t3d_skeleton_find_bone(&s.skel, CH[i]);
+            float ang[8];
+            for (int i = 0; i < 8; i++) {
+                ang[i] = 0.0f;
+                if (chain[i] < 0) continue;
+                const T3DQuat *qa = &s.skelBlend.bones[chain[i]].rotation, *qb = &s.skel.bones[chain[i]].rotation;
+                float d = fabsf(qa->v[0] * qb->v[0] + qa->v[1] * qb->v[1] + qa->v[2] * qb->v[2] + qa->v[3] * qb->v[3]);
+                ang[i] = 2.0f * acosf(fminf(1.0f, d));
+            }
+            float turn = ang[0] + ang[1] + fmaxf(ang[2] + ang[3] + ang[4], ang[5] + ang[6] + ang[7]);
+            float fit = fminf(FK_FIT_MAX, FK_FIT_K * turn);
+#ifdef HLE_LOG_POP
+            pop.turn = turn;
+#endif
+            if (fit > s.blendDur) s.blendT = s.blendDur = fit;
+        }
+        s.blendSet = 0.0f;
+    }
     if (s.blendT > 0.0f) {
+        fade_carry(dt);
         s.blendT -= dt;
         float k = 1.0f - fmaxf(0.0f, s.blendT) / s.blendDur;
-        t3d_skeleton_blend(&s.skel, &s.skelBlend, &s.skel, k * k * (3.0f - 2.0f * k));     // eased in and out
+        fade_blend(k * k * (3.0f - 2.0f * k));     // eased in and out
     }
+    pose_record(dt);
     tired_pose(dt);
     life_update(b, dt);
     life_apply();

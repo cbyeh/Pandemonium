@@ -1,5 +1,5 @@
 import sys,re,collections,statistics as S
-AN="Idle Walk Run Roll Atk1 Atk2 Atk3 Charged Cleave Halfmoon Death Backflip Kneel WalkBack HolyRaise PlungeLeap Lunge StrafeL StrafeR".split()
+AN="Idle Walk Run Roll Atk1 Atk2 Atk3 Charged Cleave Halfmoon Death Backflip Kneel WalkBack HolyRaise PlungeLeap HeroDrop Lunge StrafeL StrafeR".split()
 ST="INTRO CHASE COMBO ROLL CLEAVE HALFMOON MOONBLADE RECOVER STAGGER DEAD SPLITTER UPDOWN TRISLAM HOLYSLAM ROLLCUT PLUNGE LUNGE".split()
 def load(fs):
     ev=collections.defaultdict(list); mv=collections.defaultdict(collections.Counter)
