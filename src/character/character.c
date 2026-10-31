@@ -962,7 +962,7 @@ static inline void try_start_roll(const joypad_buttons_t* buttons, const StickIn
     characterState = CHAR_STATE_ROLLING;
     actionTimer = 0.0f;
     s_perfectThisRoll = false;
-    audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.5f, 0.0f);     // "Erase / Escape" by Fupi (CC0), kept quiet
+    audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.5f, 0.0f);     // kept quiet
 
     // Shorten roll when moving so we return to locomotion sooner (prevents long slide)
     float mag = stick ? stick->magnitude : 0.0f;
@@ -1306,7 +1306,7 @@ static void skill_fire_moon_blade(void)
     skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, 0.8f, 1, 0.0f, len / MBD_WAVE_SPEED,   // 5 waves: 4, for the dodge
                         skillStep == mbd_waves() - 1);
     character_play_swing();
-    audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_WAVE, 0.55f, 0.0f);
+    audio_play_scene_sfx_dist(SCENE1_SFX_MBD_X, 0.55f, 0.0f);
 
     // One swing per cross; cycling the clips restarts the swing every wave
     static const int swings[3] = { ANIM_ATTACK1, ANIM_ATTACK2, ANIM_ATTACK3 };
@@ -1374,7 +1374,7 @@ static void update_skill(float dt)
             skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 56.0f, 0.0f, dz * 56.0f },
                                 1.25f * tower_mod_skill_damage(SKILL_CRESCENT_CLEAVE), 4, 0.3f, 1.6f, false);    // ~8 ticks a cast in reach: 10
             skill_fx_spawn_burst(origin, a);
-            audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_CAST, 0.45f, 0.0f);
+            audio_play_scene_sfx_dist(SCENE1_SFX_CLEAVE_BEAM, 0.45f, 0.0f);
             if (skillStep == 0) {
                 screen_shake_set_shake_mag(6.0f);
                 character_play_swing();
@@ -2015,7 +2015,7 @@ static inline void start_knockdown_breakaway_roll(void)
     characterState = CHAR_STATE_ROLLING;
     actionTimer = 0.0f;
     s_perfectThisRoll = false;
-    audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.5f, 0.0f);     // "Erase / Escape" by Fupi (CC0), kept quiet
+    audio_play_scene_sfx_dist(SCENE1_SFX_ROLL_SWISH, 0.5f, 0.0f);     // kept quiet
 
     // Breakaway roll duration: pick whichever feels right.
     // If you want it snappier, use ROLL_DURATION_MOVING.
@@ -3391,7 +3391,7 @@ void character_apply_damage(float amount)
         }
     } else {
         // Non-knockdown hits should not leave knockback running
-        audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_UMPH, 1.0f, 0.0f);
+        audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_HURT1 + (int)(rand_custom_u32() & 1), 1.0f, 0.0f);
         screen_shake_set_shake_mag(10.0f);
         strongKnockbackActive = false;
     }

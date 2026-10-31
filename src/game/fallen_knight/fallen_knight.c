@@ -770,7 +770,7 @@ static void moonblade_update(Boss *b, float dt)
         float v[3] = { d[0] / len * SPEED, d[1] / len * SPEED, d[2] / len * SPEED };
         skill_fx_spawn_slash_hostile(o, v, BEAM_TILT, FK_FELT(8.0f), len / SPEED);
         memcpy(s.beam2O, o, sizeof(o)); memcpy(s.beam2V, v, sizeof(v)); s.beam2Life = len / SPEED; s.beam2T = BEAM_GAP;
-        swing_sfx();
+        sfx(SCENE1_SFX_FW_SLICE, 1.0f);
         beam_swing(0);      // its first beam's cut (the second's is played as that beam leaves)
         s.step++;
     }
@@ -1155,7 +1155,7 @@ void fallen_knight_update(Boss* b, float dt)
     // a Moon Blade cross's second beam, BEAM_GAP after its first (even once the leap has landed)
     if (s.beam2T >= 0.0f && (s.beam2T -= dt) < 0.0f) {
         skill_fx_spawn_slash_hostile(s.beam2O, s.beam2V, -BEAM_TILT, FK_FELT(8.0f), s.beam2Life);
-        if (s.state == FK_MOONBLADE) { beam_swing(1); swing_sfx(); }      // its cut (not once it has landed)
+        if (s.state == FK_MOONBLADE) { beam_swing(1); sfx(SCENE1_SFX_FW_SLICE, 1.0f); }      // its cut (not once it has landed)
     }
     switch (s.state) {
     case FK_INTRO:
@@ -1176,6 +1176,12 @@ void fallen_knight_update(Boss* b, float dt)
         float speed = (dist > 45.0f) ? FK_RUN_SPEED : (dist > FK_MELEE_RANGE - 6.0f) ? FK_WALK_SPEED : 0.0f;
         play(speed >= FK_RUN_SPEED ? FKA_RUN : speed > 0.0f ? FKA_WALK : FKA_IDLE, false);
         if (speed > 0.0f && dist > 1e-3f) move(b, dx / dist * speed, dz / dist * speed, dt);
+        // Footfalls at the knight's pace (its steps, deeper)
+        static float stepT; static int stepN;
+        if (speed > 0.0f && (stepT -= dt) <= 0.0f) {
+            sfx(SCENE1_SFX_FW_STEP1 + (stepN++ & 3), 0.8f);
+            stepT = speed >= FK_RUN_SPEED ? 0.40f : 0.70f;
+        }
         // Dodge the player's swings sometimes
         CharacterState ps = character_get_state();
         if (ps == CHAR_STATE_ATTACKING && dist < 28.0f && s.cdRoll <= 0.0f) {
@@ -1191,6 +1197,7 @@ void fallen_knight_update(Boss* b, float dt)
                 s.moveZ = (-dz / dist * back - dx / dist * side) * 70.0f;
                 enter(FK_ROLL);
                 play(FKA_ROLL, true);
+                sfx(SCENE1_SFX_FW_ROLL, 0.9f);
                 break;
             }
         }

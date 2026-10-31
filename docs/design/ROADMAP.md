@@ -111,3 +111,7 @@ Needs a per-weapon stats table: damage, animation speed and the hit capsule leng
 - **The King** (from the ending): a throne-bound caster fight in the same hall, built procedurally.
 - **Practice mode:** pick any boss and phase, with infinite potions and the hit timings shown.
 - **Time attack:** a best time per boss, which `save_controller_record_boss_clear_time_ms` already records for the story fight.
+
+### Sound left to improve (S)
+- **The Fallen Warrior's wave** and **the player's skill casts** (Moon Blade Dance and the rest): their sounds don't fit yet. Moon Blade Dance plays its sound once per wave (five a cast), so it needs a short one.
+- **Timing, everywhere:** every sound lands on what you see, in loudness (dB) and impact. The roll's sound plays on the frame the knight lands, not as the roll starts.

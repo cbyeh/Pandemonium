@@ -497,6 +497,15 @@ void audio_set_scene_sfx_dist(int ch, int sceneSfxIndex, float distance)
     slot->distance = fmaxf(distance, 0.0f);     // (sfx_update_volumes applies it)
 }
 
+void audio_stop_scene_sfx(int ch, int sceneSfxIndex)
+{
+    if (ch < 0 || ch >= MIXER_NUM_CHANNELS || !ch_is_sfx_eligible(ch)) return;
+    SfxSlot *slot = &sfxSlots[ch];
+    if (!slot->inUse || slot->sceneIndex != sceneSfxIndex) return;     // finished, the channel since reused
+    mixer_ch_stop(ch);
+    slot->inUse = false;
+}
+
 void audio_stop_all_sfx(void)
 {
     for (int ch = 0; ch < MIXER_NUM_CHANNELS; ch++) {

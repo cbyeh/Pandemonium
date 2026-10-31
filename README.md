@@ -111,6 +111,7 @@ Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on th
 <img width="1311" height="939" alt="screen shot 1" src="screenshot-3.png">
 
 ## Build
+The Gomo Sounds effects aren't in the repo (their license forbids sharing the files). Get the [Dark Fantasy Soulslike SFX Pack](https://mauriciopazp.itch.io/dark-fantasy-soulslike-sfx-pack) and run `tools/pack_sfx.py path/to/Dark_Fantasy_Soulslike_SFX_Pack.zip` (with numpy and `ffmpeg`) before the first build.
 - Install libdragon (preview)
 - Install Tiny3D (main)
 - run make file
@@ -167,13 +168,15 @@ Aethrone (cbyeh fork):
 - DIscord: Absinthefather
 
 ### Credits
-Third-party audio added in this fork. The sound effects are CC0 (public domain), so no attribution is required, but it's given anyway. The bonus boss themes are by AlkaKrab, used with permission; they are not covered by this repo's licenses and may not be reused or redistributed on their own.
+Third-party audio added in this fork. The CC0 sounds are public domain, so no attribution is required, but it's given anyway. The bonus boss themes are by AlkaKrab, used with permission. Neither they nor the Gomo Sounds effects are covered by this repo's licenses, and they may not be reused or redistributed on their own.
+
+Sound effects: Gomo Sounds (gomosounds.com)
 
 | Asset | Used for | Author | Source |
 |---|---|---|---|
 | CC0 Deep Monster Roar | Shadowborne's roar | trazzz123 | [OpenGameArt](https://opengameart.org/content/cc0-deep-monster-roar) |
-| Erase / Escape | The roll | Fupi | [OpenGameArt](https://opengameart.org/content/erase-escape) |
-| 80 CC0 RPG SFX | Skill casts, potion, fire breath, the dark beam and nova, explosions, chains, the armour clank | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-rpg-sfx) |
+| 80 CC0 RPG SFX | The Shackled Sun's chains, the perfect dodge, Storm Blade, Moonlight Splitter | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-rpg-sfx) |
+| Dark Fantasy Soulslike SFX Pack | The Bonus bosses' fire, spells, beams and wings; the knight's skills, roll, potion, hurt and armour | Gomo Sounds | [itch.io](https://mauriciopazp.itch.io/dark-fantasy-soulslike-sfx-pack) |
 | Shadowforge Convergence | Shadowborne's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
 | Veil of Eternal Nightfall | The Shackled Sun's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
 | Whispers of the Abyss | The Fallen Warrior's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
