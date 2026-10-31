@@ -18,6 +18,7 @@
 #include "character_skin.h"
 #include <math.h>
 #include "character.h"
+#include "fx/skill_fx.h"
 #include "game/boss/boss.h"
 #include "controllers/menu_controller.h"
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
@@ -1678,10 +1679,44 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
         in->btn.z = 1;
         if (t == 10) t0 = frame;
+#ifdef HLE_MBD_XSTILL   // one Moon Blade X held still in the air (flying +z, as seen from behind at first), the camera circling it HLE_MBD_XSTILL away
+        if (cyc == 0 && t >= 10) {
+            static float xp[3];
+            if (t == 10) {
+                xp[0] = camTarget.v[0]; xp[1] = camTarget.v[1] + 40.0f; xp[2] = camTarget.v[2];
+                skill_fx_spawn_wave(SKILL_WAVE_X, xp, (float[3]){ 0.0f, 0.0f, 0.001f }, 0.0f, 0, 0.0f, 40.0f, false);
+                debugf("[xstill] at %.0f %.0f %.0f, frame %d\n", (double)xp[0], (double)xp[1], (double)xp[2], frame);
+            }
+            float a = (t - 10) * (6.2832f / 360.0f);    // one turn in 360 frames, from behind
+            cameraLockOnActive = false;
+            customCamPos = (T3DVec3){{ xp[0] - sinf(a) * HLE_MBD_XSTILL, xp[1], xp[2] - cosf(a) * HLE_MBD_XSTILL }};
+            customCamTarget = (T3DVec3){{ xp[0], xp[1], xp[2] }};
+            camera_mode_smooth(CAMERA_CUSTOM, 0.0f);
+            if (t == 10 + 90 || t == 10 + 180 || t == 10 + 360) debugf("[xstill] turn %d at frame %d\n", (t - 10) / 90, frame);
+            return;
+        }
+#endif
 #if HLE_TEST_SKILL_DMG == 0
         if (t == 10 || t == 28 || t == 46) { pressed->b = 1; in->btn.b = 1; }
 #elif HLE_TEST_SKILL_DMG == 1
         if (t == 10) pressed->d_up = 1;
+#ifdef HLE_MBD_CLOSECAM     // (HLE_MBD_CAMYAW radians, default 1.2)
+#ifndef HLE_MBD_CAMYAW
+#define HLE_MBD_CAMYAW 1.2f
+#endif
+        // a still camera HLE_MBD_CLOSECAM from the side of the waves' path, from the cast (unlocked: they aim along the camera's old facing)
+        {
+            static T3DVec3 p, tg;
+            if (t == 11 && cyc == 0) {
+                // the follow camera here, turned HLE_MBD_CAMYAW round its target, HLE_MBD_CLOSECAM nearer
+                float ox = camPos.v[0] - camTarget.v[0], oz = camPos.v[2] - camTarget.v[2], c = cosf(HLE_MBD_CAMYAW), sn = sinf(HLE_MBD_CAMYAW);
+                p  = (T3DVec3){{ camTarget.v[0] + (ox * c - oz * sn) * HLE_MBD_CLOSECAM, 45.0f, camTarget.v[2] + (ox * sn + oz * c) * HLE_MBD_CLOSECAM }};
+                tg = (T3DVec3){{ camTarget.v[0], 32.0f, camTarget.v[2] }};
+                debugf("[mbdcam] cam %.0f %.0f %.0f -> %.0f %.0f %.0f (follow %.0f %.0f %.0f)\n", (double)p.v[0], (double)p.v[1], (double)p.v[2], (double)tg.v[0], (double)tg.v[1], (double)tg.v[2], (double)camPos.v[0], (double)camPos.v[1], (double)camPos.v[2]);
+            }
+            if (t >= 11 && cyc == 0) { cameraLockOnActive = false; customCamPos = p; customCamTarget = tg; camera_mode_smooth(CAMERA_CUSTOM, 0.0f); }
+        }
+#endif
 #ifdef HLE_MBD_KD   // a heavy hit HLE_MBD_KD frames into the dance (knocked down mid-air)
         if (t == 10 + HLE_MBD_KD && cyc == 0) { debugf("[mbdkd] hit at frame %d, y %.1f\n", frame, (double)character.pos[1]); character_apply_damage(25.0f); }
         if (cyc == 0 && t > 10 && t < 120) debugf("[mbdkd] f %d state %d y %.1f\n", frame, character_get_state(), (double)character.pos[1]);

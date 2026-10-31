@@ -620,6 +620,64 @@ static void dir_basis(const float v[3], float d[3], float s[3], float u[3])
     u[0] = d[1]*s[2] - d[2]*s[1]; u[1] = d[2]*s[0] - d[0]*s[2]; u[2] = d[0]*s[1] - d[1]*s[0];
 }
 
+#define X_LEN 15.0f                 // the player's X: an arm's length each way (hit as drawn: update_wave_hit)
+#define X_K   (X_LEN / 22.0f)       // its width, scaled to it
+
+/** A row across one arm of the player's X at t (-1..1 along it): its middle line and one edge. */
+static void xarm_row(const SkillFx *f, const float e[3], const float n[3], const float d[3], float t, float side,
+                     float in[3], float out[3])
+{
+    float bulge = 1.0f - t * t;
+    for (int c = 0; c < 3; c++) {
+        in[c]  = f->pos[c] + e[c] * t * X_LEN + d[c] * bulge * 4.0f * X_K;
+        out[c] = in[c] + n[c] * side * (0.8f + bulge * 3.5f) * X_K;
+    }
+}
+
+/** The player's X: two wide blades square to each other, their width across the arm (so it reads
+ *  from behind), bright down the middle and fading to the edges. The second arm is cut where it
+ *  meets the first, and its cut ends are made of the first's own edge points (same positions, same
+ *  colours): no crack and no seam where they cross, and nothing is blended twice. */
+static void draw_player_x(const SkillFx *f, const float d[3], const float s[3], const float u[3], float a)
+{
+    enum { R = 7 };     // rows along each piece
+    float e0[3], n0[3];     // the first arm, +45 degrees; the second runs along n0, its width along e0
+    for (int c = 0; c < 3; c++) { e0[c] = (s[c] + u[c]) * 0.7071f; n0[c] = (s[c] - u[c]) * 0.7071f; }
+    const float tc = (0.8f + 3.5f) * X_K / X_LEN;                       // the second arm's cut: the first's edge at its middle
+    const float wc = (0.8f + 3.5f * (1.0f - tc * tc)) * X_K / X_LEN;    // where the cut's corners lie along the first arm
+    uint32_t bright = rgba(240, 252, 255, a), dim = rgba(90, 200, 255, a * 0.25f);
+    float outer[R][3], inner[R][3], tmp[3];
+    uint32_t co[R], ci[R];
+
+    // The first arm: out to the crossing, across it (3 rows: the cut's corners and middle), and on
+    const float at[4] = { -1.0f, -wc, wc, 1.0f };
+    for (int p = 0; p < 3; p++) {
+        int rows = p == 1 ? 3 : R;
+        for (int side = -1; side <= 1; side += 2) {
+            for (int i = 0; i < rows; i++) {
+                xarm_row(f, e0, n0, d, at[p] + (at[p + 1] - at[p]) * i / (rows - 1), (float)side, inner[i], outer[i]);
+                ci[i] = bright;
+                co[i] = (p == 1 && i == 1) ? bright : dim;   // its edge bright where the second arm's middle meets it
+            }
+            build_ribbon(outer, inner, co, ci, rows);
+        }
+    }
+    // The second arm, in two pieces from the first's edges
+    for (int p = 0; p < 2; p++) {
+        float t0 = p ? tc : -1.0f, t1 = p ? 1.0f : -tc, es = p ? 1.0f : -1.0f;
+        int cut = p ? 0 : R - 1;
+        for (int side = -1; side <= 1; side += 2) {
+            for (int i = 0; i < R; i++) {
+                xarm_row(f, n0, e0, d, t0 + (t1 - t0) * i / (R - 1), (float)side, inner[i], outer[i]);
+                ci[i] = bright; co[i] = dim;
+            }
+            xarm_row(f, e0, n0, d, 0.0f, es, tmp, inner[cut]);                  // its middle: the first arm's edge at its middle
+            xarm_row(f, e0, n0, d, (float)side * wc, es, tmp, outer[cut]);      // its edge: the first arm's edge at the corner
+            build_ribbon(outer, inner, co, ci, R);
+        }
+    }
+}
+
 static void draw_xwave(const SkillFx *f)
 {
     enum { N = 11 };
@@ -653,37 +711,7 @@ static void draw_xwave(const SkillFx *f)
         float e[3] = { s[0]*ca + u[0]*sa, s[1]*ca + u[1]*sa, s[2]*ca + u[2]*sa };
         float outer[N][3], inner[N][3];
         uint32_t co[N], ci[N];
-        if (!f->hostile) {
-            // The player's: wide blades whose width lies across the arm (so the X reads from
-            // behind), bright down the middle and fading to the edges; XL long each way. No seam
-            // where they cross: the first arm is solid where the second meets it, and the second
-            // is drawn in two pieces ending at the first's edges (the arms are square to each
-            // other, so its cut lies along the first's edge): nothing is blended twice
-            const float XL = 15.0f, XK = XL / 22.0f;      // its size, and the width scaled to it
-            const float HALF = (0.8f + 3.5f) * XK;           // an arm's half-width at the crossing
-            float n[3] = { s[0]*ca - u[0]*sa, s[1]*ca - u[1]*sa, s[2]*ca - u[2]*sa };
-            float tc = HALF / XL;                            // the crossing, along an arm
-            int pieces = k ? 2 : 1;
-            for (int p = 0; p < pieces; p++) {
-                float t0 = k ? (p ? tc : -1.0f) : -1.0f, t1 = k ? (p ? 1.0f : -tc) : 1.0f;
-                for (int side = -1; side <= 1; side += 2) {
-                    for (int i = 0; i < N; i++) {
-                        float t = t0 + (t1 - t0) * i / (N - 1);
-                        float bulge = 1.0f - t * t;
-                        for (int c = 0; c < 3; c++) {
-                            inner[i][c] = f->pos[c] + e[c] * t * XL + d[c] * bulge * 4.0f * XK;
-                            outer[i][c] = inner[i][c] + n[c] * side * (0.8f + bulge * 3.5f) * XK;
-                        }
-                        // solid across the first arm where the second crosses it (no faded edge line)
-                        bool solid = !k && fabsf(t) <= tc;
-                        ci[i] = rgba(240, 252, 255, a);
-                        co[i] = solid ? ci[i] : rgba(90, 200, 255, a * 0.25f);
-                    }
-                    build_ribbon(outer, inner, co, ci, N);
-                }
-            }
-            continue;
-        }
+        if (!f->hostile) { draw_player_x(f, d, s, u, a); return; }
         // charging (a delay): it grows where it will be loosed from
         float sc = f->scale * (f->delay > 0.0f ? 0.3f + 0.7f * fminf(1.0f, f->age / f->delay) : 1.0f);
         for (int i = 0; i < N; i++) {
