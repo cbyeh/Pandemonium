@@ -591,7 +591,7 @@ static rspq_block_t *s_hoodBlock;
 // Ellipsoid patch, theta around Y from +X (the back), phi up from the equator.
 // peak > 0 drags the vertices nearest the back-top out into the hood's point;
 // lip > 0 pushes the front vertices at the brow out and down into an overhang.
-static int shell(T3DVertPacked *vb, const float c[3], const float rad[3], float t0, float t1, int nt,
+__attribute__((noinline, optimize("Os"))) static int shell(T3DVertPacked *vb, const float c[3], const float rad[3], float t0, float t1, int nt,
                  float p0, float p1, int np, float peak, float lip, SkinColor col)
 {
     static const float BT[3] = { 0.64f, 0.77f, 0.0f };
@@ -671,7 +671,7 @@ static void strip(const float (*l)[3], const float (*r)[3], int n, uint32_t col)
     for (int i = 0; i < n - 1; i++) proc_mesh_quad(l[i], r[i], r[i + 1], l[i + 1], col, false);
 }
 
-static void acc_winged_helm(SkinColor gold)
+__attribute__((noinline, optimize("Os"))) static void acc_winged_helm(SkinColor gold)
 {
     // Malenia's crest: a tall wing of feathers rising off the helm and swept back,
     // in two leaves splayed a little so it reads from behind as well
@@ -692,7 +692,7 @@ static void acc_winged_helm(SkinColor gold)
         }
 }
 
-static void acc_nightfarer_helm(SkinColor silver)
+__attribute__((noinline, optimize("Os"))) static void acc_nightfarer_helm(SkinColor silver)
 {
     // Wings on both temples, swept up and back like a Norse helm's: five feathers a side,
     // flaring out from the helm a little
@@ -716,7 +716,7 @@ static void acc_nightfarer_helm(SkinColor silver)
         }
 }
 
-static void acc_claw_shot(void)
+__attribute__((noinline, optimize("Os"))) static void acc_claw_shot(void)
 {
     // A grapnel on the forearm, halfway to the wrist: a steel housing and three claws at its
     // wrist end (the forearm's direction comes from the rig: the hand's rest offset)
@@ -755,7 +755,7 @@ __attribute__((noinline, optimize("Os"))) static void ring(float cx, float cy, f
         }
 }
 
-static void acc_berserk_helm(SkinColor steel)
+__attribute__((noinline, optimize("Os"))) static void acc_berserk_helm(SkinColor steel)
 {
     // Spined fins swept back off the helm, and the burning eyes of the Berserker armour
     uint32_t c = rgb(steel);
@@ -777,7 +777,7 @@ static void acc_berserk_helm(SkinColor steel)
     }
 }
 
-static void acc_dragonslayer(SkinColor iron)
+__attribute__((noinline, optimize("Os"))) static void acc_dragonslayer(SkinColor iron)
 {
     // The Dragonslayer: a broad straight slab, silver bevelled edges round a black core on
     // both faces, a chisel point (the black ends in a chevron short of it), a crescent guard,
