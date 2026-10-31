@@ -7,11 +7,11 @@ the Fallen Warrior's skeleton, built from the knight's), no clips (it plays the 
   python3 tools/fw_knight_model.py
 
 What changes (model space, glTF units: the knight faces -x, y up, z its left):
-  - the helmet's visor drawn out into Griffith's beak, its eye slit swept up into almonds, its dome
+  - the helmet's visor drawn out into Griffith's beak (its black eye slit moved with it: never a gap), its dome
     broader; horns grown from its sides (part of the helmet, on the head bone), down and forward
     under the chin as on the horned war-helm
-  - broader: the shoulders (round each shoulder joint) and the chest, a smooth warp of every part
-    alike (plate, mail, cloth, straps) so no seam opens; the arms, hands and sword where they were
+  - a broader chest, a smooth warp of every part alike (plate, mail, cloth, straps) so no seam
+    opens; the shoulders, its one pauldron (mail, on the sword arm), arms, hands and sword where they were
     (its blows are read from the bones: they land as before)
 """
 import json, math, os, struct
@@ -62,15 +62,9 @@ def body_warp(p):
     w = smooth(4.6, 5.8, y) * (1 - smooth(7.4, 7.9, y)) * (1 - smooth(1.5, 2.1, abs(z)))
     z = z * (1 + 0.14 * w)
     x = x - 0.12 * w * smooth(-0.6, -1.4, x)            # its front a little deeper
-    # the shoulders: swollen round each joint (the pauldrons), the arm beyond left alone
-    for s, j in SH.items():
-        dx, dy, dz = x - j[0], y - j[1], z - j[2]
-        r = math.sqrt(dx * dx + dy * dy + dz * dz)
-        k = 0.24 * (1 - smooth(0.7, 1.35, r))
-        x, y, z = x + dx * k, y + dy * k + 0.1 * k, z + dz * k
     return [x, y, z]
 
-# Griffith's beak and almond slits on the helmet; its dome broader
+# Griffith's beak on the helmet (the slit, its own black strip, warped exactly as the shell round it); its dome broader
 def head_warp(p, mat):
     x, y, z = p
     lz = z - 0.04
@@ -79,8 +73,6 @@ def head_warp(p, mat):
         eye = 1 - smooth(0.12, 0.42, abs(y - 8.06))
         x -= 0.55 * front * eye + 0.18 * front * (1 - eye) * (y > 7.9)
         y -= 0.06 * front * eye
-        if mat == 'black':                                                      # the slits swept up at their outer ends
-            y += 0.16 * smooth(0.2, 0.6, abs(lz))
         dome = smooth(8.3, 8.8, y)
         lz *= 1 + 0.16 * dome
         z = lz + 0.04
@@ -148,15 +140,51 @@ def add_acc(fmt, ctype, typ, rows, target=34962, minmax=False):
     a = {"bufferView": add_view(data, target), "componentType": ctype, "count": len(rows), "type": typ}
     if minmax: a["min"] = [min(r[i] for r in rows) for i in range(3)]; a["max"] = [max(r[i] for r in rows) for i in range(3)]
     J['accessors'].append(a); return len(J['accessors']) - 1
-prim = {"attributes": {
-    "POSITION": add_acc('3f', 5126, 'VEC3', pos, minmax=True),
-    "NORMAL": add_acc('3f', 5126, 'VEC3', nrm),
-    "TEXCOORD_0": add_acc('2f', 5126, 'VEC2', [uv0] * len(pos)),
-    "COLOR_0": add_acc('4f', 5126, 'VEC4', [col0] * len(pos)),
-    "JOINTS_0": add_acc('4B', 5121, 'VEC4', [[HEAD_J, 0, 0, 0]] * len(pos)),
-    "WEIGHTS_0": add_acc('4f', 5126, 'VEC4', [[1.0, 0, 0, 0]] * len(pos)),
-    }, "indices": add_acc('H', 5123, 'SCALAR', [[i] for i in idx], target=34963), "material": MATS.index('head')}
-J['meshes'][0]['primitives'].append(prim)
+def add_prim(pos, nrm, idx, joint, mat, uv, col):
+    J['meshes'][0]['primitives'].append({"attributes": {
+        "POSITION": add_acc('3f', 5126, 'VEC3', pos, minmax=True),
+        "NORMAL": add_acc('3f', 5126, 'VEC3', nrm),
+        "TEXCOORD_0": add_acc('2f', 5126, 'VEC2', [uv] * len(pos)),
+        "COLOR_0": add_acc('4f', 5126, 'VEC4', [col] * len(pos)),
+        "JOINTS_0": add_acc('4B', 5121, 'VEC4', [[joint, 0, 0, 0]] * len(pos)),
+        "WEIGHTS_0": add_acc('4f', 5126, 'VEC4', [[1.0, 0, 0, 0]] * len(pos)),
+        }, "indices": add_acc('H', 5123, 'SCALAR', [[i] for i in idx], target=34963), "material": MATS.index(mat)})
+add_prim(pos, nrm, idx, HEAD_J, 'head', uv0, col0)
+nhorn = len(pos)
+
+# ---------------- a great pauldron on the sword arm: stacked lames and a flange at the neck ----------------
+# Round the upper arm's own axis (shoulder to elbow; the arms hang in an A), over its top and outer
+# side: a big top plate over the shoulder with a raised flange on its neck edge, then three lames
+# down the arm, each overlapping the one below, flaring out at its lower edge (on the arm's bone)
+S = SH['Right']; E = wpos(NODE['LowerArm-Right'])
+U = norm([E[m] - S[m] for m in range(3)])
+def perp(v): d = sum(v[m] * U[m] for m in range(3)); return norm([v[m] - d * U[m] for m in range(3)])
+O = perp([0.0, 0.35, -1.0])        # its outer side, a little up: the arc's middle
+V = cross(U, O)
+ppos, pnrm, pidx = [], [], []
+def sheet(rows):
+    # a grid of points (rows of columns), both faces (the plates are thin)
+    base = len(ppos); nc = len(rows[0])
+    for r in rows:
+        for p in r: ppos.append(p); pnrm.append(norm([p[m] - S[m] for m in range(3)]))
+    for i in range(len(rows) - 1):
+        for j in range(nc - 1):
+            a, b = base + i * nc + j, base + i * nc + j + 1; c, e = a + nc, b + nc
+            pidx.extend([a, c, b, b, c, e, a, b, c, b, e, c])
+def arc(t, r, half, n=7):      # points round the arm at t along it, radius r, +-half rad about the outer side
+    out = []
+    for k in range(n):
+        ph = -half + 2 * half * k / (n - 1)
+        out.append([S[m] + U[m] * t + (O[m] * math.cos(ph) + V[m] * math.sin(ph)) * r for m in range(3)])
+    return out
+LAMES = [(-0.42, 0.18, 1.12, 1.24, 1.75), (0.08, 0.5, 1.0, 1.12, 1.6), (0.38, 0.78, 0.94, 1.04, 1.5), (0.66, 1.02, 0.88, 0.97, 1.4)]
+for t0, t1, r0, r1, half in LAMES:
+    sheet([arc(t0, r0, half), arc(t1, r1, half)])
+top = arc(LAMES[0][0], LAMES[0][2], 1.2)         # the flange: up off the top plate's neck edge
+sheet([top, [[p[0], p[1] + 0.55, p[2] + 0.06] for p in top]])
+kp = [pr for m in J['meshes'] for pr in m['primitives'] if MATS[pr['material']] == 'knight'][0]
+_, kuv, _ = acc_rw(kp['attributes']['TEXCOORD_0']); _, kcol, _ = acc_rw(kp['attributes']['COLOR_0'])
+add_prim(ppos, pnrm, pidx, JOINTS.index(NODE['UpperArm-Right']), 'knight', kuv(0), kcol(0))
 
 J.pop('animations', None)       # (it plays the knight's own)
 J['buffers'][0]['byteLength'] = len(BIN)
@@ -168,4 +196,4 @@ with open(OUT, 'wb') as f:
     f.write(struct.pack('<4sII', b'glTF', 2, 12 + 8 + len(jb) + 8 + len(BIN)))
     f.write(struct.pack('<I4s', len(jb), b'JSON')); f.write(jb)
     f.write(struct.pack('<I4s', len(BIN), b'BIN\0')); f.write(BIN)
-print("wrote", OUT, "horn verts", len(pos), "tris", len(idx) // 3)
+print("wrote", OUT, "horn verts", nhorn, "pauldron verts", len(ppos))
