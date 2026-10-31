@@ -11,6 +11,9 @@
 #include "fallen_knight.h"
 #include "character.h"
 #include "game_lighting.h"
+#ifdef HLE_LOG_FWCLIP
+#include "fw_clip_points.h"
+#endif
 #include "globals.h"
 #include "fx/skill_fx.h"
 #include "fx/screen_shake.h"
@@ -41,13 +44,15 @@ extern T3DModel* characterModel;       // the player's knight model (character.c
 
 enum {
     FKA_IDLE, FKA_WALK, FKA_RUN, FKA_ROLL, FKA_ATTACK1, FKA_ATTACK2, FKA_ATTACK3,
-    FKA_CHARGED, FKA_CLEAVE, FKA_HALFMOON, FKA_DEATH, FKA_BACKFLIP, FKA_KNEEL, FKA_BACKSTEP, FKA_HOLYRAISE, FKA_PLUNGELEAP, FKA_COUNT
+    FKA_CHARGED, FKA_CLEAVE, FKA_HALFMOON, FKA_DEATH, FKA_BACKFLIP, FKA_KNEEL, FKA_BACKSTEP, FKA_HOLYRAISE, FKA_PLUNGELEAP,
+    FKA_STRAFE_L, FKA_STRAFE_R, FKA_COUNT
 };
 static const char *ANIM_NAMES[FKA_COUNT] = {
     "Idle", "Walk1", "Run", "Roll", "Attack1", "Attack2", "Attack3",
     "AttackCharged", "SkillCleave", "SkillHalfmoon", "Death", "SkillBackflip", "StaggerKneel", "WalkBackwards", "HolyRaise", "PlungeLeap",
+    "StrafeWalkLeft", "StrafeWalkRight",
 };
-static const bool ANIM_LOOP[FKA_COUNT] = { true, true, true, [FKA_BACKSTEP] = true };
+static const bool ANIM_LOOP[FKA_COUNT] = { true, true, true, [FKA_BACKSTEP] = true, [FKA_STRAFE_L] = true, [FKA_STRAFE_R] = true };
 
 typedef enum {
     FK_INTRO, FK_CHASE, FK_COMBO, FK_ROLL, FK_CLEAVE, FK_HALFMOON, FK_MOONBLADE, FK_RECOVER, FK_STAGGER, FK_DEAD,
@@ -123,6 +128,10 @@ static struct {
     float yawPrev, yawRate;
     float cryT;             // the war cry's pose (time since; < 0 none)
     float dtLast;           // the last update's step (the cape steps with it)
+    // Footwork between attacks: it circles the player, backs off or closes in, and turns on its feet
+    float roamT;            // time left on this leg of it
+    float roamF, roamS;     // its direction: toward the player, and to its side (-1..1 each)
+    float stepT, stepSg;    // a turn on the spot: time left in it, and which way (its feet move)
 } s;
 
 // ---- Helpers ----
@@ -170,7 +179,8 @@ static float to_player(const Boss *b, float *dx, float *dz)
     return sqrtf(*dx * *dx + *dz * *dz);
 }
 
-static void face_player(Boss *b, float dt, float rate)
+/** Turns it toward the player at `rate`; returns the turn it still owed this frame (radians, signed) */
+static float face_player(Boss *b, float dt, float rate)
 {
     float dx, dz;
     to_player(b, &dx, &dz);
@@ -180,6 +190,7 @@ static void face_player(Boss *b, float dt, float rate)
     while (d < -T3D_PI) d += 2.0f * T3D_PI;
     float m = rate * dt;
     b->rot[1] += (d > m) ? m : (d < -m) ? -m : d;
+    return d;
 }
 
 static void move(Boss *b, float vx, float vz, float dt)
@@ -676,7 +687,7 @@ CLIP(SLAM,
 CLIP(HOLY,
     TR(L_SP, 0, 0, 0.3f, -0.15f, 1.0f, -0.22f, 1.05f, -0.2f, 1.25f, 0.3f, 1.5f, 0.2f),
     TR(L_WR, 0, 0, 1.0f, 0.06f, 1.25f, -0.25f, 1.5f, -0.15f),
-    TR(L_HP, 0, 0, 0.5f, -0.25f, 1.0f, -0.3f, 1.25f, 0.1f, 1.6f, 0.05f));
+    TR(L_HP, 0, 0, 0.5f, -0.1f, 1.0f, -0.12f, 1.25f, 0.1f, 1.6f, 0.05f));     // (thrown back further, its horns met the pauldron)
 // A landing from a leap: the weight taken through its knees and back (from the touch)
 CLIP(LAND,
     TR(L_WR, 0, 0, 0.08f, -0.25f, 0.35f, -0.05f, 0.6f, 0),
@@ -743,7 +754,11 @@ static void life_update(Boss *b, float dt)
         else key_play(&SPLIT_CUT, clip, WIN[s.step - 1][0] / 0.55f, (s.step & 1) ? 1.0f : -1.0f, 1.0f);
         break;
     case FK_TRISLAM:  if (s.step == 0) key_play(&SLAM, clip, 1.0f, 1.0f, 1.0f); break;
+#ifdef HLE_FK_NOHOLYKEYS    // test aid: the Holy Slam as its clips have it
+    case FK_HOLYSLAM: break;
+#else
     case FK_HOLYSLAM: if (s.step == 1) key_play(&HOLY, s.t, 1.0f, 1.0f, 1.0f); break;
+#endif
     case FK_RECOVER:  key_loop(&BREATHER, s.t / 4.2f, clamp01f(s.t / 0.5f)); break;
     case FK_STAGGER: {      // heaving while it kneels; it looks up at you before it rises
         float br = sinf(s.t * 2.0f * T3D_PI * 0.9f);
@@ -916,7 +931,7 @@ void fallen_knight_begin(Boss* boss)
     s.enraged = false;
     s.bladeW = 0.0f;
     s.beam2T = -1.0f;
-    s.cryT = -1.0f; s.chainW = 1.0f; s.hitSeen = boss->hitSeq; s.lookYaw = s.lookW = 0.0f;
+    s.cryT = -1.0f; s.chainW = 1.0f; s.roamT = 0.0f; s.stepT = 0.0f; s.hitSeen = boss->hitSeq; s.lookYaw = s.lookW = 0.0f;
     memset(s.ko, 0, sizeof(s.ko)); memset(s.kc, 0, sizeof(s.kc)); memset(s.flinch, 0, sizeof(s.flinch)); memset(s.flinchV, 0, sizeof(s.flinchV));
     enter(FK_INTRO);
 }
@@ -1401,6 +1416,51 @@ static void choose(Boss *b, float dist)
     }
 }
 
+/** Footwork between its attacks: it picks a leg every 0.6-1.4 s and walks it, facing the player all
+ *  the while (any direction: round them either way, in, or back off), on the knight's own walk,
+ *  strafe and backward clips. Turning on the spot it steps round rather than spinning on planted
+ *  feet (its walk, played while the body comes round). Its moves and their timing are untouched */
+static void footwork(Boss *b, float dist, float dx, float dz, float dt, bool chase)
+{
+    if ((s.roamT -= dt) <= 0.0f) {
+        uint32_t r = life_rng();
+        s.roamT = 0.6f + (r % 80) / 100.0f;
+        r >>= 7;
+        int k = r % 100;
+        // in reach it mostly circles, further out it mostly closes in; now and then it backs off
+        if (dist < FK_MELEE_RANGE)         { s.roamF = k < 25 ? -0.7f : 0.0f; s.roamS = (k & 1) ? 1.0f : -1.0f; }        // in reach: it circles (and sometimes gives ground)
+        else if (dist > 70.0f)             { s.roamF = 1.0f; s.roamS = ((r >> 7) % 100 < 45) ? ((k & 1) ? 0.5f : -0.5f) : 0.0f; }
+        else                               { s.roamF = k < 15 ? -0.6f : 0.85f; s.roamS = (k & 1) ? 0.7f : -0.7f; }
+        if (!chase) { s.roamF *= 0.5f; s.roamS *= 0.8f; }      // in a breather it only shifts about
+    }
+    float turn = face_player(b, dt, chase ? FK_TURN_RATE : 2.0f);
+    if (fabsf(turn) > 0.9f && s.stepT <= 0.0f) { s.stepT = 0.45f; s.stepSg = turn > 0.0f ? 1.0f : -1.0f; }    // a big turn: it steps round
+    s.stepT -= dt;
+    float f = s.roamF, sd = s.roamS;
+    // out of reach it always closes (circling at the edge, it never came on): the chase comes first
+    if (dist > FK_MELEE_RANGE - 4.0f && f < 0.6f && !(s.roamF < -0.2f && dist < FK_MELEE_RANGE + 14.0f)) f = 0.85f;
+    if (dist < FK_MELEE_RANGE - 6.0f && f > 0.0f) f = 0.0f;                  // well in reach: no closer
+    if (dist > 150.0f) { f = 1.0f; sd *= 0.3f; }                             // too far: in
+    float sp = (f > 0.6f && dist > 45.0f) ? FK_RUN_SPEED : FK_WALK_SPEED;
+    float vx = 0.0f, vz = 0.0f;
+    if (dist > 1e-3f) {
+        float nx = dx / dist, nz = dz / dist;
+        vx = (nx * f + nz * sd) * sp; vz = (nz * f - nx * sd) * sp;
+    }
+    if (s.stepT > 0.0f) {       // the turn's own steps: it walks the arc it is turning through
+        play(FKA_WALK, false);
+        if (dist > 1e-3f) move(b, (dz / dist) * s.stepSg * FK_WALK_SPEED * 0.7f, (-dx / dist) * s.stepSg * FK_WALK_SPEED * 0.7f, dt);
+        return;
+    }
+    // the clip that matches where it is going (its own: forward, back, or a strafe)
+    bool moving = fabsf(f) > 0.05f || fabsf(sd) > 0.05f;
+    if (!moving) play(FKA_IDLE, false);
+    else if (f < -0.2f) play(FKA_BACKSTEP, false);
+    else if (fabsf(sd) > fabsf(f) * 1.2f) play(sd > 0.0f ? FKA_STRAFE_L : FKA_STRAFE_R, false);
+    else play(sp >= FK_RUN_SPEED ? FKA_RUN : FKA_WALK, false);
+    if (moving) move(b, vx, vz, dt);
+}
+
 void fallen_knight_update(Boss* b, float dt)
 {
     if (!s.ready) return;
@@ -1452,10 +1512,7 @@ void fallen_knight_update(Boss* b, float dt)
         break;      // waits, landed, until the intro cutscene ends (fallen_knight_skip_intro)
 
     case FK_CHASE: {
-        face_player(b, dt, FK_TURN_RATE);
-        float speed = (dist > 45.0f) ? FK_RUN_SPEED : (dist > FK_MELEE_RANGE - 6.0f) ? FK_WALK_SPEED : 0.0f;
-        play(speed >= FK_RUN_SPEED ? FKA_RUN : speed > 0.0f ? FKA_WALK : FKA_IDLE, false);
-        if (speed > 0.0f && dist > 1e-3f) move(b, dx / dist * speed, dz / dist * speed, dt);
+        footwork(b, dist, dx, dz, dt, true);
         // Dodge the player's swings sometimes
         CharacterState ps = character_get_state();
         if (ps == CHAR_STATE_ATTACKING && dist < 28.0f && s.cdRoll <= 0.0f) {
@@ -1545,7 +1602,7 @@ void fallen_knight_update(Boss* b, float dt)
 
     case FK_RECOVER:
         // A breather after every move: the opening to hit back
-        play(FKA_IDLE, false);
+        if (s.t <= s.stareT) play(FKA_IDLE, false);
         // spent: its sword point-down, then swung up round its right side onto the shoulder as it
         // comes on (let go straight, the hand's turn cut the blade through its body)
         if (s.heavy && s.t < s.recT - 0.8f) hold_blade(0.3f, 0.25f, -0.92f);
@@ -1555,7 +1612,7 @@ void fallen_knight_update(Boss* b, float dt)
             if (s.bladeArc == 1) hold_blade_turn(0.1f, -1.0f, 0.0f, 6.0f);
             else { s.bladeTgt = 1.0f; s.bladeTurn = 6.0f; }     // blade_pose aims it at the clip's own
         }
-        if (s.t > s.stareT) face_player(b, dt, 2.0f);
+        if (s.t > s.stareT) footwork(b, dist, dx, dz, dt, false);      // it shifts its feet and squares up to you
         if (s.t > s.recT) enter(FK_CHASE);
         break;
 
@@ -1579,6 +1636,21 @@ void fallen_knight_update(Boss* b, float dt)
     grip_unpose();
     life_unpose();
 
+#ifdef HLE_LOG_FWCLIP   // test aid: the closest the horns come to the pauldron, posed (sample points; < ~0.05 glTF units: touching)
+    if (s.headBone >= 0 && s.spineBone >= 0) {
+        static float worst = 1e9f; static int n, wst, wi, wj;
+        float h[FW_CLIP_NH][3], q[3];
+        for (int i = 0; i < FW_CLIP_NH; i++) mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.headBone], (float[3]){ FW_CLIP_H[i][0] * 64.0f, FW_CLIP_H[i][1] * 64.0f, FW_CLIP_H[i][2] * 64.0f }, h[i]);
+        for (int j = 0; j < FW_CLIP_NP; j++) {
+            mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.spineBone], (float[3]){ FW_CLIP_P[j][0] * 64.0f, FW_CLIP_P[j][1] * 64.0f, FW_CLIP_P[j][2] * 64.0f }, q);
+            for (int i = 0; i < FW_CLIP_NH; i++) {
+                float d = sqrtf((q[0] - h[i][0]) * (q[0] - h[i][0]) + (q[1] - h[i][1]) * (q[1] - h[i][1]) + (q[2] - h[i][2]) * (q[2] - h[i][2])) / 64.0f;
+                if (d < worst) { worst = d; wst = s.state; wi = i; wj = j; }
+            }
+        }
+        if (++n % 120 == 0) { debugf("[fwclip] closest %.3f (state %d) horn %d pauldron %d\n", (double)worst, wst, wi, wj); worst = 1e9f; }
+    }
+#endif
 #ifdef HLE_LOG_LOOK     // test aid: how far the head and the body each turn from the player (rad)
     if (s.headBone >= 0 && s.mat) {
         static int n;
@@ -1592,6 +1664,10 @@ void fallen_knight_update(Boss* b, float dt)
             debugf("[look] st %d head off %.2f body off %.2f lookYaw %.2f w %.2f\n", s.state, (double)head, (double)body, (double)s.lookYaw, (double)s.lookW);
         }
     }
+#endif
+#ifdef HLE_LOG_FWPATH   // test aid: where it stands relative to the player (its bearing round them, and how far)
+    { static int n; if (++n % 10 == 0) { float px = b->pos[0] - character.pos[0], pz = b->pos[2] - character.pos[2];
+        debugf("[fwpath] %.3f %.1f st %d clip %d\n", (double)atan2f(px, pz), (double)sqrtf(px * px + pz * pz), s.state, s.anim); } }
 #endif
     float p[3] = { b->pos[0], b->pos[1], b->pos[2] };
     const float sc[3] = { FK_SCALE, FK_SCALE, FK_SCALE };
