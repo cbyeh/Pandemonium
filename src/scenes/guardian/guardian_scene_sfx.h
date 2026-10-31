@@ -61,7 +61,7 @@ typedef enum Scene1Sfx
     SCENE1_SFX_CHAR_FOOTSTEP_WALK3,
     SCENE1_SFX_CHAR_FOOTSTEP_WALK4,
 
-    SCENE1_SFX_CHAR_HURT1,
+    SCENE1_SFX_CHAR_UMPH,
     SCENE1_SFX_ROLL_SWISH,
     SCENE1_SFX_ARMOR_CLANK,
     SCENE1_SFX_WAR_CRY,         // the grunt, deeper, with an echo
@@ -83,6 +83,7 @@ typedef enum Scene1Sfx
     SCENE1_SFX_FW_STEP2,
     SCENE1_SFX_FW_STEP3,
     SCENE1_SFX_FW_STEP4,
+    SCENE1_SFX_FW_HURT,         // its grunt as it staggers
 
     SCENE1_SFX_COUNT
 } Scene1Sfx;

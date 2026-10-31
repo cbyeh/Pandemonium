@@ -93,6 +93,7 @@ typedef struct {
     int   sceneIndex;
     float baseVolMul;
     float distance; // last provided distance
+    uint32_t startMs;   // when it started (sfx_find_free_slot takes the oldest when all are busy)
 } SfxSlot;
 
 static SfxSlot sfxSlots[MIXER_NUM_CHANNELS];
@@ -166,7 +167,21 @@ static SfxSlot* sfx_find_free_slot(void)
         SfxSlot *slot = &sfxSlots[ch];
         if (!slot->inUse) return slot;
     }
-    return NULL;
+    // All busy: the longest-playing gives way (by then mostly its reverb's tail), so a new
+    // sound (the knight's grunt, a potion) is never the one lost
+    SfxSlot *oldest = NULL;
+    for (int ch = 0; ch < MIXER_NUM_CHANNELS; ch++) {
+        if (!ch_is_sfx_eligible(ch)) continue;
+        if (!oldest || sfxSlots[ch].startMs < oldest->startMs) oldest = &sfxSlots[ch];
+    }
+    if (oldest) {
+#ifdef HLE_LOG_SFX
+        debugf("[sfx] all busy: cut %d (%lu ms in)\n", oldest->sceneIndex, (unsigned long)(get_ticks_ms() - oldest->startMs));
+#endif
+        mixer_ch_stop(oldest->ch);
+        oldest->inUse = false;
+    }
+    return oldest;
 }
 
 static void sfx_update_volumes(void)
@@ -475,6 +490,7 @@ int audio_play_scene_sfx_dist(int sceneSfxIndex, float baseVolume, float distanc
     if (!slot) return -1;
 
     slot->inUse = true;
+    slot->startMs = get_ticks_ms();
     slot->sceneIndex = sceneSfxIndex;
     slot->baseVolMul = baseVolume;
     slot->distance = distance;

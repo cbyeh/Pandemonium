@@ -3391,7 +3391,7 @@ void character_apply_damage(float amount)
         }
     } else {
         // Non-knockdown hits should not leave knockback running
-        audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_HURT1, 1.0f, 0.0f);
+        audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_UMPH, 1.0f, 0.0f);
         screen_shake_set_shake_mag(10.0f);
         strongKnockbackActive = false;
     }

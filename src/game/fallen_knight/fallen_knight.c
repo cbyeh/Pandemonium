@@ -661,6 +661,7 @@ bool fallen_knight_stagger(Boss* b)
     b->pos[1] = s.groundY;
     enter(FK_STAGGER);
     play(FKA_KNEEL, true);
+    sfx(SCENE1_SFX_FW_HURT, 1.0f);
     b->staggerT = boss_stagger_s();
     return true;
 }
@@ -1133,6 +1134,9 @@ void fallen_knight_update(Boss* b, float dt)
 
     float dx, dz, dist = to_player(b, &dx, &dz);
 
+#ifdef HLE_FK_STAGGERME   // test aid: staggered every 8 s (its stagger and the sound with it)
+    { static float t; if ((t += dt) >= 8.0f && fallen_knight_stagger(b)) { t = 0.0f; debugf("[fk] staggered\n"); } }
+#endif
     if (b->state == BOSS_STATE_DEAD && s.state != FK_DEAD) {
         enter(FK_DEAD);
         play(FKA_DEATH, true);

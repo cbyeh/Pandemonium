@@ -35,7 +35,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Memory:** `HLE_TEST_BONUS` logs the lowest free heap.
 - **Move starts on Mupen's frame numbers:** `HLE_LOG_MOVE_MS` (Shadowborne: `[movems] <state> <VI frame>`, counted from boot; shot `N` is VI frame `N`): line up before/after videos of builds that drift apart.
 - **Choices:** `HLE_LOG_CHOOSE` (Shadowborne: the distance, angle and candidate moves at each pick, then the pick).
-- **Boss hit:** `HLE_DRAGON_HITME` (Shadowborne takes a sword hit every 1.5 s, a finisher's every 6 s: the flinch; `[flinch]` with `HLE_LOG_MOVES`). The passive dummy and the bots never damage the boss.
+- **Boss hit:** `HLE_FK_STAGGERME` (the Fallen Warrior staggered every 8 s, `[fk] staggered`), `HLE_DRAGON_HITME` (Shadowborne takes a sword hit every 1.5 s, a finisher's every 6 s: the flinch; `[flinch]` with `HLE_LOG_MOVES`). The passive dummy and the bots never damage the boss.
 - **Rig:** `HLE_LOG_RIG` (Shadowborne, per move: worst leg reach, neck and torso stretch as drawn, the head's nearest pass of its own body).
 - **Hits:** `HLE_LOG_MOVES` (`[move]` then `[hit]`), `HLE_LOG_HURTBOX`, `HLE_LOG_HITVOL`, `HLE_FK_HITLOG`, `HLE_TEST_ARC_REACH`, `HLE_LOG_JUMPS`. Sound timing: `HLE_LOG_SFX` with `HLE_LOG_MOVES` (`[sfx] ms index d <distance heard from>`).
 - **Same pixels after a rewrite:** `HLE_TEST_T3D_EXACT`.
