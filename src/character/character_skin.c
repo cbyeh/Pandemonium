@@ -47,7 +47,7 @@ typedef struct {
     uint8_t acc;
 } SkinDef;
 
-#define CLOAK(r, g, b) { CLOTH_CLOAK, C(r, g, b), false, 3.4f, 0.8f }   // to the ankles, standing
+#define CLOAK(r, g, b) { CLOTH_CLOAK, C(r, g, b), false, 3.1f, 0.8f }   // to the ankles, standing
 
 static const SkinDef SKINS[SKIN_COUNT] = {
     [SKIN_KNIGHT]           = { "Knight" },
@@ -71,7 +71,7 @@ static const SkinDef SKINS[SKIN_COUNT] = {
     // the claw shot on his left forearm
     [SKIN_NIGHTFARER]           = { "Nightfarer", .armor = C(92, 96, 112), .helm = C(176, 180, 194), .cloth = C(30, 56, 150),
                                 .chain = C(58, 60, 72), .hidePlume = true,
-                                .cl = { { CLOTH_CLOAK, C(38, 66, 170), false, 3.5f, 0.75f } },
+                                .cl = { { CLOTH_CLOAK, C(38, 66, 170), false, 3.2f, 0.75f } },
                                 .acc = ACC_NIGHTFARER_HELM | ACC_SCARF | ACC_CLAW_SHOT },
 };
 
@@ -161,6 +161,7 @@ typedef struct {
     float hrest[CLOTH_ROWS], vrest[CLOTH_COLS];
     // each link's rest length and 1/rest^2 (link): across, down (to the next row), bend (two down)
     float hl[CLOTH_ROWS][2], vl[CLOTH_ROWS][CLOTH_COLS][2], bl[CLOTH_ROWS][CLOTH_COLS][2];
+    float fall;                 // how fast its pins drop (units/s, 0 rising): the air lifts it
     float tl[CLOTH_ROWS][CLOTH_COLS];   // tethers: the farthest each point gets from its pin (its column's length to it)
     bool valid;
     float time;
@@ -178,6 +179,7 @@ typedef struct {
 static Cloth s_cloth[2];
 static Capsule s_body[20];      // 20 < 32: a bit each in Cloth.near
 static int s_bodyCount;
+static uint32_t s_armBits;     // the sword and arms (they swing fast: cloth_draw always checks them)
 
 static const uint8_t TATTER[CLOTH_COLS] = { 100, 15, 60, 5, 80, 25, 90 };  // % of the last three segments
 
@@ -215,6 +217,7 @@ static void cloth_bodies(void)
     SPHERE(B_SPINE, -0.1f, 0.35f, 0, 0.95f + m);
     SPHERE(B_WAIST, -0.05f, -0.2f, 0, 0.9f + ml);
     SPHERE(B_HEAD, -0.34f, 1.07f, 0, 0.9f);          // hair and plume roots sit on it
+    const int arm0 = n;
     // sword hilt (the blade runs along the hand's -X): crossguard and pommel
     bone_world(B_HAND_R, -0.3f, 0, 0, b[n].a); bone_world(B_HAND_R, 1.25f, 0, 0, b[n].b); b[n].r = 0.7f + m; n++;
     // and the blade, pommel to tip (the stock sword's line; the Dragonslayer lies along it, broader)
@@ -227,6 +230,7 @@ static void cloth_bodies(void)
     CAPS(B_FORE_L, B_HAND_L, 0.45f + ma);
     CAPS(B_FORE_R, B_HAND_R, 0.45f + ma);
     SPHERE(B_HAND_L, 0, 0, 0, 0.45f + ma);            // the left gauntlet (the right is in the hilt)
+    s_armBits = ((1u << n) - 1) & ~((1u << arm0) - 1);
     CAPS(B_LEG_L, B_SHIN_L, 0.5f + ml);
     CAPS(B_LEG_R, B_SHIN_R, 0.5f + ml);
     CAPS(B_SHIN_L, B_FOOT_L, 0.42f + ml);
@@ -326,29 +330,26 @@ static inline bool collide1(float *p, const Capsule *c)
     return true;
 }
 
-// Pushes a particle out of the body (the hot loop of the cloth): near given, out of every capsule,
-// marking those it's near; near NULL, out of only those marked (bits)
-static void collide(float *p, uint32_t only, uint32_t *near)
+// Behind the plane (hair over a cape stays behind it: point, normal), if any
+static inline void behind(float *p, const float *plane)
 {
-    if (near) {
-        uint32_t nb = 0;
-        for (int i = 0; i < s_bodyCount; i++) if (collide1(p, &s_body[i])) nb |= 1u << i;
-        *near = nb;
-    } else
-        for (int i = 0; only; i++, only >>= 1) if (only & 1) collide1(p, &s_body[i]);
+    if (!plane) return;
+    float d = (p[0] - plane[0]) * plane[3] + (p[1] - plane[1]) * plane[4] + (p[2] - plane[2]) * plane[5];
+    if (d < 0) for (int m = 0; m < 3; m++) p[m] -= d * plane[3 + m];
 }
 
-// Out of the body, and behind the plane (hair over a cape stays behind it: point, normal) if any
-static void push_out(float *p, const float *plane, uint32_t only, uint32_t *near)
+// Out of the capsules in bits (the hot loop of the cloth), then behind the plane; returns those
+// it's near (cloth_draw checks only these, from a step's)
+static uint32_t push_out(float *p, const float *plane, uint32_t only)
 {
-    collide(p, only, near);
-    if (plane) {
-        float d = (p[0] - plane[0]) * plane[3] + (p[1] - plane[1]) * plane[4] + (p[2] - plane[2]) * plane[5];
-        if (d < 0) for (int m = 0; m < 3; m++) p[m] -= d * plane[3 + m];
-    }
+    uint32_t nb = 0;
+    for (int i = 0; only; i++, only >>= 1) if ((only & 1) && collide1(p, &s_body[i])) nb |= 1u << i;
+    behind(p, plane);
+    return nb;
 }
 
-static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back[3], const float *plane, float floor)
+// floor: it stays above; ceil: a cloak in the air rises to it (his head), never above (on the ground: below its pins)
+static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back[3], const float *plane, float floor, float ceil)
 {
     const float k = GU * (1.0f / (GLTF * MODEL_SCALE));   // gravity and wind scaled with him, as his cape is (1 in the fights)
     const float g = -220.0f * k * h * h;
@@ -356,6 +357,7 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
     const float damp = 1.0f - (strands(sp) ? 2.4f : 0.9f) * h;   // per second, not per step (0.92 / 0.97 at 30 steps)
     float wind[CLOTH_COLS];     // a gust down each column (sinf is a software call: once a column, not a particle)
     for (int c = 0; c < cl->cols; c++) wind[c] = (14.0f + 10.0f * sinf(cl->time * 1.7f + c * 0.6f)) * k * h * h / cl->rows;
+    const float lift = cl->fall * 1.6f * h * h;   // falling, the air pushes it up, evenly (the hem pushed most, it folded): it rises above him
     for (int r = 1; r < cl->rows; r++)
         for (int c = 0; c < cl->cols; c++) {
             float *p = PC(cl, c, r), *q = cl->q[r * cl->cols + c];
@@ -365,7 +367,7 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
                 q[i] = p[i];
                 p[i] += v + back[i] * gust;
             }
-            p[1] += g;
+            p[1] += g + lift;
         }
     const bool plume = sp->kind == CLOTH_PLUME;
     float (*tpin)[3] = plume ? cl->anchor2 : cl->anchor;
@@ -397,7 +399,7 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
                     float *p = PC(cl, c, r), *a = tpin[c];
                     float d[3] = { p[0] - a[0], p[1] - a[1], p[2] - a[2] }, l2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2], t = cl->tl[r][c];
                     if (l2 > t * t) { float k = t / sqrtf(l2); for (int i = 0; i < 3; i++) p[i] = a[i] + d[i] * k; }
-                    push_out(p, plane, 0, &cl->near[r * cl->cols + c]);
+                    cl->near[r * cl->cols + c] = push_out(p, plane, (1u << s_bodyCount) - 1);
                 }
 #ifdef HLE_LOG_CLOTH
         s_colT += TICKS_READ() - tc;
@@ -409,7 +411,10 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
             float top = sp->kind == CLOTH_PLUME ? cl->anchor2[c][1] : cl->anchor[c][1];
             float maxY = top - (sp->kind == CLOTH_PLUME ? 0.02f : 0.15f) * r * cl->vrest[c];
             float *y = &PC(cl, c, r)[1];
-            if (*y > maxY) *y = maxY;
+            if (sp->kind == CLOTH_CLOAK) {   // in the air, up to his head (hard); landed, eased back under its pins (snapped, it crumpled)
+                if (ceil > maxY) { if (*y > ceil) *y = ceil; }
+                else if (*y > maxY) *y += (maxY - *y) * 0.35f;
+            } else if (*y > maxY) *y = maxY;
             if (*y < floor) *y = floor;     // and never through the floor (a roll, a knockdown)
         }
     if (sp->kind == CLOTH_PLUME)   // the links above may have nudged its stiff root
@@ -446,6 +451,9 @@ static uint32_t shade(SkinColor c, const float n[3], float bias)
     return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xFF;
 }
 
+#ifdef HLE_LOG_CLIP
+static int s_clipN;
+#endif
 // The vertices are in the knight's model space, drawn with its matrix, built every frame (the
 // cloth steps every other frame: see halfway below). o is the model's origin in the world, ax its unit axes there (scaled), s2 their |ax|^2.
 // A cloak is drawn twice, culled: its outside, and its lining (darker) wound the other way
@@ -502,7 +510,21 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat
             float *v = shown[r * cl->cols + c];
             bool pin = r == 0 || (r == 1 && sp->kind == CLOTH_PLUME);
             for (int m = 0; m < 3; m++) v[m] = (halfway && !pin) ? 0.5f * (p[m] + q[m]) : p[m];
-            if (!pin) push_out(v, plane, cl->near[r * cl->cols + c], NULL);
+            // and out of the sword and arms, wherever they are: a swing reaches cloth they weren't near at the step
+#ifdef HLE_ARMS_NEAR   // test aid: as before, only what was near at the step
+            if (!pin) push_out(v, plane, cl->near[r * cl->cols + c]);
+#else
+            if (!pin) push_out(v, plane, cl->near[r * cl->cols + c] | s_armBits);
+#endif
+#ifdef HLE_LOG_CLIP    // test aid: drawn points still inside the sword or an arm (cloth through them)
+            if (!pin) for (int b = 0; b < s_bodyCount; b++) if (s_armBits >> b & 1) {
+                const Capsule *k = &s_body[b];
+                float ap[3] = { v[0] - k->a[0], v[1] - k->a[1], v[2] - k->a[2] };
+                float hh = (ap[0] * k->ab[0] + ap[1] * k->ab[1] + ap[2] * k->ab[2]) * k->il2; hh = hh < 0 ? 0 : hh > 1 ? 1 : hh;
+                float d[3] = { ap[0] - k->ab[0] * hh, ap[1] - k->ab[1] * hh, ap[2] - k->ab[2] * hh };
+                if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] < 0.81f * k->r2) { s_clipN++; break; }
+            }
+#endif
         }
     // Per vertex: no divides but the normal's (a divide is 29 cycles), the colour's tint once
     const float inv = 1.0f / s2, K = 1.0f / 255.0f;
@@ -528,8 +550,9 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat
             int16_t pos[3];
             for (int m = 0; m < 3; m++) pos[m] = (int16_t)((w[0] * ax[m][0] + w[1] * ax[m][1] + w[2] * ax[m][2]) * inv);
             put_vert(vb, i, pos, cl->col[i]);
-            // the lining: 5/8 of the outside, each channel (no carries across: the low bits masked)
-            if (lined) put_vert(vb, n + i, pos, ((cl->col[i] >> 1 & 0x7F7F7F00) + (cl->col[i] >> 3 & 0x1F1F1F00)) | 0xFF);
+            // the lining: 7/8 of the outside, each channel (no carries across: the low bits masked);
+            // at 5/8 a fold or a lift showed it as black shards, not the same cloth
+            if (lined) put_vert(vb, n + i, pos, (cl->col[i] - (cl->col[i] >> 3 & 0x1F1F1F00)) | 0xFF);
         }
     #undef DC
 #ifdef HLE_LOG_CLOTH
@@ -716,7 +739,7 @@ static void acc_claw_shot(void)
     }
 }
 
-static void ring(float cx, float cy, float rx, float ry, float rz, float th0, float th1, int nt, int np, uint32_t col, float fluff)
+__attribute__((noinline, optimize("Os"))) static void ring(float cx, float cy, float rx, float ry, float rz, float th0, float th1, int nt, int np, uint32_t col, float fluff)
 {
     for (int j = 0; j < np; j++)
         for (int i = 0; i < nt; i++) {
@@ -924,7 +947,7 @@ void character_skin_set(int id)
     rerecord();
 }
 
-void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelMat, const float pos[3], float dt)
+void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelMat, const float pos[3], float ground, float dt)
 {
     const SkinDef *s = &SKINS[s_skin];
     if (!s_model || skel != s_skel) return;
@@ -979,6 +1002,8 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
     if (dt > 0.05f) dt = 0.05f;
 
     bool cape = s->cl[0].kind == CLOTH_CLOAK || s->cl[1].kind == CLOTH_CLOAK;
+    float ceil = -1e9f;     // in the air (a jump, Moon Blade Dance): a cloak may rise to the top of his head
+    if (pos[1] > ground + 1.0f) { float hd[3]; bone_world(B_HEAD, -0.34f, 1.97f, 0.0f, hd); ceil = hd[1]; }
     for (int k = 0; k < 2; k++) {
         const ClothSpec *sp = &s->cl[k];
         Cloth *cl = &s_cloth[k];
@@ -992,6 +1017,7 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
         float *prev0 = prev[0];
         cloth_anchors(cl, sp);
         float dx = cl->anchor[0][0] - prev0[0], dy = cl->anchor[0][1] - prev0[1], dz = cl->anchor[0][2] - prev0[2];
+        cl->fall = dt > 0.0f && dy < 0.0f ? fminf(-dy / dt, 200.0f) : 0.0f;   // (a teleport: not a fall)
         if (!cl->valid || dx * dx + dy * dy + dz * dz > 40.0f * 40.0f) { cloth_reset(cl, sp); cl->acc = 0.0f; cl->built = -1; }   // first frame or teleport
         else {      // carried partly with its pins (the run and the turns): it streams back at a slant, not flat out
             const float follow = sp->kind == CLOTH_CLOAK ? 0.55f : 0.35f;
@@ -1020,7 +1046,7 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
         // A step every other frame, of both frames' time
         cl->acc += dt;
         cl->stepped = step;
-        if (cl->stepped) { cloth_step(cl, sp, fminf(cl->acc, 0.07f), back, pl, pos[1] + 0.1f * GU); cl->acc = 0.0f; }
+        if (cl->stepped) { cloth_step(cl, sp, fminf(cl->acc, 0.07f), back, pl, ground + 0.1f * GU, ceil); cl->acc = 0.0f; }
         for (int c = 0; c < cl->cols; c++) {     // the pins follow the body every frame
             memcpy(PC(cl, c, 0), cl->anchor[c], sizeof(float[3]));
             if (sp->kind == CLOTH_PLUME) memcpy(PC(cl, c, 1), cl->anchor2[c], sizeof(float[3]));
@@ -1045,6 +1071,10 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
       if (n == 119) { debugf("[cloth] stretch %.3f avg, %.3f max\n", (double)(st / 120), (double)stMax); st = stMax = 0; }
       if (++n == 120) { debugf("[cloth] %lu us a frame: bodies %lu, simulation %lu, draw submit %lu (collision %lu) anchors %lu vertices %lu (matrix %lu, flush %lu)\n", (unsigned long)(TICKS_TO_US(sum) / n),
                                (unsigned long)(TICKS_TO_US(s_bodyT) / n), (unsigned long)(TICKS_TO_US(s_stepT) / n), (unsigned long)(TICKS_TO_US(s_subT) / n), (unsigned long)(TICKS_TO_US(s_colT) / n), (unsigned long)(TICKS_TO_US(s_ancT) / n), (unsigned long)(TICKS_TO_US(s_vtxT) / n), (unsigned long)(TICKS_TO_US(s_matT) / n), (unsigned long)(TICKS_TO_US(s_wbT) / n)); sum = s_bodyT = s_stepT = s_subT = s_colT = s_ancT = s_vtxT = s_matT = s_wbT = 0; n = 0; } }
+#endif
+#ifdef HLE_LOG_CLIP
+    { static int n, sum, worst; sum += s_clipN; worst = s_clipN > worst ? s_clipN : worst; s_clipN = 0;
+      if (++n == 60) { debugf("[clip] %d points in the arms over 60 frames (worst frame %d)\n", sum, worst); n = sum = worst = 0; } }
 #endif
 #ifdef HLE_LOG_HEM   // test aid: the cloak's hem against the legs, above the ankle in GU (the units of ClothSpec.len)
     { static int n; if (++n % 60 == 0) {

@@ -26,7 +26,7 @@ void character_skin_set(int id);              // re-records the knight's draw bl
 
 // Used by character.c
 rspq_block_t* character_skin_record(const T3DModel *model, const T3DSkeleton *skel);
-void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelMat, const float pos[3], float dt);
+void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelMat, const float pos[3], float ground, float dt);   // ground: the floor the cloth stays above
 void character_skin_reset_cloth(void);
 void character_skin_bind_block(rspq_block_t **block);
 

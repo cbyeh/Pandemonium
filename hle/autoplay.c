@@ -1673,6 +1673,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             boss->poise = 0.0f; boss->staggerT = 0.0f;
         }
         if (t == 2 && cyc == 0) pressed->z = 1;
+#ifdef HLE_DUMMY_SKIN   // in this skin (the cloth through a skill)
+        if (t == 2 && cyc == 0) character_skin_set(HLE_DUMMY_SKIN);
+#endif
         in->btn.z = 1;
         if (t == 10) t0 = frame;
 #if HLE_TEST_SKILL_DMG == 0

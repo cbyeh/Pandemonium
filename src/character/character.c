@@ -3295,7 +3295,8 @@ void character_draw(void)
     T3DMat4FP *bones = character.skeleton ? gpu_skeleton_begin(character.skeleton) : NULL;
     t3d_matrix_set(modelMat, true);
     rspq_block_run(character.dpl_model);
-    character_skin_draw_extras(character.skeleton, modelMat, character.pos, deltaTime);
+    // the cloth above the hall's floor, also in a jump (or his feet, where he's below it: the ending's fall)
+    character_skin_draw_extras(character.skeleton, modelMat, character.pos, fminf(character.pos[1], SHADOW_GROUND_Y), deltaTime);
     if (character.skeleton) gpu_skeleton_end(character.skeleton, bones);
 }
 
