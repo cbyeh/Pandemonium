@@ -83,7 +83,8 @@ typedef struct { float p[3], v[3]; bool on; } Ball;
 static struct {
     bool ready;
     // Rigid parts on the skinned body: head, jaw, throat, feet
-    ProcMesh mThroat, mFoot, mHead, mHeadDark, mJaw, flame, mOrb, mIce, mCone;      // (the crystals, the tail's blade: the skinned body's own)
+    ProcMesh mThroat, mFoot, mHead, mHeadDark, mJaw, flame, mOrb, mIce, mCone;
+    sprite_t *texFire;      // the fire cone's heat: n64guy's CC0 "N64 Fire" (its Flat loop, as intensity), 30 frames one above the next      // (the crystals, the tail's blade: the skinned body's own)
     // The skinned body (tools/shadowborne_model.py): each bone's frame rebuilt from the rig every
     // frame. bindK: the bone's bind rotation in the frame the rig builds for it (F_bind^T R_bind)
     T3DModel *model;
@@ -722,6 +723,8 @@ void dragon_boss_free(void)
     ProcMesh *all[] = { &s.mThroat, &s.mFoot, &s.mHead, &s.mHeadDark, &s.mJaw, &s.flame, &s.mOrb, &s.mIce, &s.mCone };
     for (unsigned i = 0; i < sizeof(all) / sizeof(all[0]); i++) proc_mesh_free(all[i]);
     sprite_free(s.texScales);
+    sprite_free(s.texFire);
+    s.texFire = NULL;
     rspq_block_free(s.block); rspq_block_free(s.blockUnlit);
     t3d_model_free(s.model);
     free_uncached(s.mats);
@@ -752,6 +755,7 @@ void dragon_boss_begin(Boss* boss)
         build_glow(&s.mIce, proc_rgb(110, 170, 255), proc_rgb(225, 240, 255));     // the crystal beam, before the dark
         build_cone();
         s.texScales = sprite_load("rom:/dragon_boss/scales.i8.sprite");
+        s.texFire = sprite_load("rom:/fx/fire_flat.sprite");
         s.mats = malloc_uncached(sizeof(T3DMat4FP) * MAT_RING * MAT_MAX);
         s.ready = true;
     }
@@ -3148,6 +3152,9 @@ static void choose(Boss *b, float dist, float rel)
 void dragon_boss_update(Boss* b, float dt)
 {
     if (!s.ready) return;
+#ifdef HLE_DRAGON_FREEZE_CONE   // test aid: its clock stopped once a fire cone is out (a still scene: the cone's cost alone)
+    if (s.cone.on && s.cone.t >= CONE_GROW + 0.03f) dt = 0.0f;
+#endif
     if (b->damageFlashTimer > 0.0f) b->damageFlashTimer -= dt;
     key_remove();       // the moves and the easing work on the pose under the keyframed layer
     memset(s.kv, 0, sizeof(s.kv));
@@ -3427,6 +3434,96 @@ void dragon_boss_update(Boss* b, float dt)
 
 // ---- Drawing ----
 
+/** The fire cone in fire: its mesh's shape and colours (white-hot at its point, red at its rim, a
+ *  low wall of fire round the rim, clear at its top), the fire loop's heat flowing out through it, its
+ *  frames in step with the clock: a texel's heat between the colour there (hot) and a deep red
+ *  (cool). Its own textured triangles, in quarter units as skill_fx's. False: drawn as the mesh */
+static T3DMat4FP *s_coneQ;
+static void cone_vert(T3DVertPacked *vb, int vi, const float w[3], float s0, float t0, uint32_t col)
+{
+    T3DVertPacked *v = &vb[vi >> 1];
+    static uint16_t nrm;
+    if (!nrm) nrm = t3d_vert_pack_normal(&(T3DVec3){{ 0, 0, 1 }});
+    #define RND(x) ((int16_t)((x) + ((x) >= 0.0f ? 0.5f : -0.5f)))     // (lroundf: a library call per value)
+    int16_t px = RND(w[0] * 4.0f), py = RND(w[1] * 4.0f), pz = RND(w[2] * 4.0f), ss = RND(s0 * 32.0f), tt = RND(t0 * 32.0f);
+    #undef RND
+    if (vi & 1) { v->posB[0] = px; v->posB[1] = py; v->posB[2] = pz; v->normB = nrm; v->rgbaB = col; v->stB[0] = ss; v->stB[1] = tt; }
+    else        { v->posA[0] = px; v->posA[1] = py; v->posA[2] = pz; v->normA = nrm; v->rgbaA = col; v->stA[0] = ss; v->stA[1] = tt; }
+}
+static bool cone_textured(const float p[3], const float fx[3], const float fz[3], float sx, float sy, float sz, float alpha)
+{
+    if (!s.texFire) return false;
+    if (!s_coneQ) {
+        s_coneQ = malloc_uncached(sizeof(T3DMat4FP));
+        T3DMat4 id; t3d_mat4_identity(&id); id.m[0][0] = id.m[1][1] = id.m[2][2] = 0.25f;
+        t3d_mat4_to_fixed(s_coneQ, &id);
+    }
+    enum { NA = 6 };
+    static float L[4][NA + 1][3];       // its shape at full size (its point, its three rings out), worked out once
+    static bool lOk;
+    if (!lOk) {
+        for (int r = 0; r < 4; r++)
+            for (int j = 0; j <= NA; j++) {
+                float a = CONE_HALF * (-1.0f + 2.0f * j / NA), d = CONE_L * CONE_F[r];
+                L[r][j][0] = fm_sinf(a) * d; L[r][j][1] = r ? cone_h(CONE_F[r], a) : CONE_H[0]; L[r][j][2] = fm_cosf(a) * d;
+            }
+        lOk = true;
+    }
+    float P[4][NA + 1][3], G[NA + 1][3];    // placed: scaled as it rolls out; the floor under the rim
+    float ax[3], az[3];
+    for (int m = 0; m < 3; m++) { ax[m] = fx[m] * sx; az[m] = fz[m] * sz; }
+    for (int r = 0; r < 4; r++)
+        for (int j = 0; j <= NA; j++) {
+            const float *l = L[r][j];
+            for (int m = 0; m < 3; m++) P[r][j][m] = p[m] + ax[m] * l[0] + az[m] * l[2];
+            P[r][j][1] += l[1] * sy;
+            if (r == 3) { memcpy(G[j], P[r][j], sizeof(G[j])); G[j][1] = s.groundY; }
+        }
+    uint32_t a8 = (uint32_t)(clamp01(alpha) * 170.0f);     // as the mesh was drawn
+    static const uint32_t RING[4] = { 0xFFDC6C00, 0xFFA83A00, 0xF65E1C00, 0xF0581C00 };    // as the mesh: hot at its point, red out at its rim
+    surface_t all = sprite_get_pixels(s.texFire), sub = surface_make_sub(&all, 0, ((int)(s.life * 30.0f) % 30) * 32, 32, 32);
+    t3d_fog_set_enabled(false);     // (tiny3d writes the fog into the vertex alpha)
+    rdpq_sync_pipe();
+    rdpq_mode_combiner(RDPQ_COMBINER1((SHADE, ENV, TEX0, ENV), (0, 0, 0, SHADE)));     // cool texels deep red, hot ones the colour there
+    rdpq_set_env_color(RGBA32(205, 70, 12, 255));
+    rdpq_mode_filter(FILTER_BILINEAR);
+    rdpq_sync_tile();
+    rdpq_tex_upload(TILE0, &sub, &(rdpq_texparms_t){ .s.repeats = REPEAT_INFINITE, .t.repeats = REPEAT_INFINITE });
+    t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_TEXTURED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);
+    t3d_matrix_set(s_coneQ, true);
+    float flow = s.life * 24.0f;        // flowing out from its point
+    {   // its top
+        T3DVertPacked *vb = gpu_alloc(sizeof(T3DVertPacked) * 14);     // 4 rings of 7
+        for (int r = 0; r < 4; r++)
+            for (int j = 0; j <= NA; j++) cone_vert(vb, r * (NA + 1) + j, P[r][j], j * 16.0f, CONE_F[r] * 64.0f - flow, RING[r] | a8);
+        t3d_vert_load(vb, 0, 28);
+        for (int r = 0; r < 3; r++)
+            for (int j = 0; j < NA; j++) {
+                int a = r * (NA + 1) + j, b = a + 1, c = a + NA + 1, d = c + 1;
+                if (r) t3d_tri_draw(a, c, b);
+                t3d_tri_draw(b, c, d);
+            }
+        t3d_tri_sync();
+    }
+    {   // its rim's wall: burning up off the floor, clear at its top (the flames a little over its edge)
+        T3DVertPacked *vb = gpu_alloc(sizeof(T3DVertPacked) * 7);
+        for (int j = 0; j <= NA; j++) {
+            float top[3]; memcpy(top, P[3][j], sizeof(top)); top[1] += 6.0f * sy;
+            cone_vert(vb, j * 2, top, j * 16.0f, flow, 0xFF782000);
+            cone_vert(vb, j * 2 + 1, G[j], j * 16.0f, flow + 24.0f, 0xFF782000 | a8);
+        }
+        t3d_vert_load(vb, 0, 14);
+        for (int j = 0; j < NA; j++) { int a = j * 2; t3d_tri_draw(a, a + 1, a + 2); t3d_tri_draw(a + 2, a + 1, a + 3); }
+        t3d_tri_sync();
+    }
+    rdpq_sync_pipe();
+    rdpq_mode_combiner(RDPQ_COMBINER1((0, 0, 0, SHADE), (0, 0, 0, PRIM)));
+    rdpq_mode_filter(FILTER_POINT);
+    t3d_state_set_drawflags(T3D_FLAG_SHADED | T3D_FLAG_DEPTH | T3D_FLAG_NO_LIGHT);     // the glows' (DRAW_OPEN, untextured)
+    t3d_fog_set_enabled(true);
+    return true;
+}
+
 static void put(const ProcMesh *m, const float p[3], const float x[3], const float y[3], const float z[3],
                 float sx, float sy, float sz)
 {
@@ -3578,8 +3675,24 @@ void dragon_boss_draw(Boss* b)
     for (int i = 0; i < FL_MAX; i++) {
         const Flame *f = &s.fl[i];
         if (f->age >= f->life) continue;
-        float u = f->age / f->life;
-        put_glow(&s.flame, f->p, f->size * (0.4f + 0.6f * clamp01(u * 2.0f)) * (1.0f - u * u));
+        float u = f->age / f->life, sz = f->size * (0.4f + 0.6f * clamp01(u * 2.0f)) * (1.0f - u * u);
+        if (f->p[1] > s.groundY + 2.01f) { put_glow(&s.flame, f->p, sz); continue; }      // in the air: as it was
+        // burning on the floor: each its own tilt, turn and stretch, tumbling on (lined up, a burning
+        // patch read as stacked blocks). Each slot's tilt and stretch worked out once (the frame's
+        // budget is tight: per flame per frame they cost ~0.3 fps)
+        static struct { float cb, sb, k[3]; } T[FL_MAX];
+        static bool tOk;
+        if (!tOk) {
+            for (int j = 0; j < FL_MAX; j++) {
+                float b = j * 1.7f + 0.6f;
+                T[j].cb = fm_cosf(b); T[j].sb = fm_sinf(b);
+                T[j].k[0] = (0.85f + 0.3f * ((j * 37) % 7) / 6.0f) / 8.0f; T[j].k[1] = (0.85f + 0.3f * ((j * 53) % 5) / 4.0f) / 8.0f; T[j].k[2] = (0.8f + 0.4f * ((j * 71) % 9) / 8.0f) / 8.0f;
+            }
+            tOk = true;
+        }
+        float a = i * 2.39996f + f->age * (2.0f + (i & 3)), ca = fm_cosf(a), sa = fm_sinf(a), cb = T[i].cb, sb = T[i].sb;
+        float x[3] = { ca, sa * sb, sa * cb }, y[3] = { 0.0f, cb, -sb }, z[3] = { -sa, ca * sb, ca * cb };      // (z = x cross y)
+        put(&s.flame, f->p, x, y, z, sz * T[i].k[0], sz * T[i].k[1], sz * T[i].k[2]);
     }
     for (int i = 0; i < ORB_MAX; i++)
         if (s.orb[i].on) put_glow(&s.mOrb, s.orb[i].p, 4.5f + 0.8f * fm_sinf(s.life * 9.0f + i));
@@ -3595,7 +3708,7 @@ void dragon_boss_draw(Boss* b)
         float fz[3] = { fm_sinf(s.cone.yaw), 0.0f, fm_cosf(s.cone.yaw) }, fx[3] = { fz[2], 0.0f, -fz[0] }, p[3] = { s.cone.p[0], s.groundY, s.cone.p[1] };
         float flick = 1.0f + 0.12f * fm_sinf(s.life * 31.0f), mir = fm_sinf(s.life * 17.0f) > 0.0f ? 1.0f : -1.0f;     // mirrored now and then: its tongues shift
         rdpq_set_prim_color(RGBA32(255, 255, 255, (int)(170 * (1.0f - v))));
-        put(&s.mCone, p, fx, UP, fz, k * mir, k * flick * (1.0f - 0.7f * v), k);
+        if (!cone_textured(p, fx, fz, k * mir, k * flick * (1.0f - 0.7f * v), k, 1.0f - v)) put(&s.mCone, p, fx, UP, fz, k * mir, k * flick * (1.0f - 0.7f * v), k);
         rdpq_set_prim_color(RGBA32(255, 255, 255, 170));
     }
     const ProcMesh *light = s.dark ? &s.mOrb : &s.mIce;     // the beams: crystal light, then the dark

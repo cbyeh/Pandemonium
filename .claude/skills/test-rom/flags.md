@@ -10,7 +10,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Long stagger:** `HLE_STAGGER_LONG` gives Crushing Blows outside the Tower; `[stagger]` lines log when each stagger starts, ends and the boss is up.
 - **Into phase 2:** `HLE_TEST_TWO_RUNS` (kill the Guardian, reach phase 2, twice); `HLE_2R_NOSKIP` lets the cutscenes play (about 3000 frames), `HLE_2R_LOCK` locks on before the kill, `HLE_2R_KILL_T=<frames>` fights that long first (topped up, moving, swinging: a real fight records far more blocks).
 - **Display lists:** `HLE_TEST_DL_CHECK` walks every task as the plugin will (into each `G_DL`) and logs any command this backend never emits (`[dlcheck] BAD`: Delta's plugin aborts on one), cache resets and replays while one is pending.
-- **Boss held still** (before/after shots that line up): `HLE_TEST_FREEZE_BOSS`. Boss AI is otherwise non-deterministic.
+- **Boss held still** (before/after shots that line up): `HLE_TEST_FREEZE_BOSS`. Boss AI is otherwise non-deterministic. `HLE_DRAGON_FREEZE_CONE` stops Shadowborne's clock once a fire cone is out (with `HLE_DRAGON_FORCE=21`): a still scene to price what it draws.
 - **Ending:** `HLE_TEST_ENDING`.
 - **Lock-on at the kill:** `HLE_DUMMY_LOCK_KILL` (with `HLE_TEST_DUMMY`): locked on and circling, the boss dies at 4 s; `[lockkill]` logs the camera.
 - **Bot playtest:** `HLE_DUMMY_REAL` + `HLE_DUMMY_STRIKE` / `_ROLL`, `HLE_STRIKE_OPEN`, `HLE_STRIKE_STAMINA`; potions below 40%, prints `[bot] ... beaten/died`.
@@ -44,6 +44,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **HLE block replay** (hle/replay.c): `HLE_TEST_REPLAY_CHECK` runs every replayable block normally and compares it with its recording (display list, scratch, matrix sources, state left): `[hle] replay: ... check N ok M BAD` with `HLE_TEST_PERF`, `[replay] MISMATCH` on any difference. `HLE_NO_REPLAY` interprets every block (the reference for pixel comparisons). `HLE_TEST_VCACHE_VERIFY` checksums the source of every vertex/strip cache hit (`[vcache] CHANGED` if data cached as static was rewritten). With `HLE_TEST_PERF`: replay counts, replay time by part, time inside recorded blocks.
 - **Memory used before it's set:** `HLE_TEST_DIRTY_HEAP` fills freed heap with garbage at frames 400 and 900; compare shots with a clean run (it found the Fallen Warrior's unset matrix).
 - **Emulated CPU cost:** `HLE_TEST_MEMBENCH` (Mupen charges every instruction the same, cached or not). `HLE_LOG_SIDECAM` logs boss/player positions with `HLE_DUMMY_SIDECAM`.
+- **Heap layout:** `HLE_HEAP_PAD=<KB>` holds that much from boot (Ares speed shifts with layout: try a few). A build's fight plays differently from another's (the AI's rolls follow the clock), so fps across builds in live fights isn't like for like; repeat runs of one ROM are identical.
 - **Compare like with like:** live fights diverge between builds (AI, timing): compare pixels on frozen scenes (`HLE_TEST_FREEZE_BOSS`, best with `HLE_DUMMY_SIDECAM`) and fps over long live runs.
 - **Logs only:** one huge shot frame (`run.sh rom 40000`) plus `TIMEOUT`; batch in the background, then `grep 'IS64: \[dummy\]'`.
 

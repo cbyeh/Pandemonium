@@ -146,6 +146,10 @@ $(FILESYSTEMDIR)/%.sprite: $(ASSDIR)/%.png
 	@echo "    [SPRITE] $@"
 	$(N64_MKSPRITE) $(MKSPRITE_FLAGS) -o $(dir $@) "$<"
 
+# The fire loop (n64guy's CC0 "N64 Fire", its Flat set, 30 frames one above the next) as heat
+# alone: the game colours it (8 bits a texel, 30 KB in RAM, not RGBA32's 122)
+$(FILESYSTEMDIR)/fx/fire_flat.sprite: MKSPRITE_FLAGS += -f I8
+
 $(FILESYSTEMDIR)/%.font64: $(ASSDIR)/%.ttf
 	@mkdir -p $(dir $@)
 	@echo "    [FONT] $@"

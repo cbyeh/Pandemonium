@@ -58,6 +58,9 @@ static void attach_frame(uint32_t *waited)
 
 int main(void)
 {
+#ifdef HLE_HEAP_PAD     // test aid: KB held from boot, to try other heap layouts
+    { static void *pad; pad = malloc(HLE_HEAP_PAD * 1024); (void)pad; }
+#endif
 #ifdef HLE_LOG_MOVE_MS
     { extern void dragon_vi_start(void); dragon_vi_start(); }
 #endif

@@ -168,7 +168,7 @@ Aethrone (cbyeh fork):
 - DIscord: Absinthefather
 
 ### Credits
-Third-party audio added in this fork. The CC0 sounds are public domain, so no attribution is required, but it's given anyway. The bonus boss themes are by AlkaKrab, used with permission. Neither they nor the Gomo Sounds effects are covered by this repo's licenses, and they may not be reused or redistributed on their own.
+Third-party audio and art added in this fork. The CC0 sounds and art are public domain, so no attribution is required, but it's given anyway. The bonus boss themes are by AlkaKrab, used with permission. Neither they nor the Gomo Sounds effects are covered by this repo's licenses, and they may not be reused or redistributed on their own.
 
 Sound effects: Gomo Sounds (gomosounds.com)
 
@@ -176,6 +176,7 @@ Sound effects: Gomo Sounds (gomosounds.com)
 |---|---|---|---|
 | CC0 Deep Monster Roar | Shadowborne's roar | trazzz123 | [OpenGameArt](https://opengameart.org/content/cc0-deep-monster-roar) |
 | 80 CC0 RPG SFX | The Shackled Sun's chains, the perfect dodge, Moonlight Splitter | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-rpg-sfx) |
+| N64 Fire | Shadowborne's fire cone | n64guy | [OpenGameArt](https://opengameart.org/content/n64-fire) |
 | Dark Fantasy Soulslike SFX Pack | The Bonus bosses' fire, spells, beams and wings; the knight's skills, roll, potion, hurt and armour | Gomo Sounds | [itch.io](https://mauriciopazp.itch.io/dark-fantasy-soulslike-sfx-pack) |
 | Shadowforge Convergence | Shadowborne's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
 | Veil of Eternal Nightfall | The Shackled Sun's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
