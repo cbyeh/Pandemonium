@@ -167,16 +167,16 @@ Aethrone (cbyeh fork):
 - DIscord: Absinthefather
 
 ### Credits
-Third-party audio added in this fork. Everything here is CC0 (public domain), so no attribution is required, but it's given anyway.
+Third-party audio added in this fork. The sound effects are CC0 (public domain), so no attribution is required, but it's given anyway. The bonus boss themes are by AlkaKrab, used with permission; they are not covered by this repo's licenses and may not be reused or redistributed on their own.
 
 | Asset | Used for | Author | Source |
 |---|---|---|---|
 | CC0 Deep Monster Roar | Shadowborne's roar | trazzz123 | [OpenGameArt](https://opengameart.org/content/cc0-deep-monster-roar) |
 | Erase / Escape | The roll | Fupi | [OpenGameArt](https://opengameart.org/content/erase-escape) |
 | 80 CC0 RPG SFX | Skill casts, potion, fire breath, the dark beam and nova, explosions, chains, the armour clank | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-rpg-sfx) |
-| Determined Pursuit (epic orchestra loop) | Shadowborne's theme | Emma_MA | [OpenGameArt](https://opengameart.org/content/determined-pursuit-epic-orchestra-loop) |
-| Boss Battle #2 [Symphonic Metal] | The Shackled Sun's theme | nene | [OpenGameArt](https://opengameart.org/content/boss-battle-2-symphonic-metal) |
-| Battle Theme A | The Fallen Warrior's theme | cynicmusic | [OpenGameArt](https://opengameart.org/content/battle-theme-a) |
+| Shadowforge Convergence | Shadowborne's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
+| Veil of Eternal Nightfall | The Shackled Sun's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
+| Whispers of the Abyss | The Fallen Warrior's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
 
 ## Licensing
 

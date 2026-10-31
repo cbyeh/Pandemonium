@@ -183,7 +183,7 @@ static const float POST_BOSS_PROMPT_DIST  = 140.0f;   // show A prompt and allow
 static bool s_pendingBossLoopMusic = false;
 static const char *s_bossLoopMusicPath = "rom:/audio/music/boss_phase1-looping-22k.wav64";
 static const char *s_boss2LoopMusicPath = "rom:/audio/music/boss_phase2_cutscene2-22k.wav64";   // Guardian Unbound
-static const char *s_boss3LoopMusicPath = "rom:/audio/music/fallen_warrior_battle-22k.wav64";    // Fallen Warrior
+static const char *s_boss3LoopMusicPath = "rom:/audio/music/whispers_of_the_abyss-22k.wav64";    // Fallen Warrior
 static BonusFight s_bonusFight = BONUS_NONE;   // set by the title Bonus menu
 static bool  s_tower;             // set by the title Tower menu: the next scene_init climbs
 static bool  s_towerDraft;        // choosing a boon between floors
@@ -1209,7 +1209,7 @@ static const BonusDef BONUS_DEFS[] = {
         },
         .dropAt = 3,
         .begin = fallen_knight_begin, .skip = fallen_knight_skip_intro, .phase = FALLEN_KNIGHT_PHASE,
-        .music = "rom:/audio/music/fallen_warrior_battle-22k.wav64",  // CC0, "Battle Theme A" by cynicmusic
+        .music = "rom:/audio/music/whispers_of_the_abyss-22k.wav64",  // "Whispers of the Abyss" by AlkaKrab
     },
     [BONUS_SHACKLED_SUN] = {
         .intro = {
@@ -1226,7 +1226,7 @@ static const BonusDef BONUS_DEFS[] = {
         },
         .dropAt = 4,
         .begin = sun_boss_begin, .skip = sun_boss_skip_intro, .phase = SUN_BOSS_PHASE,
-        .music = "rom:/audio/music/shackled_sun_metal-22k.wav64",    // CC0, "Boss Battle #2 [Symphonic Metal]" by nene
+        .music = "rom:/audio/music/veil_of_eternal_nightfall-22k.wav64",    // "Veil of Eternal Nightfall" by AlkaKrab
     },
     [BONUS_SHADOWBORN] = {
         .intro = {
@@ -1241,7 +1241,7 @@ static const BonusDef BONUS_DEFS[] = {
         },
         .dropAt = 3,
         .begin = dragon_boss_begin, .skip = dragon_boss_skip_intro, .phase = DRAGON_BOSS_PHASE,
-        .music = "rom:/audio/music/shadowborn_pursuit-22k.wav64",    // CC0, "Determined Pursuit" by Emma_MA
+        .music = "rom:/audio/music/shadowforge_convergence-22k.wav64",    // "Shadowforge Convergence" by AlkaKrab
         .camScale = 2.6f,
     },
 };
