@@ -295,6 +295,7 @@ static sprite_t* victoryTitleBgSprite = NULL;
 static surface_t victoryTitleBgSurf = {0};
 
 
+_Static_assert(SCENE1_SFX_COUNT <= AUDIO_SCENE_MAX_SFX, "more sounds than audio_scene_load_paths loads: raise AUDIO_SCENE_MAX_SFX");
 static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_TITLE_WALK]  = "rom:/audio/sfx/title_screen_walk_effect-22k.wav64",
 
@@ -366,6 +367,10 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_FW_STEP3]    = "rom:/audio/sfx/hostile/fw_step3_22k.wav64",
     [SCENE1_SFX_FW_STEP4]    = "rom:/audio/sfx/hostile/fw_step4_22k.wav64",
     [SCENE1_SFX_FW_HURT]     = "rom:/audio/sfx/hostile/fw_hurt_22k.wav64",
+    [SCENE1_SFX_SUN_ROAR]    = "rom:/audio/sfx/hostile/sun_roar_22k.wav64",
+    [SCENE1_SFX_SUN_SWELL]   = "rom:/audio/sfx/hostile/sun_swell_22k.wav64",
+    [SCENE1_SFX_SUN_RUSH]    = "rom:/audio/sfx/hostile/sun_rush_22k.wav64",
+    [SCENE1_SFX_SUN_ECLIPSE] = "rom:/audio/sfx/hostile/sun_eclipse_22k.wav64",
 };
 
 // The sounds heard all through a fight, held in memory (about 230 KB): the bosses' step, the

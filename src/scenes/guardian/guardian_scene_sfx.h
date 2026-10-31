@@ -84,6 +84,11 @@ typedef enum Scene1Sfx
     SCENE1_SFX_FW_STEP3,
     SCENE1_SFX_FW_STEP4,
     SCENE1_SFX_FW_HURT,         // its grunt as it staggers
+    // The Shackled Sun's own
+    SCENE1_SFX_SUN_ROAR,        // breaking free, and calling the eclipse
+    SCENE1_SFX_SUN_SWELL,       // Flare's and Corona's charge
+    SCENE1_SFX_SUN_RUSH,        // a ram or dive, heard from it as it moves
+    SCENE1_SFX_SUN_ECLIPSE,
 
     SCENE1_SFX_COUNT
 } Scene1Sfx;

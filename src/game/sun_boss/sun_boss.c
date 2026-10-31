@@ -163,12 +163,14 @@ static void enter(SbState st) {
 
 // At the Guardian's level and with his falloff (boss_play_attack_sfx: the distance to the player);
 // they played at a fixed 0.85 with none, as his at melee range but up to 3x his further off
-static void sfx(int id, float vol)
+static float boss_dist(void)
 {
     Boss *b = boss_get_instance();
     float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
-    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+    return sqrtf(dx * dx + dz * dz);
 }
+static int sfx(int id, float vol) { return audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, boss_dist()); }
+static int rushCh = -1;     // a ram's or dive's rush: heard from the sun as it moves (sun_boss_update)
 // A ranged move's impact, heard from where it lands (from the boss, one by the player at range
 // was faint or silent)
 static void sfx_at(int id, float vol, float x, float z)
@@ -447,12 +449,13 @@ static void corona_update(Boss *b, float dt)
     // through it or be far away
     if (s.step == 0) {
         s.raysSpin = 6.0f;
+        if (s.t <= dt) sfx(SCENE1_SFX_SUN_SWELL, 1.0f);     // the rays spinning up: a swell to the ring
         if (s.t >= 1.3f / speed_mult()) {
             float o[3] = { b->pos[0], s.groundY + 6.0f, b->pos[2] };
             skill_fx_spawn_arc_hostile(o, b->rot[1], 85.0f, hurt(22.0f));
             skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 85.0f, hurt(22.0f));
             screen_shake_set_shake_mag(12.0f);
-            sfx_boom();
+            sfx_boom(); sfx(SCENE1_SFX_FIRE_SUN, 1.0f);
             s.step = 1;
         }
     }
@@ -468,7 +471,7 @@ static void dive_update(Boss *b, float dt)
         if (s.t >= 1.1f) { s.diveTarget[0] = character.pos[0]; s.diveTarget[1] = character.pos[2]; s.step = 1; s.t = 0.0f;
                            skill_fx_spawn_burst_warn((float[3]){ s.diveTarget[0], s.groundY, s.diveTarget[1] }, 0.0f); }
     } else if (s.step == 1) {
-        if (s.t >= 0.35f) { s.step = 2; s.t = 0.0f; }
+        if (s.t >= 0.35f) { s.step = 2; s.t = 0.0f; rushCh = sfx(SCENE1_SFX_SUN_RUSH, 1.0f); }    // the drop
     } else {
         move_toward(b, s.diveTarget[0], s.diveTarget[1], 200.0f, dt);
         b->pos[1] -= 260.0f * dt;
@@ -503,7 +506,7 @@ static void flare_update(Boss *b, float dt)
             float a = b->rot[1] + k * (T3D_PI / 4.0f);
             skill_fx_spawn_burst_warn((float[3]){ b->pos[0] + sinf(a) * FLARE_R, s.groundY, b->pos[2] + cosf(a) * FLARE_R }, a);
         }
-        if (s.t <= dt) sfx(SCENE1_SFX_FIRE_SUN, 1.0f);
+        if (s.t <= dt) sfx(SCENE1_SFX_SUN_SWELL, 1.0f);     // it draws in: a swell to the burst
         if (s.t >= WIND) {
             s.flarePos[0] = b->pos[0]; s.flarePos[1] = s.groundY + 4.0f; s.flarePos[2] = b->pos[2];
             s.flareYaw = b->rot[1]; s.flareAge = 0.0f; s.flareHit = false;
@@ -512,7 +515,7 @@ static void flare_update(Boss *b, float dt)
             skill_fx_spawn_arc_hostile(s.flarePos, s.flareYaw, FLARE_R, 0.0f);
             skill_fx_spawn_pillar_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
             screen_shake_set_shake_mag(9.0f);
-            sfx_boom();
+            sfx_boom(); sfx(SCENE1_SFX_FIRE_SUN, 1.0f);
             s.step = 1; s.t = 0.0f;
         }
     } else {
@@ -580,7 +583,7 @@ static void ram_update(Boss *b, float dt)
         float hy = s.t < WIND - LOCK ? HOVER_H + 4.0f : HOVER_H - 6.0f;    // rears as it pulls back, then dips: the eye at the player's height
         b->pos[1] += (s.groundY + hy - b->pos[1]) * fminf(1.0f, dt * 4.0f);
         if (s.t >= WIND) { s.step = 1; s.t = 0.0f; s.hitDone = false; s.ramFrom[0] = b->pos[0]; s.ramFrom[1] = b->pos[2];
-                           sfx_cast(); screen_shake_set_shake_mag(5.0f);
+                           sfx_cast(); rushCh = sfx(SCENE1_SFX_SUN_RUSH, 1.0f); screen_shake_set_shake_mag(5.0f);
                            // charging, its body shoves the player where the eye meets it (not 4 out
                            // from it, the sword's margin): no shove without the hit
                            b->capsuleCollider.radius = SUN_R; }
@@ -639,7 +642,7 @@ static void eclipse_update(Boss *b, float dt)
     float hy = s.t < spent ? s.groundY + 70.0f : s.groundY + REST_H;
     b->pos[1] += (hy - b->pos[1]) * fminf(1.0f, dt * (s.t < spent ? 2.5f : 4.0f));
     s.raysSpin = fmaxf(s.raysSpin, s.t < spent ? 7.0f : 1.0f);
-    if (s.t <= dt) { sfx(SCENE1_SFX_DARK_BEAM, 1.0f); screen_shake_set_shake_mag(4.0f); }
+    if (s.t <= dt) { sfx(SCENE1_SFX_SUN_ECLIPSE, 1.0f); sfx(SCENE1_SFX_SUN_ROAR, 0.9f); screen_shake_set_shake_mag(4.0f); }
     if (s.step < 3 && s.t >= EC_RISE + s.step * EC_GAP) {
         int w = s.step, n = EC_N[w];
         float cx = w == 2 ? character.pos[0] : b->pos[0], cz = w == 2 ? character.pos[2] : b->pos[2];
@@ -1193,6 +1196,7 @@ void sun_boss_update(Boss* b, float dt)
     if (b->damageFlashTimer > 0.0f) b->damageFlashTimer -= dt;
     s.t += dt;
     s.life += dt;
+    if (rushCh >= 0) audio_set_scene_sfx_dist(rushCh, SCENE1_SFX_SUN_RUSH, boss_dist());    // (ignored once it has ended)
 #ifdef HLE_SUN_HITME    // test aid: a sword hit every 1.2 s, every third one a finisher (the passive dummy never hits it)
     { static float ht; static int n; if (b->mode == BOSS_MODE_COMBAT && (ht += dt) >= 1.2f) { ht = 0.0f; n++; boss_apply_hit(b, 0.01f, (n % 3 ? 1.0f : 2.5f) * 4.0f / POISE_DAMAGE); } }
 #endif
@@ -1300,7 +1304,7 @@ void sun_boss_update(Boss* b, float dt)
         }
         if (s.step < 6 && s.t >= s.step * 0.25f) {
             screen_shake_set_shake_mag(8.0f);
-            if (s.step == 0) sfx_boom();
+            if (s.step == 0) { sfx_boom(); sfx(SCENE1_SFX_SUN_ROAR, 1.0f); }     // its roar as it breaks free
             s.step++;
         }
         if (s.t > 2.0f) { b->mode = BOSS_MODE_COMBAT; s.cdCorona = 0.0f; s.cdEclipse = 6.0f; enter(SB_HOVER); }

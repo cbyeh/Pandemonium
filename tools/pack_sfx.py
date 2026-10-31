@@ -100,6 +100,16 @@ def heard(db, vol):     # the file's loudness that plays at `db` when the game p
     return db - 20 * np.log10(vol)
 
 
+def cut(x, secs):   # its first `secs`, faded out over the last 0.15
+    y = x[:int(secs * SR)].copy(); f = min(len(y), int(0.15 * SR)); y[-f:] *= np.linspace(1, 0, f)
+    return y
+
+
+def pitch(x, k):    # k times the pitch (and speed)
+    src = os.path.join(TMP, "p.wav"); L.write(src, np.clip(x, -1, 1), SR)
+    return ffmpeg(src, f"asetrate=22050*{k},aresample=22050")
+
+
 def heavy(x):       # deeper and heavier: pitched down 0.82x, the low end lifted
     src = os.path.join(TMP, "h.wav"); L.write(src, np.clip(x, -1, 1), SR)
     return ffmpeg(src, "asetrate=22050*0.82,aresample=22050,bass=g=5:f=110,lowpass=f=7000")
@@ -134,6 +144,11 @@ def main():
     out["fx/heal_chime"] = to_lufs(verb(trim_tail(at(pk("Player/ashen_knight_drink_flask_02"), 5060)), ROOM), -24.703 - 5)
     out["fx/mbd_x"] = to_lufs(verb(lead(pk("Player/ashen_knight_heavy_attack_01")), ROOM), heard(hits, 0.55))     # Moon Blade Dance
     out["fx/cleave_beam"] = to_lufs(verb(lead(pk("Player/ashen_knight_light_attack_03")), ROOM), heard(hits, 0.45))  # Crescent Cleave
+    # The Shackled Sun's own: its roar (a giant's, pitched up), the swell of a charge, a ram's rush, a darker eclipse
+    out["hostile/sun_roar"] = boss(verb(lead(pitch(pk("Enemies/giant_knight_roar_01"), 1.25))))
+    out["hostile/sun_swell"] = boss(verb(lead(pk("Sorcery/fire_sorcery_cast_03"))), -2)
+    out["hostile/sun_rush"] = boss(verb(cut(lead(pk("Sorcery/fire_sorcery_cast_02")), 0.9)))     # as long as a ram
+    out["hostile/sun_eclipse"] = boss(heavy(verb(lead(pk("Sorcery/dark_sorcery_cast_02")))))
     out["hostile/fw_hurt"] = boss(heavy(verb(lead(pk("Player/ashen_knight_hurt_01")))), -3)     # the Fallen Warrior's grunt as it staggers
     # Halfmoon Slash: the heavy attack at the start of the made sound (tools/halfmoon_sfx.py's), the whole at his hits
     hm = dry("halfmoon_slash_made")
