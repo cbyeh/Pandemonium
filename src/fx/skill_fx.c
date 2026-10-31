@@ -54,6 +54,18 @@ void skill_fx_next_arc_half(float half) { s_spawnHalf = half; }
 
 static SkillFx s_fx[SKILL_FX_MAX];
 
+// The Fallen Warrior's fire trail: points along its path, each burning FIRE_BURN then smoke for
+// FIRE_SMOKE; drawn as two seamless lines of fire either side of the path (one strip each)
+#define FIRE_PTS   24
+#define FIRE_SMOKE 0.5f
+#define FIRE_SIDE  5.0f     // each line this far off the path
+#define FIRE_BAND  7.0f     // the fire's reach off the path (the lines and their flames)
+typedef struct { float x, y, z, sx, sz, fx, fz, born, burn; uint8_t id; } FirePt;     // where, its side and forward, when lit, how long it burns
+static FirePt s_fire[FIRE_PTS];
+static int s_fireN;
+static float s_fireT;
+static uint8_t s_fireId;
+
 // ---- Spawning ----
 
 static SkillFx* fx_alloc(FxType type)
@@ -71,8 +83,34 @@ static SkillFx* fx_alloc(FxType type)
 }
 
 void skill_fx_init(void) { skill_fx_reset(); }
-void skill_fx_reset(void) { memset(s_fx, 0, sizeof(s_fx)); }
-void skill_fx_clear_hostile(void) { for (int i = 0; i < SKILL_FX_MAX; i++) if (s_fx[i].hostile) s_fx[i].type = FX_NONE; }
+void skill_fx_reset(void) { memset(s_fx, 0, sizeof(s_fx)); s_fireN = 0; }
+void skill_fx_clear_hostile(void) { for (int i = 0; i < SKILL_FX_MAX; i++) if (s_fx[i].hostile) s_fx[i].type = FX_NONE; s_fireN = 0; }
+
+void skill_fx_fire_trail_begin(void) { s_fireId++; }
+
+bool skill_fx_fire_trail_add(const float pos[3], float yaw, float burn)
+{
+    if (s_fireN >= FIRE_PTS) return false;
+    float fx = -sinf(yaw), fz = cosf(yaw);
+    s_fire[s_fireN++] = (FirePt){ pos[0], pos[1], pos[2], fz, -fx, fx, fz, s_fireT, burn, s_fireId };
+    return true;
+}
+
+/** True if p (on the floor) is within r of the fire still burning (smoke doesn't): the band along
+ *  each stretch between two of a trail's points, as drawn */
+bool skill_fx_fire_trail_touches(const float p[3], float r)
+{
+    float R = r + FIRE_BAND;
+    for (int i = 0; i + 1 < s_fireN; i++) {
+        const FirePt *a = &s_fire[i], *b = &s_fire[i + 1];
+        if (a->id != b->id || s_fireT - a->born >= a->burn) continue;
+        float ex = b->x - a->x, ez = b->z - a->z, l2 = ex * ex + ez * ez;
+        float u = l2 > 1e-6f ? fmaxf(0.0f, fminf(1.0f, ((p[0] - a->x) * ex + (p[2] - a->z) * ez) / l2)) : 0.0f;
+        float dx = p[0] - (a->x + ex * u), dz = p[2] - (a->z + ez * u);
+        if (dx * dx + dz * dz < R * R) return true;
+    }
+    return false;
+}
 
 void skill_fx_spawn_arc(const float pos[3], float yaw, float radius, float damage)
 {
@@ -401,6 +439,12 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
 void skill_fx_update(float dt)
 {
     Boss *b = boss_get_instance();
+    s_fireT += dt;
+    {   // the trail's points out in the order they were lit, once their smoke has gone
+        int k = 0;
+        while (k < s_fireN && s_fireT - s_fire[k].born >= s_fire[k].burn + FIRE_SMOKE) k++;
+        if (k) { memmove(s_fire, s_fire + k, sizeof(s_fire[0]) * (s_fireN - k)); s_fireN -= k; }
+    }
     for (int i = 0; i < SKILL_FX_MAX; i++) {
         SkillFx *f = &s_fx[i];
         if (f->type == FX_NONE) continue;
@@ -766,6 +810,63 @@ static void draw_burst(const SkillFx *f)
     s_drawHostile = hostile;
 }
 
+/** The fire trail: per line a strip from the floor up to a ragged, flickering edge: tongues
+ *  (FIRE_SUB to a stretch, each its own height, licking up and down and swaying) with low
+ *  troughs between, over a yellow core strip. Lit, it rises in 0.15 s; burnt out, it fades to grey
+ *  and away */
+#define FIRE_SUB 4          // the outer flame's vertices to a stretch: tongue, trough, tongue, trough
+static void draw_fire_strip(int i0, int n, float side, int layer)
+{
+    enum { MAXV = (FIRE_PTS - 1) * FIRE_SUB + 1, CHUNK = 33 };
+    float P[FIRE_PTS][3], H[FIRE_PTS], S[FIRE_PTS];     // each point's base, flame height, smoke (0..1)
+    for (int j = 0; j < n; j++) {
+        const FirePt *p = &s_fire[i0 + j];
+        float age = s_fireT - p->born, up = fminf(1.0f, age / 0.15f), sm = fmaxf(0.0f, fminf(1.0f, (age - p->burn) / FIRE_SMOKE));
+        P[j][0] = p->x + p->sx * side * FIRE_SIDE; P[j][1] = p->y + 0.3f; P[j][2] = p->z + p->sz * side * FIRE_SIDE;
+        H[j] = up * (layer ? 4.0f * (1.0f - sm) : 12.0f); S[j] = sm;
+    }
+    int sub = layer ? 1 : FIRE_SUB, nv = (n - 1) * sub + 1;
+    static float top[MAXV][3], base[MAXV][3];
+    static uint32_t ct[MAXV], cb[MAXV];
+    const FirePt *f0 = &s_fire[i0];
+    for (int v = 0; v < nv; v++) {
+        int j = v / sub; float u = (float)(v - j * sub) / sub;
+        if (j >= n - 1) { j = n - 2; u = 1.0f; }
+        float h = H[j] + (H[j + 1] - H[j]) * u, sm = S[j] + (S[j + 1] - S[j]) * u;
+        float ph = f0->born * 37.0f + v * 1.93f + side * 1.3f;     // each tongue's own flicker
+        if (!layer) h *= (v & 1) ? 0.62f + 0.38f * fm_sinf(s_fireT * 14.0f + ph) * fm_sinf(s_fireT * 5.3f + ph * 0.7f) + 0.25f : 0.3f + 0.1f * fm_sinf(s_fireT * 9.0f + ph);
+        else h *= 0.8f + 0.2f * fm_sinf(s_fireT * 11.0f + ph);
+        float lick = (v & 1) && !layer ? 1.8f * fm_sinf(s_fireT * 8.0f + ph) : 0.0f;    // a tongue's tip swaying along the line
+        for (int c = 0; c < 3; c++) base[v][c] = P[j][c] + (P[j + 1][c] - P[j][c]) * u;
+        top[v][0] = base[v][0] + f0->fx * lick; top[v][1] = base[v][1] + h; top[v][2] = base[v][2] + f0->fz * lick;
+        if (layer) { cb[v] = rgba(255, 230, 130, fmaxf(0.0f, 1.0f - 2.0f * sm)); ct[v] = rgba(255, 160, 50, 0.0f); }
+        else {
+            float a = 1.0f - sm;
+            cb[v] = rgba((int)(255 - 140 * sm), (int)(130 - 25 * sm), (int)(30 + 70 * sm), a * (1.0f - 0.35f * sm));     // to grey smoke
+            ct[v] = rgba((int)(230 - 140 * sm), (int)(50 + 35 * sm), (int)(12 + 70 * sm), (v & 1) ? 0.0f : a * 0.35f);
+        }
+    }
+    for (int v = 0; v + 1 < nv; v += CHUNK - 1) {       // build_ribbon takes up to 34 at once
+        int m = nv - v < CHUNK ? nv - v : CHUNK;
+        build_ribbon(&top[v], &base[v], &ct[v], &cb[v], m);
+    }
+}
+
+static void draw_fire_trail(void)
+{
+    bool hostile = s_drawHostile;
+    s_drawHostile = false;      // fire's own colours
+    for (int i = 0; i < s_fireN; ) {
+        int n = 1;
+        while (i + n < s_fireN && s_fire[i + n].id == s_fire[i].id) n++;
+        if (n >= 2)
+            for (int side = -1; side <= 1; side += 2)
+                for (int layer = 0; layer < 2; layer++) draw_fire_strip(i, n, (float)side, layer);
+        i += n;
+    }
+    s_drawHostile = hostile;
+}
+
 /** The Fallen Warrior's landing crown: a ring spreading out over the floor, a circle of spikes
  *  rising from it, pointed, leaning out; fading as it spreads (no hit) */
 static void draw_crown(const SkillFx *f)
@@ -829,6 +930,7 @@ void skill_fx_draw(void)
 {
     bool any = false;
     for (int i = 0; i < SKILL_FX_MAX && !any; i++) any = s_fx[i].type != FX_NONE;
+    any = any || s_fireN > 1;
     if (!any) return;
 
     draw_begin();
@@ -844,6 +946,9 @@ void skill_fx_draw(void)
             default: break;
         }
     }
+#ifndef HLE_FIRE_NODRAW     // test aid: the fire trail's cost (not drawn)
+    draw_fire_trail();
+#endif
     draw_end();
 }
 

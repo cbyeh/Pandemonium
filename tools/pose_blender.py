@@ -91,6 +91,8 @@ hv = [me.matrix_world @ v.co for v, v0 in zip(mm.vertices, me.data.vertices) if 
 bv = [p for p in pts if (p - pb['Hand-Right'].head).length > 1.2]       # the blade, not the hand round its grip
 bh = pb['Hand-Right'].head; bt = max(pts, key=lambda p: (p - bh).length); ax = (bt - bh)
 def segd(q): u = max(0.0, min(1.0, (q - bh).dot(ax) / ax.length_squared)); return (q - (bh + ax * u)).length
+pm = max(pts, key=lambda p: (p - bt).length)     # the pommel's end: with the tip, the sword's axis
+print('pommel', tuple(round(x, 2) for x in pm), 'tip', tuple(round(x, 2) for x in bt))
 print('blade to helmet', round(min(segd(q) for q in hv), 2), '(from its axis; the blade is ~0.2 thick)')
 for gname in ['Foot-Left', 'Foot-Right', 'LowerLeg-Left', 'LowerLeg-Right', 'Hand-Left']:
     gi = me.vertex_groups[gname].index
@@ -129,7 +131,8 @@ for o in bpy.data.objects:
 cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); sc.collection.objects.link(cam); sc.camera = cam
 cam.data.type = 'ORTHO'; cam.data.ortho_scale = P.get('scale', 15)
 for k, yaw in enumerate(P.get('views', (0, 270, 240, 300))):
-    r = math.radians(yaw); cam.location = (42*math.sin(r), -42*math.cos(r), 3.5 + 42*math.tan(math.radians(12))); cam.rotation_euler = (math.radians(78), 0, r)
+    r = math.radians(yaw); ca = P.get('cam_at', (0, 0, 0))     # the view's centre (a close-up: cam_at and a small scale)
+    cam.location = (ca[0] + 42*math.sin(r), ca[1] - 42*math.cos(r), ca[2] + 3.5 + 42*math.tan(math.radians(12))); cam.rotation_euler = (math.radians(78), 0, r)
     sc.render.filepath = f'{out_png}_{k}.png'; bpy.ops.render.render(write_still=True)
 # the pose's bone transforms, as glTF writes them (the knight.glb nodes' local TRS)
 for a in list(bpy.data.actions):

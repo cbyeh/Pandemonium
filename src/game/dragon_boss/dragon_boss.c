@@ -236,6 +236,7 @@ static void hb_move_end(void);
 static volatile uint32_t vi_n;
 static void vi_tick(void) { vi_n++; }
 void dragon_vi_start(void) { register_VI_handler(vi_tick); }     // (from boot: the count is Mupen's frame number)
+uint32_t dragon_vi_frame(void) { return vi_n; }
 #endif
 static void enter(DgState st)
 {
