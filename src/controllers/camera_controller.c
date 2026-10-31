@@ -357,6 +357,20 @@ void camera_update(T3DViewport *viewport)
         camera_set_projection(viewport);
 
         camera_apply_screen_shake(&camPos, &camTarget, &up);
+#ifdef HLE_FW_CLOSECAM   // test aid: close round the Fallen Warrior's head and shoulders, orbiting slowly (HLE_FW_CLOSECAM_D: distance)
+        {
+            extern float fw_closecam_head[3], fw_closecam_yaw;
+            if (fw_closecam_head[1] != 0.0f) {
+#ifndef HLE_FW_CLOSECAM_D
+#define HLE_FW_CLOSECAM_D 26.0f
+#endif
+                float a = fw_closecam_yaw + get_ticks_ms() * 0.0004f;
+                camTarget = (T3DVec3){{ fw_closecam_head[0], fw_closecam_head[1] - 2.5f, fw_closecam_head[2] }};
+                camPos = (T3DVec3){{ camTarget.v[0] + sinf(a) * HLE_FW_CLOSECAM_D, camTarget.v[1] + 3.0f, camTarget.v[2] + cosf(a) * HLE_FW_CLOSECAM_D }};
+                up = (T3DVec3){{ 0.0f, 1.0f, 0.0f }};
+            }
+        }
+#endif
         t3d_viewport_look_at(viewport, &camPos, &camTarget, &up);
     }
     else if(cameraState == CAMERA_FREECAM)
