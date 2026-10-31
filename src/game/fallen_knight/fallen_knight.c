@@ -15,6 +15,7 @@
 #include "fx/screen_shake.h"
 #include "../boss/environmental_mechanics/boss_ground_crush.h"
 #include "controllers/audio_controller.h"
+#include "controllers/camera_controller.h"
 #include "../../scenes/guardian/guardian_scene_sfx.h"
 #include "../../scenes/guardian/guardian_scene_bounds.h"
 #include "utilities/general_utility.h"
@@ -208,6 +209,13 @@ static void sfx_at(int id, float vol, float x, float z)
     audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
 }
 static void swing_sfx(void) { sfx(SCENE1_SFX_SWING_BOSS, 1.0f); }
+// The intro's sounds, heard from the cutscene camera (the player stands 160 off, near silent)
+static void sfx_cam(int id, float vol)
+{
+    Boss *b = boss_get_instance();
+    float dx = customCamPos.v[0] - b->pos[0], dz = customCamPos.v[2] - b->pos[2];     // (the cutscene camera as it moves)
+    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+}
 
 /** The drawn blade in world space, from the last pose: guard to tip, as the knight model has it
  *  in the hand's space. (The player's 640 along the hand's -X follows its sword trail; drawn
@@ -1172,7 +1180,9 @@ void fallen_knight_update(Boss* b, float dt)
         // the floor; rises (HeroDrop), then fights
         b->pos[1] = s.groundY + FK_DROP_HEIGHT * fmaxf(0.0f, 1.0f - s.t / (FK_INTRO_TIME * 0.6f));
         face_player(b, dt, 10.0f);
-        if (s.t >= FK_INTRO_TIME * 0.6f - 0.07f && s.t - dt < FK_INTRO_TIME * 0.6f - 0.07f) sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);   // onset on the landing
+        if (s.t >= 0.05f && s.t - dt < 0.05f) sfx_cam(SCENE1_SFX_BOSS_SWING4, 1.0f);    // the fall: its swell as it passes the camera
+        // the Guardian's slam (the sound that goes with its floor crack), its onset 0.05 s in on the landing
+        if (s.t >= FK_INTRO_TIME * 0.6f - 0.05f && s.t - dt < FK_INTRO_TIME * 0.6f - 0.05f) sfx_cam(SCENE1_SFX_BOSS_SMASH1, 1.0f);
         if (s.step == 0 && b->pos[1] <= s.groundY) {
             float p[3] = { b->pos[0], s.groundY, b->pos[2] };
             boss_ground_crush_spawn_sized(p[0], s.groundY + 0.25f, p[2], 1.0f);

@@ -9,6 +9,7 @@
 #include "sun_boss.h"
 #include "character.h"
 #include "globals.h"
+#include "controllers/camera_controller.h"
 #include "general_utility.h"
 #include "game_time.h"
 #include "fx/proc_mesh.h"
@@ -181,6 +182,13 @@ static void sfx_at(int id, float vol, float x, float z)
 static void sfx_boom(void) { sfx(SCENE1_SFX_BOSS_SMASH1, 1.0f); }
 static void sfx_cast(void) { sfx(SCENE1_SFX_SUN_CAST, 1.0f); }
 static void sfx_chain(int k) { sfx(k ? SCENE1_SFX_CHAIN2 : SCENE1_SFX_CHAIN1, 1.0f); }
+// The intro's sounds, heard from the cutscene camera (the player stands 160 off, near silent)
+static void sfx_cam(int id, float vol)
+{
+    Boss *b = boss_get_instance();
+    float dx = customCamPos.v[0] - b->pos[0], dz = customCamPos.v[2] - b->pos[2];     // (the cutscene camera as it moves)
+    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+}
 
 static float speed_mult(void) { return s.unshackled ? 1.35f : 1.0f; }
 static float hurt(float d) { return s.unshackled ? d * 1.2f : d; }     // unshackled, it hits 20% harder
@@ -1239,6 +1247,10 @@ void sun_boss_update(Boss* b, float dt)
         // Comes down from the ceiling in its chains
         b->pos[1] = s.groundY + HOVER_H + (DROP_H - HOVER_H) * (1.0f - clamp01(s.t / (INTRO_TIME * 0.8f)));
         face_player(b, dt, 4.0f);
+        // its chains rattle as it comes down, the last softer as it settles
+        if (s.t >= 0.05f && s.t - dt < 0.05f) sfx_cam(SCENE1_SFX_CHAIN1, 1.0f);
+        if (s.t >= 1.1f && s.t - dt < 1.1f) sfx_cam(SCENE1_SFX_CHAIN2, 1.0f);
+        if (s.t >= 2.2f && s.t - dt < 2.2f) sfx_cam(SCENE1_SFX_CHAIN1, 0.65f);
         // then waits, hovering, until the intro cutscene ends (sun_boss_skip_intro)
         break;
 
