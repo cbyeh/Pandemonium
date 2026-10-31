@@ -464,6 +464,9 @@ static void corona_update(Boss *b, float dt)
             skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 85.0f, hurt(22.0f));
             screen_shake_set_shake_mag(12.0f);
             sfx(SCENE1_SFX_SUN_BURST, 1.0f);    // the boom and its fire, one sound
+#ifdef HLE_LOG_MOVES     // test aid: when it bursts
+            debugf("[corona] burst at %.2f s, red %.2f\n", (double)s.t, (double)s.red);
+#endif
             s.step = 1;
         }
     }
@@ -502,9 +505,10 @@ static void dive_update(Boss *b, float dt)
 #define FLARE_R    40.0f
 #define FLARE_BAND 8.0f        // the ring's bright outer edge (the ribbon is 16 wide at most, fading inward)
 #define FLARE_LIVE 0.4f        // it hurts while it grows (0.35 s) and is bright; it fades out by 0.55
+#define FLARE_WIND (0.8f / speed_mult() + 0.25f)     // its draw-in
 static void flare_update(Boss *b, float dt)
 {
-    const float WIND = 0.8f / speed_mult();
+    const float WIND = FLARE_WIND;
     if (s.step == 0) {
         face_player(b, dt, 2.0f);
         b->pos[1] += (s.groundY + HOVER_H - 4.0f - b->pos[1]) * fminf(1.0f, dt * 4.0f);
@@ -524,6 +528,9 @@ static void flare_update(Boss *b, float dt)
             skill_fx_spawn_pillar_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
             screen_shake_set_shake_mag(9.0f);
             sfx(SCENE1_SFX_SUN_BURST, 1.0f);    // the boom and its fire, one sound
+#ifdef HLE_LOG_MOVES     // test aid: when it bursts
+            debugf("[flare] burst at %.2f s\n", (double)s.t);
+#endif
             s.step = 1; s.t = 0.0f;
         }
     } else {
@@ -1193,8 +1200,9 @@ static void face_update(const Boss *b, float dt)
     // A blink: shut in 0.07 s, open in 0.13 (on top of the eased lids, never mid-tell)
     if (s.blinkT >= 0.0f) { s.blinkT += dt; if (s.blinkT > 0.2f) s.blinkT = -1.0f; }
     else if (blinks && (s.blinkIn -= dt) <= 0.0f) { s.blinkT = 0.0f; s.blinkIn = 1.8f + (rand_custom_u32() % 300) / 100.0f; }
-    // The ram: blood red, pulsing, as it rears and charges
-    float red = s.state == SB_RAM && s.step < 2 ? (s.step ? 1.0f : clamp01(s.t / (0.6f / sm))) : 0.0f;
+    // The ram: blood red, pulsing, as it rears and charges; the corona too, reddening through its wind-up
+    float red = s.state == SB_RAM && s.step < 2 ? (s.step ? 1.0f : clamp01(s.t / (0.6f / sm)))
+              : s.state == SB_CORONA && s.step == 0 ? clamp01(s.t / (1.3f / sm)) : 0.0f;
     s.red += (red - s.red) * fminf(1.0f, dt * 10.0f);
 }
 
@@ -1329,7 +1337,7 @@ void sun_boss_update(Boss* b, float dt)
     b->rot[0] = b->rot[2] = 0.0f;
 
     // Its tells are its body's and its face's (face_update), each move its own; no glow
-    float inhale = s.state == SB_FLARE && s.step == 0 ? clamp01(s.t / (0.8f / sm)) : 0.0f;
+    float inhale = s.state == SB_FLARE && s.step == 0 ? clamp01(s.t / FLARE_WIND) : 0.0f;
     float dark = s.state == SB_ECLIPSE && s.t < EC_RISE + 2 * EC_GAP + EC_FLY + 0.3f ? 1.0f : 0.0f;
     s.inhale += (inhale - s.inhale) * fminf(1.0f, dt * (inhale > s.inhale ? 8.0f : 12.0f));
     s.dark += (dark - s.dark) * fminf(1.0f, dt * 2.5f);

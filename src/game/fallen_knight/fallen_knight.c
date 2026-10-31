@@ -983,12 +983,12 @@ CLIP(HALFMOON,
     TR(L_HP, 0, 0, 1.5f, -0.12f, 1.7f, 0, 2.4f, 0),
     TR(L_SR, 0, 0, 1.6f, 0, 1.7f, 0.12f, 2.2f, 0),
     TR(L_AR, 0, 0, 0.4f, 0.3f, 1.55f, 0.35f, 1.7f, 0.1f, 2.4f, 0));
-// Cleave: bowed over the sword as it plants and sinks, then flung up and back as it rips it free
+// Cleave: bowed over the sword as it plants and sinks (held 0.25 s longer), then flung up and back as it rips it free
 CLIP(CLEAVE,
-    TR(L_SP, 0, 0, 0.3f, 0.15f, 0.85f, 0.3f, 0.95f, -0.15f, 1.3f, -0.05f, 1.9f, 0),
-    TR(L_WR, 0, 0, 0.3f, -0.05f, 0.85f, -0.15f, 0.95f, 0.05f, 1.4f, 0),
-    TR(L_HP, 0, 0, 0.8f, -0.15f, 0.95f, -0.25f, 1.5f, 0),
-    TR(L_AP, 0, 0, 0.85f, -0.2f, 1.0f, 0.3f, 1.6f, 0));
+    TR(L_SP, 0, 0, 0.3f, 0.15f, 1.1f, 0.3f, 1.2f, -0.15f, 1.55f, -0.05f, 2.15f, 0),
+    TR(L_WR, 0, 0, 0.3f, -0.05f, 1.1f, -0.15f, 1.2f, 0.05f, 1.65f, 0),
+    TR(L_HP, 0, 0, 1.05f, -0.15f, 1.2f, -0.25f, 1.75f, 0),
+    TR(L_AP, 0, 0, 1.1f, -0.2f, 1.25f, 0.3f, 1.85f, 0));
 // The splitter: a hop back, landing heavy; each of its three swings thrown from the hips (clip
 // time, stretched to each swing's strike)
 CLIP(SPLIT_BACK,
@@ -1316,7 +1316,7 @@ static void cleave_update(Boss *b, float dt)
 {
     // Stands and plants its sword point-down, sinks into a crouch with it, then rips it up: five crimson blades rise one
     // by one, fanned along where it faced (it doesn't turn)
-    const float PLANT = 0.3f, CROUCH = 0.5f, FROM = 0.25f, SINK = 1.5f, RELEASE = CROUCH + (0.85f - FROM) / SINK + 0.05f, GAP = 0.12f;
+    const float PLANT = 0.3f, CROUCH = 0.5f, FROM = 0.25f, SINK = (0.85f - FROM) / 0.65f, RELEASE = CROUCH + (0.85f - FROM) / SINK + 0.05f, GAP = 0.12f;  // the sink over 0.65 s (was 0.4)
     if (s.anim == FKA_CLEAVE) t3d_anim_set_speed(&s.anims[s.anim], clip_time() < 0.85f ? SINK : 1.0f);
     if (s.t < RELEASE) {
         if (s.t < CROUCH) play(FKA_IDLE, false);
@@ -1333,6 +1333,9 @@ static void cleave_update(Boss *b, float dt)
         cleave_point(b, s.step, o, &dx, &dz);
         skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, o, (float[3]){ dx * 6.0f, 0.0f, dz * 6.0f }, FK_FELT(7.0f), 2, 0.4f, 1.5f, false);
         if (s.step == 0) screen_shake_set_shake_mag(5.0f);
+#ifdef HLE_LOG_MOVES     // test aid: when the blades rise
+        if (s.step == 0) debugf("[cleave] blades at %.2f s\n", (double)s.t);
+#endif
         s.step++;
     }
     if (s.t > RELEASE + 0.95f) recover(1.3f, false);
