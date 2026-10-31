@@ -70,7 +70,7 @@ Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on th
 | Guardian Unbound | Fallen Warrior (Bonus) |
 |---|---|
 | <img src="docs/media/boss_guardian_unbound.png" width="400"> | <img src="docs/media/boss_fallen_warrior.png" width="400"> |
-| The Guardian, risen in gold, his sword floating over him: a barrage from the air. | A crimson knight mirrors your image: he combos, Halfmoon, Moon Blade, rolls and counters, a leaping plunge. |
+| The Guardian, risen in gold, his sword floating over him: a barrage from the air. | The king's fallen champion, horned and crimson: he combos, Halfmoon, Moon Blade, rolls and counters, a leaping plunge. |
 | **The Shackled Sun (Bonus)** | **Shadowborne (Bonus)** |
 | <img src="docs/media/boss_shackled_sun.png" width="400"> | <img src="docs/media/boss_shadowborn.png" width="400"> |
 | A chained sun with an uncanny face: its chains lash and sweep, sunbrand crosses fly, and once unshackled it eclipses. | A crystal dragon on great wings: claws, stomps, charges, lasers, throws fire, and strikes with its tail. |
