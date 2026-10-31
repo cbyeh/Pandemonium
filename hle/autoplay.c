@@ -282,6 +282,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (t == 1) character.pos[1] = HLE_SKIN_GATE_Y;
 #endif
             if (t == 60) character_skin_reset_cloth();
+#ifdef HLE_SKIN_CYCLE   // every caped skin in turn, 300 frames each (HLE_LOG_HEM: where its hem hangs)
+            if (t >= 60 && (t - 60) % 300 == 0) character_skin_set(1 + (t - 60) / 300 % 7);
+#endif
             if (t % 60 == 0) debugf("[skin] f%d knight y %.1f state %d\n", frame, (double)character.pos[1], (int)character_get_state());
             float *p = character.pos;
             customCamPos = (T3DVec3){{ p[0] + HLE_SKIN_DIST, p[1] + HLE_SKIN_CAM_Y, p[2] }};
@@ -509,6 +512,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
 #ifdef HLE_BOOT_SKIN
     if (frame == 2) character_skin_set(HLE_BOOT_SKIN);   // test aid: A/B the title with one skin
+#ifdef HLE_SKIN_CYCLE
+    if (frame % 300 == 2) { character_skin_set(1 + frame / 300 % 7); debugf("[skin] title f%d skin %d\n", frame, 1 + frame / 300 % 7); }
+#endif
     return;
 #endif
 #ifdef HLE_TEST_SKIN_TITLE

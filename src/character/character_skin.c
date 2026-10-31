@@ -16,7 +16,10 @@
 // Knight rig facts (from knight.glb): it faces -X, Y up; bone rest rotations are
 // identity, so bone-local offsets are model offsets. Offsets below are in glTF units.
 #define GLTF 64.0f                     // t3d base scale: model units per glTF unit
-#define GU   (GLTF * MODEL_SCALE)      // world units per glTF unit
+// The cloth's lengths and the body's radii, in glTF units, times GU: tuned in the fights, where he's
+// drawn at half MODEL_SCALE (2 world units per glTF unit there, GU 4). Scaled with him (bones_cache):
+// fixed, the title's knight (1.5x) wore a cape a third his size and the armour went through it
+static float GU = GLTF * MODEL_SCALE;
 
 typedef struct { uint8_t r, g, b, set; } SkinColor;
 #define C(r, g, b) { r, g, b, 1 }
@@ -44,7 +47,7 @@ typedef struct {
     uint8_t acc;
 } SkinDef;
 
-#define CLOAK(r, g, b) { CLOTH_CLOAK, C(r, g, b), false, 5.4f, 0.4f }
+#define CLOAK(r, g, b) { CLOTH_CLOAK, C(r, g, b), false, 3.4f, 0.4f }   // to the ankles, standing
 
 static const SkinDef SKINS[SKIN_COUNT] = {
     [SKIN_KNIGHT]           = { "Knight" },
@@ -54,21 +57,21 @@ static const SkinDef SKINS[SKIN_COUNT] = {
     // Artorias: dark silver plate, bright mail, a torn royal-blue cloak, a long black plume
     [SKIN_WOLF_KNIGHT]      = { "Wolf Knight", .armor = C(112, 104, 100), .helm = C(146, 142, 146), .chain = C(165, 175, 196),
                                 .cloth = C(30, 52, 108), .hidePlume = true,
-                                .cl = { { CLOTH_CLOAK, C(42, 74, 152), true, 4.6f, 0.5f }, { CLOTH_PLUME, C(22, 22, 30), false, 3.6f, 0.4f } } },
+                                .cl = { { CLOTH_CLOAK, C(42, 74, 152), true, 3.1f, 0.5f }, { CLOTH_PLUME, C(22, 22, 30), false, 3.6f, 0.4f } } },
     // Guts: blackened plate, a spined wolf helm with burning eyes, a ragged black cloak, the Dragonslayer
     [SKIN_BLACK_SWORDSMAN]  = { "Black Swordsman", .armor = C(58, 57, 63), .helm = C(52, 51, 58), .cloth = C(24, 22, 22),
                                 .chain = C(22, 22, 24), .hidePlume = true, .hideSword = true,
-                                .cl = { { CLOTH_CLOAK, C(26, 24, 27), true, 6.2f, 0.55f } }, .acc = ACC_BERSERK_HELM | ACC_DRAGONSLAYER },
+                                .cl = { { CLOTH_CLOAK, C(26, 24, 27), true, 3.2f, 0.55f } }, .acc = ACC_BERSERK_HELM | ACC_DRAGONSLAYER },
     // Malenia: brass plate, an olive pleated dress, a winged helm, a fur collar, a red ponytail over a crimson cape (it tapers)
     [SKIN_SCARLET_VALKYRIE] = { "Scarlet Valkyrie", .armor = C(196, 156, 82), .helm = C(208, 168, 92), .cloth = C(98, 80, 50),
                                 .chain = C(72, 60, 40), .hidePlume = true,
-                                .cl = { { CLOTH_HAIR, C(196, 64, 30), true, 3.4f, -0.45f }, { CLOTH_CLOAK, C(86, 12, 16), false, 4.8f, 0.55f, 0.8f } },
+                                .cl = { { CLOTH_HAIR, C(196, 64, 30), true, 3.4f, -0.45f }, { CLOTH_CLOAK, C(86, 12, 16), false, 1.8f, 0.55f, 0.8f } },
                                 .acc = ACC_WINGED_HELM | ACC_FUR_COLLAR },
     // Nightfarer (Nightreign): a winged silver helm, a dark scarf, a royal-blue tabard and long coat,
     // the claw shot on his left forearm
     [SKIN_NIGHTFARER]           = { "Nightfarer", .armor = C(92, 96, 112), .helm = C(176, 180, 194), .cloth = C(30, 56, 150),
                                 .chain = C(58, 60, 72), .hidePlume = true,
-                                .cl = { { CLOTH_CLOAK, C(38, 66, 170), false, 6.0f, 0.45f } },
+                                .cl = { { CLOTH_CLOAK, C(38, 66, 170), false, 3.5f, 0.45f } },
                                 .acc = ACC_NIGHTFARER_HELM | ACC_SCARF | ACC_CLAW_SHOT },
 };
 
@@ -122,6 +125,9 @@ static void bones_cache(const T3DMat4FP *modelMat)
                 s_bw[b][j][k] = j < 3 ? s * GLTF : s + m[3][k];
             }
     }
+    const float *x = s_bw[B_SPINE][0];
+    float gu = 2.0f * sqrtf(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+    if (gu > 1e-3f) GU = gu;     // 0 on the title's first frame, before the rig is posed
 }
 
 // bone-local glTF offset -> world (bones_cache first)
@@ -329,11 +335,12 @@ static void push_out(float *p, const float *plane, uint32_t only, uint32_t *near
 
 static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back[3], const float *plane)
 {
-    const float g = -220.0f * h * h;
+    const float k = GU / (GLTF * MODEL_SCALE);   // gravity and wind scaled with him, as his cape is (1 in the fights)
+    const float g = -220.0f * k * h * h;
     cl->time += h;
     const float damp = 1.0f - (strands(sp) ? 2.4f : 0.9f) * h;   // per second, not per step (0.92 / 0.97 at 30 steps)
     float wind[CLOTH_COLS];     // a gust down each column (sinf is a software call: once a column, not a particle)
-    for (int c = 0; c < cl->cols; c++) wind[c] = (14.0f + 10.0f * sinf(cl->time * 1.7f + c * 0.6f)) * h * h / cl->rows;
+    for (int c = 0; c < cl->cols; c++) wind[c] = (14.0f + 10.0f * sinf(cl->time * 1.7f + c * 0.6f)) * k * h * h / cl->rows;
     for (int r = 1; r < cl->rows; r++)
         for (int c = 0; c < cl->cols; c++) {
             float *p = PC(cl, c, r), *q = cl->q[r * cl->cols + c];
@@ -483,8 +490,9 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat
                 float nv[3] = { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] };
                 float nl = 1.0f / (sqrtf(nv[0] * nv[0] + nv[1] * nv[1] + nv[2] * nv[2]) + 1e-6f);
                 nv[0] *= nl; nv[1] *= nl; nv[2] *= nl;
-                // strands get a sheen down the middle, cloth darkens toward the hem
-                float bias = strands(sp) ? 0.85f + 0.3f * (c == cl->cols / 2) : 1.0f - 0.25f * r / cl->rows;
+                // strands get a sheen down the middle, cloth darkens toward the hem and in its pleats (the
+                // odd columns, pinned further out: hanging smooth, the folds still read)
+                float bias = strands(sp) ? 0.85f + 0.3f * (c == cl->cols / 2) : (1.0f - 0.25f * r / cl->rows) * ((c & 1) ? 0.72f : 1.0f);
                 cl->col[i] = shade_tinted(tint, nv, bias);
             }
             const float *p = DC(c, r);
@@ -1010,5 +1018,17 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
       if (n == 119) { debugf("[cloth] stretch %.3f avg, %.3f max\n", (double)(st / 120), (double)stMax); st = stMax = 0; }
       if (++n == 120) { debugf("[cloth] %lu us a frame: bodies %lu, simulation %lu, draw submit %lu (collision %lu) anchors %lu vertices %lu (matrix %lu, flush %lu)\n", (unsigned long)(TICKS_TO_US(sum) / n),
                                (unsigned long)(TICKS_TO_US(s_bodyT) / n), (unsigned long)(TICKS_TO_US(s_stepT) / n), (unsigned long)(TICKS_TO_US(s_subT) / n), (unsigned long)(TICKS_TO_US(s_colT) / n), (unsigned long)(TICKS_TO_US(s_ancT) / n), (unsigned long)(TICKS_TO_US(s_vtxT) / n), (unsigned long)(TICKS_TO_US(s_matT) / n), (unsigned long)(TICKS_TO_US(s_wbT) / n)); sum = s_bodyT = s_stepT = s_subT = s_colT = s_ancT = s_vtxT = s_matT = s_wbT = 0; n = 0; } }
+#endif
+#ifdef HLE_LOG_HEM   // test aid: the cloak's hem against the legs, above the ankle in GU (the units of ClothSpec.len)
+    { static int n; if (++n % 60 == 0) {
+      const Cloth *cl = &s_cloth[s->cl[0].kind == CLOTH_CLOAK ? 0 : 1];
+      float foot = 0.5f * (s_bw[B_FOOT_L][3][1] + s_bw[B_FOOT_R][3][1]), mean = 0, lo = 1e9f, hi = -1e9f;
+      for (int c = 0; c < cl->cols; c++) { float y = cl->p[(cl->rows - 1) * cl->cols + c][1]; mean += y; lo = fminf(lo, y); hi = fmaxf(hi, y); }
+      mean /= cl->cols;
+      #define UP(y) (double)(((y) - foot) / GU)
+      debugf("[hem] skin %d hem mean %.2f low %.2f high %.2f | knee %.2f hip %.2f waist %.2f pin %.2f\n", s_skin, UP(mean), UP(lo), UP(hi),
+             UP(0.5f * (s_bw[B_SHIN_L][3][1] + s_bw[B_SHIN_R][3][1])), UP(0.5f * (s_bw[B_LEG_L][3][1] + s_bw[B_LEG_R][3][1])), UP(s_bw[B_WAIST][3][1]), UP(cl->anchor[3][1]));
+      #undef UP
+    } }
 #endif
 }
