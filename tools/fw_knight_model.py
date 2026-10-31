@@ -152,14 +152,14 @@ def add_prim(pos, nrm, idx, joint, mat, uv, col):
 add_prim(pos, nrm, idx, HEAD_J, 'head', uv0, col0)
 nhorn = len(pos)
 
-# ---------------- a great pauldron on the sword arm: stacked lames and a flange at the neck ----------------
+# ---------------- a pauldron on the left shoulder (the off arm): stacked lames and a flange at the neck ----------------
 # Round the upper arm's own axis (shoulder to elbow; the arms hang in an A), over its top and outer
 # side: a big top plate over the shoulder with a raised flange on its neck edge, then three lames
 # down the arm, each overlapping the one below, flaring out at its lower edge (on the arm's bone)
-S = SH['Right']; E = wpos(NODE['LowerArm-Right'])
+S = SH['Left']; E = wpos(NODE['LowerArm-Left'])
 U = norm([E[m] - S[m] for m in range(3)])
 def perp(v): d = sum(v[m] * U[m] for m in range(3)); return norm([v[m] - d * U[m] for m in range(3)])
-O = perp([0.0, 0.35, -1.0])        # its outer side, a little up: the arc's middle
+O = perp([0.0, 0.35, 1.0])         # its outer side (its left: +z), a little up: the arc's middle
 V = cross(U, O)
 ppos, pnrm, pidx = [], [], []
 def sheet(rows):
@@ -177,14 +177,16 @@ def arc(t, r, half, n=7):      # points round the arm at t along it, radius r, +
         ph = -half + 2 * half * k / (n - 1)
         out.append([S[m] + U[m] * t + (O[m] * math.cos(ph) + V[m] * math.sin(ph)) * r for m in range(3)])
     return out
-LAMES = [(-0.42, 0.18, 1.12, 1.24, 1.75), (0.08, 0.5, 1.0, 1.12, 1.6), (0.38, 0.78, 0.94, 1.04, 1.5), (0.66, 1.02, 0.88, 0.97, 1.4)]
+K = 0.72      # its size (the first was too big)
+LAMES = [(-0.42 * K, 0.18 * K, 0.98 * K + 0.12, 1.08 * K + 0.12, 1.75), (0.08 * K, 0.5 * K, 0.88 * K + 0.12, 0.98 * K + 0.12, 1.6),
+         (0.38 * K, 0.78 * K, 0.82 * K + 0.12, 0.91 * K + 0.12, 1.5), (0.66 * K, 1.02 * K, 0.77 * K + 0.12, 0.85 * K + 0.12, 1.4)]
 for t0, t1, r0, r1, half in LAMES:
     sheet([arc(t0, r0, half), arc(t1, r1, half)])
 top = arc(LAMES[0][0], LAMES[0][2], 1.2)         # the flange: up off the top plate's neck edge
-sheet([top, [[p[0], p[1] + 0.55, p[2] + 0.06] for p in top]])
+sheet([top, [[p[0], p[1] + 0.55 * K, p[2] - 0.06] for p in top]])
 kp = [pr for m in J['meshes'] for pr in m['primitives'] if MATS[pr['material']] == 'knight'][0]
 _, kuv, _ = acc_rw(kp['attributes']['TEXCOORD_0']); _, kcol, _ = acc_rw(kp['attributes']['COLOR_0'])
-add_prim(ppos, pnrm, pidx, JOINTS.index(NODE['UpperArm-Right']), 'knight', kuv(0), kcol(0))
+add_prim(ppos, pnrm, pidx, JOINTS.index(NODE['UpperArm-Left']), 'knight', kuv(0), kcol(0))
 
 J.pop('animations', None)       # (it plays the knight's own)
 J['buffers'][0]['byteLength'] = len(BIN)
