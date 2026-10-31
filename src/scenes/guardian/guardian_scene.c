@@ -2503,7 +2503,9 @@ void scene_draw(T3DViewport *viewport)
     }
 
     // Overlay lock-on marker above the boss.
+#ifndef HLE_SHOT_CLEAN
     draw_lockon_indicator(viewport);
+#endif
 
     scene_draw_video_trigger(viewport);
 

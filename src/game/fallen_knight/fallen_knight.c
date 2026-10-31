@@ -11,6 +11,9 @@
 #include "fallen_knight.h"
 #include "character.h"
 #include "game_lighting.h"
+#ifdef HLE_FW_CLOSECAM
+float fw_closecam_head[3], fw_closecam_yaw;
+#endif
 #ifdef HLE_LOG_FWCLIP
 #include "fw_clip_points.h"
 #endif
@@ -1998,19 +2001,58 @@ void fallen_knight_update(Boss* b, float dt)
     if (s.handKeep.parentIdx != 0xFFFF) { s.skel.bones[s.swordBone].rotation = s.handKeep.rotation; s.skel.bones[s.swordBone].hasChanged = true; }
     life_unpose();
 
-#ifdef HLE_LOG_FWCLIP   // test aid: the closest the horns come to the pauldron, posed (sample points; < ~0.05 glTF units: touching)
+#ifdef HLE_LOG_FWCLIP   // test aid: the closest the horns come to the pauldron and to the blade's line, posed (sample points; pauldron < ~0.05 glTF units: touching)
     if (s.headBone >= 0 && s.spineBone >= 0) {
-        static float worst = 1e9f; static int n, wst, wi, wj;
-        float h[FW_CLIP_NH][3], q[3];
+        static int armBone = -2;
+        if (armBone == -2) armBone = t3d_skeleton_find_bone(&s.skel, "UpperArm-Left");
+        static float worst = 1e9f, worstS = 1e9f, wsu, wg[3]; static int n, wst, wi, wj, wsst, wsi;
+        float h[FW_CLIP_NH][3], q[3], g[3], t[3], b0[3], b1[3];
         for (int i = 0; i < FW_CLIP_NH; i++) mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.headBone], (float[3]){ FW_CLIP_H[i][0] * 64.0f, FW_CLIP_H[i][1] * 64.0f, FW_CLIP_H[i][2] * 64.0f }, h[i]);
         for (int j = 0; j < FW_CLIP_NP; j++) {
-            mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.spineBone], (float[3]){ FW_CLIP_P[j][0] * 64.0f, FW_CLIP_P[j][1] * 64.0f, FW_CLIP_P[j][2] * 64.0f }, q);
+            if (armBone < 0) break;
+            mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[armBone], (float[3]){ FW_CLIP_P[j][0] * 64.0f, FW_CLIP_P[j][1] * 64.0f, FW_CLIP_P[j][2] * 64.0f }, q);
             for (int i = 0; i < FW_CLIP_NH; i++) {
                 float d = sqrtf((q[0] - h[i][0]) * (q[0] - h[i][0]) + (q[1] - h[i][1]) * (q[1] - h[i][1]) + (q[2] - h[i][2]) * (q[2] - h[i][2])) / 64.0f;
                 if (d < worst) { worst = d; wst = s.state; wi = i; wj = j; }
             }
         }
-        if (++n % 120 == 0) { debugf("[fwclip] closest %.3f (state %d) horn %d pauldron %d\n", (double)worst, wst, wi, wj); worst = 1e9f; }
+        if (s.swordBone >= 0) {     // the blade, guard to tip, in the same (model) space
+            sword_seat((float[3]){ -29.0f, 46.0f, -3.0f }, g); sword_seat((float[3]){ -522.0f, 69.0f, -68.0f }, t);
+            mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.swordBone], g, b0);
+            mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.swordBone], t, b1);
+            float e[3] = { b1[0] - b0[0], b1[1] - b0[1], b1[2] - b0[2] }, ee = e[0] * e[0] + e[1] * e[1] + e[2] * e[2];
+            float o[3], ax[3][3], gl[3];     // the guard in the head bone's own axes (glTF units)
+            mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.headBone], (float[3]){ 0, 0, 0 }, o);
+            for (int a = 0; a < 3; a++) { float u[3] = { 0, 0, 0 }; u[a] = 64.0f; mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.headBone], u, ax[a]); for (int k = 0; k < 3; k++) ax[a][k] -= o[k]; }
+            for (int a = 0; a < 3; a++) gl[a] = ((b0[0] - o[0]) * ax[a][0] + (b0[1] - o[1]) * ax[a][1] + (b0[2] - o[2]) * ax[a][2]) / (64.0f * 64.0f);
+            for (int i = 0; i < FW_CLIP_NH; i++) {
+                float u = fmaxf(0.0f, fminf(1.0f, ((h[i][0] - b0[0]) * e[0] + (h[i][1] - b0[1]) * e[1] + (h[i][2] - b0[2]) * e[2]) / ee)), d2 = 0.0f;
+                for (int k = 0; k < 3; k++) { float c = h[i][k] - b0[k] - e[k] * u; d2 += c * c; }
+                float d = sqrtf(d2) / 64.0f;
+                if (d < worstS) { worstS = d; wsst = s.state; wsi = i; wsu = u; memcpy(wg, gl, sizeof wg); }
+            }
+        }
+#ifdef HLE_LOG_FWPOSE   // the blade (guard, tip), the chest's and the upper arm's frames, in the head bone's space: horn shapes scored offline
+        if (s.swordBone >= 0 && armBone >= 0 && (n & 3) == 0) {
+            float o[3], ax[3][3], r[2][3], f[2][4][3];
+            mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.headBone], (float[3]){ 0, 0, 0 }, o);
+            for (int a = 0; a < 3; a++) { float u[3] = { 0, 0, 0 }; u[a] = 64.0f; mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.headBone], u, ax[a]); for (int k = 0; k < 3; k++) ax[a][k] -= o[k]; }
+            #define TOHEAD(src, dst) for (int a_ = 0; a_ < 3; a_++) dst[a_] = ((src[0] - o[0]) * ax[a_][0] + (src[1] - o[1]) * ax[a_][1] + (src[2] - o[2]) * ax[a_][2]) / (64.0f * 64.0f)
+            TOHEAD(b0, r[0]); TOHEAD(b1, r[1]);
+            int bones[2] = { s.spineBone, armBone };
+            for (int bi = 0; bi < 2; bi++)
+                for (int a = 0; a < 4; a++) {     // the bone's origin, then where its unit axes land
+                    float u[3] = { 0, 0, 0 }, w[3]; if (a) u[a - 1] = 64.0f;
+                    mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[bones[bi]], u, w);
+                    TOHEAD(w, f[bi][a]);
+                }
+            #undef TOHEAD
+            char line[400]; int len = snprintf(line, sizeof line, "[fwpose] %d %.3f %.3f %.3f %.3f %.3f %.3f", s.state, (double)r[0][0], (double)r[0][1], (double)r[0][2], (double)r[1][0], (double)r[1][1], (double)r[1][2]);
+            for (int bi = 0; bi < 2; bi++) for (int a = 0; a < 4; a++) len += snprintf(line + len, sizeof line - len, " %.3f %.3f %.3f", (double)f[bi][a][0], (double)f[bi][a][1], (double)f[bi][a][2]);
+            debugf("%s\n", line);
+        }
+#endif
+        if (++n % 120 == 0) { debugf("[fwclip] closest %.3f (state %d) horn %d pauldron %d sword %.3f (state %d) horn %d at %.2f along the blade, guard at %.2f %.2f %.2f (head)\n", (double)worst, wst, wi, wj, (double)worstS, wsst, wsi, (double)wsu, (double)wg[0], (double)wg[1], (double)wg[2]); worst = worstS = 1e9f; }
     }
 #endif
 #ifdef HLE_LOG_GRIP     // test aid: the wrist: the angle between the forearm (elbow to wrist) and the blade, per move
@@ -2058,6 +2100,17 @@ void fallen_knight_update(Boss* b, float dt)
     const float sc[3] = { FK_SCALE, FK_SCALE, FK_SCALE };
     const float rot[3] = { 0.0f, b->rot[1] + FK_YAW_OFFSET, 0.0f };
     t3d_mat4fp_from_srt_euler(s.mat, sc, rot, p);
+#ifdef HLE_FW_CLOSECAM   // test aid: the camera close round its head and shoulders (camera_controller asks)
+    if (s.headBone >= 0) {
+        float h[3];
+        mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.headBone], (float[3]){ 0.0f, 0.0f, 0.0f }, h);
+        mat4fp_mul_point_f32_row3_colbasis(s.mat, h, fw_closecam_head);
+        float o[3], f[3];       // its facing (the knight faces -x in its model): HLE_FW_CLOSECAM_A 0 is straight in front
+        mat4fp_mul_point_f32_row3_colbasis(s.mat, (float[3]){ 0.0f, 0.0f, 0.0f }, o);
+        mat4fp_mul_point_f32_row3_colbasis(s.mat, (float[3]){ -64.0f, 0.0f, 0.0f }, f);
+        fw_closecam_yaw = atan2f(f[0] - o[0], f[2] - o[2]);
+    }
+#endif
     {   // The body capsule follows it down: feet to head while it kneels staggered, so it's hit where it is
         T3DVec3 top = {{ 0.0f, 20.0f, 0.0f }};
         if (s.state == FK_STAGGER && s.headBone >= 0) {
@@ -2121,9 +2174,10 @@ void fallen_knight_draw(Boss* b)
     bool flash = b->damageFlashTimer > 0.0f;
     uint8_t amb[4] = { colorAmbient[0], colorAmbient[1], colorAmbient[2], 255 };
     t3d_light_set_ambient(flash ? (uint8_t[4]){ 255, 120, 120, 255 } : amb);
-    static const char *MATS[] = { "knight", "head", "chainmail", "cloth", "straps", "sword", "black" };
+    static const char *MATS[] = { "knight", "head", "chainmail", "cloth", "straps", "sword", "black", "lames", "iron" };
     static const color_t COLS[] = { RGBA32(100, 27, 34, 255), RGBA32(100, 27, 34, 255), RGBA32(128, 40, 48, 255), RGBA32(56, 18, 22, 255),
-                                    RGBA32(78, 22, 27, 255), RGBA32(84, 80, 82, 255), RGBA32(20, 16, 18, 255) };
+                                    RGBA32(78, 22, 27, 255), RGBA32(84, 80, 82, 255), RGBA32(20, 16, 18, 255),
+                                    RGBA32(84, 40, 32, 255), RGBA32(84, 80, 86, 255) };     // (the pauldron: its lames dark brownish red, its dome dark iron)
     static bool tinted;     // (its own model: its colours set once)
     if (!tinted) {
         for (int i = 0; i < (int)(sizeof MATS / sizeof MATS[0]); i++) { T3DMaterial *m = t3d_model_get_material(s.body, MATS[i]); if (m) m->primColor = COLS[i]; }

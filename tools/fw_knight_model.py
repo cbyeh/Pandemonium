@@ -8,11 +8,12 @@ the Fallen Warrior's skeleton, built from the knight's), no clips (it plays the 
 
 What changes (model space, glTF units: the knight faces -x, y up, z its left):
   - the helmet's visor drawn out into Griffith's beak (its black eye slit moved with it: never a gap), its dome
-    broader; horns grown from its sides (part of the helmet, on the head bone), down and forward
-    under the chin as on the horned war-helm
+    broader; horns grown from its temples (part of the helmet, on the head bone), down its sides
+    and sweeping forward past the chin as on the horned war-helm
   - a broader chest, a smooth warp of every part alike (plate, mail, cloth, straps) so no seam
-    opens; the shoulders, its one pauldron (mail, on the sword arm), arms, hands and sword where they were
-    (its blows are read from the bones: they land as before)
+    opens; the shoulders, arms, hands and sword where they were (its blows are read from the bones:
+    they land as before)
+  - a great pauldron on the left shoulder (an iron dome and neck guard, three lames down the arm)
 """
 import json, math, os, struct
 
@@ -98,82 +99,40 @@ for m in J['meshes']:
 
 # ---------------- the horns: grown from the helmet's sides, on the head bone ----------------
 import sys
-HORN = next((a.split('=')[1] for a in sys.argv if a.startswith('--horn=')), 'B')
-# (head-local, the helmet's size: it spans y 0.16..1.98, z +-0.65): from high on its side, out,
-# down and forward, the tips curling in under the chin; the horned war-helm's proportions (B)
-HORNS = {
-    'A': ([(-0.28, 1.3, 0.52), (-0.6, 1.22, 0.98), (-0.9, 0.74, 1.08), (-1.12, 0.2, 0.92), (-1.3, -0.26, 0.68)], 0.28),
-    'B': ([(-0.25, 1.5, 0.55), (-0.62, 1.42, 1.08), (-1.0, 0.8, 1.22), (-1.3, 0.05, 1.04), (-1.5, -0.6, 0.72)], 0.34),
-    # B drawn in: its roots sunk into the helm's side (attached), the whole of it narrower (its z x 0.85, 0.75)
-    'B1': ([(-0.3, 1.38, 0.36), (-0.62, 1.36, 0.92), (-1.0, 0.8, 1.04), (-1.3, 0.05, 0.88), (-1.5, -0.6, 0.61)], 0.32),
-    'B2': ([(-0.3, 1.38, 0.34), (-0.62, 1.36, 0.81), (-1.0, 0.8, 0.92), (-1.3, 0.05, 0.78), (-1.5, -0.6, 0.54)], 0.32),
-    # as the reference: springing high off the dome's sides, hugging the helm down its flanks, past
-    # the jaw to tips curling in below the chin (R2: the tips reaching further forward)
-    'R':  ([(-0.2, 1.75, 0.42), (-0.45, 1.55, 0.78), (-0.7, 1.0, 0.86), (-0.95, 0.35, 0.8), (-1.15, -0.25, 0.66), (-1.25, -0.62, 0.5)], 0.3),
-    'R2': ([(-0.2, 1.75, 0.42), (-0.45, 1.55, 0.78), (-0.72, 1.0, 0.86), (-1.02, 0.36, 0.8), (-1.32, -0.2, 0.62), (-1.52, -0.52, 0.44)], 0.3),
-    # measured off the reference (the helm's half-width ~118 px = 0.75 here): thick nearly all its
-    # length (50 px at the root plate, 43 at mid-face, 25 at three-quarters, then a point), its root
-    # inside the dome (fully attached), close down the helm's flanks, the tips ~0.3 of its height
-    # under the chin. M2 a little thicker
-    'M':  ([(-0.15, 1.62, 0.3), (-0.42, 1.58, 0.74), (-0.66, 1.1, 0.84), (-0.9, 0.45, 0.82), (-1.1, -0.12, 0.68), (-1.22, -0.42, 0.52)], 0.17),
-    'M2': ([(-0.15, 1.62, 0.3), (-0.42, 1.58, 0.76), (-0.66, 1.1, 0.87), (-0.9, 0.45, 0.85), (-1.1, -0.12, 0.7), (-1.22, -0.42, 0.53)], 0.21),
-    'M3': ([(-0.15, 1.62, 0.3), (-0.42, 1.58, 0.78), (-0.66, 1.1, 0.9), (-0.9, 0.45, 0.88), (-1.1, -0.12, 0.72), (-1.22, -0.42, 0.55)], 0.22),
-    'C': ([(-0.22, 1.62, 0.56), (-0.66, 1.56, 1.22), (-1.1, 0.82, 1.4), (-1.46, -0.08, 1.18), (-1.7, -0.86, 0.78)], 0.4),
-}
-def horn_points(side):
-    pts = HORNS[HORN][0]
-    return [(x + HEAD[0], y + HEAD[1], side * z + HEAD[2]) for x, y, z in pts]
+# The horned war-helm's horns (the user's reference): from the temples, a little above the eyes, out
+# and slightly up, then wide and down, curling forward to sharp tips just ahead of and below the chin.
+# Head-local, the helmet's size (it spans y 0.16..2.04, z +-0.65, its face at x ~-1.0): measured off the
+# front view (widest ~1.6 helm half-widths out, drawn in close at the user's word, at half its height; tips ~0.85 of it in, at the chin)
+# and the three-quarter one (the tips ahead of the face). A tapered tube, round in section, thick at the root
+PATH = [(-0.4, 1.3, 0.3), (-0.34, 1.44, 0.66), (-0.36, 1.24, 0.88), (-0.5, 0.96, 0.88), (-0.94, 0.569, 0.73), (-1.325, 0.357, 0.58), (-1.6, 0.25, 0.43)]
+RINGS, SIDES, R0 = 12, 6, 0.25
 def cr(pts, t):
     u = t * (len(pts) - 1); k = min(int(u), len(pts) - 2); f = u - k
     p0, p1, p2, p3 = pts[max(k - 1, 0)], pts[k], pts[k + 1], pts[min(k + 2, len(pts) - 1)]
     return [0.5 * (2 * p1[m] + (-p0[m] + p2[m]) * f + (2 * p0[m] - 5 * p1[m] + 4 * p2[m] - p3[m]) * f * f + (-p0[m] + 3 * p1[m] - 3 * p2[m] + p3[m]) * f ** 3) for m in range(3)]
 def norm(v): l = math.sqrt(sum(c * c for c in v)) + 1e-9; return [c / l for c in v]
 def cross(a, b): return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-# The horns as crescent blades (the reference's): between a convex outer edge and a concave inner one
-# that leaves the helm's side in one continuous arc (its upper part lying on the helm: attached), the two
-# meeting at the tip; each section a diamond (a cut ridge down both faces), its facets' shading baked
-# into their colours (the knight is lit by the ambient alone). Head-local, the helmet's size
-# (the helmet's half-width, measured: 0.56 high up, 0.66 at the brow, 0.52 at the jaw: the inner edge just inside it)
-# from the helmet's sides (back at their middle, not ahead), down along them, angling forward only
-# slowly, most of it in the lower half, to the tips ahead of the chin
-# (a C seen from the front, held in close to the helm and ending at the jaw: further out and longer, his
-# clips' bowed head brought it onto the left shoulder)
-INNER = [(-0.2, 1.62, 0.5), (-0.3, 1.35, 0.64), (-0.42, 0.95, 0.72), (-0.62, 0.45, 0.7), (-0.95, -0.05, 0.56), (-1.28, -0.42, 0.38)]
-OUTER = [(-0.05, 1.76, 0.6), (-0.2, 1.62, 0.92), (-0.38, 1.15, 1.0), (-0.62, 0.55, 0.96), (-0.98, 0.02, 0.78), (-1.28, -0.42, 0.38)]
-RINGS = 12
 LIGHT = norm([-0.4, 0.8, 0.45])
 pos, nrm, idx, shade = [], [], [], []
 for side in (1, -1):
-    def hl(p): return (p[0] + HEAD[0], p[1] + HEAD[1], side * p[2] + HEAD[2])
-    END = 0.7       # ends at the jaw, cut blunt (past the chin, his clips' bowed head brought it onto the left shoulder)
-    I = [cr([hl(p) for p in INNER], END * k / (RINGS - 1)) for k in range(RINGS)]
-    O = [cr([hl(p) for p in OUTER], END * k / (RINGS - 1)) for k in range(RINGS)]
-    rings = []
+    C = [cr([(p[0] + HEAD[0], p[1] + HEAD[1], side * p[2] + HEAD[2]) for p in PATH], k / (RINGS - 1)) for k in range(RINGS)]
+    rings, N = [], None
     for k in range(RINGS):
-        f = END * k / (RINGS - 1)
-        mid = [(I[k][m] + O[k][m]) * 0.5 for m in range(3)]
-        T = norm([(I[min(k + 1, RINGS - 1)][m] + O[min(k + 1, RINGS - 1)][m]) - (I[max(k - 1, 0)][m] + O[max(k - 1, 0)][m]) for m in range(3)])
-        Wd = norm([O[k][m] - I[k][m] for m in range(3)])
-        B = norm(cross(T, Wd))                                   # through the blade (its faces' normal)
-        th = 0.2 * (1 - f ** 1.6) + 0.005                        # its thickness, front to back
-        rings.append([O[k], [mid[m] + B[m] * th for m in range(3)], I[k], [mid[m] - B[m] * th for m in range(3)]])
+        T = norm([C[min(k + 1, RINGS - 1)][m] - C[max(k - 1, 0)][m] for m in range(3)])
+        N = norm(cross(cross(T, N if N else [0.0, 0.0, 1.0]), T))     # carried along the curve (no twist)
+        Bn = cross(T, N)
+        r = R0 * (1 - k / (RINGS - 1)) ** 0.7
+        rings.append([[C[k][m] + r * (math.cos(2 * math.pi * q / SIDES) * N[m] + math.sin(2 * math.pi * q / SIDES) * Bn[m]) for m in range(3)] for q in range(SIDES)])
     for k in range(RINGS - 1):
-        for q in range(4):
-            a, b = rings[k][q], rings[k][(q + 1) % 4]
-            c, e = rings[k + 1][(q + 1) % 4], rings[k + 1][q]
-            n = norm(cross([b[m] - a[m] for m in range(3)], [e[m] - a[m] for m in range(3)]))
-            if side < 0: n = [-v for v in n]
+        for q in range(SIDES):
+            a, b = rings[k][q], rings[k][(q + 1) % SIDES]
+            c, e = rings[k + 1][(q + 1) % SIDES], rings[k + 1][q]
+            n = norm([(a[m] + b[m] + c[m] + e[m]) * 0.25 - (C[k][m] + C[k + 1][m]) * 0.5 for m in range(3)])     # facing out from the axis
             base = len(pos)
             for v in (a, b, c, e): pos.append(v); nrm.append(n)
-            sh = 0.5 + 0.55 * max(0.0, sum(n[m] * LIGHT[m] for m in range(3)))
-            shade += [sh] * 4
-            idx += ([base, base + 1, base + 2, base, base + 2, base + 3] if side > 0 else [base, base + 2, base + 1, base, base + 3, base + 2])
-    cap = rings[-1]     # the cut end
-    n = norm([cap[0][m] - cap[2][m] for m in range(3)]); n = norm(cross([cap[1][m] - cap[3][m] for m in range(3)], n))
-    base = len(pos)
-    for v in cap: pos.append(v); nrm.append(n)
-    shade += [0.5 + 0.55 * max(0.0, abs(sum(n[m] * LIGHT[m] for m in range(3))))] * 4
-    idx += [base, base + 1, base + 2, base, base + 2, base + 3, base, base + 2, base + 1, base, base + 3, base + 2]
+            shade += [0.5 + 0.55 * max(0.0, sum(n[m] * LIGHT[m] for m in range(3)))] * 4
+            f = norm(cross([b[m] - a[m] for m in range(3)], [e[m] - a[m] for m in range(3)]))
+            idx += ([base, base + 1, base + 2, base, base + 2, base + 3] if sum(f[m] * n[m] for m in range(3)) > 0 else [base, base + 2, base + 1, base, base + 3, base + 2])
 # The forehead: four flat facets meeting at one point above the eyes (a low diamond pyramid, the
 # reference's brow), proud of the helmet over its brow, down to the beak
 FH = {'top': (-0.62, 1.96, 0.0), 'l': (-0.86, 1.36, 0.6), 'r': (-0.86, 1.36, -0.6), 'bot': (-1.56, 0.96, 0.0), 'pt': (-1.34, 1.44, 0.0)}
@@ -215,60 +174,87 @@ def add_prim(pos, nrm, idx, joint, mat, uv, col):
 add_prim(pos, nrm, idx, HEAD_J, 'head', uv0, [[min(1.0, col0[m] * shade[k]) for m in range(3)] + [col0[3]] for k in range(len(pos))])
 nhorn = len(pos)
 
-# ---------------- a pauldron on the left shoulder: solid stacked lames and a flange at the neck, pinned to the chest ----------------
-# Round the upper arm's own axis (shoulder to elbow; the arms hang in an A), over its top and outer
-# side: a big top plate over the shoulder with a raised flange on its neck edge, then three lames
-# down the arm, each overlapping the one below, flaring out at its lower edge (on the arm's bone)
-S = SH['Left']; E = wpos(NODE['LowerArm-Left'])
-U = norm([E[m] - S[m] for m in range(3)])
-def perp(v): d = sum(v[m] * U[m] for m in range(3)); return norm([v[m] - d * U[m] for m in range(3)])
-O = perp([0.0, float(next((a.split('=')[1] for a in sys.argv if a.startswith('--pup=')), -0.2)), 1.0])         # its outer side (its left: +z), a little up: the arc's middle (out on the arm, clear of the horn)
-V = cross(U, O)
+# ---------------- a pauldron on the left shoulder (the user's reference) ----------------
+# A big hammered dome over the shoulder with a guard standing up at its neck edge, flaring out (dark
+# iron), and three dark brownish red lames stepping down the upper arm, each
+# tucked under the one above, a ridge down its middle; all on the arm's bone (they swing with it)
+NC['MAT4'] = 16
+_, ibm, _ = acc_rw(J['skins'][0]['inverseBindMatrices'])
+def bind(j):        # a joint's bind matrix's inverse (column-major): model space to the bone's own
+    return ibm(JOINTS.index(NODE[j]))
+def to_bone(M, p): return [M[r] * p[0] + M[4 + r] * p[1] + M[8 + r] * p[2] + M[12 + r] for r in range(3)]
+def joint_at(j):    # the joint in model space (its bind's rotation is orthonormal: -R^T t)
+    M = bind(j); return [-(M[4 * c] * M[12] + M[4 * c + 1] * M[13] + M[4 * c + 2] * M[14]) for c in range(3)]
+S, E = joint_at('UpperArm-Left'), joint_at('LowerArm-Left')
+U = norm([E[m] - S[m] for m in range(3)]); ARM = math.sqrt(sum((E[m] - S[m]) ** 2 for m in range(3)))
+def dot(a, b): return sum(a[m] * b[m] for m in range(3))
 ppos, pnrm, pidx, pshade = [], [], [], []
-def quad(a, b, c, e):
-    # one flat facet, both sides drawn (its shading baked in: the knight is lit by the ambient alone)
+def quad(a, b, c, e, away=None, mul=1.0):
+    # one flat facet (its shading baked in: the knight is lit by the ambient alone): facing away, or both sides drawn
     n = norm(cross([b[m] - a[m] for m in range(3)], [e[m] - a[m] for m in range(3)]))
+    if away is not None and dot(n, away) < 0: a, b, c, e = a, e, c, b; n = [-v for v in n]
     base = len(ppos)
     for v in (a, b, c, e): ppos.append(v); pnrm.append(n)
-    pshade.extend([0.5 + 0.55 * abs(sum(n[m] * LIGHT[m] for m in range(3)))] * 4)
-    pidx.extend([base, base + 1, base + 2, base, base + 2, base + 3, base, base + 2, base + 1, base, base + 3, base + 2])
-def plate(rows, thick):
-    # a solid plate: its outer face (the rows), an inner one set in toward the arm, and its edges
-    inner = [[[p[m] - (p[m] - S[m]) / (sum((p[k] - S[k]) ** 2 for k in range(3)) ** 0.5) * thick for m in range(3)] for p in r] for r in rows]
+    pshade.extend([mul * (0.3 + 0.85 * (abs(dot(n, LIGHT)) if away is None else max(0.0, dot(n, LIGHT))))] * 4)     # (one-sided: its shadowed side dark)
+    pidx.extend([base, base + 1, base + 2, base, base + 2, base + 3])
+    if away is None: pidx.extend([base, base + 2, base + 1, base, base + 3, base + 2])
+def plate(rows, thick, outward, both=False, rowmul=None):
+    # a solid plate: its outer face (the rows), facing out(p), an inner one set in by thick (drawn only where
+    # it shows: both), and its rims, each facing out
+    inner = [[[p[m] - outward(p)[m] * thick for m in range(3)] for p in r] for r in rows]
     nr, nc = len(rows), len(rows[0])
+    mid = [sum(p[m] for r in rows for p in r) / (nr * nc) for m in range(3)]
+    out = lambda *q: [sum(v[m] for v in q) / len(q) - mid[m] for m in range(3)]
     for i in range(nr - 1):
         for j in range(nc - 1):
-            quad(rows[i][j], rows[i][j + 1], rows[i + 1][j + 1], rows[i + 1][j])
-            quad(inner[i][j], inner[i + 1][j], inner[i + 1][j + 1], inner[i][j + 1])
-    for j in range(nc - 1):         # the top and bottom edges (the rims)
-        quad(rows[0][j], inner[0][j], inner[0][j + 1], rows[0][j + 1])
-        quad(rows[-1][j], rows[-1][j + 1], inner[-1][j + 1], inner[-1][j])
-    for i in range(nr - 1):         # its ends
-        quad(rows[i][0], rows[i + 1][0], inner[i + 1][0], inner[i][0])
-        quad(rows[i][-1], inner[i][-1], inner[i + 1][-1], rows[i + 1][-1])
-def arc(t, r, half, n=6):      # points round the arm at t along it, radius r, from 0.45 of half in front of the outer side to half behind it
-    out = []                    # (-V is forward: wrapped round to the front it met the horn's bulge)
-    for k in range(n):
-        ph = -0.45 * half + 1.45 * half * k / (n - 1)
-        out.append([S[m] + U[m] * t + (O[m] * math.cos(ph) + V[m] * math.sin(ph)) * r for m in range(3)])
-    return out
-K = float(next((a.split('=')[1] for a in sys.argv if a.startswith('--pk=')), 0.7))       # its size
-# Lying squarely over the shoulder (it stood up round the hanging arm: into the horns): a cap over the
-# shoulder's top and two lames stepping down over its outside, each a band of an ellipsoid round the
-# shoulder joint, the outer side only (from the front of the shoulder round to its back)
-CEN = [S[0], S[1] + float(next((a.split("=")[1] for a in sys.argv if a.startswith("--py=")), -0.02)), S[2] + float(next((a.split("=")[1] for a in sys.argv if a.startswith("--pz=")), 0.45))]     # out along the shoulder: its inner edge clear of the horn
-def band(ph0, ph1, grow, n_th=7):
+            f = (rows[i][j], rows[i][j + 1], rows[i + 1][j + 1], rows[i + 1][j])
+            quad(*f, away=outward(f[0]), mul=rowmul[i] if rowmul else 1.0)
+            if both: quad(inner[i][j], inner[i + 1][j], inner[i + 1][j + 1], inner[i][j + 1], away=[-v for v in outward(f[0])])
+    for j in range(nc - 1):
+        quad(rows[0][j], inner[0][j], inner[0][j + 1], rows[0][j + 1], away=out(rows[0][j], rows[0][j + 1]), mul=0.45)
+        quad(rows[-1][j], rows[-1][j + 1], inner[-1][j + 1], inner[-1][j], away=out(rows[-1][j], rows[-1][j + 1]), mul=0.45)
+    for i in range(nr - 1):
+        quad(rows[i][0], rows[i + 1][0], inner[i + 1][0], inner[i][0], away=out(rows[i][0], rows[i + 1][0]), mul=0.45)
+        quad(rows[i][-1], inner[i][-1], inner[i + 1][-1], rows[i + 1][-1], away=out(rows[i][-1], rows[i + 1][-1]), mul=0.45)
+# The dome: a bowl over the shoulder, its crown up and out from the joint (square to the arm), reaching
+# further down the arm than in toward the neck, its rim flared into a lip
+OA = norm([(0.0 if m != 1 else 1.0) - U[1] * U[m] for m in range(3)]); OB = cross(U, OA)       # round the arm: up-out, and across
+CEN = [S[m] + 0.04 * OA[m] for m in range(3)]
+DA, DX = 0.58, 0.7
+def dome(ph, th, k=1.0):     # th = 0 down the arm, pi in at the neck
+    ru = 0.54 + 0.2 * math.cos(th)
+    return [CEN[m] + k * (DA * math.cos(ph) * OA[m] + math.sin(ph) * (DX * math.sin(th) * OB[m] + ru * math.cos(th) * U[m])) for m in range(3)]
+dent = lambda i, j: 1.0 + 0.03 * math.sin(i * 2.3 + j * 1.7) * math.sin(j * 0.9 + i * 3.1)     # hammered
+NT = 12
+plate([[dome(0.04 + 1.2 * i / 4, 2 * math.pi * j / NT, dent(i, j % NT) * (1.08 if i == 4 else 1.0)) for j in range(NT + 1)] for i in range(5)], 0.07, lambda p: norm([p[m] - CEN[m] for m in range(3)]))
+# the guard: standing on the dome's neck-side rim, square to the shoulder line, its top rolled out
+guard = []
+for i, (up, out) in enumerate(((0.0, 0.0), (0.22, -0.01), (0.4, 0.08))):
+    row = []
+    for j in range(7):
+        u = -1.0 + 2.0 * j / 6
+        h = 1.0 - 0.5 * u * u
+        b0 = dome(1.0, math.pi - 0.95 * u)
+        row.append([b0[m] + up * h * OA[m] - (up * h * 0.6 - out * h) * U[m] for m in range(3)])
+    guard.append(row)
+plate(guard, 0.05, lambda p: U, both=True)
+ncap = len(ppos)
+# the lames: bands round the upper arm's outer side, each flaring at its lower edge over the next
+def lame(t0, t1, r):
     rows = []
-    for ph in (ph0, (ph0 + ph1) * 0.5, ph1):
+    for t, rr in ((t0, r), ((t0 + t1) * 0.5, r + 0.02), (t1, r + 0.06)):
         row = []
-        for k in range(n_th):
-            th = -1.75 + 3.5 * k / (n_th - 1)             # round the shoulder: front (-) to back (+), about its outside (+z)
-            sx, sz = math.sin(ph) * math.sin(-th), math.sin(ph) * math.cos(th)
-            row.append([CEN[0] + 0.62 * K * grow * sx, CEN[1] + 0.42 * K * grow * math.cos(ph), CEN[2] + 0.72 * K * grow * sz])
+        for j in range(7):
+            th = -2.0 + 4.0 * j / 6
+            ridge = 0.035 * max(0.0, 1.0 - abs(th) / 0.45)
+            c = [S[m] + U[m] * t * ARM for m in range(3)]
+            row.append([c[m] + (rr + ridge) * (math.cos(th) * OA[m] + math.sin(th) * OB[m]) for m in range(3)])
         rows.append(row)
     return rows
-for ph0, ph1, grow in ((float(next((a.split("=")[1] for a in sys.argv if a.startswith("--ptop=")), 0.35)), 0.62, 1.0), (0.52, 1.02, 1.05), (0.92, 1.38, 1.1)):
-    plate(band(ph0, ph1, grow), 0.07)
+def to_axis(p):
+    t = dot([p[m] - S[m] for m in range(3)], U); return norm([p[m] - S[m] - U[m] * t for m in range(3)])
+for i in range(3):
+    plate(lame(0.34 + 0.17 * i, 0.54 + 0.17 * i, 0.39 + 0.025 * i), 0.05, to_axis, rowmul=(0.6, 1.05))     # each in the shadow of the one above, lit at its rolled lower edge
 # the horns never through it: the closest the two come, the head turned and tipped as far as the life layer takes it
 def rot(p, yaw, pitch):
     x, y, z = p[0] - HEAD[0], p[1] - HEAD[1], p[2] - HEAD[2]
@@ -279,16 +265,21 @@ gap = 1e9
 for yaw in (-0.85, -0.45, 0.0, 0.25, 0.45):         # (the head's look and flinch, and its clips' own tilt, relative to the chest; toward the pauldron (+) the life layer turns it at most 0.45)
     for pitch in (-0.4, 0.0, 0.4):
         hv = [rot(p, yaw, pitch) for p in pos[::3]]
-        for q in ppos[::2]:
+        for q in ppos[:ncap:2]:
             for h in hv:
                 d = sum((q[m] - h[m]) ** 2 for m in range(3))
                 if d < gap: gap = d; worst = (yaw, pitch)
-rest = min(sum((q[m] - h[m]) ** 2 for m in range(3)) for q in ppos for h in pos) ** 0.5
+rest = min(sum((q[m] - h[m]) ** 2 for m in range(3)) for q in ppos[:ncap] for h in pos) ** 0.5
 print("horn to pauldron: at rest %.2f, closest %.2f (glTF units) at yaw %.2f pitch %.2f" % (rest, gap ** 0.5, *worst))
 kp = [pr for m in J['meshes'] for pr in m['primitives'] if MATS[pr['material']] == 'knight'][0]
 _, kuv, _ = acc_rw(kp['attributes']['TEXCOORD_0']); _, kcol, _ = acc_rw(kp['attributes']['COLOR_0'])
 c0 = kcol(0)
-add_prim(ppos, pnrm, pidx, JOINTS.index(NODE['Spine1']), 'knight', kuv(0), [[min(1.0, c0[m] * pshade[k]) for m in range(3)] + [c0[3]] for k in range(len(ppos))])     # pinned to the chest: the arm rising high (the Holy Slam's tell) carried it into the horns
+pcol = [[min(1.0, c0[m] * pshade[k]) for m in range(3)] + [c0[3]] for k in range(len(ppos))]
+# its own materials, copies of the knight's (the game tints them): the dome and guard dark iron, the lames dark brownish red
+for name in ('iron', 'lames'):
+    J['materials'].append(dict(J['materials'][MATS.index('knight')], name=name)); MATS.append(name)
+add_prim(ppos[:ncap], pnrm[:ncap], [i for i in pidx if i < ncap], JOINTS.index(NODE['UpperArm-Left']), 'iron', kuv(0), pcol[:ncap])     # on the arm (pinned to the chest, it was left behind the shoulder as the clips swing the arm forward)
+add_prim(ppos[ncap:], pnrm[ncap:], [i - ncap for i in pidx if i >= ncap], JOINTS.index(NODE['UpperArm-Left']), 'lames', kuv(0), pcol[ncap:])
 
 # The sword on its own bone (IK_Hand.R, which nothing else is skinned to): the game sets it on the
 # hand each frame, and turns the sword in the grip for the lunge's thrust (fallen_knight.c sword_carry)
@@ -312,12 +303,13 @@ with open(OUT, 'wb') as f:
     f.write(struct.pack('<I4s', len(jb), b'JSON')); f.write(jb)
     f.write(struct.pack('<I4s', len(BIN), b'BIN\0')); f.write(BIN)
 print("wrote", OUT, "horn verts", nhorn, "pauldron verts", len(ppos))
-# a test aid's sample points (HLE_LOG_FWCLIP): the horns' in the head bone's space, the pauldron's in
-# Spine1's (it's pinned to the chest) (glTF units; rest rotations are identity, so a bone's space is offset only)
-AL = wpos(NODE['Spine1'])
+# a test aid's sample points (HLE_LOG_FWCLIP), each in its bone's own space (glTF units): the horns'
+# (head), the pauldron's (the upper arm)
+LA = bind('UpperArm-Left')
 with open(os.path.join(ROOT, "src/game/fallen_knight/fw_clip_points.h"), 'w') as f:
-    f.write("// Generated by tools/fw_knight_model.py: sample points of the Fallen Warrior's horns (head bone) and\n// pauldron (pinned to Spine1), in their bones' spaces, glTF units (test aid HLE_LOG_FWCLIP)\n")
-    hs = pos[:nhorn:3]; ps = ppos[::4]
+    f.write("// Generated by tools/fw_knight_model.py: sample points of the Fallen Warrior's horns (head bone), its\n// pauldron (UpperArm-Left), in their bones' spaces, glTF units (test aid HLE_LOG_FWCLIP)\n")
+    hs = [to_bone(bind('Head'), v) for v in pos[:nhorn:3]]
+    ps = [to_bone(LA, v) for v in ppos[::4]]
     f.write("#define FW_CLIP_NH %d\n#define FW_CLIP_NP %d\n" % (len(hs), len(ps)))
-    f.write("static const float FW_CLIP_H[FW_CLIP_NH][3] = {\n" + "".join("    { %.3ff, %.3ff, %.3ff },\n" % tuple(v[m] - HEAD[m] for m in range(3)) for v in hs) + "};\n")
-    f.write("static const float FW_CLIP_P[FW_CLIP_NP][3] = {\n" + "".join("    { %.3ff, %.3ff, %.3ff },\n" % tuple(v[m] - AL[m] for m in range(3)) for v in ps) + "};\n")
+    f.write("static const float FW_CLIP_H[FW_CLIP_NH][3] = {\n" + "".join("    { %.3ff, %.3ff, %.3ff },\n" % tuple(v) for v in hs) + "};\n")
+    f.write("static const float FW_CLIP_P[FW_CLIP_NP][3] = {\n" + "".join("    { %.3ff, %.3ff, %.3ff },\n" % tuple(v) for v in ps) + "};\n")
