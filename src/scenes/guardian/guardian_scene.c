@@ -314,7 +314,6 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_BOSS_STEP1]  = "rom:/audio/sfx/boss/boss_step1_22k.wav64",
     [SCENE1_SFX_DRAGON_ROAR] = "rom:/audio/sfx/boss/dragon_roar_22k.wav64",
     [SCENE1_SFX_DRAGON_GROWL] = "rom:/audio/sfx/hostile/dragon_growl_22k.wav64",
-    [SCENE1_SFX_SPELL_WAVE]  = "rom:/audio/sfx/fx/spell_wave_22k.wav64",
     [SCENE1_SFX_SPELL_CAST]  = "rom:/audio/sfx/fx/spell_cast_22k.wav64",
     [SCENE1_SFX_BLADE_SLASH] = "rom:/audio/sfx/fx/halfmoon_slash_22k.wav64",    // Halfmoon Slash (tools/halfmoon_sfx.py)
     [SCENE1_SFX_HEAL]        = "rom:/audio/sfx/fx/heal_chime_22k.wav64",
@@ -350,7 +349,6 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_CHAR_FOOTSTEP_WALK4] = "rom:/audio/sfx/character/char_footstep_walk4_22k.wav64",
 
     [SCENE1_SFX_CHAR_HURT1]          = "rom:/audio/sfx/character/hurt1_22k.wav64",
-    [SCENE1_SFX_CHAR_HURT2]          = "rom:/audio/sfx/character/hurt2_22k.wav64",
     [SCENE1_SFX_ROLL_SWISH] = "rom:/audio/sfx/character/roll_swish_22k.wav64",
     [SCENE1_SFX_ARMOR_CLANK] = "rom:/audio/sfx/character/armor_clank_22k.wav64",
     [SCENE1_SFX_WAR_CRY] = "rom:/audio/sfx/hostile/war_cry_22k.wav64",

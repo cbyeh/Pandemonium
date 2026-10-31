@@ -175,7 +175,7 @@ Sound effects: Gomo Sounds (gomosounds.com)
 | Asset | Used for | Author | Source |
 |---|---|---|---|
 | CC0 Deep Monster Roar | Shadowborne's roar | trazzz123 | [OpenGameArt](https://opengameart.org/content/cc0-deep-monster-roar) |
-| 80 CC0 RPG SFX | The Shackled Sun's chains, the perfect dodge, Storm Blade, Moonlight Splitter | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-rpg-sfx) |
+| 80 CC0 RPG SFX | The Shackled Sun's chains, the perfect dodge, Moonlight Splitter | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-rpg-sfx) |
 | Dark Fantasy Soulslike SFX Pack | The Bonus bosses' fire, spells, beams and wings; the knight's skills, roll, potion, hurt and armour | Gomo Sounds | [itch.io](https://mauriciopazp.itch.io/dark-fantasy-soulslike-sfx-pack) |
 | Shadowforge Convergence | Shadowborne's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
 | Veil of Eternal Nightfall | The Shackled Sun's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |

@@ -2826,7 +2826,7 @@ void character_update(void)
                     if (storm > 0.0f) {
                         boss_apply_hit(boss, storm, 0.0f);     // a boon's damage: no stagger of its own
                         skill_fx_spawn_pillar(boss->pos);
-                        audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_WAVE, 0.8f, 0.0f);
+                        audio_play_scene_sfx_dist(character_random_hit_sfx(), 1.0f, 0.0f);   // a second sword hit
                     }
 
                     // Spawn blood at the actual sword/boss contact point. The sword tip alone
@@ -3391,7 +3391,7 @@ void character_apply_damage(float amount)
         }
     } else {
         // Non-knockdown hits should not leave knockback running
-        audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_HURT1 + (int)(rand_custom_u32() & 1), 1.0f, 0.0f);
+        audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_HURT1, 1.0f, 0.0f);
         screen_shake_set_shake_mag(10.0f);
         strongKnockbackActive = false;
     }

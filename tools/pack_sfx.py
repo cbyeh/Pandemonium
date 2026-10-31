@@ -5,9 +5,12 @@ files, so they aren't in the repo (.gitignore): get the pack and run this before
   python tools/pack_sfx.py path/to/Dark_Fantasy_Soulslike_SFX_Pack.zip    (or the unzipped folder)
 
 Needs numpy (Blender's bundled Python has it) and ffmpeg. Each sound is cut to 22 kHz mono, its
-attack set where the game's timing expects it, its trailing silence cut, levelled (the Bonus
-bosses' at the Guardian's, as tools/boss_sfx_levels.py), and the dry ones given a short stone-hall
-reverb in the style of the game's original sounds. The Fallen Warrior's are made heavier.
+attack set where the game's timing expects it, its trailing silence cut, given a stone-hall reverb
+as long as the game's original sounds' (the bosses' ring ~1.3 s, the knight's ~0.8 s) and levelled:
+the Bonus bosses' at the Guardian's (tools/boss_sfx_levels.py), the knight's skills at his sword
+hits as heard (the file's loudness with the volume the game plays it at). The Fallen Warrior's are
+made heavier. It also remakes, from their dry sources in tools/sfx_src, the CC0 and made sounds
+that get the same reverb (those are in the repo).
 """
 import os
 import subprocess
@@ -74,7 +77,7 @@ def boss(x, db=0.0):    # the Guardian's level (boss_sfx_levels), `db` under it
     return L.process(x, SR) * 10 ** (db / 20)
 
 
-def _ir(rt60=1.1, pre=0.02):
+def _ir(rt60, pre=0.02):
     rng = np.random.default_rng(1); n = int(SR * rt60 * 1.2); t = np.arange(n) / SR
     h = rng.standard_normal(n) * np.exp(-6.9 * t / rt60); out = np.zeros(n); s = 0.0
     for i in range(n):      # darker as it decays
@@ -83,14 +86,18 @@ def _ir(rt60=1.1, pre=0.02):
     return out / np.sqrt((out ** 2).sum())
 
 
-IR = _ir()
+HALL = _ir(2.2)     # the bosses': their sounds ring ~1.3 s (-10 to -40 dB), the Guardian's 0.8-2.0
+ROOM = _ir(1.6)     # the knight's: ~0.8 s, his 0.6-1.1
 
 
-def verb(x, wet_db=-9.0, keep_level=False):
-    n = len(x) + len(IR) - 1; N = 1 << (n - 1).bit_length()
-    w = np.fft.irfft(np.fft.rfft(x, N) * np.fft.rfft(IR, N), N)[:n]
-    y = trim_tail(np.concatenate([x, np.zeros(len(IR) - 1)]) + w * 10 ** (wet_db / 20))
-    return to_lufs(y, L.loud(x, SR)) if keep_level else y
+def verb(x, ir=HALL, wet_db=-6.0):
+    n = len(x) + len(ir) - 1; N = 1 << (n - 1).bit_length()
+    w = np.fft.irfft(np.fft.rfft(x, N) * np.fft.rfft(ir, N), N)[:n]
+    return trim_tail(np.concatenate([x, np.zeros(len(ir) - 1)]) + w * 10 ** (wet_db / 20))
+
+
+def heard(db, vol):     # the file's loudness that plays at `db` when the game plays it at `vol`
+    return db - 20 * np.log10(vol)
 
 
 def heavy(x):       # deeper and heavier: pitched down 0.82x, the low end lifted
@@ -102,41 +109,54 @@ def main():
     P = pack_root(sys.argv[1])
     pk = lambda name: ffmpeg(os.path.join(P, name + ".wav"))
     orig = lambda name: L.read(os.path.join(SFX, name + "_22k.wav"))[0]
-    out = {}
+    dry = lambda name: L.read(os.path.join(ROOT, "tools", "sfx_src", name + "_22k.wav"))[0]
+    hits = np.mean([L.loud(orig(f"character/char_attack_hit{i}"), SR) for i in range(1, 7)])  # the knight's sword hits
+    step = L.loud(orig("boss/boss_step1"), SR)
+    out, kept = {}, {}
 
     # The Bonus bosses' (the attack where the old sound's was: fire 0.01 s, cast 0.03, nova 0.28, beam 0.12, blast 0.24)
-    out["hostile/fire_burst"] = boss(trim_tail(at(pk("Sorcery/fire_sorcery_explode_01"), 220)))     # the Fallen Warrior's lunge
-    out["hostile/fire_sun"] = boss(trim_tail(at(pk("Sorcery/fire_sorcery_explode_02"), 220)))
-    out["hostile/fire_dragon"] = boss(trim_tail(at(pk("Sorcery/fire_sorcery_explode_03"), 220)))
-    out["hostile/dragon_breath"] = verb(boss(trim_tail(at(pk("Enemies/ancient_dragon_breathe_fire_03"), 220))), keep_level=True)
-    out["hostile/wing_flap"] = boss(trim_tail(lead(pk("Enemies/ancient_dragon_flap_wings_01"))), -6)
-    out["hostile/wing_flyby"] = boss(trim_tail(lead(pk("Enemies/ancient_dragon_flap_wings_03"))), -3)
-    out["hostile/spell_cast"] = verb(boss(trim_tail(at(pk("Sorcery/dark_sorcery_cast_03"), 660))), keep_level=True)
-    out["hostile/dark_nova"] = boss(trim_tail(at(pk("Sorcery/dark_sorcery_cast_01"), 6160)))
-    out["hostile/dark_beam"] = verb(boss(trim_tail(at(pk("Sorcery/dark_sorcery_cast_02"), 2640))), keep_level=True)
-    out["hostile/rock_blast"] = boss(trim_tail(at(pk("Sorcery/fire_sorcery_explode_02"), 5280)))
+    out["hostile/fire_burst"] = boss(verb(trim_tail(at(pk("Sorcery/fire_sorcery_explode_01"), 220))))     # the Fallen Warrior's lunge
+    out["hostile/fire_sun"] = boss(verb(trim_tail(at(pk("Sorcery/fire_sorcery_explode_02"), 220))))
+    out["hostile/fire_dragon"] = boss(verb(trim_tail(at(pk("Sorcery/fire_sorcery_explode_03"), 220))))
+    out["hostile/dragon_breath"] = boss(verb(trim_tail(at(pk("Enemies/ancient_dragon_breathe_fire_03"), 220))))
+    out["hostile/wing_flap"] = boss(verb(trim_tail(lead(pk("Enemies/ancient_dragon_flap_wings_01")))), -6)   # (under the attacks)
+    out["hostile/wing_flyby"] = boss(verb(trim_tail(lead(pk("Enemies/ancient_dragon_flap_wings_03")))), -3)
+    out["hostile/spell_cast"] = boss(verb(trim_tail(at(pk("Sorcery/dark_sorcery_cast_03"), 660))))
+    out["hostile/dark_nova"] = boss(verb(trim_tail(at(pk("Sorcery/dark_sorcery_cast_01"), 6160))))
+    out["hostile/dark_beam"] = boss(verb(trim_tail(at(pk("Sorcery/dark_sorcery_cast_02"), 2640))))
+    out["hostile/rock_blast"] = boss(verb(trim_tail(at(pk("Sorcery/fire_sorcery_explode_02"), 5280))))
     out["hostile/fw_slice"] = boss(heavy(verb(lead(pk("Player/ashen_knight_heavy_attack_03")))))   # the Fallen Warrior's Moon Blade
-    # The knight's (at the old sounds' loudness: potion and clank 5 dB under them)
+    # The knight's: skills at his sword hits as heard; hurt at the old grunt's; potion, clank, roll as quiet as chosen
     roll = to_lufs(trim_tail(at(pk("Player/ashen_knight_dodge_roll_01"), 0)), -30.968)
-    out["character/roll_swish"] = verb(roll, keep_level=True)
-    out["hostile/fw_roll"] = to_lufs(heavy(verb(roll)), L.loud(orig("boss/boss_step1"), SR))
-    out["character/armor_clank"] = verb(to_lufs(trim_tail(at(pk("Weapons/longsword_hit_armor_01"), 2640)), -21.981 - 5), keep_level=True)
-    out["fx/heal_chime"] = verb(to_lufs(trim_tail(at(pk("Player/ashen_knight_drink_flask_02"), 5060)), -24.703 - 5), keep_level=True)
-    out["fx/mbd_x"] = to_lufs(verb(lead(pk("Player/ashen_knight_heavy_attack_01"))), -17.9)          # Moon Blade Dance
-    out["fx/cleave_beam"] = to_lufs(verb(lead(pk("Player/ashen_knight_light_attack_03")), -12), -17.9)  # Crescent Cleave
-    umph = L.loud(orig("character/umph"), SR)
-    out["character/hurt1"] = to_lufs(verb(lead(pk("Player/ashen_knight_hurt_01"))), umph)
-    out["character/hurt2"] = to_lufs(verb(lead(pk("Player/ashen_knight_hurt_03"))), umph)
-    # Halfmoon Slash: the heavy attack at the start of the made sound (tools/sfx_src: tools/halfmoon_sfx.py's)
-    hm = L.read(os.path.join(ROOT, "tools", "sfx_src", "halfmoon_slash_made_22k.wav"))[0]
-    h3 = verb(lead(pk("Player/ashen_knight_heavy_attack_03")))
+    out["character/roll_swish"] = to_lufs(verb(roll, ROOM), -30.968)
+    out["hostile/fw_roll"] = to_lufs(heavy(verb(roll)), step)
+    out["character/armor_clank"] = to_lufs(verb(trim_tail(at(pk("Weapons/longsword_hit_armor_01"), 2640)), ROOM), -21.981 - 5)
+    out["fx/heal_chime"] = to_lufs(verb(trim_tail(at(pk("Player/ashen_knight_drink_flask_02"), 5060)), ROOM), -24.703 - 5)
+    out["fx/mbd_x"] = to_lufs(verb(lead(pk("Player/ashen_knight_heavy_attack_01")), ROOM), heard(hits, 0.55))     # Moon Blade Dance
+    out["fx/cleave_beam"] = to_lufs(verb(lead(pk("Player/ashen_knight_light_attack_03")), ROOM), heard(hits, 0.45))  # Crescent Cleave
+    out["character/hurt1"] = to_lufs(verb(lead(pk("Player/ashen_knight_hurt_01")), ROOM), L.loud(orig("character/umph"), SR))
+    # Halfmoon Slash: the heavy attack at the start of the made sound (tools/halfmoon_sfx.py's), the whole at his hits
+    hm = dry("halfmoon_slash_made")
+    h3 = verb(lead(pk("Player/ashen_knight_heavy_attack_03")), ROOM)
     h3 = h3 * 10 ** ((L.loud(hm, SR) - 2 - L.loud(h3, SR)) / 20)
     mix = np.zeros(max(len(hm), len(h3))); mix[:len(hm)] += hm; mix[:len(h3)] += h3
-    out["fx/halfmoon_slash"] = L.limit(mix * 10 ** ((L.loud(hm, SR) - L.loud(mix, SR)) / 20))
+    out["fx/halfmoon_slash"] = to_lufs(verb(mix, ROOM, -9), heard(hits, 1.0))
 
-    for name, y in out.items():
+    # In the repo: the CC0 and made sounds, the same reverb over their dry sources
+    kept["fx/spell_cast"] = to_lufs(verb(dry("spell_cast_rubberduck"), ROOM), heard(hits, 0.8))     # the perfect dodge
+    kept["hostile/spell_wave"] = boss(verb(dry("spell_wave_rubberduck_boss")))     # Moonlight Splitter's cue
+    for n in ("chain1", "chain2", "war_cry", "slam_impact"):
+        kept["hostile/" + n] = boss(verb(dry(n)))
+    kept["hostile/halfmoon_slash"] = boss(verb(dry("halfmoon_slash_boss")))       # Moonlight Splitter's crescents
+    kept["boss/dragon_roar"] = to_lufs(verb(dry("dragon_roar")), L.loud(dry("dragon_roar"), SR))
+    kept["hostile/dragon_growl"] = to_lufs(verb(dry("dragon_growl")), L.loud(dry("dragon_growl"), SR))
+    kept["hostile/char_swing1"] = boss(verb(heavy(orig("character/char_swing1")), HALL, -9))    # the Fallen Warrior's swing
+    for i in range(1, 5):   # its footfalls: the knight's, heavier, at the Guardian's
+        kept[f"hostile/fw_step{i}"] = to_lufs(verb(heavy(orig(f"character/char_footstep_run{i}")), ROOM, -9), step)
+
+    for name, y in list(out.items()) + list(kept.items()):
         L.write(os.path.join(SFX, name + "_22k.wav"), y, SR)
-        print(f"{name:24s} {len(y) / SR:4.2f}s {L.loud(y, SR):6.1f} LUFS")
+        print(f"{name:24s} {len(y) / SR:4.2f}s {L.loud(y, SR):6.1f} LUFS{'' if name in out else '  (in the repo)'}")
 
 
 if __name__ == "__main__":

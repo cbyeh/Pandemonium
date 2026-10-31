@@ -24,7 +24,6 @@ typedef enum Scene1Sfx
     SCENE1_SFX_DRAGON_ROAR,     // CC0, "Deep Monster Roar" by trazzz123 (OpenGameArt)
 
     // The knight's skills and the Bonus bosses' spells (the Dark Fantasy Soulslike pack; the chains CC0, rubberduck)
-    SCENE1_SFX_SPELL_WAVE,
     SCENE1_SFX_SPELL_CAST,
     SCENE1_SFX_BLADE_SLASH,
     SCENE1_SFX_HEAL,
@@ -62,8 +61,7 @@ typedef enum Scene1Sfx
     SCENE1_SFX_CHAR_FOOTSTEP_WALK3,
     SCENE1_SFX_CHAR_FOOTSTEP_WALK4,
 
-    SCENE1_SFX_CHAR_HURT1,      // getting hurt: one of two, at random
-    SCENE1_SFX_CHAR_HURT2,
+    SCENE1_SFX_CHAR_HURT1,
     SCENE1_SFX_ROLL_SWISH,
     SCENE1_SFX_ARMOR_CLANK,
     SCENE1_SFX_WAR_CRY,         // the grunt, deeper, with an echo
