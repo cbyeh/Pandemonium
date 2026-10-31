@@ -252,11 +252,11 @@ def arc(t, r, half, n=6):      # points round the arm at t along it, radius r, f
         ph = -0.45 * half + 1.45 * half * k / (n - 1)
         out.append([S[m] + U[m] * t + (O[m] * math.cos(ph) + V[m] * math.sin(ph)) * r for m in range(3)])
     return out
-K = float(next((a.split('=')[1] for a in sys.argv if a.startswith('--pk=')), 0.85))       # its size
+K = float(next((a.split('=')[1] for a in sys.argv if a.startswith('--pk=')), 0.7))       # its size
 # Lying squarely over the shoulder (it stood up round the hanging arm: into the horns): a cap over the
 # shoulder's top and two lames stepping down over its outside, each a band of an ellipsoid round the
 # shoulder joint, the outer side only (from the front of the shoulder round to its back)
-CEN = [S[0], S[1] + float(next((a.split("=")[1] for a in sys.argv if a.startswith("--py=")), -0.02)), S[2] + float(next((a.split("=")[1] for a in sys.argv if a.startswith("--pz=")), 0.32))]     # out along the shoulder: its inner edge clear of the horn
+CEN = [S[0], S[1] + float(next((a.split("=")[1] for a in sys.argv if a.startswith("--py=")), -0.02)), S[2] + float(next((a.split("=")[1] for a in sys.argv if a.startswith("--pz=")), 0.45))]     # out along the shoulder: its inner edge clear of the horn
 def band(ph0, ph1, grow, n_th=7):
     rows = []
     for ph in (ph0, (ph0 + ph1) * 0.5, ph1):
@@ -267,7 +267,7 @@ def band(ph0, ph1, grow, n_th=7):
             row.append([CEN[0] + 0.62 * K * grow * sx, CEN[1] + 0.42 * K * grow * math.cos(ph), CEN[2] + 0.72 * K * grow * sz])
         rows.append(row)
     return rows
-for ph0, ph1, grow in ((float(next((a.split("=")[1] for a in sys.argv if a.startswith("--ptop=")), 0.05)), 0.62, 1.0), (0.52, 1.02, 1.05), (0.92, 1.38, 1.1)):
+for ph0, ph1, grow in ((float(next((a.split("=")[1] for a in sys.argv if a.startswith("--ptop=")), 0.35)), 0.62, 1.0), (0.52, 1.02, 1.05), (0.92, 1.38, 1.1)):
     plate(band(ph0, ph1, grow), 0.07)
 # the horns never through it: the closest the two come, the head turned and tipped as far as the life layer takes it
 def rot(p, yaw, pitch):
@@ -289,6 +289,17 @@ kp = [pr for m in J['meshes'] for pr in m['primitives'] if MATS[pr['material']] 
 _, kuv, _ = acc_rw(kp['attributes']['TEXCOORD_0']); _, kcol, _ = acc_rw(kp['attributes']['COLOR_0'])
 c0 = kcol(0)
 add_prim(ppos, pnrm, pidx, JOINTS.index(NODE['Spine1']), 'knight', kuv(0), [[min(1.0, c0[m] * pshade[k]) for m in range(3)] + [c0[3]] for k in range(len(ppos))])     # pinned to the chest: the arm rising high (the Holy Slam's tell) carried it into the horns
+
+# The sword on its own bone (IK_Hand.R, which nothing else is skinned to): the game sets it on the
+# hand each frame, and turns the sword in the grip for the lunge's thrust (fallen_knight.c sword_carry)
+SWORD_J = JOINTS.index(NODE['IK_Hand.R'])
+for m in J['meshes']:
+    for pr in m['primitives']:
+        if MATS[pr['material']] != 'sword': continue
+        n, _, jput = acc_rw(pr['attributes']['JOINTS_0'])
+        for k in range(n): jput(k, [SWORD_J, 0, 0, 0])
+        n, _, wput = acc_rw(pr['attributes']['WEIGHTS_0'])
+        for k in range(n): wput(k, [1.0, 0.0, 0.0, 0.0] if J['accessors'][pr['attributes']['WEIGHTS_0']]['componentType'] == 5126 else [255, 0, 0, 0])
 
 J.pop('animations', None)       # (it plays the knight's own)
 J['buffers'][0]['byteLength'] = len(BIN)

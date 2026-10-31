@@ -45,24 +45,30 @@ extern T3DModel* characterModel;       // the player's knight model (character.c
 
 enum {
     FKA_IDLE, FKA_WALK, FKA_RUN, FKA_ROLL, FKA_ATTACK1, FKA_ATTACK2, FKA_ATTACK3,
-    FKA_CHARGED, FKA_CLEAVE, FKA_HALFMOON, FKA_DEATH, FKA_BACKFLIP, FKA_KNEEL, FKA_BACKSTEP, FKA_HOLYRAISE, FKA_PLUNGELEAP, FKA_HERODROP,
+    FKA_CHARGED, FKA_CLEAVE, FKA_HALFMOON, FKA_DEATH, FKA_BACKFLIP, FKA_KNEEL, FKA_BACKSTEP, FKA_HOLYRAISE, FKA_PLUNGELEAP, FKA_HERODROP, FKA_LUNGE,
     FKA_STRAFE_L, FKA_STRAFE_R, FKA_COUNT
 };
 static const char *ANIM_NAMES[FKA_COUNT] = {
     "Idle", "Walk1", "Run", "Roll", "Attack1", "Attack2", "Attack3",
-    "AttackCharged", "SkillCleave", "SkillHalfmoon", "Death", "SkillBackflip", "StaggerKneel", "WalkBackwards", "HolyRaise", "PlungeLeap", "HeroDrop",
+    "AttackCharged", "SkillCleave", "SkillHalfmoon", "Death", "SkillBackflip", "StaggerKneel", "WalkBackwards", "HolyRaise", "PlungeLeap", "HeroDrop", "Lunge",
     "StrafeWalkLeft", "StrafeWalkRight",
 };
 static const bool ANIM_LOOP[FKA_COUNT] = { true, true, true, [FKA_BACKSTEP] = true, [FKA_STRAFE_L] = true, [FKA_STRAFE_R] = true };
 
 typedef enum {
     FK_INTRO, FK_CHASE, FK_COMBO, FK_ROLL, FK_CLEAVE, FK_HALFMOON, FK_MOONBLADE, FK_RECOVER, FK_STAGGER, FK_DEAD,
-    FK_SPLITTER, FK_UPDOWN, FK_TRISLAM, FK_HOLYSLAM, FK_ROLLCUT, FK_PLUNGE,
+    FK_SPLITTER, FK_UPDOWN, FK_TRISLAM, FK_HOLYSLAM, FK_ROLLCUT, FK_PLUNGE, FK_LUNGE,
 } FkState;
 
 // The combo's third blow: the plain overhead, the same held at the top of its rise (a roll
 // on its first motion is tracked and caught), or a lunging thrust
 enum { FIN_SLASH, FIN_DELAY, FIN_THRUST };
+
+// The fire lunge: the full one from far off (any distance), a quicker short one, or a leap back
+// away from the player and then the full one
+enum { LUNGE_FULL, LUNGE_SHORT, LUNGE_BACK };
+#define FIRE_MAX   24       // points along one lunge's fire trail, at most (spaced to fit)
+#define FIRE_LIFE  1.4f     // each stretch burns this long, then smoke: out in the order it was lit
 
 // The strike of each swing clip (clip seconds), measured from the blade's speed: the
 // windups before it can't hurt. Attack1-3 (Attack2 rises from low in front: the up-down's
@@ -89,7 +95,7 @@ static struct {
     bool striking;          // inside a swing's damage window this frame
     float groundY, velY;
     float moveX, moveZ;     // roll / jump drift
-    float cdCleave, cdHalfmoon, cdMoonblade, cdRoll, cdSplitter, cdUpdown, cdTri, cdHoly, cdPlunge;
+    float cdCleave, cdHalfmoon, cdMoonblade, cdRoll, cdSplitter, cdUpdown, cdTri, cdHoly, cdPlunge, cdLunge, cdBackLunge;
     int finisher;           // the combo's third blow (FIN_*)
     float holdT;            // time held in a finisher's pause
     bool counter;           // the roll comes up into a rising cut
@@ -105,7 +111,11 @@ static struct {
     float pickJit;          // this chase's offset to when it picks its next move (+-0.2 s: no metronome)
     int queued;             // a blow it has picked and is closing in to land (-1: none)
     float queuedAt;         // since when (kept off 2 s, it takes a move that reaches instead)
-    float lastUsed[9];      // when each move last came (choose: the longer ago, the likelier)
+    float lastUsed[11];     // when each move last came (choose: the longer ago, the likelier)
+    int lungeKind;          // LUNGE_*
+    float lungeO[2], lungeLen, lungeGone, fireGap;     // the skim: from, how far, how far so far, between its flames
+    int fireLit;            // fire trail points lit along this skim
+    float fireHitT;         // until the trail can hurt again
     bool heavy;             // spent (after Holy Slam): hunched, sword down; else just breathing
     int bladeArc;           // its sword back up after that: 0 point-down, 1 out to its right, 2 onto the shoulder, 3 the clip's again
     float tiredW, breathPh; // the breathing pose's current weight, and its phase
@@ -116,6 +126,13 @@ static struct {
     float gripW;            // how far its left hand is on the hilt: both hands on the sword in its big moves
     float gripFit;          // how well the hilt is placed for it (reach, ahead of the body), eased
     T3DBone gripKeep[3];    // the clip's own pose of those, put back after drawing
+    // The sword's own bone (IK_Hand.R, unused by the mesh else: tools/fw_knight_model.py skins the
+    // sword to it), on the hand each frame; in the lunge's thrust the sword turned in the grip
+    int swordCarrier;
+    T3DQuat carrierK; float carrierKP[3];   // its rest pose in the hand's (the sword's verts are baked in its rest space)
+    T3DQuat seatQ;          // the sword's turn in the hand (about GRIP_P), identity but in the thrust
+    float seatW;            // and how far it has moved over, GRIP_P to GRIP_T
+    T3DBone handKeep;       // the clip's own pose of the hand, put back after drawing
     float beam2T, beam2O[3], beam2V[3], beam2Life;  // a Moon Blade cross's second beam, after the first (< 0: none)
     // Life (life_*): a layer of turns on the waist, spine, head and free arm over the clips
     int waistBone;
@@ -143,7 +160,7 @@ static bool committed;
 static bool hle_counts(void)    // HLE_SIDESTEP_NEW: only the new moves (the combo's third, the roll's cut, the plunge)
 {
 #ifdef HLE_SIDESTEP_NEW
-    return (s.state == FK_COMBO && s.step == 3) || s.state == FK_ROLLCUT || s.state == FK_PLUNGE;
+    return (s.state == FK_COMBO && s.step == 3) || s.state == FK_ROLLCUT || s.state == FK_PLUNGE || s.state == FK_LUNGE;
 #else
     return true;
 #endif
@@ -163,7 +180,7 @@ static void play(int a, bool restart)
     t3d_skeleton_blend(&s.skelBlend, &s.skel, &s.skel, 0.0f);    // snapshot the current pose
     // swings cut in fast (the blade's hits are read from the pose); going down, dying and
     // moving about ease over longer
-    s.blendDur = a == FKA_KNEEL ? 0.6f : a == FKA_HOLYRAISE ? 0.4f : a == FKA_DEATH ? 0.35f : (a == FKA_IDLE || a == FKA_WALK || a == FKA_RUN || s.anim == FKA_ROLL) ? 0.3f : 0.15f;
+    s.blendDur = a == FKA_KNEEL ? 0.6f : a == FKA_LUNGE ? 0.3f : a == FKA_HOLYRAISE ? 0.4f : a == FKA_DEATH ? 0.35f : (a == FKA_IDLE || a == FKA_WALK || a == FKA_RUN || s.anim == FKA_ROLL) ? 0.3f : 0.15f;
     s.blendT = s.blendDur;
     if (s.anim >= 0) t3d_anim_set_playing(&s.anims[s.anim], false);
     s.anim = a;
@@ -324,6 +341,27 @@ static void sfx_cam(int id, float vol)
     audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
 }
 
+static void quat_rotate(const T3DQuat *q, const float v[3], float out[3]);
+
+// The knight's grip, in the hand's space (model units): the handle crosses the palm, so with the
+// palm in and the blade along the arm the hand folds 90 degrees, fingers down. In the lunge's
+// thrust the hand stays straight and the sword turns in it instead, about the grip, along the
+// forearm (measured from fw_knight.glb's rest mesh)
+static const float GRIP_P[3] = { 43.6f, 43.7f, 6.9f };          // where the blade's axis passes through the fist
+static const float BLADE_H[3] = { -0.9902f, 0.0433f, -0.1324f }; // the blade's axis
+static const float FORE_H[3] = { 0.0773f, 0.9450f, 0.3178f };    // the forearm's line (elbow to wrist), the wrist straight
+static const float PALM_H[3] = { 0.137f, 0.286f, -0.937f };      // the palm's side
+static const float GRIP_T[3] = { 7.96f, 0.96f, 1.5f };            // the handle's place in the straight hand: on the forearm's line a little under it, the guard at the fist's front (74 along)
+
+/** A point of the sword in the hand's space, as it sits in the hand now (turned by seatQ about the
+ *  grip, which moves over to GRIP_T) */
+static void sword_seat(const float v[3], float out[3])
+{
+    float d[3] = { v[0] - GRIP_P[0], v[1] - GRIP_P[1], v[2] - GRIP_P[2] }, r[3];
+    quat_rotate(&s.seatQ, d, r);
+    for (int k = 0; k < 3; k++) out[k] = r[k] + GRIP_P[k] + (GRIP_T[k] - GRIP_P[k]) * s.seatW;
+}
+
 /** The drawn blade in world space, from the last pose: guard to tip, as the knight model has it
  *  in the hand's space. (The player's 640 along the hand's -X follows its sword trail; drawn
  *  without one, that reached 6 past this tip and ran 5 to the side of it) */
@@ -331,9 +369,11 @@ static bool sword_segment(float base[3], float tip[3])
 {
     if (s.swordBone < 0) return false;
     const T3DMat4FP *B = &s.skel.boneMatricesFP[s.swordBone];
-    float m0[3], m1[3];
-    mat4fp_mul_point_f32_row3_colbasis(B, (float[3]){ -29.0f, 46.0f, -3.0f }, m0);
-    mat4fp_mul_point_f32_row3_colbasis(B, (float[3]){ -522.0f, 69.0f, -68.0f }, m1);
+    float m0[3], m1[3], g[3], t[3];
+    sword_seat((float[3]){ -29.0f, 46.0f, -3.0f }, g);
+    sword_seat((float[3]){ -522.0f, 69.0f, -68.0f }, t);
+    mat4fp_mul_point_f32_row3_colbasis(B, g, m0);
+    mat4fp_mul_point_f32_row3_colbasis(B, t, m1);
     mat4fp_mul_point_f32_row3_colbasis(s.mat, m0, base);
     mat4fp_mul_point_f32_row3_colbasis(s.mat, m1, tip);
     return true;
@@ -642,6 +682,79 @@ static void grip_pose(float dt)
     }
 }
 
+static void quat_from_basis(T3DQuat *q, const float x[3], const float y[3], const float z[3])     // columns x, y, z
+{
+    float m00 = x[0], m11 = y[1], m22 = z[2], tr = m00 + m11 + m22;
+    if (tr > 0.0f) { float k = sqrtf(tr + 1.0f) * 2.0f; *q = (T3DQuat){{ (y[2] - z[1]) / k, (z[0] - x[2]) / k, (x[1] - y[0]) / k, 0.25f * k }}; }
+    else if (m00 > m11 && m00 > m22) { float k = sqrtf(1.0f + m00 - m11 - m22) * 2.0f; *q = (T3DQuat){{ 0.25f * k, (y[0] + x[1]) / k, (z[0] + x[2]) / k, (y[2] - z[1]) / k }}; }
+    else if (m11 > m22) { float k = sqrtf(1.0f + m11 - m00 - m22) * 2.0f; *q = (T3DQuat){{ (y[0] + x[1]) / k, 0.25f * k, (z[1] + y[2]) / k, (z[0] - x[2]) / k }}; }
+    else { float k = sqrtf(1.0f + m22 - m00 - m11) * 2.0f; *q = (T3DQuat){{ (z[0] + x[2]) / k, (z[1] + y[2]) / k, 0.25f * k, (x[1] - y[0]) / k }}; }
+    t3d_quat_normalize(q);
+}
+
+/** How far into the lunge's thrust the clip is (0..1): out with the thrust, back in with its recovery */
+static float thrust_w(void)
+{
+    if (s.state != FK_LUNGE || s.anim != FKA_LUNGE) return 0.0f;
+    float c = clip_time();
+    return c < 0.95f ? clamp01f((c - 0.55f) / 0.12f) : 1.0f - clamp01f((c - 0.95f) / 0.3f);
+}
+
+/** The sword on its own bone: on the hand (as the mesh has it, at rest), turned in the grip in the
+ *  thrust. There the hand is put straight on the forearm too, its palm in (left), the fingers along
+ *  the blade, the arm 5 degrees down (the clip's: tools/poses/lunge) */
+static void sword_carry(void)
+{
+    s.handKeep.parentIdx = 0xFFFF;
+    if (s.swordCarrier < 0 || s.swordBone < 0) return;
+    float w = thrust_w();
+    w = w * w * (3.0f - 2.0f * w);
+    s.seatQ = (T3DQuat){{ 0.0f, 0.0f, 0.0f, 1.0f }};
+    s.seatW = w;
+    if (w > 0.0f) {
+        T3DBone *h = &s.skel.bones[s.swordBone];
+        // the hand: its forearm line along the arm's, its palm to the left (the model: forward -x, up +y, left +z)
+        static const float F[3] = { -0.9962f, -0.0872f, 0.0f }, L[3] = { 0.0f, 0.0f, 1.0f };
+        float a0[3], a1[3], a2[3], pd;
+        memcpy(a0, FORE_H, sizeof(a0)); vnorm(a0);
+        pd = PALM_H[0] * a0[0] + PALM_H[1] * a0[1] + PALM_H[2] * a0[2];
+        for (int k = 0; k < 3; k++) a1[k] = PALM_H[k] - a0[k] * pd;
+        vnorm(a1);
+        a2[0] = a0[1] * a1[2] - a0[2] * a1[1]; a2[1] = a0[2] * a1[0] - a0[0] * a1[2]; a2[2] = a0[0] * a1[1] - a0[1] * a1[0];
+        T3DQuat qa, qb, qr, qp, ql;
+        quat_from_basis(&qa, a0, a1, a2);       // the hand's frame (forearm, palm, their cross) ...
+        float b2[3] = { F[1] * L[2] - F[2] * L[1], F[2] * L[0] - F[0] * L[2], F[0] * L[1] - F[1] * L[0] };
+        quat_from_basis(&qb, F, L, b2);         // ... onto the arm's (along, left, their cross)
+        quat_conj(&qa); t3d_quat_mul(&qr, &qb, &qa);    // the hand's rotation in the model
+        float pp[3];
+        bone_world(h->parentIdx, &qp, pp);
+        quat_conj(&qp); t3d_quat_mul(&ql, &qp, &qr); t3d_quat_normalize(&ql);
+        s.handKeep = *h;
+        t3d_quat_nlerp(&h->rotation, &s.handKeep.rotation, &ql, w);
+        h->hasChanged = true;
+        // the sword turned in it: its blade onto the forearm's line, about the grip
+        T3DQuat full, id = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
+        quat_between(&full, BLADE_H, a0);
+        t3d_quat_nlerp(&s.seatQ, &id, &full, w);
+    }
+    // its bone: the hand's pose x the turn in the grip x its rest offset from the hand
+    T3DQuat qh, qt, tmp, qw, ql2; float ph[3], pw[3], v[3], r[3], pt[3];
+    bone_world(s.swordBone, &qh, ph);
+    sword_seat(s.carrierKP, r);
+    quat_rotate(&qh, r, pt);
+    for (int k = 0; k < 3; k++) pt[k] += ph[k];
+    t3d_quat_mul(&tmp, &qh, &s.seatQ); t3d_quat_mul(&qt, &tmp, &s.carrierK);
+    T3DBone *c = &s.skel.bones[s.swordCarrier];
+    bone_world(c->parentIdx, &qw, pw);
+    quat_conj(&qw);
+    t3d_quat_mul(&ql2, &qw, &qt); t3d_quat_normalize(&ql2);
+    for (int k = 0; k < 3; k++) v[k] = pt[k] - pw[k];
+    quat_rotate(&qw, v, r);
+    c->rotation = ql2;
+    memcpy(c->position.v, r, sizeof(r));
+    c->hasChanged = true;
+}
+
 /** The clip's own pose of the left arm back, for the next frame's (a held clip doesn't rewrite it) */
 static void grip_unpose(void)
 {
@@ -726,7 +839,7 @@ CLIP(FID_HAND,
 
 static bool melee_state(void)       // its blade is read from the pose: the waist and spine stay as the clip has them
 {
-    return s.state == FK_COMBO || s.state == FK_UPDOWN || s.state == FK_ROLLCUT || s.state == FK_PLUNGE || (s.state == FK_HOLYSLAM && s.step == 0);
+    return s.state == FK_COMBO || s.state == FK_UPDOWN || s.state == FK_ROLLCUT || s.state == FK_PLUNGE || s.state == FK_LUNGE || (s.state == FK_HOLYSLAM && s.step == 0);
 }
 
 static float landT = -1.0f;         // since its last landing (LAND)
@@ -893,6 +1006,16 @@ void fallen_knight_begin(Boss* boss)
         s.armL[0] = t3d_skeleton_find_bone(&s.skel, "UpperArm-Left");
         s.armL[1] = t3d_skeleton_find_bone(&s.skel, "LowerArm-Left");
         s.armL[2] = t3d_skeleton_find_bone(&s.skel, "Hand-Left");
+        s.swordCarrier = t3d_skeleton_find_bone(&s.skel, "IK_Hand.R");
+        s.seatQ = (T3DQuat){{ 0.0f, 0.0f, 0.0f, 1.0f }}; s.seatW = 0.0f;
+        if (s.swordCarrier >= 0 && s.swordBone >= 0) {     // (the fresh skeleton is at rest)
+            T3DQuat qh, qc; float ph[3], pc[3], d[3];
+            bone_world(s.swordBone, &qh, ph); bone_world(s.swordCarrier, &qc, pc);
+            quat_conj(&qh);
+            t3d_quat_mul(&s.carrierK, &qh, &qc);
+            for (int k = 0; k < 3; k++) d[k] = pc[k] - ph[k];
+            quat_rotate(&qh, d, s.carrierKP);
+        }
         s.ready = true;
 #ifdef HLE_FK_POSESCAN  // test aid: the blade's direction (model space, y up) through every clip
         for (int i = 0; i < FKA_COUNT; i++) {
@@ -934,9 +1057,9 @@ void fallen_knight_begin(Boss* boss)
     s.groundY = character.pos[1];
     boss->pos[1] = s.groundY + FK_DROP_HEIGHT;
     s.velY = 0.0f;
-    s.cdCleave = 5.0f; s.cdHalfmoon = 12.0f; s.cdMoonblade = 9.0f; s.cdRoll = 0.0f; s.cdSplitter = 6.0f; s.cdUpdown = 3.0f; s.cdTri = 14.0f; s.cdHoly = 20.0f; s.cdPlunge = 8.0f;
-    s.queued = -1;
-    for (int i = 0; i < 9; i++) s.lastUsed[i] = get_ticks_ms() * 0.001f;     // (all equally fresh at the start)
+    s.cdCleave = 5.0f; s.cdHalfmoon = 12.0f; s.cdMoonblade = 9.0f; s.cdRoll = 0.0f; s.cdSplitter = 6.0f; s.cdUpdown = 3.0f; s.cdTri = 14.0f; s.cdHoly = 20.0f; s.cdPlunge = 8.0f; s.cdLunge = 6.0f; s.cdBackLunge = 10.0f;
+    s.queued = -1; s.fireHitT = 0.0f;
+    for (int i = 0; i < 11; i++) s.lastUsed[i] = get_ticks_ms() * 0.001f;     // (all equally fresh at the start)
     s.enraged = false;
     s.bladeW = 0.0f;
     s.beam2T = -1.0f;
@@ -963,6 +1086,7 @@ bool fallen_knight_stagger(Boss* b)
     // Knocked down where it stands; not in the air (the leap) or already down
     if (!s.ready || s.state == FK_INTRO || s.state == FK_MOONBLADE || s.state == FK_STAGGER || s.state == FK_DEAD) return false;
     if (s.state == FK_PLUNGE && s.step == 1) return false;
+    if (s.state == FK_LUNGE && (s.step == 0 || s.step == 2)) return false;     // off its feet: the leap back, the skim
     b->pos[1] = s.groundY;
     enter(FK_STAGGER);
     play(FKA_KNEEL, true);
@@ -1365,6 +1489,127 @@ static void plunge_update(Boss *b, float dt)
     }
 }
 
+/** A point of its fire trail (skill_fx draws it and says where it burns) */
+static void fire_light(const Boss *b, float x, float z)
+{
+    skill_fx_fire_trail_add((float[3]){ x, s.groundY, z }, b->rot[1], FIRE_LIFE);
+}
+
+/** One standing in the fire (on the floor: jump it) is burnt, then again each second it stays */
+static void fire_update(float dt)
+{
+    if (s.fireHitT > 0.0f) { s.fireHitT -= dt; return; }
+    if (character.pos[1] - s.groundY > 6.0f || !skill_fx_fire_trail_touches(character.pos, character.capsuleCollider.radius)) return;
+    character_apply_damage(FK_FELT(8.0f));
+    s.fireHitT = 1.0f;
+    sfx_at(SCENE1_SFX_FIRE, 0.6f, character.pos[0], character.pos[2]);
+}
+
+static void lunge_update(Boss *b, float dt)
+{
+    // The fire lunge (the Lunge clip, keyed): down into its lunge, the sword hand
+    // drawn back to its hip with the blade level at you, its left leg leading, turning on you,
+    // held as it commits; then it skims at you barely off the floor, the arm and blade thrust out
+    // in one line as it goes, stepping through to land on its right leg as far as you were, fire
+    // springing up along its path; it stops short and draws the sword back in. Step out of its
+    // line (and clear of the fire). Never from close: the short one (quicker tell, at most 80)
+    // needs 70 between them, and one closed in on in its tell leaps back first: away, a low
+    // backflip, then the lunge from there
+    const float DRAW_AT = 0.55f, LUNGE_END = 0.95f;     // the clip: drawn back by 0.55 s, then the thrust and its stride
+    const float TELL = s.lungeKind == LUNGE_SHORT ? 0.5f : s.lungeKind == LUNGE_BACK ? 0.6f : 0.85f, LOCK = TELL * 0.65f;
+    const float SPEED = s.lungeKind == LUNGE_SHORT ? 170.0f : 240.0f, HOP = 3.5f;
+    float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
+    if (s.step == 0) {          // the leap back
+        const float VY = 70.0f, G = 190.0f, BACK = 150.0f;
+        if (s.t <= dt) {
+            float dx, dz, d = to_player(b, &dx, &dz);
+            if (d > 1e-3f) { s.moveX = -dx / d * BACK; s.moveZ = -dz / d * BACK; } else { s.moveX = -fx * BACK; s.moveZ = -fz * BACK; }
+            play(FKA_BACKFLIP, true);
+            t3d_anim_set_speed(&s.anims[s.anim], 0.6f / (2.0f * VY / G));     // the flip done as it lands
+            s.velY = VY;
+            sfx(SCENE1_SFX_SWING_BOSS, 0.6f);
+        }
+        face_player(b, dt, 4.0f);
+        move(b, s.moveX, s.moveZ, dt);
+        s.velY -= G * dt;
+        b->pos[1] = fmaxf(s.groundY, b->pos[1] + s.velY * dt);
+        if (b->pos[1] <= s.groundY && s.velY < 0.0f) {
+            landT = 0.0f;
+            sfx(SCENE1_SFX_BOSS_LAND1, 0.7f);
+            s.step = 1; s.t = 0.0f;
+            play(FKA_LUNGE, true);
+        }
+        return;
+    }
+    if (s.step == 1) {          // the tell: into the lunge, turning on you, then held
+        if (s.anim != FKA_LUNGE) play(FKA_LUNGE, true);
+        clip_to(DRAW_AT * fminf(1.0f, (s.t + dt) / TELL), dt);     // drawn back over the tell, then held
+        if (s.t < LOCK) face_player(b, dt, 5.0f);
+        else hle_commit();
+        if (s.t >= TELL) {
+            float dx, dz, d = to_player(b, &dx, &dz), ahead = dx * fx + dz * fz;
+            if (d < 50.0f && s.lungeKind != LUNGE_BACK) {      // closed in on: no stab from here, it leaps back first
+                s.lungeKind = LUNGE_BACK; s.step = 0; s.t = 0.0f;
+                return;
+            }
+            s.lungeLen = fmaxf(8.0f, fminf(d, ahead > 0.0f ? ahead : d) - 18.0f);   // short of where you were: the blade reaches on
+            if (s.lungeKind == LUNGE_SHORT) s.lungeLen = fminf(s.lungeLen, 80.0f);
+            s.lungeO[0] = b->pos[0]; s.lungeO[1] = b->pos[2]; s.lungeGone = 0.0f; s.fireLit = 0;
+            s.fireGap = fmaxf(8.0f, s.lungeLen / (FIRE_MAX - 1));
+            s.step = 2; s.t = 0.0f;
+            swing_sfx();
+            sfx(SCENE1_SFX_FIRE, 0.8f);     // its launch (the boss's)
+            skill_fx_fire_trail_begin();
+            fire_light(b, b->pos[0], b->pos[2]);
+#ifdef HLE_LOG_LUNGE    // test aid: each lunge's launch, and where it stops
+            debugf("[lunge] kind %d go %.0f (player %.0f away) gap %.1f at %d ms\n", s.lungeKind, (double)s.lungeLen, (double)d, (double)s.fireGap, (int)get_ticks_ms());
+#ifdef HLE_LOG_MOVE_MS
+            { extern uint32_t dragon_vi_frame(void); debugf("[movems] lunge launch VI %d\n", (int)dragon_vi_frame()); }
+#endif
+#endif
+        }
+        return;
+    }
+    if (s.step == 2) {          // the skim
+        s.striking = true;
+        float want = fminf(SPEED * dt, s.lungeLen - s.lungeGone), x0 = b->pos[0], z0 = b->pos[2];
+        if (dt > 0.0f) move(b, fx * want / dt, fz * want / dt, dt);
+        float went = sqrtf((b->pos[0] - x0) * (b->pos[0] - x0) + (b->pos[2] - z0) * (b->pos[2] - z0));
+        if (went < want * 0.5f) s.lungeLen = s.lungeGone;      // a wall: it stops there
+        s.lungeGone += went;
+        b->pos[1] = s.groundY + HOP * sinf(T3D_PI * clamp01f(s.lungeGone / fmaxf(1.0f, s.lungeLen)));
+        clip_to(DRAW_AT + (LUNGE_END - DRAW_AT) * clamp01f(s.lungeGone / fmaxf(1.0f, s.lungeLen)), dt);    // the thrust, the legs stepping through, as far as it has gone
+        for (int lit = (int)(s.lungeGone / s.fireGap); s.fireLit < lit; ) {     // a flame each fireGap along its path
+            s.fireLit++;
+            fire_light(b, s.lungeO[0] + fx * s.fireLit * s.fireGap, s.lungeO[1] + fz * s.fireLit * s.fireGap);
+        }
+        melee_check(b, DRAW_AT + 0.06f, 1e9f, FK_FELT(33.0f));     // once the blade is on its way out: 33 taken
+        if (s.lungeGone >= s.lungeLen - 1e-3f) {
+            if (s.lungeGone - s.fireLit * s.fireGap > 2.0f) fire_light(b, b->pos[0], b->pos[2]);     // the trail right up to where it stops
+            b->pos[1] = s.groundY;
+            landT = 0.0f;
+            sfx(SCENE1_SFX_BOSS_LAND1, 0.6f);
+            s.step = 3; s.t = 0.0f;
+            t3d_anim_set_speed(&s.anims[s.anim], 1.0f);     // stopped: the clip's recovery, the sword drawn in and onto the shoulder
+#ifdef HLE_LOG_LUNGE
+            { float dx, dz; debugf("[lunge] stop: went %.0f, %d fire points, player %.0f away, blade hit %d at %d ms\n", (double)s.lungeGone, s.fireLit, (double)to_player(b, &dx, &dz), s.hitDone, (int)get_ticks_ms()); }
+#endif
+        }
+        return;
+    }
+    // planted, recovering (the clip, 0.95-1.55 s); then now and then straight into its combo
+    if (s.anim == FKA_LUNGE && !clip_done()) t3d_anim_set_speed(&s.anims[s.anim], 1.0f);
+    if (s.t >= 0.6f) {
+        float dx, dz;
+        uint32_t r = rand_custom_u32() % 100;
+#ifdef HLE_FK_PACE
+        r = HLE_FK_PACE == 1 ? 0 : 99;
+#endif
+        if (r < 35 && to_player(b, &dx, &dz) < FK_MELEE_RANGE + 6.0f) { enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); }
+        else recover(1.3f, false);
+    }
+}
+
 // ---- Decisions ----
 
 static void choose(Boss *b, float dist)
@@ -1380,6 +1625,8 @@ static void choose(Boss *b, float dist)
     if (HLE_FK_FORCE == 7) { enter(FK_HOLYSLAM); play(FKA_ATTACK1, true); debugf("[fk] holyslam\n"); return; }
     if (HLE_FK_FORCE == 6) { enter(FK_TRISLAM); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.1f); debugf("[fk] trislam\n"); return; }
     if (HLE_FK_FORCE == 8) { if (dist < 40.0f) return; s.cdPlunge = 0.0f; enter(FK_PLUNGE); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], 0.3f); debugf("[fk] plunge\n"); return; }
+    if (HLE_FK_FORCE == 10) { if (dist < 70.0f) return; s.lungeKind = dist >= 110.0f ? LUNGE_FULL : LUNGE_SHORT; enter(FK_LUNGE); s.step = 1; play(FKA_LUNGE, true); debugf("[fk] lunge %d dist %.0f\n", s.lungeKind, (double)dist); return; }
+    if (HLE_FK_FORCE == 11) { s.lungeKind = LUNGE_BACK; enter(FK_LUNGE); debugf("[fk] lunge back dist %.0f\n", (double)dist); return; }   // 10 = the lunge (by range), 11 = the leap back and lunge
     if (HLE_FK_FORCE >= 4 && dist > FK_MELEE_RANGE - 4.0f) return;     // the melee ones: in reach first
     if (HLE_FK_FORCE == 9) { enter(FK_MOONBLADE); debugf("[fk] moonblade\n"); return; }   // 9 = the Moon Blade (the leap and its slashes), at any range
     if (HLE_FK_FORCE == 4) { enter(FK_UPDOWN); play(FKA_ATTACK2, true); debugf("[fk] updown\n"); return; }
@@ -1387,24 +1634,28 @@ static void choose(Boss *b, float dist)
 #endif
     // Every move off its cooldown is a candidate at any range, the likelier the longer since it last
     // came (1 + the seconds since, to 20): all of them come round, none twice running. One that must
-    // reach (the combo, up-down, cleave, halfmoon, holy slam) picked out of reach: it closes in first
-    enum { P_HALFMOON, P_MOONBLADE, P_HOLY, P_TRI, P_PLUNGE, P_SPLITTER, P_CLEAVE, P_UPDOWN, P_COMBO, P_N };
-    static const float REACH[P_N] = { 70.0f, 1e9f, 50.0f, 1e9f, 1e9f, 1e9f, 60.0f, FK_MELEE_RANGE + 8.0f, FK_MELEE_RANGE - 4.0f };
+    // reach (the combo, up-down, cleave, halfmoon, holy slam) picked out of reach: it closes in first.
+    // The fire lunge is its gap-closer: off 70, the likelier the further (twice past 110), and again
+    // twice when the player has kept away; the leap back and lunge from close in
+    enum { P_HALFMOON, P_MOONBLADE, P_HOLY, P_TRI, P_PLUNGE, P_SPLITTER, P_CLEAVE, P_UPDOWN, P_LUNGE, P_BACKLUNGE, P_COMBO, P_N };
+    static const float REACH[P_N] = { 70.0f, 1e9f, 50.0f, 1e9f, 1e9f, 1e9f, 60.0f, FK_MELEE_RANGE + 8.0f, 1e9f, 1e9f, FK_MELEE_RANGE - 4.0f };
     float now = get_ticks_ms() * 0.001f;
     int m = s.queued;
     bool farOnly = m >= 0 && now - s.queuedAt > 2.0f;     // kept off it 2 s (the player backing away): a move that reaches
     if (farOnly) m = -1;
     if (m < 0) {
-        float *cd[P_N] = { &s.cdHalfmoon, &s.cdMoonblade, &s.cdHoly, &s.cdTri, &s.cdPlunge, &s.cdSplitter, &s.cdCleave, &s.cdUpdown, NULL };
+        float *cd[P_N] = { &s.cdHalfmoon, &s.cdMoonblade, &s.cdHoly, &s.cdTri, &s.cdPlunge, &s.cdSplitter, &s.cdCleave, &s.cdUpdown, &s.cdLunge, &s.cdBackLunge, NULL };
         float w[P_N], tot = 0.0f;
         for (int i = 0; i < P_N; i++) {
             bool ok = (!cd[i] || *cd[i] <= 0.0f) && (i != P_HOLY || s.enraged) && (i != P_PLUNGE || dist >= 40.0f)    // (the plunge's leap needs room)
+                   && (i != P_LUNGE || dist >= 70.0f) && (i != P_BACKLUNGE || dist < 60.0f)
                    && (!farOnly || REACH[i] > 1e8f);
             w[i] = ok ? 1.0f + fminf(now - s.lastUsed[i], 19.0f) : 0.0f;
+            if (i == P_LUNGE) w[i] *= (dist >= 110.0f ? 2.0f : 1.0f) * (farOnly ? 2.0f : 1.0f);
             tot += w[i];
         }
 #ifdef HLE_LOG_CHOOSE    // test aid: the distance and each candidate's weight at a pick
-        debugf("[choose] dist %.0f w %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f\n", (double)dist, (double)w[0], (double)w[1], (double)w[2], (double)w[3], (double)w[4], (double)w[5], (double)w[6], (double)w[7], (double)w[8]);
+        debugf("[choose] dist %.0f w %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f\n", (double)dist, (double)w[0], (double)w[1], (double)w[2], (double)w[3], (double)w[4], (double)w[5], (double)w[6], (double)w[7], (double)w[8], (double)w[9], (double)w[10]);
 #endif
         static uint32_t x;              // its own rolls (xorshift32, seeded from the clock), as Shadowborne's
         if (!x) x = (uint32_t)TICKS_READ() | 1u;
@@ -1426,6 +1677,8 @@ static void choose(Boss *b, float dist)
     case P_SPLITTER:  s.cdSplitter = 11.0f; enter(FK_SPLITTER); break;
     case P_CLEAVE:    s.cdCleave = 9.0f; enter(FK_CLEAVE); break;
     case P_UPDOWN:    s.cdUpdown = 7.0f; enter(FK_UPDOWN); play(FKA_ATTACK2, true); break;
+    case P_LUNGE:     s.cdLunge = 10.0f; s.cdBackLunge = fmaxf(s.cdBackLunge, 5.0f); s.lungeKind = dist >= 110.0f ? LUNGE_FULL : LUNGE_SHORT; enter(FK_LUNGE); s.step = 1; play(FKA_LUNGE, true); break;
+    case P_BACKLUNGE: s.cdBackLunge = 16.0f; s.cdLunge = fmaxf(s.cdLunge, 5.0f); s.lungeKind = LUNGE_BACK; enter(FK_LUNGE); break;
     default:          enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); break;
     }
 }
@@ -1492,7 +1745,7 @@ void fallen_knight_update(Boss* b, float dt)
     if (b->damageFlashTimer > 0.0f) b->damageFlashTimer -= dt;
     s.t += dt;
     s.dtLast = dt;
-    s.cdCleave -= dt; s.cdHalfmoon -= dt; s.cdMoonblade -= dt; s.cdRoll -= dt; s.cdSplitter -= dt; s.cdUpdown -= dt; s.cdTri -= dt; s.cdHoly -= dt; s.cdPlunge -= dt;
+    s.cdCleave -= dt; s.cdHalfmoon -= dt; s.cdMoonblade -= dt; s.cdRoll -= dt; s.cdSplitter -= dt; s.cdUpdown -= dt; s.cdTri -= dt; s.cdHoly -= dt; s.cdPlunge -= dt; s.cdLunge -= dt; s.cdBackLunge -= dt;
     s.bladeTgt = 0.0f;      // a move that holds the blade asks again each frame (hold_blade)
 
     float dx, dz, dist = to_player(b, &dx, &dz);
@@ -1525,6 +1778,7 @@ void fallen_knight_update(Boss* b, float dt)
         skill_fx_spawn_slash_hostile(s.beam2O, s.beam2V, -BEAM_TILT, FK_FELT(8.0f), s.beam2Life);
         if (s.state == FK_MOONBLADE) { beam_swing(1); sfx(SCENE1_SFX_FW_SLICE, 1.0f); }      // its cut (not once it has landed)
     }
+    if (s.state != FK_DEAD) fire_update(dt);
     switch (s.state) {
     case FK_INTRO:
         // Falls from above, the blade down its back, into a superhero landing that cracks
@@ -1610,6 +1864,7 @@ void fallen_knight_update(Boss* b, float dt)
 
     case FK_ROLLCUT:   rollcut_update(b, dt); break;
     case FK_PLUNGE:    plunge_update(b, dt);  break;
+    case FK_LUNGE:     lunge_update(b, dt);   break;
 
     case FK_CLEAVE:    cleave_update(b, dt);   break;
     case FK_HALFMOON:  halfmoon_update(b, dt); break;
@@ -1665,8 +1920,10 @@ void fallen_knight_update(Boss* b, float dt)
     life_apply();
     blade_pose(dt);
     grip_pose(dt);
+    sword_carry();
     t3d_skeleton_update(&s.skel);
     grip_unpose();
+    if (s.handKeep.parentIdx != 0xFFFF) { s.skel.bones[s.swordBone].rotation = s.handKeep.rotation; s.skel.bones[s.swordBone].hasChanged = true; }
     life_unpose();
 
 #ifdef HLE_LOG_FWCLIP   // test aid: the closest the horns come to the pauldron, posed (sample points; < ~0.05 glTF units: touching)
@@ -1682,6 +1939,29 @@ void fallen_knight_update(Boss* b, float dt)
             }
         }
         if (++n % 120 == 0) { debugf("[fwclip] closest %.3f (state %d) horn %d pauldron %d\n", (double)worst, wst, wi, wj); worst = 1e9f; }
+    }
+#endif
+#ifdef HLE_LOG_GRIP     // test aid: the wrist: the angle between the forearm (elbow to wrist) and the blade, per move
+    {   // (a straight-armed grip, the handle along the forearm: ~13 degrees). Its range over each move, and while held (blade_pose)
+        static int fore = -2, st = -1, stp = -1; static float lo, hi, hiHeld, atHi;
+        if (fore == -2) fore = t3d_skeleton_find_bone(&s.skel, "LowerArm-Right");
+        float e[3], w[3], base[3], tip[3];
+        if (fore >= 0 && s.swordBone >= 0 && sword_segment(base, tip)) {
+            float m0[3], m1[3];
+            mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[fore], (float[3]){ 0, 0, 0 }, m0);
+            mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.swordBone], (float[3]){ 0, 0, 0 }, m1);
+            mat4fp_mul_point_f32_row3_colbasis(s.mat, m0, e); mat4fp_mul_point_f32_row3_colbasis(s.mat, m1, w);
+            float a[3] = { w[0] - e[0], w[1] - e[1], w[2] - e[2] }, c[3] = { tip[0] - base[0], tip[1] - base[1], tip[2] - base[2] };
+            vnorm(a); vnorm(c);
+            float ang = acosf(fmaxf(-1.0f, fminf(1.0f, a[0] * c[0] + a[1] * c[1] + a[2] * c[2]))) * 57.3f;
+            if (s.state != st || s.step != stp) {
+                if (st >= 0) debugf("[grip] state %d step %d: wrist %.0f..%.0f deg (worst at clip %.2f), held %.0f\n", st, stp, (double)lo, (double)hi, (double)atHi, (double)hiHeld);
+                st = s.state; stp = s.step; lo = 1e9f; hi = -1.0f; hiHeld = -1.0f;
+            }
+            if (ang < lo) lo = ang;
+            if (ang > hi) { hi = ang; atHi = clip_time(); }
+            if (s.bladeW > 0.5f && ang > hiHeld) hiHeld = ang;
+        }
     }
 #endif
 #ifdef HLE_LOG_LOOK     // test aid: how far the head and the body each turn from the player (rad)
