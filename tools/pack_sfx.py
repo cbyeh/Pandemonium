@@ -134,6 +134,8 @@ def main():
     out["fx/heal_chime"] = to_lufs(verb(trim_tail(at(pk("Player/ashen_knight_drink_flask_02"), 5060)), ROOM), -24.703 - 5)
     out["fx/mbd_x"] = to_lufs(verb(lead(pk("Player/ashen_knight_heavy_attack_01")), ROOM), heard(hits, 0.55))     # Moon Blade Dance
     out["fx/cleave_beam"] = to_lufs(verb(lead(pk("Player/ashen_knight_light_attack_03")), ROOM), heard(hits, 0.45))  # Crescent Cleave
+    out["hostile/fw_thrust"] = boss(heavy(verb(lead(pk("Player/ashen_knight_light_attack_02")))))    # the fire lunge's thrust
+    out["hostile/fw_stab"] = boss(verb(lead(pk("Weapons/critical_blow_blood_splatter_01"))))     # its blade going in
     out["hostile/fw_hurt"] = boss(heavy(verb(lead(pk("Player/ashen_knight_hurt_01")))), -3)     # the Fallen Warrior's grunt as it staggers
     # Halfmoon Slash: the heavy attack at the start of the made sound (tools/halfmoon_sfx.py's), the whole at his hits
     hm = dry("halfmoon_slash_made")

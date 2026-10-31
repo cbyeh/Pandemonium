@@ -84,6 +84,8 @@ typedef enum Scene1Sfx
     SCENE1_SFX_FW_STEP3,
     SCENE1_SFX_FW_STEP4,
     SCENE1_SFX_FW_HURT,         // its grunt as it staggers
+    SCENE1_SFX_FW_THRUST,       // the fire lunge's thrust
+    SCENE1_SFX_FW_STAB,         // and its blade going in
 
     SCENE1_SFX_COUNT
 } Scene1Sfx;

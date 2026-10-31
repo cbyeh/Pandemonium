@@ -366,6 +366,8 @@ static const char *SCENE1_SFX_PATHS[SCENE1_SFX_COUNT] = {
     [SCENE1_SFX_FW_STEP3]    = "rom:/audio/sfx/hostile/fw_step3_22k.wav64",
     [SCENE1_SFX_FW_STEP4]    = "rom:/audio/sfx/hostile/fw_step4_22k.wav64",
     [SCENE1_SFX_FW_HURT]     = "rom:/audio/sfx/hostile/fw_hurt_22k.wav64",
+    [SCENE1_SFX_FW_THRUST]   = "rom:/audio/sfx/hostile/fw_thrust_22k.wav64",
+    [SCENE1_SFX_FW_STAB]     = "rom:/audio/sfx/hostile/fw_stab_22k.wav64",
 };
 
 // The sounds heard all through a fight, held in memory (about 230 KB): the bosses' step, the

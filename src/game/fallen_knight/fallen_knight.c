@@ -403,6 +403,7 @@ static void melee_check(Boss *b, float t0, float t1, float damage)
     if (!hit) return;
     s.hitDone = true;
     character_apply_damage(damage);
+    if (s.state == FK_LUNGE) sfx_at(SCENE1_SFX_FW_STAB, 1.0f, character.pos[0], character.pos[2]);    // the blade in
 #ifdef HLE_TEST_DUMMY
     debugf("[fk] hit by clip %d at %.2f s\n", s.anim, (double)clip);
 #endif
@@ -1462,6 +1463,17 @@ static void plunge_update(Boss *b, float dt)
 }
 
 /** A point of its fire trail (skill_fx draws it and says where it burns) */
+// The lunge's fire, heard from its trail: the nearest point of the path burnt so far
+static int fireCh = -1;
+static float fire_trail_dist(const Boss *b)
+{
+    float ax = s.lungeO[0], az = s.lungeO[1], ex = b->pos[0] - ax, ez = b->pos[2] - az;
+    float px = character.pos[0] - ax, pz = character.pos[2] - az, l2 = ex * ex + ez * ez;
+    float k = l2 > 1e-3f ? clamp01f((px * ex + pz * ez) / l2) : 0.0f;
+    float dx = px - ex * k, dz = pz - ez * k;
+    return sqrtf(dx * dx + dz * dz);
+}
+
 static void fire_light(const Boss *b, float x, float z)
 {
     skill_fx_fire_trail_add((float[3]){ x, s.groundY, z }, b->rot[1], FIRE_LIFE);
@@ -1529,8 +1541,8 @@ static void lunge_update(Boss *b, float dt)
             s.lungeO[0] = b->pos[0]; s.lungeO[1] = b->pos[2]; s.lungeGone = 0.0f; s.fireLit = 0;
             s.fireGap = fmaxf(8.0f, s.lungeLen / (FIRE_MAX - 1));
             s.step = 2; s.t = 0.0f;
-            swing_sfx();
-            sfx(SCENE1_SFX_FIRE, 0.8f);     // its launch (the boss's)
+            sfx(SCENE1_SFX_FW_THRUST, 1.0f);       // the thrust
+            fireCh = audio_play_scene_sfx_dist(SCENE1_SFX_FIRE, 0.8f * BONUS_SFX_VOL, fire_trail_dist(b));   // the fire, from its trail
             skill_fx_fire_trail_begin();
             fire_light(b, b->pos[0], b->pos[2]);
 #ifdef HLE_LOG_LUNGE    // test aid: each lunge's launch, and where it stops
@@ -1669,6 +1681,7 @@ void fallen_knight_update(Boss* b, float dt)
 #ifdef HLE_FK_STAGGERME   // test aid: staggered every 8 s (its stagger and the sound with it)
     { static float t; if ((t += dt) >= 8.0f && fallen_knight_stagger(b)) { t = 0.0f; debugf("[fk] staggered\n"); } }
 #endif
+    if (fireCh >= 0) audio_set_scene_sfx_dist(fireCh, SCENE1_SFX_FIRE, fire_trail_dist(b));     // (ignored once it has ended)
     if (b->state == BOSS_STATE_DEAD && s.state != FK_DEAD) {
         enter(FK_DEAD);
         play(FKA_DEATH, true);
