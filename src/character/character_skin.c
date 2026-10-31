@@ -35,7 +35,7 @@ typedef struct {
 } ClothSpec;
 
 // Accessories: procedural meshes riding a bone (see acc_build)
-enum { ACC_WINGED_HELM = 1, ACC_FUR_COLLAR = 2, ACC_BERSERK_HELM = 4, ACC_DRAGONSLAYER = 8,
+enum { ACC_WINGED_HELM = 1, ACC_BERSERK_HELM = 4, ACC_DRAGONSLAYER = 8,
        ACC_NIGHTFARER_HELM = 16, ACC_SCARF = 32, ACC_CLAW_SHOT = 64 };
 
 typedef struct {
@@ -47,7 +47,7 @@ typedef struct {
     uint8_t acc;
 } SkinDef;
 
-#define CLOAK(r, g, b) { CLOTH_CLOAK, C(r, g, b), false, 3.4f, 0.4f }   // to the ankles, standing
+#define CLOAK(r, g, b) { CLOTH_CLOAK, C(r, g, b), false, 3.4f, 0.8f }   // to the ankles, standing
 
 static const SkinDef SKINS[SKIN_COUNT] = {
     [SKIN_KNIGHT]           = { "Knight" },
@@ -57,21 +57,21 @@ static const SkinDef SKINS[SKIN_COUNT] = {
     // Artorias: dark silver plate, bright mail, a torn royal-blue cloak, a long black plume
     [SKIN_WOLF_KNIGHT]      = { "Wolf Knight", .armor = C(112, 104, 100), .helm = C(146, 142, 146), .chain = C(165, 175, 196),
                                 .cloth = C(30, 52, 108), .hidePlume = true,
-                                .cl = { { CLOTH_CLOAK, C(42, 74, 152), true, 3.1f, 0.5f }, { CLOTH_PLUME, C(22, 22, 30), false, 3.6f, 0.4f } } },
+                                .cl = { { CLOTH_CLOAK, C(42, 74, 152), true, 3.1f, 1.2f }, { CLOTH_PLUME, C(22, 22, 30), false, 3.6f, 0.4f } } },
     // Guts: blackened plate, a spined wolf helm with burning eyes, a ragged black cloak, the Dragonslayer
     [SKIN_BLACK_SWORDSMAN]  = { "Black Swordsman", .armor = C(58, 57, 63), .helm = C(52, 51, 58), .cloth = C(24, 22, 22),
                                 .chain = C(22, 22, 24), .hidePlume = true, .hideSword = true,
-                                .cl = { { CLOTH_CLOAK, C(26, 24, 27), true, 3.2f, 0.55f } }, .acc = ACC_BERSERK_HELM | ACC_DRAGONSLAYER },
-    // Malenia: brass plate, an olive pleated dress, a winged helm, a fur collar, a red ponytail over a crimson cape (it tapers)
+                                .cl = { { CLOTH_CLOAK, C(26, 24, 27), true, 3.2f, 1.5f } }, .acc = ACC_BERSERK_HELM | ACC_DRAGONSLAYER },
+    // Malenia: brass plate, an olive pleated dress, a winged helm, a red ponytail over a crimson cape (it tapers)
     [SKIN_SCARLET_VALKYRIE] = { "Scarlet Valkyrie", .armor = C(196, 156, 82), .helm = C(208, 168, 92), .cloth = C(98, 80, 50),
                                 .chain = C(72, 60, 40), .hidePlume = true,
-                                .cl = { { CLOTH_HAIR, C(196, 64, 30), true, 3.4f, -0.45f }, { CLOTH_CLOAK, C(86, 12, 16), false, 1.8f, 0.55f, 0.8f } },
-                                .acc = ACC_WINGED_HELM | ACC_FUR_COLLAR },
+                                .cl = { { CLOTH_HAIR, C(196, 64, 30), true, 3.4f, -0.45f }, { CLOTH_CLOAK, C(86, 12, 16), false, 2.3f, 1.8f, 0.3f } },
+                                .acc = ACC_WINGED_HELM },
     // Nightfarer (Nightreign): a winged silver helm, a dark scarf, a royal-blue tabard and long coat,
     // the claw shot on his left forearm
     [SKIN_NIGHTFARER]           = { "Nightfarer", .armor = C(92, 96, 112), .helm = C(176, 180, 194), .cloth = C(30, 56, 150),
                                 .chain = C(58, 60, 72), .hidePlume = true,
-                                .cl = { { CLOTH_CLOAK, C(38, 66, 170), false, 3.5f, 0.45f } },
+                                .cl = { { CLOTH_CLOAK, C(38, 66, 170), false, 3.5f, 0.75f } },
                                 .acc = ACC_NIGHTFARER_HELM | ACC_SCARF | ACC_CLAW_SHOT },
 };
 
@@ -148,8 +148,8 @@ static void bone_world(int b, float x, float y, float z, float out[3])
 #define RING 4                          // frames the RSP may still be reading
 // One step a frame, CLOTH_ITERS passes over the links, the body pushed out on the last: two
 // steps of six (three of them colliding) cost 17 ms a frame on hardware, halving the frame rate.
-// Three with the cloak's bend links stretch it as four did without them (1.15 of its length running)
-#define CLOTH_ITERS 3
+// Two: the tethers (cloth_tether) hold its length, the passes only shape it
+#define CLOTH_ITERS 2
 
 // ab, il2 (1/|ab|^2), r2 and a bounding sphere (m, br2) are worked out once a frame (cloth_bodies)
 typedef struct { float a[3], b[3], r, ab[3], il2, r2, m[3], br2; } Capsule;
@@ -161,6 +161,7 @@ typedef struct {
     float hrest[CLOTH_ROWS], vrest[CLOTH_COLS];
     // each link's rest length and 1/rest^2 (link): across, down (to the next row), bend (two down)
     float hl[CLOTH_ROWS][2], vl[CLOTH_ROWS][CLOTH_COLS][2], bl[CLOTH_ROWS][CLOTH_COLS][2];
+    float tl[CLOTH_ROWS][CLOTH_COLS];   // tethers: the farthest each point gets from its pin (its column's length to it)
     bool valid;
     float time;
     T3DVertPacked *vb[RING];
@@ -190,9 +191,9 @@ static void cloth_anchors(Cloth *cl, const ClothSpec *sp)
     for (int c = 0; c < cl->cols; c++) {
         float u = (float)c / (cl->cols - 1) * 2.0f - 1.0f;   // -1..1 across
         if (sp->kind == CLOTH_CLOAK && sp->drop > 0.0f)   // across the back, under the hair
-            bone_world(B_SPINE, 1.25f - 0.7f * u * u + ((c & 1) ? 0.06f : 0.0f), 2.62f - sp->drop, 1.2f * u, cl->anchor[c]);
-        else if (sp->kind == CLOTH_CLOAK)   // over the pauldrons, wrapping forward at the sides, pleated
-            bone_world(B_SPINE, 0.95f - 0.95f * u * u + ((c & 1) ? 0.08f : 0.0f), 2.62f, 1.45f * u, cl->anchor[c]);
+            bone_world(B_SPINE, 1.25f - 0.7f * u * u + ((c & 1) ? 0.06f : 0.0f), 2.62f - sp->drop, 0.8f * u, cl->anchor[c]);
+        else if (sp->kind == CLOTH_CLOAK)   // from round the hood, onto the pauldrons at the sides, pleated (it flares out from there)
+            bone_world(B_SPINE, 0.95f - 0.95f * u * u + ((c & 1) ? 0.08f : 0.0f), 2.62f, 1.1f * u, cl->anchor[c]);
         else if (sp->kind == CLOTH_HAIR)    // a ponytail from the back of the helm
             bone_world(B_HEAD, 0.62f, 1.4f, 0.13f * u, cl->anchor[c]);
         else {                              // a crest on top of the helm that arches up and back
@@ -209,27 +210,27 @@ static void cloth_bodies(void)
     #define CAPS(b0, b1, rad) do { bone_world(b0, 0, 0, 0, b[n].a); bone_world(b1, 0, 0, 0, b[n].b); b[n].r = (rad); n++; } while (0)
     // Radii (in glTF units, times GU below) are the mesh's extents plus a margin, as cloth triangles span between particles;
     // more on the elbows and forearms, whose spiked guards poked through between them
-    const float m = 0.12f, ma = 0.24f;
+    const float m = 0.12f, ma = 0.24f, ml = 0.4f;   // ml: the hips and legs, whose spiked guards poked through at the mesh's size
     SPHERE(B_SPINE, -0.1f, 1.45f, 0, 1.0f + m);      // upper back
     SPHERE(B_SPINE, -0.1f, 0.35f, 0, 0.95f + m);
-    SPHERE(B_WAIST, -0.05f, -0.2f, 0, 0.9f + m);
+    SPHERE(B_WAIST, -0.05f, -0.2f, 0, 0.9f + ml);
     SPHERE(B_HEAD, -0.34f, 1.07f, 0, 0.9f);          // hair and plume roots sit on it
     // sword hilt (the blade runs along the hand's -X): crossguard and pommel
     bone_world(B_HAND_R, -0.3f, 0, 0, b[n].a); bone_world(B_HAND_R, 1.25f, 0, 0, b[n].b); b[n].r = 0.7f + m; n++;
     // and the blade, pommel to tip (the stock sword's line; the Dragonslayer lies along it, broader)
     bone_world(B_HAND_R, 0.2f, 0.7f, 0.1f, b[n].a); bone_world(B_HAND_R, -8.0f, 1.05f, -1.0f, b[n].b);
     b[n].r = ((SKINS[s_skin].acc & ACC_DRAGONSLAYER) ? 0.75f : 0.4f) + m; n++;
-    CAPS(B_ARM_L, B_FORE_L, 0.62f + m);              // pauldrons and upper arms
-    CAPS(B_ARM_R, B_FORE_R, 0.62f + m);
+    CAPS(B_ARM_L, B_FORE_L, 0.62f + ma);             // pauldrons and upper arms
+    CAPS(B_ARM_R, B_FORE_R, 0.62f + ma);
     SPHERE(B_FORE_L, 0, 0, 0, 0.88f + ma);            // pointed elbow guards
     SPHERE(B_FORE_R, 0, 0, 0, 0.88f + ma);
     CAPS(B_FORE_L, B_HAND_L, 0.45f + ma);
     CAPS(B_FORE_R, B_HAND_R, 0.45f + ma);
     SPHERE(B_HAND_L, 0, 0, 0, 0.45f + ma);            // the left gauntlet (the right is in the hilt)
-    CAPS(B_LEG_L, B_SHIN_L, 0.5f + m);
-    CAPS(B_LEG_R, B_SHIN_R, 0.5f + m);
-    CAPS(B_SHIN_L, B_FOOT_L, 0.42f + m);
-    CAPS(B_SHIN_R, B_FOOT_R, 0.42f + m);
+    CAPS(B_LEG_L, B_SHIN_L, 0.5f + ml);
+    CAPS(B_LEG_R, B_SHIN_R, 0.5f + ml);
+    CAPS(B_SHIN_L, B_FOOT_L, 0.42f + ml);
+    CAPS(B_SHIN_R, B_FOOT_R, 0.42f + ml);
     #undef SPHERE
     #undef CAPS
     s_bodyCount = n;
@@ -238,7 +239,7 @@ static void cloth_bodies(void)
         float l2 = 0.0f;
         for (int k = 0; k < 3; k++) { c->ab[k] = c->b[k] - c->a[k]; l2 += c->ab[k] * c->ab[k]; c->m[k] = (c->a[k] + c->b[k]) * 0.5f; }
         c->il2 = l2 > 0.0f ? 1.0f / l2 : 0.0f;
-        c->r *= GU;
+        c->r *= 0.5f * GU;     // the mesh's own size (GU is twice it: the cloth's lengths were tuned so)
         c->r2 = c->r * c->r;
         float br = sqrtf(l2) * 0.5f + c->r;
         c->br2 = br * br;
@@ -264,6 +265,11 @@ static void cloth_reset(Cloth *cl, const ClothSpec *sp)
     }
     #undef VREST
     #undef REST
+    for (int c = 0; c < cl->cols; c++) {
+        float t = 0.0f;
+        int r0 = sp->kind == CLOTH_PLUME ? 2 : 1;      // a plume's from its stiff second row
+        for (int r = r0; r < cl->rows; r++) cl->tl[r][c] = t += cl->vl[r - 1][c][0];
+    }
     for (int r = 0; r < cl->rows; r++)
         for (int c = 0; c < cl->cols; c++) {
             float *p = PC(cl, c, r);
@@ -274,10 +280,18 @@ static void cloth_reset(Cloth *cl, const ClothSpec *sp)
     cl->valid = true;
 }
 
+// A heavier hem (each row HEM heavier than the one above): it lags and swings, the top gives.
+// A link's correction is shared by weight: wa the part a takes (0: a is pinned)
+#define HEM 0.15f
+#define SH(ra, rb) ((1.0f + HEM * (rb)) / (2.0f + HEM * ((ra) + (rb))))
+static const float SHARE1[CLOTH_ROWS] = { SH(0, 1), SH(1, 2), SH(2, 3), SH(3, 4), SH(4, 5), SH(5, 6), SH(6, 7), 0 };   // row r with r + 1
+static const float SHARE2[CLOTH_ROWS] = { SH(0, 2), SH(1, 3), SH(2, 4), SH(3, 5), SH(4, 6), SH(5, 7), 0, 0 };        // with r + 2
+_Static_assert(CLOTH_ROWS == 8, "SHARE1, SHARE2: a weight per row");
+
 // rest: its length and 1/length^2; stiff: the part of the stretch taken out (1: all of it).
 // Near its length, (len - rest) / len is taken as (len^2 / rest^2 - 1) / 2: no root or divide
 // (58 cycles), as most links are within 10% of their length
-static void link(float *a, float *b, const float rest[2], bool pinA, float stiff)
+static void link(float *a, float *b, const float rest[2], float wa, float stiff)
 {
     float d[3] = { b[0] - a[0], b[1] - a[1], b[2] - a[2] };
     float l2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
@@ -288,7 +302,7 @@ static void link(float *a, float *b, const float rest[2], bool pinA, float stiff
         k = (len - rest[0]) / len;
     }
     k *= stiff;
-    float wa = pinA ? 0.0f : 0.5f, wb = pinA ? 1.0f : 0.5f;
+    float wb = 1.0f - wa;
     for (int i = 0; i < 3; i++) { a[i] += d[i] * k * wa; b[i] -= d[i] * k * wb; }
 }
 
@@ -334,7 +348,7 @@ static void push_out(float *p, const float *plane, uint32_t only, uint32_t *near
     }
 }
 
-static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back[3], const float *plane)
+static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back[3], const float *plane, float floor)
 {
     const float k = GU * (1.0f / (GLTF * MODEL_SCALE));   // gravity and wind scaled with him, as his cape is (1 in the fights)
     const float g = -220.0f * k * h * h;
@@ -360,16 +374,24 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
         }
         for (int r = 0; r < cl->rows - 1; r++)
             for (int c = 0; c < cl->cols; c++)
-                link(PC(cl, c, r), PC(cl, c, r + 1), cl->vl[r][c], r == 0 || (r == 1 && sp->kind == CLOTH_PLUME), 1.0f);
+                link(PC(cl, c, r), PC(cl, c, r + 1), cl->vl[r][c], (r == 0 || (r == 1 && sp->kind == CLOTH_PLUME)) ? 0.0f : SHARE1[r], 1.0f);
         // bend links: hair can't fold back on itself; a cloak resists it softly, on the first
         // pass, so it drapes and swings instead of crumpling when he stops
         if (strands(sp) || it == 0)
             for (int r = 0; r < cl->rows - 2; r++)
                 for (int c = 0; c < cl->cols; c++)
-                    link(PC(cl, c, r), PC(cl, c, r + 2), cl->bl[r][c], r == 0, strands(sp) ? 1.0f : 0.35f);
+                    link(PC(cl, c, r), PC(cl, c, r + 2), cl->bl[r][c], r == 0 ? 0.0f : SHARE2[r], strands(sp) ? 1.0f : 0.35f);
         int loose = sp->tattered ? cl->rows - 3 : cl->rows;   // tatters hang as free strands
         for (int r = 1; r < loose; r++)
-            for (int c = 0; c < cl->cols - 1; c++) link(PC(cl, c, r), PC(cl, c + 1, r), cl->hl[r], false, 1.0f);
+            for (int c = 0; c < cl->cols - 1; c++) link(PC(cl, c, r), PC(cl, c + 1, r), cl->hl[r], 0.5f, 1.0f);
+        // tethers: no point farther from its pin than its column's length (no stretch, however
+        // fast he moves); the root only where one's pulled out past it
+        for (int r = sp->kind == CLOTH_PLUME ? 2 : 1; r < cl->rows; r++)
+            for (int c = 0; c < cl->cols; c++) {
+                float *p = PC(cl, c, r), *a = sp->kind == CLOTH_PLUME ? cl->anchor2[c] : cl->anchor[c];
+                float d[3] = { p[0] - a[0], p[1] - a[1], p[2] - a[2] }, l2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2], t = cl->tl[r][c];
+                if (l2 > t * t) { float k = t / sqrtf(l2); for (int i = 0; i < 3; i++) p[i] = a[i] + d[i] * k; }
+            }
 #ifdef HLE_LOG_CLOTH
         uint32_t tc = TICKS_READ();
 #endif
@@ -383,7 +405,9 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
         for (int c = 0; c < cl->cols; c++) {
             float top = sp->kind == CLOTH_PLUME ? cl->anchor2[c][1] : cl->anchor[c][1];
             float maxY = top - (sp->kind == CLOTH_PLUME ? 0.02f : 0.15f) * r * cl->vrest[c];
-            if (PC(cl, c, r)[1] > maxY) PC(cl, c, r)[1] = maxY;
+            float *y = &PC(cl, c, r)[1];
+            if (*y > maxY) *y = maxY;
+            if (*y < floor) *y = floor;     // and never through the floor (a roll, a knockdown)
         }
     if (sp->kind == CLOTH_PLUME)   // the links above may have nudged its stiff root
         for (int c = 0; c < cl->cols; c++) memcpy(PC(cl, c, 1), cl->anchor2[c], sizeof(float[3]));
@@ -797,7 +821,6 @@ static void acc_build(void)
         proc_mesh_set_transform(&s_acc[s_accCount].m, 1.0f, (float[3]){ 0, 0, 0 }, (float[3]){ 0, 0, 0 }); \
         s_acc[s_accCount++].bone = bn; }
     ACC(ACC_WINGED_HELM, B_HEAD, acc_winged_helm(s->helm));
-    ACC(ACC_FUR_COLLAR, B_SPINE, ring(-0.1f, 2.62f, 1.32f, 0.38f, 1.42f, -2.5f, 2.5f, 16, 3, proc_rgb(156, 132, 100), 0.08f));
     ACC(ACC_BERSERK_HELM, B_HEAD, acc_berserk_helm(s->helm));
     ACC(ACC_DRAGONSLAYER, B_HAND_R, acc_dragonslayer((SkinColor)C(70, 68, 70)));
     ACC(ACC_NIGHTFARER_HELM, B_HEAD, acc_nightfarer_helm(s->helm));
@@ -994,7 +1017,7 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
         // A step every other frame, of both frames' time
         cl->acc += dt;
         cl->stepped = step;
-        if (cl->stepped) { cloth_step(cl, sp, fminf(cl->acc, 0.07f), back, pl); cl->acc = 0.0f; }
+        if (cl->stepped) { cloth_step(cl, sp, fminf(cl->acc, 0.07f), back, pl, pos[1] + 0.1f * GU); cl->acc = 0.0f; }
         for (int c = 0; c < cl->cols; c++) {     // the pins follow the body every frame
             memcpy(PC(cl, c, 0), cl->anchor[c], sizeof(float[3]));
             if (sp->kind == CLOTH_PLUME) memcpy(PC(cl, c, 1), cl->anchor2[c], sizeof(float[3]));
