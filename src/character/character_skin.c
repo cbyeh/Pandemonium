@@ -246,7 +246,7 @@ static void cloth_bodies(void)
     }
 }
 
-static void cloth_reset(Cloth *cl, const ClothSpec *sp)
+__attribute__((noinline, optimize("Os"))) static void cloth_reset(Cloth *cl, const ClothSpec *sp)   // rare (a first frame, a teleport): for size
 {
     float len = sp->len * GU;
     float top = sqrtf(t3d_vec3_distance2(&(T3DVec3){{cl->anchor[0][0], cl->anchor[0][1], cl->anchor[0][2]}},
@@ -267,8 +267,8 @@ static void cloth_reset(Cloth *cl, const ClothSpec *sp)
     #undef REST
     for (int c = 0; c < cl->cols; c++) {
         float t = 0.0f;
-        int r0 = sp->kind == CLOTH_PLUME ? 2 : 1;      // a plume's from its stiff second row
-        for (int r = r0; r < cl->rows; r++) cl->tl[r][c] = t += cl->vl[r - 1][c][0];
+        // a plume's from its stiff second row (held to it: there, it's pinned)
+        for (int r = 1; r < cl->rows; r++) cl->tl[r][c] = t += (r > 1 || sp->kind != CLOTH_PLUME) ? cl->vl[r - 1][c][0] : 0.0f;
     }
     for (int r = 0; r < cl->rows; r++)
         for (int c = 0; c < cl->cols; c++) {
@@ -284,9 +284,9 @@ static void cloth_reset(Cloth *cl, const ClothSpec *sp)
 // A link's correction is shared by weight: wa the part a takes (0: a is pinned)
 #define HEM 0.15f
 #define SH(ra, rb) ((1.0f + HEM * (rb)) / (2.0f + HEM * ((ra) + (rb))))
-static const float SHARE1[CLOTH_ROWS] = { SH(0, 1), SH(1, 2), SH(2, 3), SH(3, 4), SH(4, 5), SH(5, 6), SH(6, 7), 0 };   // row r with r + 1
-static const float SHARE2[CLOTH_ROWS] = { SH(0, 2), SH(1, 3), SH(2, 4), SH(3, 5), SH(4, 6), SH(5, 7), 0, 0 };        // with r + 2
-_Static_assert(CLOTH_ROWS == 8, "SHARE1, SHARE2: a weight per row");
+// row r with r + 1 (the bend links, r with r + 2, use it too: within 4%, and the ROM keeps its size)
+static const float SHARE1[CLOTH_ROWS] = { SH(0, 1), SH(1, 2), SH(2, 3), SH(3, 4), SH(4, 5), SH(5, 6), SH(6, 7), 0 };
+_Static_assert(CLOTH_ROWS == 8, "SHARE1: a weight per row");
 
 // rest: its length and 1/length^2; stiff: the part of the stretch taken out (1: all of it).
 // Near its length, (len - rest) / len is taken as (len^2 / rest^2 - 1) / 2: no root or divide
@@ -367,6 +367,8 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
             }
             p[1] += g;
         }
+    const bool plume = sp->kind == CLOTH_PLUME;
+    float (*tpin)[3] = plume ? cl->anchor2 : cl->anchor;
     for (int it = 0; it < CLOTH_ITERS; it++) {
         for (int c = 0; c < cl->cols; c++) {
             memcpy(PC(cl, c, 0), cl->anchor[c], sizeof(float[3]));
@@ -380,22 +382,23 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
         if (strands(sp) || it == 0)
             for (int r = 0; r < cl->rows - 2; r++)
                 for (int c = 0; c < cl->cols; c++)
-                    link(PC(cl, c, r), PC(cl, c, r + 2), cl->bl[r][c], r == 0 ? 0.0f : SHARE2[r], strands(sp) ? 1.0f : 0.35f);
+                    link(PC(cl, c, r), PC(cl, c, r + 2), cl->bl[r][c], r == 0 ? 0.0f : SHARE1[r], strands(sp) ? 1.0f : 0.35f);
         int loose = sp->tattered ? cl->rows - 3 : cl->rows;   // tatters hang as free strands
         for (int r = 1; r < loose; r++)
             for (int c = 0; c < cl->cols - 1; c++) link(PC(cl, c, r), PC(cl, c + 1, r), cl->hl[r], 0.5f, 1.0f);
-        // tethers: no point farther from its pin than its column's length (no stretch, however
-        // fast he moves); the root only where one's pulled out past it
-        for (int r = sp->kind == CLOTH_PLUME ? 2 : 1; r < cl->rows; r++)
-            for (int c = 0; c < cl->cols; c++) {
-                float *p = PC(cl, c, r), *a = sp->kind == CLOTH_PLUME ? cl->anchor2[c] : cl->anchor[c];
-                float d[3] = { p[0] - a[0], p[1] - a[1], p[2] - a[2] }, l2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2], t = cl->tl[r][c];
-                if (l2 > t * t) { float k = t / sqrtf(l2); for (int i = 0; i < 3; i++) p[i] = a[i] + d[i] * k; }
-            }
 #ifdef HLE_LOG_CLOTH
         uint32_t tc = TICKS_READ();
 #endif
-        if (it == CLOTH_ITERS - 1) for (int i = cl->cols; i < cl->cols * cl->rows; i++) push_out(cl->p[i], plane, 0, &cl->near[i]);
+        // the last pass: the tethers (no point farther from its pin than its column's length, however
+        // fast he moves; the root only where one's pulled out past it), then out of the body
+        if (it == CLOTH_ITERS - 1)
+            for (int r = 1; r < cl->rows; r++)
+                for (int c = 0; c < cl->cols; c++) {
+                    float *p = PC(cl, c, r), *a = tpin[c];
+                    float d[3] = { p[0] - a[0], p[1] - a[1], p[2] - a[2] }, l2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2], t = cl->tl[r][c];
+                    if (l2 > t * t) { float k = t / sqrtf(l2); for (int i = 0; i < 3; i++) p[i] = a[i] + d[i] * k; }
+                    push_out(p, plane, 0, &cl->near[r * cl->cols + c]);
+                }
 #ifdef HLE_LOG_CLOTH
         s_colT += TICKS_READ() - tc;
 #endif
