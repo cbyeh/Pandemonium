@@ -352,7 +352,14 @@ void audio_play_music(const char *path, bool loop)
     currentMusicLoop = loop;
 
     wav64_open(&currentMusic, path);
-    wav64_set_loop(&currentMusic, loop);
+    // A track with its own loop (tools/music_loop.py) keeps it; others loop whole
+    if (!loop || currentMusic.wave.loop_len == 0)
+        wav64_set_loop(&currentMusic, loop);
+#ifdef HLE_AUTOPLAY
+    debugf("[music] len %d loop %d..%d\n", (int)currentMusic.wave.len,
+           currentMusic.wave.loop_len ? (int)((currentMusic.wave.loop_end ? currentMusic.wave.loop_end : currentMusic.wave.len) - currentMusic.wave.loop_len) : -1,
+           (int)(currentMusic.wave.loop_end ? currentMusic.wave.loop_end : currentMusic.wave.len));
+#endif
 
     mixer_ch_set_freq(CHANNEL_MUSIC, currentMusic.wave.frequency);
 
@@ -405,6 +412,13 @@ void audio_resume_music(void)
 
 void audio_update_fade(float dt)
 {
+#ifdef HLE_LOG_MUSICPOS   // test aid: the music's play position every 2 s (shows the loop's jump back)
+    static float logT;
+    if (musicPlaying && (logT += dt) >= 2.0f) {
+        logT = 0.0f;
+        debugf("[musicpos] %lu %.2f s\n", (unsigned long)get_ticks_ms(), mixer_ch_get_pos(CHANNEL_MUSIC) / currentMusic.wave.frequency);
+    }
+#endif
     if (!musicFadingOut) return;
 
     musicFadeT += dt;

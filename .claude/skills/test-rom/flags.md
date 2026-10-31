@@ -26,7 +26,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Frame-exact video:** shot every frame, `run.sh rom "$(seq -s, 900 1 1100)"` (comma list, not a range), then
   `ffmpeg -framerate 30 -pattern_type glob -i '*.png' -vf scale=640:-2,format=yuv420p -c:v libx264 -crf 18 out.mp4`. Lower `-framerate` or `setpts=4*PTS` for slow motion.
 - **Sheets / side-by-sides:** `-vf "scale=320:-1,tile=6x4" -frames:v 1`; `hstack`/`xstack` with `crop=...,scale=...:flags=neighbor`.
-- **Audio:** the emulator runs `--audio dummy`, so sound is never captured from it. Build A/B clips from the asset files with ffmpeg `concat` (old, 1 s `anullsrc`, new); loudness via `astats` / `volumedetect` / `ebur128`. `tools/boss_sfx_map.py` makes a page of every Bonus move's sounds (LUFS, gain); `tools/boss_sfx_levels.py` needs numpy (Blender's Python has it).
+- **Audio:** the emulator runs `--audio dummy`, so sound is never captured from it. Build A/B clips from the asset files with ffmpeg `concat` (old, 1 s `anullsrc`, new); loudness via `astats` / `volumedetect` / `ebur128`. `tools/boss_sfx_map.py` makes a page of every Bonus move's sounds (LUFS, gain); `tools/boss_sfx_levels.py` needs numpy (Blender's Python has it). Music loops: `tools/music_loop.py` (beat-grid loop points written as a WAV `smpl` loop; needs `--bpm`, see its header), `HLE_LOG_MUSICPOS` logs `[musicpos]` every 2 s (the jump back shows as the position dropping).
 - **LLE reference shots:** `~/n64/emu/ref/make_lle_refs.sh` (angrylion + cxd4 via `run_lle.sh`).
 
 ## Measure
