@@ -3728,7 +3728,7 @@ void dragon_boss_draw(Boss* b)
     if (s.state == DG_TAIL && s.step == 0)      // the tail's crystal blade glows before it swings
         put_glow(light, s.tl[NTAIL], 3.0f + 2.5f * clamp01(s.t / 0.5f) + fm_sinf(s.life * 16.0f));
     bool beamish = s.state == DG_BEAM || s.state == DG_NOVA || s.state == DG_SNIPE || s.state == DG_SKYBEAM || s.state == DG_HOVER;
-    if (s.glow > 0.01f) put_glow(beamish || s.dark ? light : &s.flame, s.mouth, 2.0f + 5.0f * s.glow);
+    if (s.glow > 0.01f) put_glow(beamish ? light : &s.flame, s.mouth, 2.0f + 5.0f * s.glow);
 #ifdef HLE_PROF_DRAGON
     DPROF(4);
 #endif
