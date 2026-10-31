@@ -169,12 +169,26 @@ static void hle_commit(void) { if (!committed) { committed = true; if (hle_count
 static inline void hle_commit(void) {}
 #endif
 
+#ifdef HLE_LOG_POP     // test aid: jolts in its motion, each laid to the clip or move change before it
+static struct { int fa, ta, fs, ts; float t, peak, yawPk, body, at, lateB, lateS; int pt, n; bool on; } pop;
+static void pop_mark(int fa, int ta, int fs, int ts)
+{
+    if (pop.on && pop.t <= 0.0f) { if (ta >= 0) { pop.ta = ta; if (pop.fa < 0) pop.fa = fa; } if (ts >= 0) { pop.ts = ts; if (pop.fs < 0) pop.fs = fs; } return; }     // the same frame: one change
+    if (pop.on) debugf("[pop] st %d>%d clip %d>%d peak %.0f pt %d yaw %.0f body %.0f at %.0f ms late %.0f %.0f\n", pop.fs, pop.ts, pop.fa, pop.ta, (double)pop.peak, pop.pt, (double)pop.yawPk, (double)pop.body, (double)(pop.at * 1000.0f), (double)pop.lateB, (double)pop.lateS);
+    pop.fa = ta >= 0 ? fa : -1; pop.ta = ta; pop.fs = ts >= 0 ? fs : -1; pop.ts = ts;
+    pop.t = 0.0f; pop.peak = 0.0f; pop.yawPk = 0.0f; pop.body = 0.0f; pop.at = 0.0f; pop.lateB = pop.lateS = 0.0f; pop.pt = -1; pop.on = true;
+}
+#endif
+
 static void play(int a, bool restart)
 {
     if (a == s.anim && !restart) return;
 #ifdef HLE_TEST_DUMMY
     committed = false;
     if (a >= FKA_ATTACK1 && a <= FKA_HALFMOON && hle_counts()) hle_fk_swing++;
+#endif
+#ifdef HLE_LOG_POP
+    pop_mark(s.anim, a, s.state, -1);
 #endif
     t3d_skeleton_blend(&s.skelBlend, &s.skel, &s.skel, 0.0f);    // snapshot the current pose
     // swings cut in fast (the blade's hits are read from the pose); going down, dying and
@@ -299,8 +313,12 @@ static void bone_turn(int bone, float pitch, float yaw, float roll, float rise, 
     h->hasChanged = true;
 }
 
+
 static void enter(FkState st)
 {
+#ifdef HLE_LOG_POP
+    pop_mark(s.anim, -1, s.state, st);
+#endif
 #ifdef HLE_LOG_MOVES     // test aid: each move as it starts (the hits after it are its: [hit])
     debugf("[move] %d\n", st);
 #endif
@@ -357,6 +375,54 @@ static void sword_seat(const float v[3], float out[3])
 /** The drawn blade in world space, from the last pose: guard to tip, as the knight model has it
  *  in the hand's space. (The player's 640 along the hand's -X follows its sword trail; drawn
  *  without one, that reached 6 past this tip and ran 5 to the side of it) */
+#ifdef HLE_LOG_POP
+/** Each frame: how hard its hands, sword tip, head, hips and feet change speed (model space, glTF
+ *  units/s^2: the clips' own motion, not its travel), and its turn (rad/s^2). For 0.4 s after a change
+ *  the peak goes to that change's [pop] line; otherwise to the clip's own ([popclip]: what it does
+ *  anyway, the bar a change is held to) */
+static void pop_sample(float dt, float yaw)
+{
+    static const char *NAMES[] = { "Hand-Right", "Hand-Left", "Head", "Waist", "Foot-Left", "Foot-Right" };
+    enum { NP = 7 };
+    static int bone[6] = { -2 }; static float p0[NP][3], v0[NP][3], yaw0, yv0; static int warm;
+    static float clipPk[FKA_COUNT], clipSum[FKA_COUNT]; static int clipN[FKA_COUNT]; static float logT;
+    if (bone[0] == -2) for (int i = 0; i < 6; i++) bone[i] = t3d_skeleton_find_bone(&s.skel, NAMES[i]);
+    if (dt <= 1e-4f) return;
+    float p[NP][3];
+    for (int i = 0; i < 6; i++) {
+        if (bone[i] < 0) return;
+        mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[bone[i]], (float[3]){ 0, 0, 0 }, p[i]);
+    }
+    { float t[3]; sword_seat((float[3]){ -522.0f, 69.0f, -68.0f }, t); mat4fp_mul_point_f32_row3_colbasis(&s.skel.boneMatricesFP[s.swordBone], t, p[6]); }
+    float pk = 0.0f, bodyPk = 0.0f; int pt = -1;
+    float yv = remainderf(yaw - yaw0, 2.0f * T3D_PI) / dt, ya = fabsf(yv - yv0) / dt;
+    for (int i = 0; i < NP; i++) {
+        float v[3], a = 0.0f;
+        for (int c = 0; c < 3; c++) { v[c] = (p[i][c] - p0[i][c]) / 64.0f / dt; float d = v[c] - v0[i][c]; a += d * d; p0[i][c] = p[i][c]; v0[i][c] = v[c]; }
+        a = sqrtf(a) / dt;
+        if (warm >= 2 && a > pk) { pk = a; pt = i; }
+        if (warm >= 2 && i < 6 && a > bodyPk) bodyPk = a;
+    }
+    yaw0 = yaw; yv0 = yv;
+    if (warm < 2) { warm++; return; }
+    if (pop.on) {
+        pop.t += dt;
+        if (pk > pop.peak) { pop.peak = pk; pop.pt = pt; pop.at = pop.t; }
+        if (bodyPk > pop.body) pop.body = bodyPk;
+        if (pop.t > 0.05f) { if (bodyPk > pop.lateB) pop.lateB = bodyPk; if (pk > pop.lateS) pop.lateS = pk; }     // past a hard cut's own jump
+        if (ya > pop.yawPk) pop.yawPk = ya;
+        if (pop.t > 0.4f) { debugf("[pop] st %d>%d clip %d>%d peak %.0f pt %d yaw %.0f body %.0f at %.0f ms late %.0f %.0f\n", pop.fs, pop.ts, pop.fa, pop.ta, (double)pop.peak, pop.pt, (double)pop.yawPk, (double)pop.body, (double)(pop.at * 1000.0f), (double)pop.lateB, (double)pop.lateS); pop.on = false; }
+    } else if (s.anim >= 0) {
+        if (pk > clipPk[s.anim]) clipPk[s.anim] = pk;
+        clipSum[s.anim] += pk; clipN[s.anim]++;
+    }
+    if ((logT += dt) > 30.0f) {
+        logT = 0.0f;
+        for (int a = 0; a < FKA_COUNT; a++) if (clipN[a]) debugf("[popclip] %d %s max %.0f mean %.0f n %d\n", a, ANIM_NAMES[a], (double)clipPk[a], (double)(clipSum[a] / clipN[a]), clipN[a]);
+    }
+}
+#endif
+
 static bool sword_segment(float base[3], float tip[3])
 {
     if (s.swordBone < 0) return false;
@@ -1877,6 +1943,9 @@ void fallen_knight_update(Boss* b, float dt)
 
     // Animate (with a short crossfade after clip changes)
     t3d_anim_update(&s.anims[s.anim], dt);
+#ifdef HLE_POP_REF      // test aid: no crossfades (the clips' own motion, for HLE_LOG_POP to hold the changes to)
+    s.blendT = 0.0f;
+#endif
     if (s.blendT > 0.0f) {
         s.blendT -= dt;
         float k = 1.0f - fmaxf(0.0f, s.blendT) / s.blendDur;
@@ -1889,6 +1958,9 @@ void fallen_knight_update(Boss* b, float dt)
     grip_pose(dt);
     sword_carry();
     t3d_skeleton_update(&s.skel);
+#ifdef HLE_LOG_POP
+    pop_sample(dt, b->rot[1]);
+#endif
     grip_unpose();
     if (s.handKeep.parentIdx != 0xFFFF) { s.skel.bones[s.swordBone].rotation = s.handKeep.rotation; s.skel.bones[s.swordBone].hasChanged = true; }
     life_unpose();
