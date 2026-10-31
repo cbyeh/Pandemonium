@@ -205,9 +205,9 @@ static void cloth_anchors(Cloth *cl, const ClothSpec *sp)
 static void cloth_bodies(void)
 {
     Capsule *b = s_body; int n = 0;
-    #define SPHERE(bone, x, y, z, rad) do { bone_world(bone, x, y, z, b[n].a); memcpy(b[n].b, b[n].a, sizeof b[n].a); b[n].r = (rad) * GU; n++; } while (0)
-    #define CAPS(b0, b1, rad) do { bone_world(b0, 0, 0, 0, b[n].a); bone_world(b1, 0, 0, 0, b[n].b); b[n].r = (rad) * GU; n++; } while (0)
-    // Radii are the mesh's extents plus a margin, as cloth triangles span between particles;
+    #define SPHERE(bone, x, y, z, rad) do { bone_world(bone, x, y, z, b[n].a); memcpy(b[n].b, b[n].a, sizeof b[n].a); b[n].r = (rad); n++; } while (0)
+    #define CAPS(b0, b1, rad) do { bone_world(b0, 0, 0, 0, b[n].a); bone_world(b1, 0, 0, 0, b[n].b); b[n].r = (rad); n++; } while (0)
+    // Radii (in glTF units, times GU below) are the mesh's extents plus a margin, as cloth triangles span between particles;
     // more on the elbows and forearms, whose spiked guards poked through between them
     const float m = 0.12f, ma = 0.24f;
     SPHERE(B_SPINE, -0.1f, 1.45f, 0, 1.0f + m);      // upper back
@@ -215,10 +215,10 @@ static void cloth_bodies(void)
     SPHERE(B_WAIST, -0.05f, -0.2f, 0, 0.9f + m);
     SPHERE(B_HEAD, -0.34f, 1.07f, 0, 0.9f);          // hair and plume roots sit on it
     // sword hilt (the blade runs along the hand's -X): crossguard and pommel
-    bone_world(B_HAND_R, -0.3f, 0, 0, b[n].a); bone_world(B_HAND_R, 1.25f, 0, 0, b[n].b); b[n].r = (0.7f + m) * GU; n++;
+    bone_world(B_HAND_R, -0.3f, 0, 0, b[n].a); bone_world(B_HAND_R, 1.25f, 0, 0, b[n].b); b[n].r = 0.7f + m; n++;
     // and the blade, pommel to tip (the stock sword's line; the Dragonslayer lies along it, broader)
     bone_world(B_HAND_R, 0.2f, 0.7f, 0.1f, b[n].a); bone_world(B_HAND_R, -8.0f, 1.05f, -1.0f, b[n].b);
-    b[n].r = ((SKINS[s_skin].acc & ACC_DRAGONSLAYER) ? 0.75f : 0.4f) * GU + m * GU; n++;
+    b[n].r = ((SKINS[s_skin].acc & ACC_DRAGONSLAYER) ? 0.75f : 0.4f) + m; n++;
     CAPS(B_ARM_L, B_FORE_L, 0.62f + m);              // pauldrons and upper arms
     CAPS(B_ARM_R, B_FORE_R, 0.62f + m);
     SPHERE(B_FORE_L, 0, 0, 0, 0.88f + ma);            // pointed elbow guards
@@ -238,6 +238,7 @@ static void cloth_bodies(void)
         float l2 = 0.0f;
         for (int k = 0; k < 3; k++) { c->ab[k] = c->b[k] - c->a[k]; l2 += c->ab[k] * c->ab[k]; c->m[k] = (c->a[k] + c->b[k]) * 0.5f; }
         c->il2 = l2 > 0.0f ? 1.0f / l2 : 0.0f;
+        c->r *= GU;
         c->r2 = c->r * c->r;
         float br = sqrtf(l2) * 0.5f + c->r;
         c->br2 = br * br;
@@ -335,7 +336,7 @@ static void push_out(float *p, const float *plane, uint32_t only, uint32_t *near
 
 static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back[3], const float *plane)
 {
-    const float k = GU / (GLTF * MODEL_SCALE);   // gravity and wind scaled with him, as his cape is (1 in the fights)
+    const float k = GU * (1.0f / (GLTF * MODEL_SCALE));   // gravity and wind scaled with him, as his cape is (1 in the fights)
     const float g = -220.0f * k * h * h;
     cl->time += h;
     const float damp = 1.0f - (strands(sp) ? 2.4f : 0.9f) * h;   // per second, not per step (0.92 / 0.97 at 30 steps)
