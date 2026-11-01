@@ -1789,6 +1789,7 @@ void scene_update(void) {
         // and its attacks with it: they play out and fade (not updated, each one froze where it was and
         // the boss's next casts piled up on screen until the effect slots were full)
         skill_fx_update(deltaTime);
+        boss_ground_crush_update(deltaTime);    // a slam's floor crack fades too (it stayed)
 
         letterbox_update();
 
