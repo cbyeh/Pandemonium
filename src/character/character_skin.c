@@ -180,10 +180,13 @@ static Cloth s_cloth[2];
 static Capsule s_body[20];      // 20 < 32: a bit each in Cloth.near
 static int s_bodyCount;
 static uint32_t s_armBits;     // the sword and arms (they swing fast: cloth_draw always checks them)
+static int s_blade;             // the blade's capsule; where it was at the last step, and its sweep since (swept)
+static float s_bladeA0[3], s_bladeB0[3], s_swM[3], s_swR2;
+static bool s_bladeOk, s_swing;
 
 static const uint8_t TATTER[CLOTH_COLS] = { 100, 15, 60, 5, 80, 25, 90 };  // % of the last three segments
 
-void character_skin_reset_cloth(void) { s_cloth[0].valid = s_cloth[1].valid = false; }
+void character_skin_reset_cloth(void) { s_cloth[0].valid = s_cloth[1].valid = false; s_bladeOk = false; }
 
 static inline float *PC(Cloth *cl, int c, int r) { return cl->p[r * cl->cols + c]; }
 static inline bool strands(const ClothSpec *sp) { return sp->kind == CLOTH_HAIR || sp->kind == CLOTH_PLUME; }
@@ -231,6 +234,7 @@ static void cloth_bodies(void)
     CAPS(B_FORE_R, B_HAND_R, 0.45f + ma);
     SPHERE(B_HAND_L, 0, 0, 0, 0.45f + ma);            // the left gauntlet (the right is in the hilt)
     s_armBits = ((1u << n) - 1) & ~((1u << arm0) - 1);
+    s_blade = arm0 + 1;
     CAPS(B_LEG_L, B_SHIN_L, 0.5f + ml);
     CAPS(B_LEG_R, B_SHIN_R, 0.5f + ml);
     CAPS(B_SHIN_L, B_FOOT_L, 0.42f + ml);
@@ -348,6 +352,27 @@ static uint32_t push_out(float *p, const float *plane, uint32_t only)
     return nb;
 }
 
+// The blade's sweep since the last step (a step is 1/30 s: in a big swing it passed right through
+// the cloth): a point it went through, a third or two thirds of the way, is carried on with it
+// (and so keeps some of its speed): the cloth sways off the swing instead of the blade cutting it
+static void swept(float *p)
+{
+    float m[3] = { p[0] - s_swM[0], p[1] - s_swM[1], p[2] - s_swM[2] };
+    if (m[0] * m[0] + m[1] * m[1] + m[2] * m[2] >= s_swR2) return;
+    const Capsule *k = &s_body[s_blade];
+    for (int j = 1; j <= 2; j++) {
+        float t = j * (1.0f / 3.0f), a[3], ab[3];
+        for (int i = 0; i < 3; i++) { a[i] = s_bladeA0[i] + (k->a[i] - s_bladeA0[i]) * t; ab[i] = s_bladeB0[i] + (k->b[i] - s_bladeB0[i]) * t - a[i]; }
+        float ap[3] = { p[0] - a[0], p[1] - a[1], p[2] - a[2] };
+        float h = (ap[0] * ab[0] + ap[1] * ab[1] + ap[2] * ab[2]) * k->il2;     // (the blade keeps its length)
+        h = h < 0 ? 0 : h > 1 ? 1 : h;
+        float d[3] = { ap[0] - ab[0] * h, ap[1] - ab[1] * h, ap[2] - ab[2] * h };
+        if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] >= 4.0f * k->r2) continue;     // twice its width: the air it drives moves cloth too
+        for (int i = 0; i < 3; i++) p[i] += ((k->a[i] - s_bladeA0[i]) * (1.0f - h) + (k->b[i] - s_bladeB0[i]) * h) * (1.0f - t);
+        return;
+    }
+}
+
 // floor: it stays above; ceil: a cloak in the air rises to it (his head), never above (on the ground: below its pins)
 static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back[3], const float *plane, float floor, float ceil)
 {
@@ -399,6 +424,9 @@ static void cloth_step(Cloth *cl, const ClothSpec *sp, float h, const float back
             for (int r = 1; r < cl->rows; r++)
                 for (int c = 0; c < cl->cols; c++) {
                     float *p = PC(cl, c, r), *a = tpin[c];
+#ifndef HLE_NO_SWEEP   // test aid: the blade only where it is at the step
+                    if (s_swing) swept(p);
+#endif
                     float d[3] = { p[0] - a[0], p[1] - a[1], p[2] - a[2] }, l2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2], t = cl->tl[r][c];
                     if (l2 > t * t) { float k = t / sqrtf(l2); for (int i = 0; i < 3; i++) p[i] = a[i] + d[i] * k; }
                     cl->near[r * cl->cols + c] = push_out(p, plane, (1u << s_bodyCount) - 1);
@@ -1016,6 +1044,20 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
     if (dt > 0.05f) dt = 0.05f;
 
     bool cape = s->cl[0].kind == CLOTH_CLOAK || s->cl[1].kind == CLOTH_CLOAK;
+    const Capsule *bk = &s_body[s_blade];
+    if (step) {     // the blade's sweep since the last step: its bounding sphere (swept), none after a teleport
+        float sw = 0.0f;
+        for (int i = 0; i < 3; i++) {
+            s_swM[i] = (s_bladeA0[i] + s_bladeB0[i] + bk->a[i] + bk->b[i]) * 0.25f;
+            float e = bk->b[i] - s_bladeB0[i]; sw += e * e;
+        }
+        float r = 0.0f;
+        const float *pts[4] = { s_bladeA0, s_bladeB0, bk->a, bk->b };
+        for (int j = 0; j < 4; j++) { float e2 = 0; for (int i = 0; i < 3; i++) e2 += (pts[j][i] - s_swM[i]) * (pts[j][i] - s_swM[i]); r = fmaxf(r, e2); }
+        r = sqrtf(r) + 2.0f * bk->r;
+        s_swR2 = r * r;
+        s_swing = s_bladeOk && sw < 60.0f * 60.0f;
+    }
     float ceil = -1e9f;     // in the air (a jump, Moon Blade Dance): a cloak may rise to the top of his head
     if (pos[1] > ground + 1.0f) { float hd[3]; bone_world(B_HEAD, -0.34f, 1.97f, 0.0f, hd); ceil = hd[1]; }
     for (int k = 0; k < 2; k++) {
@@ -1087,6 +1129,7 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
         cloth_draw(cl, sp, modelMat, o, ax, s2, cl->stepped, pl);
         if (hair) t3d_state_set_depth_offset(0);
     }
+    if (step) { memcpy(s_bladeA0, bk->a, sizeof s_bladeA0); memcpy(s_bladeB0, bk->b, sizeof s_bladeB0); s_bladeOk = true; }
 #ifdef HLE_PROF_SERIAL
     s_kp[3] += gpu_prof_split();
 #endif
