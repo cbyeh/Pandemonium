@@ -1196,6 +1196,7 @@ void fallen_knight_begin(Boss* boss)
 {
     if (!s.ready) {
         s.skel = t3d_skeleton_create(characterModel);
+        t3d_skeleton_update(&s.skel);   // its bones' matrices: the first update's head turn reads them (unset, they were old heap: a NaN compare halted Delta's core)
         s.skelBlend = t3d_skeleton_clone(&s.skel, false);
         for (int i = 0; i < FKA_COUNT; i++) {
             s.anims[i] = t3d_anim_create(characterModel, ANIM_NAMES[i]);
