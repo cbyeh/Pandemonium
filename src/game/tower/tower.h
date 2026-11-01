@@ -58,7 +58,8 @@ int  tower_draft_selected(void);        // the card under the cursor (nChoices: 
 void tower_draft_draw(void);
 void tower_hud_draw(void);              // floor / circle during a run fight
 const char* tower_death_summary(void);   // a line for the death screen
-const char* tower_run_summary(void);     // the run so far, for the pause menu (several lines)
+const char* tower_run_summary(void);     // the run so far, for the pause menu's Stats page (several lines)
+int tower_run_boons(char out[][24], int max);   // the boons held (with stacks), one a line, for its Boons page; returns the count
 
 // ---- Nights: from the second circle each circle has one (a trade-off, more Embers) ----
 const char* tower_night_name(void);     // "" for none

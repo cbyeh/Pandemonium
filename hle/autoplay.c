@@ -15,7 +15,7 @@
 #ifdef HLE_TEST_TOWER     // the Unbroken check hits the player
 #include "character.h"
 #endif
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE)
 #include "camera_controller.h"
 #include "joypad_utility.h"
 #include "character_skin.h"
@@ -27,7 +27,7 @@
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #include "scenes/guardian/guardian_scene_bounds.h"
 #endif
-#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH)
+#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH)
 #include "utilities/save_controller.h"
 #include "controllers/scene_controller.h"
 #include "controllers/menu_controller.h"
@@ -700,6 +700,41 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         return;
     }
 #endif
+#ifdef HLE_TEST_TOWER_STATS
+    // The pause menu's Stats pages with every boon held (tower.c fills the run): Title > Tower >
+    // Climb; in the fight Start, D-down (Stats), A: page 1; A: page 2; Right: page 1; Left: page 2;
+    // A: back to the pause menu
+    {
+        static int phase = 0, t0 = 0, step = 0;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0;
+        if (phase == 0) {
+            if (menu_controller_is_active()) { phase = 1; t0 = frame; debugf("[stats] title at %d\n", frame); }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 1) {
+            extern bool tower_active(void);
+            static const char seq[] = "DDAA";     // (Story is the first row)
+            if (t >= 20 && step < 4) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; t0 = frame; }
+            if (step == 4 && boss && tower_active()) { phase = 2; t0 = frame; step = 0; debugf("[stats] climbing at %d\n", frame); }
+        } else if (phase == 2) {
+            static bool fighting;
+            if (!fighting) { if (!boss || boss->mode != BOSS_MODE_COMBAT) { t0 = frame; if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; } return; } fighting = true; t0 = frame; return; }
+            character.health = character.maxHealth;     // (alive for the shots)
+            static const char seq[] = "SDARLAB";
+            if (t >= (step ? 60 : 300) && seq[step]) {
+                char c = seq[step];
+                extern bool tower_active(void);
+                if (!step) debugf("[stats] in the Tower: %d\n", tower_active());
+                if (c == 'S') { pressed->start = 1; in->btn.start = 1; } else if (c == 'D') pressed->d_down = 1;
+                else if (c == 'A') { pressed->a = 1; in->btn.a = 1; } else if (c == 'B') { pressed->b = 1; in->btn.b = 1; }
+                else if (c == 'R') pressed->d_right = 1; else if (c == 'L') pressed->d_left = 1;
+                debugf("[stats] step %c at frame %d\n", c, frame);
+                step++; t0 = frame;
+            }
+        }
+        return;
+    }
+#endif
 #ifdef HLE_TEST_TOWER_UI
     // Screens and the skill cards: 200 Embers; Title > Tower > Shrine: buy Honed Blade
     // (row 3); back, Climb; no skill works on floor 1; kill the boss: the draft, take its
@@ -769,8 +804,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (menu_controller_is_active()) { phase = 1; t0 = frame; }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
-            static const char seq[] = "DDAA";
-            if (t >= 20 && step < 5) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; t0 = frame; }
+            static const char seq[] = "DDAA";     // (Story is the first row)
+            if (t >= 20 && step < 4) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; t0 = frame; }
             if (step == 5 && boss && tower_active()) { phase = 2; t0 = frame; }
         } else if (phase == 2) {
             if (!boss) return;

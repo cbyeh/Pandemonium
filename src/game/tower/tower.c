@@ -273,6 +273,11 @@ void tower_begin_run(uint32_t seed)
     s.floor = 1;
     s.rng = seed ? seed : 1;
     shuffle_circle();
+#ifdef HLE_TEST_TOWER_STATS   // test aid: every boon at its most, every pact twice, for the Stats pages
+    for (int b = 0; b < BOON_COUNT; b++) s.stacks[b] = BOONS[b].maxStacks;
+    for (int b = 0; b < PB_COUNT; b++) s.bless[b] = 2;
+    for (int c = 0; c < PC_COUNT; c++) s.curse[c] = 2;
+#endif
 #ifdef HLE_TOWER_GIVE   // test aid: start the run holding this boon
     s.stacks[HLE_TOWER_GIVE] = 1;
 #endif
@@ -623,14 +628,7 @@ const char* tower_run_summary(void)
     ADD("Damage x%.2f, damage taken x%.2f\n", (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken());
     ADD("Max health %.0f, potions %d", (double)tower_mod_max_health(), character.healthPotions);
     if (s.potionDebt) ADD(" (%d owed)", s.potionDebt);
-    ADD("\nBoons:");
-    int k = 0;
-    for (int i = 0; i < BOON_COUNT; i++) if (s.stacks[i]) {
-        ADD("%s %s", k++ ? "," : "", BOONS[i].name);
-        if (BOONS[i].maxStacks > 1) ADD(" %d", s.stacks[i]);
-    }
-    if (!k) ADD(" none");
-    ADD("\nBlessings:"); k = 0;
+    ADD("\nBlessings:"); int k = 0;
     for (int i = 0; i < PB_COUNT; i++) if (s.bless[i]) ADD("%s %s %d", k++ ? "," : "", BLESSINGS[i].name, s.bless[i]);
     if (!k) ADD(" none");
     ADD("\nCurses:"); k = 0;
@@ -638,6 +636,16 @@ const char* tower_run_summary(void)
     if (!k) ADD(" none");
     #undef ADD
     return b;
+}
+
+int tower_run_boons(char out[][24], int max)
+{
+    int n = 0;
+    for (int i = 0; i < BOON_COUNT && n < max; i++) if (s.stacks[i]) {
+        if (BOONS[i].maxStacks > 1) snprintf(out[n++], 24, "%s %d", BOONS[i].name, s.stacks[i]);
+        else snprintf(out[n++], 24, "%s", BOONS[i].name);
+    }
+    return n;
 }
 
 const char* tower_death_summary(void)

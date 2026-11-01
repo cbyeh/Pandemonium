@@ -75,10 +75,12 @@ static bool overscanCalibrating = false;
 static int8_t overscanPrevX = 0;
 static int8_t overscanPrevY = 0;
 
+static int runPage;     // the Stats menu's page: 0 the run's numbers, 1 its boons
+
 // Menu text
 static const char* mainMenuOptions[MENU_MAIN_COUNT] = {
     "Resume",
-    "Run",
+    "Stats",
     "Restart",
     "Settings",
     "Controls",
@@ -405,6 +407,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                 case MENU_MAIN_RUN:
                     currentMenu = MENU_RUN;
                     selectedOption = 0;
+                    runPage = 0;
                     break;
 
                 case MENU_MAIN_RESTART:
@@ -708,7 +711,10 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             (void)save_controller_save_settings();
         }
     } else if (currentMenu == MENU_RUN) {
-        if (bJustPressed || aJustPressed) { currentMenu = MENU_MAIN; selectedOption = MENU_MAIN_RUN; }
+        // two pages: Left/Right flip them, A turns to the next and closes from the last, B closes
+        if (leftJustPressed || rightJustPressed) runPage ^= 1;
+        else if (bJustPressed || (aJustPressed && runPage == 1)) { currentMenu = MENU_MAIN; selectedOption = MENU_MAIN_RUN; }
+        else if (aJustPressed) runPage = 1;
     } else if (currentMenu == MENU_CREDITS) {
         if (aJustPressed || bJustPressed) {
             currentMenu = parentMenu;
@@ -1563,9 +1569,23 @@ void menu_controller_draw(void)
         draw_icon_line(iconDpad, listX, y, lineHeight, listW, lay == LAYOUT_SKILLS_ON_C ? "Move Camera" : "Skills / Potion");
     } else if (currentMenu == MENU_RUN) {
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
-                         FONT_UNBALANCED, x, y + titleYOffset, "THIS CLIMB");
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW + 40, .height = contentH, .wrap = WRAP_WORD },
-                         FONT_UNBALANCED, x - 20, y + titleYOffset + 22, "%s", tower_run_summary());
+                         FONT_UNBALANCED, x, y + titleYOffset, runPage ? "BOONS" : "STATS");
+        if (!runPage) {
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW + 40, .height = contentH, .wrap = WRAP_WORD },
+                             FONT_UNBALANCED, x - 20, y + titleYOffset + 22, "%s", tower_run_summary());
+        } else {
+            // one boon a line in two columns, down the left first: all of them fit
+            char boons[BOON_COUNT][24];
+            int n = tower_run_boons(boons, BOON_COUNT), rows = (n + 1) / 2;
+            int rowH = rows > 10 ? 14 : 16;
+            for (int i = 0; i < n; i++)
+                rdpq_text_printf(&(rdpq_textparms_t){ .width = (contentW + 40) / 2, .height = contentH }, FONT_UNBALANCED,
+                                 x - 20 + (i / rows) * ((contentW + 40) / 2), y + titleYOffset + 22 + (i % rows) * rowH, "%s", boons[i]);
+            if (!n) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH }, FONT_UNBALANCED, x, y + titleYOffset + 40, "None yet");
+        }
+        // the other page, in the title row's corner
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = runPage ? ALIGN_LEFT : ALIGN_RIGHT, .width = contentW + 40, .height = contentH }, FONT_UNBALANCED,
+                         x - 20, y + titleYOffset, runPage ? "< Stats" : "Boons >");
     } else if (currentMenu == MENU_CREDITS) {
         rdpq_text_printf(&(rdpq_textparms_t){
             .align = ALIGN_CENTER,
