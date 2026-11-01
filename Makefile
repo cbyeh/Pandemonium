@@ -82,6 +82,9 @@ endif
 CODEOBJECTS += $(patsubst hle/%,$(OBJDIR)/hle/%.o,$(basename $(HLEFILES)))
 N64_ASFLAGS += -Ihle/internal
 N64_CFLAGS += $(HLE_EXTRA_CFLAGS) -DHLE_BUILD -Ihle -Ihle/internal -Ihle/internal/rspq -I$(T3D_INST)/src/t3d
+# The crash symbols without inlined functions' names (a backtrace names the function they're in,
+# and the line): ~25 KB less, the ROM kept at its size on the release page
+N64_SYM := $(N64_SYM) --no-inlines
 N64_LDFLAGS += --wrap sys_hw_memset --wrap sys_hw_memset16 --wrap sys_hw_memset32 --wrap sys_hw_memset64
 # Z clears without a mid-frame SYNC_FULL (hle/clearz_hle.c)
 N64_LDFLAGS += --wrap __rdpq_clear_z
