@@ -88,6 +88,7 @@ static struct {
     int anim;
     float blendT, blendDur; // crossfade timer (0 = done), and its length
     T3DMat4FP *mat;
+    bool tinted;            // its colours set on this load's model (a boot-long flag left a reloaded one gray: the Tower's)
     T3DModel *body;         // its body (tools/fw_knight_model.py): the knight's own mesh reshaped, on the knight's skeleton
     int swordBone;          // "Hand-Right": the blade runs along its -X
     int headBone;           // "Head": the body capsule's top while it kneels staggered
@@ -2354,11 +2355,13 @@ void fallen_knight_draw(Boss* b)
     static const color_t COLS[] = { RGBA32(100, 27, 34, 255), RGBA32(100, 27, 34, 255), RGBA32(128, 40, 48, 255), RGBA32(56, 18, 22, 255),
                                     RGBA32(78, 22, 27, 255), RGBA32(84, 80, 82, 255), RGBA32(20, 16, 18, 255),
                                     RGBA32(84, 40, 32, 255), RGBA32(70, 16, 20, 255) };     // (the pauldron: its lames dark brownish red, its dome dark red)
-    static bool tinted;     // (its own model: its colours set once)
-    if (!tinted) {
+    if (!s.tinted) {
         for (int i = 0; i < (int)(sizeof MATS / sizeof MATS[0]); i++) { T3DMaterial *m = t3d_model_get_material(s.body, MATS[i]); if (m) m->primColor = COLS[i]; }
-        tinted = true;
+        s.tinted = true;
     }
+#ifdef HLE_LOG_FWTINT   // test aid: its armour's colour as drawn (the Tower's second load drew it untinted)
+    { static int n; if (n++ % 300 == 0) { color_t c = t3d_model_get_material(s.body, "knight")->primColor; debugf("[fwtint] armour %d,%d,%d\n", c.r, c.g, c.b); } }
+#endif
     t3d_matrix_set(gpu_mat(s.mat), true);
     T3DMat4FP *bones = gpu_skeleton_begin(&s.skel);
     t3d_model_draw_custom(s.body, (T3DModelDrawConf){ .matrices = gpu_skeleton_matrices(), .filterCb = fk_parts });
