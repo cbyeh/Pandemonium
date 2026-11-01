@@ -87,7 +87,7 @@ N64_CFLAGS += $(HLE_EXTRA_CFLAGS) -DHLE_BUILD -Ihle -Ihle/internal -Ihle/interna
 N64_SYM := $(N64_SYM) --no-inlines
 N64_LDFLAGS += --wrap sys_hw_memset --wrap sys_hw_memset16 --wrap sys_hw_memset32 --wrap sys_hw_memset64
 # Z clears without a mid-frame SYNC_FULL (hle/clearz_hle.c)
-N64_LDFLAGS += --wrap __rdpq_clear_z
+N64_LDFLAGS += --wrap __rdpq_clear_z $(HLE_EXTRA_LDFLAGS)
 ifneq ($(HLE_BOOTFIX_ONLY),1)
 # Models register their vertices with the converted-vertex cache (hle/ovl_t3d.c)
 N64_LDFLAGS += --wrap t3d_model_load --wrap t3d_model_free

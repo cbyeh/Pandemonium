@@ -586,10 +586,8 @@ static void msa_assets_shutdown(void) {
         floorGlowMatrix = NULL;
     }
 
-#ifdef RSPQ_BLOCK_FREE_SUPPORTED
-    if (swordDpl) rspq_block_free(swordDpl);
+    if (swordDpl) rspq_block_free(swordDpl);       // (the scene waited for the GPU)
     if (floorGlowDpl) rspq_block_free(floorGlowDpl);
-#endif
     swordDpl = NULL;
     floorGlowDpl = NULL;
 

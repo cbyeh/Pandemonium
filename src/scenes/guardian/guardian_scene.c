@@ -2771,6 +2771,8 @@ void scene_delete_environment(void)
     if (sunshaftsDpl)  { rspq_block_free(sunshaftsDpl);  sunshaftsDpl = NULL; }
     if (fogDoorDpl)    { rspq_block_free(fogDoorDpl);    fogDoorDpl = NULL; }
     if (roomFloorDpl)  { rspq_block_free(roomFloorDpl);  roomFloorDpl = NULL; }
+    if (floorGlowDpl)  { rspq_block_free(floorGlowDpl);  floorGlowDpl = NULL; }
+    if (bossChainsGlowDpl) { rspq_block_free(bossChainsGlowDpl); bossChainsGlowDpl = NULL; }
 
     // --- Models ---
     if (mapModel)       { t3d_model_free(mapModel);       mapModel = NULL; }
@@ -2782,6 +2784,8 @@ void scene_delete_environment(void)
     if (sunshaftsModel) { t3d_model_free(sunshaftsModel); sunshaftsModel = NULL; }
     if (fogDoorModel)   { t3d_model_free(fogDoorModel);   fogDoorModel = NULL; }
     if (roomFloorModel) { t3d_model_free(roomFloorModel); roomFloorModel = NULL; }
+    if (floorGlowModel) { t3d_model_free(floorGlowModel); floorGlowModel = NULL; }
+    if (bossChainsGlowModel) { t3d_model_free(bossChainsGlowModel); bossChainsGlowModel = NULL; }
 
     // --- Matrices (malloc_uncached) ---
     if (mapMatrix)       { free_uncached(mapMatrix);       mapMatrix = NULL; }
@@ -2793,6 +2797,8 @@ void scene_delete_environment(void)
     if (sunshaftsMatrix) { free_uncached(sunshaftsMatrix); sunshaftsMatrix = NULL; }
     if (fogDoorMatrix)   { free_uncached(fogDoorMatrix);   fogDoorMatrix = NULL; }
     if (roomFloorMatrix) { free_uncached(roomFloorMatrix); roomFloorMatrix = NULL; }
+    if (floorGlowMatrix) { free_uncached(floorGlowMatrix); floorGlowMatrix = NULL; }
+    if (bossChainsGlowMatrix) { free_uncached(bossChainsGlowMatrix); bossChainsGlowMatrix = NULL; }
 }
 
 #ifdef HLE_TEST_ENDING

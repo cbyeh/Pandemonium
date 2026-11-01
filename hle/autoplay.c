@@ -15,7 +15,7 @@
 #ifdef HLE_TEST_TOWER     // the Unbroken check hits the player
 #include "character.h"
 #endif
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE)
 #include "camera_controller.h"
 #include "joypad_utility.h"
 #include "character_skin.h"
@@ -52,6 +52,61 @@ void hle_open_tick(bool open, float dt)
 
 #ifdef HLE_TEST_FOG_AB
 bool hle_fog_ab_cpu;
+#endif
+#ifdef HLE_TEST_LEAK
+// Test aid (with HLE_TEST_CYCLE; link with HLE_EXTRA_LDFLAGS="--wrap malloc --wrap free --wrap calloc
+// --wrap realloc --wrap memalign"): every live allocation's size, caller and cycle; hle_leak_dump
+// lists the ones made in a cycle that are still held cycles later (what each title return leaks)
+#define LK_N 16384
+static struct { void *p; uint32_t size, ra; int16_t cyc; } lk[LK_N];
+int hle_leak_cyc;
+void *__real_malloc(size_t), __real_free(void *), *__real_calloc(size_t, size_t), *__real_realloc(void *, size_t), *__real_memalign(size_t, size_t);
+static void lk_add2(void *p, size_t size, void *ra, int cyc)
+{
+    if (!p) return;
+    uint32_t h = ((uint32_t)p >> 3) % LK_N;
+    for (int n = 0; n < LK_N; n++, h = (h + 1) % LK_N)
+        if (!lk[h].p) { lk[h].p = p; lk[h].size = size; lk[h].ra = (uint32_t)ra; lk[h].cyc = cyc; return; }
+}
+static void lk_add(void *p, size_t size, void *ra) { lk_add2(p, size, ra, hle_leak_cyc); }
+static void lk_del(void *p)
+{
+    if (!p) return;
+    uint32_t h = ((uint32_t)p >> 3) % LK_N;
+    for (int n = 0; n < LK_N && lk[h].p; n++, h = (h + 1) % LK_N)
+        if (lk[h].p == p) {     // re-place the run after it (linear probing)
+            lk[h].p = NULL;
+            for (uint32_t j = (h + 1) % LK_N; lk[j].p; j = (j + 1) % LK_N) { typeof(lk[0]) e = lk[j]; lk[j].p = NULL; lk_add2(e.p, e.size, (void *)e.ra, e.cyc); }
+            return;
+        }
+}
+void *__wrap_malloc(size_t s) { disable_interrupts(); void *p = __real_malloc(s); lk_add(p, s, __builtin_return_address(0)); enable_interrupts(); return p; }
+void *__wrap_calloc(size_t a, size_t b) { disable_interrupts(); void *p = __real_calloc(a, b); lk_add(p, a * b, __builtin_return_address(0)); enable_interrupts(); return p; }
+void *__wrap_memalign(size_t a, size_t s) { disable_interrupts(); void *p = __real_memalign(a, s); lk_add(p, s, __builtin_return_address(0)); enable_interrupts(); return p; }
+void *__wrap_realloc(void *o, size_t s) { disable_interrupts(); lk_del(o); void *p = __real_realloc(o, s); lk_add(p, s, __builtin_return_address(0)); enable_interrupts(); return p; }
+void *__real_malloc_uncached(size_t), *__real_asset_load(const char *, int *);
+void *__wrap_malloc_uncached(size_t s) { void *p = __real_malloc_uncached(s); disable_interrupts(); uint32_t ra = (uint32_t)__builtin_return_address(0);
+    for (int i = 0; i < LK_N; i++) if (lk[i].p && (uint32_t)lk[i].p == ((uint32_t)p & 0xDFFFFFFF)) lk[i].ra = ra;  // uncached pointer: the cached block it came from
+    enable_interrupts(); return p; }
+void *__real_malloc_uncached_aligned(int, size_t);
+void *__wrap_malloc_uncached_aligned(int a, size_t s) { void *p = __real_malloc_uncached_aligned(a, s); disable_interrupts(); uint32_t ra = (uint32_t)__builtin_return_address(0);
+    for (int i = 0; i < LK_N; i++) if (lk[i].p && (uint32_t)lk[i].p == ((uint32_t)p & 0xDFFFFFFF)) lk[i].ra = ra;
+    enable_interrupts(); return p; }
+void *__real_rspq_block_end(void);
+void *__wrap_rspq_block_end(void) { void *b = __real_rspq_block_end(); disable_interrupts(); uint32_t ra = (uint32_t)__builtin_return_address(0);
+    for (int i = 0; i < LK_N; i++) if ((uint32_t)lk[i].p == ((uint32_t)b & 0xDFFFFFFF)) lk[i].ra = ra;
+    enable_interrupts(); return b; }
+void *__wrap_asset_load(const char *f, int *sz) { void *p = __real_asset_load(f, sz); debugf("[leak] asset_load %s -> %p (cyc %d, from %08lx)\n", f, p, hle_leak_cyc, (unsigned long)__builtin_return_address(0)); return p; }
+void __wrap_free(void *p) { disable_interrupts(); lk_del(p); __real_free(p); enable_interrupts(); }
+void hle_leak_dump(int from, int to)
+{
+    uint32_t total = 0; int n = 0;
+    for (int i = 0; i < LK_N; i++) if (lk[i].p && lk[i].cyc >= from && lk[i].cyc < to) {
+        total += lk[i].size; n++;
+        debugf("[leak] cyc %d %p %lu bytes from %08lx\n", lk[i].cyc, lk[i].p, (unsigned long)lk[i].size, (unsigned long)lk[i].ra);
+    }
+    debugf("[leak] cycles %d-%d: %d blocks, %lu bytes still held\n", from, to - 1, n, (unsigned long)total);
+}
 #endif
 void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
@@ -1045,6 +1100,78 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         camera_mode(CAMERA_CUSTOM);
         if (t % 60 == 0) debugf("[cover] shot %d at frame %d\n", k, frame);
         if (t >= 125 && t < 129) { pressed->b = 1; in->btn.b = 1; }     // a swing, for an action pose
+        return;
+    }
+#endif
+#ifdef HLE_TEST_CYCLE
+    // Load/unload stress: title -> a fight -> back to the title, over and over, each cycle a
+    // different way in and out (the Fallen Warrior's intro watched, skipped early, skipped as it
+    // drops, mid-landing; Restart; other bosses first; death; a kill and its outro). Logs free
+    // heap at the title every cycle (a leak shows as it falling) and a heartbeat (a freeze: it stops)
+    {
+        extern bool scene_is_cutscene_active(void);
+        enum { V_WATCH, V_SKIP_EARLY, V_SKIP_DROP, V_SKIP_LAND, V_RESTART, V_SUN, V_DRAGON, V_STORY, V_DIE, V_KILL, V_N };
+        static const char *const VN[V_N] = { "fw-watch", "fw-skip-early", "fw-skip-drop", "fw-skip-land", "fw-restart", "sun", "dragon", "story", "fw-die", "fw-kill" };
+        static int phase = 0, t0 = 0, step = 0, cyc = 0, dropF = -1, restarted = 0, heap0 = -1, lastMs = 0, worstMs = 0;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0, v = cyc % V_N;
+        heap_stats_t h; sys_get_heap_stats(&h);
+        int ms = (int)get_ticks_ms(), freeKB = (h.total - h.used) / 1024;
+        if (lastMs && ms - lastMs > worstMs) worstMs = ms - lastMs;
+        lastMs = ms;
+        if (frame % 120 == 0) debugf("[cyc] hb f%d ms %d cyc %d %s phase %d boss %d mode %d cut %d free %d KB worst frame %d ms\n", frame, ms, cyc, VN[v], phase,
+                                     boss ? boss->phaseIndex : -1, boss ? boss->mode : -1, scene_is_cutscene_active(), freeKB, worstMs);
+        #define TAP_A() do { pressed->a = 1; in->btn.a = 1; } while (0)
+        if (phase == 0) {               // the title menu (A opens it)
+            if (menu_controller_is_active() && !boss) {
+                if (t > 30) {
+                    if (heap0 < 0) heap0 = freeKB;
+                    debugf("[cyc] title cyc %d next %s free %d KB (first %d, %+d) worst frame %d ms\n", cyc, VN[v], freeKB, heap0, freeKB - heap0, worstMs);
+                    phase = 1; t0 = frame; step = 0; dropF = -1; restarted = 0; worstMs = 0;
+                }
+            } else { t0 = frame; if (!boss && frame > 200 && frame % 30 == 0) TAP_A(); }
+        } else if (phase == 1) {        // pick the fight
+            const char *seq = v == V_SUN ? "DADA" : v == V_DRAGON ? "DADDA" : v == V_STORY ? "A" : "DAA";
+            if (t >= 20 && step < (int)strlen(seq)) { if (seq[step] == 'D') pressed->d_down = 1; else TAP_A(); step++; t0 = frame; }
+            else if (step == (int)strlen(seq) && boss && scene_is_cutscene_active()) { debugf("[cyc] intro cyc %d %s f%d free %d KB\n", cyc, VN[v], frame, freeKB); phase = 2; t0 = frame; }
+            else if (t > 1500) { debugf("[cyc] STUCK picking cyc %d\n", cyc); phase = 0; }
+        } else if (phase == 2) {        // the intro, left or skipped as the variant says
+            if (dropF < 0 && boss && boss->visible && boss->phaseIndex >= 3) { dropF = frame; debugf("[cyc] boss drops in at intro +%d free %d KB\n", t, freeKB); }
+            bool skip = false;
+            if (restarted) skip = false;
+            else if (v == V_SKIP_EARLY) skip = t == 30 || t == 40;
+            else if (v == V_SKIP_DROP) skip = dropF >= 0 && (frame == dropF || frame == dropF + 8);
+            else if (v == V_SKIP_LAND) skip = dropF >= 0 && (frame == dropF + 60 || frame == dropF + 68);
+            else if (v == V_SUN || v == V_DRAGON || v == V_STORY) skip = t > 60 && t % 20 == 0;
+            if (skip) TAP_A();
+            if (boss && boss->mode == BOSS_MODE_COMBAT && !scene_is_cutscene_active() && character_get_state() == CHAR_STATE_NORMAL) {
+                debugf("[cyc] fight cyc %d boss %d after %d frames free %d KB worst frame %d ms\n", cyc, boss->phaseIndex, t, freeKB, worstMs);
+                phase = 3; t0 = frame;
+            } else if (t > 4000) { debugf("[cyc] STUCK in intro cyc %d\n", cyc); phase = 3; t0 = frame; }
+        } else if (phase == 3) {        // fight a moment, then out
+            if (character.health < character.maxHealth * 0.5f && v != V_DIE) character.health = character.maxHealth;
+            if (t == 180) {
+                if (v == V_DIE) character_apply_damage(9999.0f);
+                else if (v == V_KILL) boss_apply_damage(boss, boss->maxHealth * 2.0f);
+                else pressed->start = 1;
+            }
+            int downs = v == V_RESTART && !restarted ? 1 : 4;     // Resume, Restart, Settings, Controls, Main Menu
+            if (v != V_DIE && v != V_KILL) {
+                if (t > 180 && t <= 180 + downs * 10 && (t - 180) % 10 == 0) pressed->d_down = 1;
+                if (t == 200 + downs * 10) {
+                    TAP_A();
+                    if (downs == 1) { restarted = 1; phase = 2; t0 = frame; dropF = -1; debugf("[cyc] restart cyc %d\n", cyc); return; }
+                }
+            } else if (t > 400 && t % 30 == 0 && boss) TAP_A();     // the death screen / the outro
+            if (t > 200 && !boss) {
+                cyc++; phase = 0; t0 = frame;
+#ifdef HLE_TEST_LEAK
+                { extern int hle_leak_cyc; extern void hle_leak_dump(int, int); hle_leak_cyc = cyc; if (cyc == 7) hle_leak_dump(2, 6); }
+#endif
+            }
+            else if (t > 3000) { debugf("[cyc] STUCK leaving cyc %d\n", cyc); }
+        }
+        #undef TAP_A
         return;
     }
 #endif
