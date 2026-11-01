@@ -12,6 +12,9 @@
 #ifndef HLE_STRIKE_EVERY
 #define HLE_STRIKE_EVERY 24     // frames between presses (fewer chains the combo)
 #endif
+#ifdef HLE_TEST_TOWER     // the Unbroken check hits the player
+#include "character.h"
+#endif
 #if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS)
 #include "camera_controller.h"
 #include "joypad_utility.h"
@@ -342,7 +345,28 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         if (fabsf(tower_boss_health_scale(1) - 0.7f) > 0.01f || fabsf(tower_boss_health_scale(5) - 0.385f) > 0.01f) fails++;   // circle 1, no skills (a Bonus boss: 0.7 x 0.55)
         { extern float tower_mod_damage_taken(void); if (fabsf(tower_mod_damage_taken() - 0.6f) > 0.01f) fails++; }
         if (tower_mod_skill_allowed(0)) fails++;
-        tower_end_run();
+        {   // Unbroken: one killing blow a floor survived at 1 HP; the next one kills; never a revive
+            extern void tower_test_grant_unbroken(void);
+            #define HIT(hp0) do { character_set_state(CHAR_STATE_NORMAL); character.health = (hp0); character_apply_damage(1000.0f); } while (0)
+            #define ALIVE1 (character.health == 1.0f && character_get_state() != CHAR_STATE_DEAD)
+            #define DEAD0  (character.health == 0.0f && character_get_state() == CHAR_STATE_DEAD)
+            int uf = 0;
+            HIT(10.0f); if (!DEAD0) uf |= 1;                                    // without it: dead
+            tower_test_grant_unbroken();
+            HIT(10.0f); if (!ALIVE1) uf |= 2;                                   // with it: 1 HP
+            HIT(1.0f);  if (!DEAD0) uf |= 4;                                    // spent this floor: dead
+            character_apply_damage(1000.0f); if (!DEAD0) uf |= 8;               // hit while dead: no revive
+            tower_next_floor();
+            HIT(10.0f); if (!ALIVE1) uf |= 16;                                  // the next floor: again
+            tower_end_run();
+            HIT(10.0f); if (!DEAD0) uf |= 32;                                   // outside a run: nothing
+            #undef HIT
+            #undef ALIVE1
+            #undef DEAD0
+            character_set_state(CHAR_STATE_TITLE_IDLE); character.health = character.maxHealth;
+            debugf("[tower] unbroken: %s (bits %d)\n", uf ? "FAIL" : "ok", uf);
+            if (uf) fails++;
+        }
         if (tower_mod_max_potions() != 3 || !tower_mod_skill_allowed(0) || tower_boss_health_scale(3) != 1.0f) fails++;
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }

@@ -842,6 +842,10 @@ void tower_tick(float dt)
 float tower_rally_pool(void) { return s.active ? fminf(s.rally, character.maxHealth - character.health) : 0.0f; }
 int   tower_mod_extra_mbd_waves(void) { return tower_boon_stacks(BOON_CRESCENT_ECHO) ? 2 : 0; }
 
+#ifdef HLE_TEST_TOWER
+void tower_test_grant_unbroken(void) { s.stacks[BOON_UNBROKEN]++; }     // test aid: the boon without the draft
+#endif
+
 bool tower_mod_try_unbroken(void)
 {
     if (!tower_boon_stacks(BOON_UNBROKEN) || s.unbrokenUsed) return false;
