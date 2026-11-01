@@ -13,6 +13,7 @@ All scripts live in `hle/autoplay.c` and need `-DHLE_AUTOPLAY` (HLE: `HLE_EXTRA_
 - **Boss held still** (before/after shots that line up): `HLE_TEST_FREEZE_BOSS`. Boss AI is otherwise non-deterministic. `HLE_DRAGON_FREEZE_CONE` stops Shadowborne's clock once a fire cone is out (with `HLE_DRAGON_FORCE=21`): a still scene to price what it draws.
 - **Ending:** `HLE_TEST_ENDING`.
 - **Lock-on at the kill:** `HLE_DUMMY_LOCK_KILL` (with `HLE_TEST_DUMMY`): locked on and circling, the boss dies at 4 s; `[lockkill]` logs the camera.
+- **Effects alive:** `HLE_LOG_FXN` logs `[fxn] <live> live, player state <n>` once a second (with `HLE_DUMMY_REAL` the player dies: state 7 is the death screen).
 - **Bot playtest:** `HLE_DUMMY_REAL` + `HLE_DUMMY_STRIKE` / `_ROLL`, `HLE_STRIKE_OPEN`, `HLE_STRIKE_STAMINA`; potions below 40%, prints `[bot] ... beaten/died`.
 - **Player:** `HLE_DUMMY_ORBIT` / `KEEP` / `PIN` / `CENTER` / `MOVE` / `SIDESTEP`, `HLE_DUMMY_SKIN=<n>`, `HLE_PAD_LAYOUT`, `HLE_SKILLS_OFF`.
 - **Skills:** off on a fresh save (pressing buttons casts nothing). `HLE_TEST_SKILL_DMG=<1-based>` zeroes cooldowns and casts on a loop. With `=1` (Moon Blade Dance, first cast only): `HLE_MBD_KD=<frames>` a 25 hit that many frames in (knocked down mid-air); `HLE_MBD_CLOSECAM=<0.13f>` a still side camera that fraction of the follow camera's distance (`HLE_MBD_CAMYAW`, 1.2 rad); `HLE_MBD_XSTILL=<28.0f>` no cast, one X held still in the air, seen from behind that far (the camera's turn barely shows).

@@ -1786,6 +1786,9 @@ void scene_update(void) {
         if (boss_is_active(g_boss)) {
             boss_update(g_boss);
         }
+        // and its attacks with it: they play out and fade (not updated, each one froze where it was and
+        // the boss's next casts piled up on screen until the effect slots were full)
+        skill_fx_update(deltaTime);
 
         letterbox_update();
 

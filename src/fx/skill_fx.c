@@ -956,6 +956,10 @@ static void draw_end(void)
 
 void skill_fx_draw(void)
 {
+#ifdef HLE_LOG_FXN   // test aid: live effects once a second, with the player's state (on the death screen they froze)
+    { static int n; if (++n % 60 == 0) { int live = 0; for (int i = 0; i < SKILL_FX_MAX; i++) live += s_fx[i].type != FX_NONE;
+      debugf("[fxn] %d live, player state %d, hp %.0f\n", live, (int)character_get_state(), (double)character.health); } }
+#endif
     bool any = false;
     for (int i = 0; i < SKILL_FX_MAX && !any; i++) any = s_fx[i].type != FX_NONE;
     any = any || s_fireN > 1;
