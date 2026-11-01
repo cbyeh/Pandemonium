@@ -454,7 +454,8 @@ static uint32_t shade(SkinColor c, const float n[3], float bias)
 }
 
 #ifdef HLE_LOG_CLIP
-static int s_clipN;
+static int s_clipN, s_frontN;
+static float s_frontPl[6];      // the cloak's wall (cloth_draw counts points in front of it)
 #endif
 // The vertices are in the knight's model space, drawn with its matrix, built every frame (the
 // cloth steps every other frame: see halfway below). o is the model's origin in the world, ax its unit axes there (scaled), s2 their |ax|^2.
@@ -526,6 +527,7 @@ static void cloth_draw(Cloth *cl, const ClothSpec *sp, const T3DMat4FP *modelMat
                 float d[3] = { ap[0] - k->ab[0] * hh, ap[1] - k->ab[1] * hh, ap[2] - k->ab[2] * hh };
                 if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] < 0.81f * k->r2) { s_clipN++; break; }
             }
+            if (!pin && sp->kind == CLOTH_CLOAK && (v[0] - s_frontPl[0]) * s_frontPl[3] + (v[2] - s_frontPl[2]) * s_frontPl[5] < -0.3f * GU) s_frontN++;
 #endif
         }
     // Per vertex: no divides but the normal's (a divide is 29 cycles), the colour's tint once
@@ -1052,6 +1054,21 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
             plane[3] = back[0] / hl; plane[4] = 0.0f; plane[5] = back[2] / hl;
             pl = plane;
         }
+        const bool hair = pl != NULL;
+        // a cloak: kept behind him, or at most at his sides (it swung forward through him in attacks):
+        // behind a wall through his spine, square to it (it turns with his torso)
+        if (sp->kind == CLOTH_CLOAK) {
+            const float *sx = s_bw[B_SPINE][0];
+            float hl = sqrtf(sx[0] * sx[0] + sx[2] * sx[2]) + 1e-6f;
+            memcpy(plane, s_bw[B_SPINE][3], sizeof(float[3]));
+            plane[3] = sx[0] / hl; plane[4] = 0.0f; plane[5] = sx[2] / hl;
+#ifdef HLE_LOG_CLIP
+            memcpy(s_frontPl, plane, sizeof s_frontPl);
+#endif
+#ifndef HLE_CAPE_FRONT   // test aid: as before, free to swing forward
+            pl = plane;
+#endif
+        }
 #ifdef HLE_LOG_CLOTH
         uint32_t ts = TICKS_READ();
 #endif
@@ -1066,9 +1083,9 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
 #ifdef HLE_LOG_CLOTH
         s_stepT += TICKS_READ() - ts;
 #endif
-        if (pl) t3d_state_set_depth_offset(-0x40);   // where it lies on the cape, it wins
+        if (hair) t3d_state_set_depth_offset(-0x40);   // where it lies on the cape, it wins
         cloth_draw(cl, sp, modelMat, o, ax, s2, cl->stepped, pl);
-        if (pl) t3d_state_set_depth_offset(0);
+        if (hair) t3d_state_set_depth_offset(0);
     }
 #ifdef HLE_PROF_SERIAL
     s_kp[3] += gpu_prof_split();
@@ -1086,7 +1103,8 @@ void character_skin_draw_extras(const T3DSkeleton *skel, const T3DMat4FP *modelM
 #endif
 #ifdef HLE_LOG_CLIP
     { static int n, sum, worst; sum += s_clipN; worst = s_clipN > worst ? s_clipN : worst; s_clipN = 0;
-      if (++n == 60) { debugf("[clip] %d points in the arms over 60 frames (worst frame %d)\n", sum, worst); n = sum = worst = 0; } }
+      static int fs; fs += s_frontN; s_frontN = 0;
+      if (++n == 60) { debugf("[clip] %d points in the arms over 60 frames (worst frame %d), %d in front of him\n", sum, worst, fs); n = sum = worst = fs = 0; } }
 #endif
 #ifdef HLE_LOG_HEM   // test aid: the cloak's hem against the legs, above the ankle in GU (the units of ClothSpec.len)
     { static int n; if (++n % 60 == 0) {
