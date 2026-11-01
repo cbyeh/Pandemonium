@@ -1234,10 +1234,10 @@ static const BonusDef BONUS_DEFS[] = {
             "^Another knight...~\n^another oath,~ ^sworn\nto a dying sun.",
             "^I knelt where you stand,~\n^his champion...~ ^as\nyou are now.",
             "^I won him every war.~\n^I wore this steel~\n^until it wore me.",
-            ">Rise, then...~ ^and learn\nwhat champions become!",
+            ">Rise, then...~ ^and learn\nwhat your oath is worth!",
         },
         .outro = {
-            "^Ah...~ ^so this is how\na champion falls.",
+            "^Ah...~ ^so this is how\nthe oath ends.",
             "^Not in glory...~\n<but on my knees.",
             "^Carry it, knight...~\n<better than I did.",
         },
