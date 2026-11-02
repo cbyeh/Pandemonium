@@ -14,14 +14,17 @@ What shipped in 1.0, the numbers it is tuned to, and the ideas still open. Sizes
 - the time to kill coming from the openings: a sword hit is 4 per 0.65 s, after a 0.4 s reaction,
 - as a share of the player's resources (150 health + 3 potions at 45%, about 352).
 
-| Fight | Health | Damage a minute | Avg opening | Cost |
+Each half measured on its own (`HLE_DUMMY_HALF` for the second, 45% of the health), with `HLE_LOG_MOVES` (+ `HLE_LOG_HURTBOX` for Shadowborne) tagging each hit's source. A lingering hazard (the Sun's Spiral embers, Shadowborne's flames, the Fallen Warrior's Cleave blades and fire trail) counts once a cast: the passive dummy stands in it and takes every tick, a player steps out. Openings: a gap's sword damage is (gap - 0.4 s) / 0.65 s x 4.
+
+| Fight | Health | Damage per 120 s (1st / 2nd half) | Avg opening | Cost |
 |---|---|---|---|---|
-| Guardian | 100 | 438 | 1.38 s | 27% |
-| Unbound | 100 | 583 | 1.97 s | 32% |
-| Story (both) | 200 | | | 58% |
-| Fallen Warrior | 180, blows x1.125 | 385 | 1.93 s | ~48% |
-| Shackled Sun | 240, blows x1.55 | 880 | 2.49 s | ~52% |
-| Shadowborne | 275, blows x1.75 | 984 | 2.84 s | ~60% |
+| Guardian | 100 | 890 / 840 | 1.42 / 1.43 s | 26% |
+| Unbound | 100 | 1095 / 1090 | 2.01 / 2.05 s | 27% |
+| Fallen Warrior | 100 (was 180: 47%), blows x1.125 | 880 / 915 | 2.45 / 2.60 s | 26% |
+| Shackled Sun | 160 (was 240: 77%), blows x1.55 | 893 / 1469 | 2.33 / 2.00 s | 51% |
+| Shadowborne | 245 (was 275: 68%), blows x1.5 | 790 / 891 | 2.54 / 1.97 s | 60% |
+
+The Tower keeps the old Bonus health (180/240/275) as the base of `BONUS_HP_IN_TOWER`.
 
 The Bonus bosses climb past the story (`boss_target_max_health`, `boss_damage_scale`). It ignores how readable attacks are: a random-roll test showed the Bonus bosses' attacks are much easier to avoid than the Guardian's. `HLE_DUMMY_REAL` is a bot that fights back (strikes in openings, rolls out of attacks); it is too weak to win, so it only compares survival.
 
