@@ -2479,6 +2479,46 @@ static inline void update_animations(float speedRatio, CharacterState state, flo
     t3d_skeleton_update(character.skeleton);
 }
 
+#ifdef HLE_LOG_POP
+/** Test aid: the knight's jolts, as the Fallen Warrior's [pop]: how hard hands, head, hips and feet
+ *  change speed (model space, glTF units/s^2) for 0.4 s after each clip or state change ([ppop];
+ *  `late` from 50 ms on), and the worst outside them ([ppopclip] every 30 s) */
+static void char_pop_sample(float dt)
+{
+    static const char *NAMES[] = { "Hand-Right", "Hand-Left", "Head", "Waist", "Foot-Left", "Foot-Right" };
+    enum { NP = 6 };
+    static int bone[NP] = { -2 }, warm, key[4] = { -9, -9, -9, -9 }, from[4], pt, n, on;
+    static float p0[NP][3], v0[NP][3], t, peak, late, at, clipPk, logT;
+    T3DSkeleton *sk = (T3DSkeleton*)character.skeleton;
+    if (!sk || dt <= 1e-4f) return;
+    if (bone[0] == -2) for (int i = 0; i < NP; i++) bone[i] = t3d_skeleton_find_bone(sk, NAMES[i]);
+    float pk = 0.0f; int pi = -1;
+    for (int i = 0; i < NP; i++) {
+        if (bone[i] < 0) return;
+        float p[3], a = 0.0f;
+        mat4fp_mul_point_f32_row3_colbasis(&sk->boneMatricesFP[bone[i]], (float[3]){ 0, 0, 0 }, p);
+        for (int c = 0; c < 3; c++) { float v = (p[c] - p0[i][c]) / 64.0f / dt, d = v - v0[i][c]; a += d * d; p0[i][c] = p[c]; v0[i][c] = v; }
+        a = sqrtf(a) / dt;
+        if (a > pk) { pk = a; pi = i; }
+    }
+    if (warm < 2) { warm++; return; }
+    int k[4] = { characterState, character.currentAnimation, activeMainAnim, activeBlendAnim };
+    if (memcmp(k, key, sizeof(k))) {
+        if (on) debugf("[ppop] st %d>%d clip %d>%d lock %d>%d peak %.0f pt %d at %.0f ms late %.0f\n", from[0], key[0], from[1], key[1], from[2], key[2], (double)peak, pt, (double)(at * 1000.0f), (double)late);
+        memcpy(from, key, sizeof(from));
+        memcpy(key, k, sizeof(key));
+        on = 1; t = 0.0f; peak = late = at = 0.0f; pt = -1;
+    }
+    if (on) {
+        t += dt;
+        if (pk > peak) { peak = pk; pt = pi; at = t; }
+        if (t > 0.05f && pk > late) late = pk;
+        if (t > 0.4f) { debugf("[ppop] st %d>%d clip %d>%d lock %d>%d peak %.0f pt %d at %.0f ms late %.0f\n", from[0], key[0], from[1], key[1], from[2], key[2], (double)peak, pt, (double)(at * 1000.0f), (double)late); on = 0; n++; }
+    } else if (pk > clipPk) clipPk = pk;
+    if ((logT += dt) > 30.0f) { logT = 0.0f; debugf("[ppopclip] max %.0f changes %d\n", (double)clipPk, n); }
+}
+#endif
+
 /* -----------------------------------------------------------------------------
  * Init/update/draw/damage/delete
  * -------------------------------------------------------------------------- */
@@ -2929,6 +2969,9 @@ void character_update(void)
     float animationSpeedRatio = fminf(1.0f, velMag / MAX_MOVEMENT_SPEED);
 
     update_animations(animationSpeedRatio, characterState, deltaTime, velMag, animInputMag);
+#ifdef HLE_LOG_POP
+    char_pop_sample(deltaTime);
+#endif
     prevState = characterState;
 
     if (characterState == CHAR_STATE_NORMAL) {
