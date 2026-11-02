@@ -172,7 +172,8 @@ static int get_menu_option_count(MenuState menu)
         case MENU_SHRINE:    return MENU_SHRINE_COUNT;
         case MENU_RELICS:    return tower_relic_total() + 2;    // None, the relics, Back
         case MENU_SKINS:     return SKIN_COUNT + 1;
-        case MENU_CONTROLS:  return 2;    // Layout, Camera speed (B goes back)
+        case MENU_CONTROLS:  return 3;    // Layout, Camera speed, Back
+        case MENU_RUN:       return 2;    // the title row's two corners: Back and Next (Prev on the Boons page)
         case MENU_CREDITS:   return 1;
         default:             return 1;
     }
@@ -406,7 +407,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
 
                 case MENU_MAIN_RUN:
                     currentMenu = MENU_RUN;
-                    selectedOption = 0;
+                    selectedOption = 1;     // Next
                     runPage = 0;
                     break;
 
@@ -701,20 +702,22 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             selectedOption = parentSelectedOption;
         }
     } else if (currentMenu == MENU_CONTROLS) {
-        if (bJustPressed) {
+        if (bJustPressed || (aJustPressed && selectedOption == 2)) {
             currentMenu = parentMenu;
             selectedOption = parentSelectedOption;
-        } else if (aJustPressed || leftJustPressed || rightJustPressed) {
+        } else if (selectedOption < 2 && (aJustPressed || leftJustPressed || rightJustPressed)) {
             int d = leftJustPressed ? -1 : 1;
             if (selectedOption == 0) joypad_set_layout((joypad_get_layout() + d + LAYOUT_COUNT) % LAYOUT_COUNT);
             else camera_set_speed((camera_get_speed() - 1 + d + 5) % 5 + 1);
             (void)save_controller_save_settings();
         }
     } else if (currentMenu == MENU_RUN) {
-        // two pages: Left/Right flip them, A turns to the next and closes from the last, B closes
-        if (leftJustPressed || rightJustPressed) runPage ^= 1;
-        else if (bJustPressed || (aJustPressed && runPage == 1)) { currentMenu = MENU_MAIN; selectedOption = MENU_MAIN_RUN; }
-        else if (aJustPressed) runPage = 1;
+        // two pages, each with Back and the way to the other in the title row's corners (Stats: Back | Next >,
+        // Boons: < Prev | Back): Left/Right pick a corner, A takes it, B closes
+        if (leftJustPressed) selectedOption = 0;
+        else if (rightJustPressed) selectedOption = 1;
+        else if (bJustPressed || (aJustPressed && selectedOption == (runPage ? 1 : 0))) { currentMenu = MENU_MAIN; selectedOption = MENU_MAIN_RUN; }
+        else if (aJustPressed) { runPage ^= 1; selectedOption = runPage ? 0 : 1; }     // onto the other page's arrow
     } else if (currentMenu == MENU_CREDITS) {
         if (aJustPressed || bJustPressed) {
             currentMenu = parentMenu;
@@ -1535,7 +1538,7 @@ void menu_controller_draw(void)
             .wrap = WRAP_WORD,
         }, FONT_UNBALANCED, x, y + titleYOffset, "CONTROLS");
 
-        y += (lineHeight * 2) + titleYOffset;
+        y += lineHeight + 4 + titleYOffset;     // (tighter than the other menus: the Back row under the button list fits)
 
         // The two settings (Left/Right or A to change), then what each button does in that layout
         for (int i = 0; i < 2; i++) {
@@ -1552,7 +1555,7 @@ void menu_controller_draw(void)
         const int listW = 150;
         const int listX = x + (contentW - listW) / 2 + 12;
         int lay = joypad_get_layout();
-        const int step = lineHeight + 1;
+        const int step = lineHeight;
 
         draw_icon_line(iconStick, listX, y, lineHeight, listW, "Move");
         y += step;
@@ -1567,6 +1570,9 @@ void menu_controller_draw(void)
         draw_icon_line(iconCLeft, listX, y, lineHeight, listW, lay == LAYOUT_SKILLS_ON_C ? "Skills / Potion" : "Move Camera");
         y += step;
         draw_icon_line(iconDpad, listX, y, lineHeight, listW, lay == LAYOUT_SKILLS_ON_C ? "Move Camera" : "Skills / Potion");
+        y += 6;     // (the list's y is its baseline; the Back row's, its top)
+        if (selectedOption == 2) draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW - 20);
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH }, FONT_UNBALANCED, x, y, "Back");
     } else if (currentMenu == MENU_RUN) {
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
                          FONT_UNBALANCED, x, y + titleYOffset, runPage ? "BOONS" : "STATS");
@@ -1583,9 +1589,15 @@ void menu_controller_draw(void)
                                  x - 20 + (i / rows) * ((contentW + 40) / 2), y + titleYOffset + 22 + (i % rows) * rowH, "%s", boons[i]);
             if (!n) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH }, FONT_UNBALANCED, x, y + titleYOffset + 40, "None yet");
         }
-        // the other page, in the title row's corner
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = runPage ? ALIGN_LEFT : ALIGN_RIGHT, .width = contentW + 40, .height = contentH }, FONT_UNBALANCED,
-                         x - 20, y + titleYOffset, runPage ? "< Stats" : "Boons >");
+        // the title row's corners: Back and the way to the other page
+        const int cornerW = 70, wideW = contentW + 40;
+        for (int i = 0; i < 2; i++) {
+            int cx = i ? x - 20 + wideW - cornerW : x - 20;
+            if (i == selectedOption) draw_menu_selection_highlight(cx - 4, y + titleYOffset, cornerW + 8, lineHeight);
+            const char *label = (i == (runPage ? 1 : 0)) ? "Back" : runPage ? "< Prev" : "Next >";
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = i ? ALIGN_RIGHT : ALIGN_LEFT, .width = cornerW, .height = contentH }, FONT_UNBALANCED,
+                             cx, y + titleYOffset, "%s", label);
+        }
     } else if (currentMenu == MENU_CREDITS) {
         rdpq_text_printf(&(rdpq_textparms_t){
             .align = ALIGN_CENTER,

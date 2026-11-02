@@ -273,7 +273,7 @@ void tower_begin_run(uint32_t seed)
     s.floor = 1;
     s.rng = seed ? seed : 1;
     shuffle_circle();
-#ifdef HLE_TEST_TOWER_STATS   // test aid: every boon at its most, every pact twice, for the Stats pages
+#if defined(HLE_TEST_TOWER_STATS) && !defined(HLE_STATS_BARE)   // test aid: every boon at its most, every pact twice, for the Stats pages (BARE: as the run starts)
     for (int b = 0; b < BOON_COUNT; b++) s.stacks[b] = BOONS[b].maxStacks;
     for (int b = 0; b < PB_COUNT; b++) s.bless[b] = 2;
     for (int c = 0; c < PC_COUNT; c++) s.curse[c] = 2;
@@ -293,7 +293,11 @@ void tower_begin_run(uint32_t seed)
 #endif
     if (fx) {
         s.relicFx[0] = fx >> 4; s.relicFx[1] = fx & 15;
-        if (has_relic(RELIC_SKILL) && character_skills_enabled()) s.skills |= 1 << (rng_next() % SKILL_COUNT);
+        if (has_relic(RELIC_SKILL) && character_skills_enabled()) {
+            int k = rng_next() % SKILL_COUNT;
+            s.skills |= 1 << k;
+            s.stacks[BOON_LEARN_MOONBLADE + k] = 1;     // held as its Learn card: Stats lists it (and so its upgrades make sense)
+        }
         if (has_relic(RELIC_BLESSED)) {      // a boon that needs nothing applied on the spot
             static const BoonId GIFT[] = { BOON_EMBER_EDGE, BOON_IRON_SKIN, BOON_KINDLED_FLASK, BOON_SECOND_WIND,
                                            BOON_FLEETFOOT, BOON_BLOODTHIRST, BOON_CRUSHING_BLOWS, BOON_RIPOSTE, BOON_RALLY };
