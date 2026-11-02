@@ -127,6 +127,8 @@ int main(void)
     rdpq_font_style(font1, FONT_STYLE_GREY, &(rdpq_fontstyle_t){ .color = RGBA32(130, 130, 130, 255) });
     rdpq_font_style(font1, FONT_STYLE_BLUE, &(rdpq_fontstyle_t){ .color = RGBA32(140, 185, 255, 255) });
     rdpq_font_style(font1, FONT_STYLE_RED, &(rdpq_fontstyle_t){ .color = RGBA32(235, 110, 85, 255) });
+    rdpq_font_style(font1, FONT_STYLE_TEAL, &(rdpq_fontstyle_t){ .color = RGBA32(130, 225, 210, 255) });
+    rdpq_font_style(font1, FONT_STYLE_VIOLET, &(rdpq_fontstyle_t){ .color = RGBA32(190, 145, 255, 255) });
 
     game_time_init();
     joypad_utility_init();

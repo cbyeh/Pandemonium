@@ -76,7 +76,7 @@ static bool overscanCalibrating = false;
 static int8_t overscanPrevX = 0;
 static int8_t overscanPrevY = 0;
 
-static int runPage;     // the Stats menu's page: 0 the run's numbers, 1 its boons
+static int runPage;     // the Stats menu's page: 0 the run's numbers, 1 its build
 
 // Menu text
 static const char* mainMenuOptions[MENU_MAIN_COUNT] = {
@@ -172,9 +172,10 @@ static int get_menu_option_count(MenuState menu)
         case MENU_TOWER:     return MENU_TOWER_COUNT;
         case MENU_SHRINE:    return MENU_SHRINE_COUNT;
         case MENU_RELICS:    return tower_relic_total() + 2;    // None, the relics, Back
+        case MENU_UNLOCKS:   return tower_pack_count() + 1;     // the packs, Back
         case MENU_SKINS:     return SKIN_COUNT + 1;
         case MENU_CONTROLS:  return 3;    // Layout, Camera speed, Back
-        case MENU_RUN:       return runPage ? 1 : 2;    // the title row's corners: Stats has Back and Next, Boons only Prev
+        case MENU_RUN:       return runPage ? 1 : 2;    // the title row's corners: Stats has Back and Next, Build only Prev
         case MENU_CREDITS:   return 1;
         default:             return 1;
     }
@@ -713,7 +714,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             (void)save_controller_save_settings();
         }
     } else if (currentMenu == MENU_RUN) {
-        // two pages, their buttons in the title row's corners (Stats: Back | Next >, Boons: < Prev only):
+        // two pages, their buttons in the title row's corners (Stats: Back | Next >, Build: < Prev only):
         // Left/Right pick a corner, A takes it, B closes from either page
         if (leftJustPressed) selectedOption = 0;
         else if (rightJustPressed) selectedOption = runPage ? 0 : 1;
@@ -780,6 +781,9 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             selectedOption = tower_relic_equipped() + 1;      // on the one worn (None: row 0)
         } else if (selectedOption == MENU_SHRINE_NIGHTFARER && aJustPressed) {
             if (tower_nightfarer_buy()) save_controller_save_settings();
+        } else if (selectedOption == MENU_SHRINE_PACKS && aJustPressed) {
+            currentMenu = MENU_UNLOCKS;
+            selectedOption = 0;
         } else if (aJustPressed && selectedOption < MENU_SHRINE_UPGRADES) {
             if (tower_upgrade_buy((UpgradeId)selectedOption)) save_controller_save_settings();
         }
@@ -790,6 +794,14 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             selectedOption = MENU_SHRINE_RELIC;
         } else if (aJustPressed && selectedOption - 1 != tower_relic_equipped()) {
             if (tower_relic_select(selectedOption - 1)) save_controller_save_settings();     // buy and equip, equip, or None
+        }
+    } else if (currentMenu == MENU_UNLOCKS) {
+        int back = tower_pack_count();
+        if (bJustPressed || (aJustPressed && selectedOption == back)) {
+            currentMenu = MENU_SHRINE;
+            selectedOption = MENU_SHRINE_PACKS;
+        } else if (aJustPressed && tower_pack_buy(selectedOption)) {
+            save_controller_save_settings();
         }
     } else if (currentMenu == MENU_SKINS) {
         if (bJustPressed || (aJustPressed && selectedOption == SKIN_COUNT)) {
@@ -1167,7 +1179,7 @@ void menu_controller_draw(void)
     if (currentMenu == MENU_SETTINGS || currentMenu == MENU_AUDIO || currentMenu == MENU_VIDEO) {
         dialogHeight = 230;
     } else if (currentMenu == MENU_CONTROLS || currentMenu == MENU_CREDITS || currentMenu == MENU_SHRINE || currentMenu == MENU_RUN ||
-               currentMenu == MENU_RELICS || currentMenu == MENU_SKINS) {
+               currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS) {
         dialogHeight = 230;
     }
 
@@ -1182,7 +1194,7 @@ void menu_controller_draw(void)
         currentMenu == MENU_TOWER
     ) {
         dialogWidth = 260;
-    } else if (currentMenu == MENU_SHRINE || currentMenu == MENU_RUN || currentMenu == MENU_RELICS || currentMenu == MENU_SKINS) {
+    } else if (currentMenu == MENU_SHRINE || currentMenu == MENU_RUN || currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS) {
         dialogWidth = 300;
     }
 
@@ -1360,6 +1372,11 @@ void menu_controller_draw(void)
             } else if (i == MENU_SHRINE_NIGHTFARER) {
                 snprintf(name, sizeof name, "Nightfarer (skin)");
                 if (tower_nightfarer_cost() < 0) snprintf(right, sizeof right, "owned"); else snprintf(right, sizeof right, "%d", tower_nightfarer_cost());
+            } else if (i == MENU_SHRINE_PACKS) {
+                int own = 0;
+                for (int k = 0; k < tower_pack_count(); k++) own += tower_pack_owned(k);
+                snprintf(name, sizeof name, "Boon Packs");
+                snprintf(right, sizeof right, "%d/%d", own, tower_pack_count());
             } else {
                 snprintf(name, sizeof name, "Back");
             }
@@ -1384,16 +1401,17 @@ void menu_controller_draw(void)
         const char *desc = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_desc((UpgradeId)selectedOption)
                          : selectedOption == MENU_SHRINE_RELIC ? "Choose the relic you climb with"
                          : selectedOption == MENU_SHRINE_NIGHTFARER ? "A tracker's winged helm and blue coat"
+                         : selectedOption == MENU_SHRINE_PACKS ? "New boons for a family"
                          : "Skills are learned in the climb";
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
                          FONT_UNBALANCED, x, y + 6, "%s", desc);
         rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-    } else if (currentMenu == MENU_RELICS || currentMenu == MENU_SKINS) {
+    } else if (currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS) {
         // A list to scroll: name on the left, its state on the right, what the hovered one does below
-        bool relics = currentMenu == MENU_RELICS;
+        bool relics = currentMenu == MENU_RELICS, packs = currentMenu == MENU_UNLOCKS;
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
-                         FONT_UNBALANCED, x, y + titleYOffset, relics ? "RELICS" : "SKINS");
-        if (relics)
+                         FONT_UNBALANCED, x, y + titleYOffset, relics ? "RELICS" : packs ? "BOON PACKS" : "SKINS");
+        if (relics || packs)
             rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 8, .height = contentH, .style_id = FONT_STYLE_GOLD },
                              FONT_UNBALANCED, x, y + titleYOffset, "Embers %d", tower_embers());
         y += lineHeight * 2 + titleYOffset;
@@ -1403,7 +1421,11 @@ void menu_controller_draw(void)
             char cost[12];
             bool grey = false;
             if (i == rows - 1) name = "Back";
-            else if (relics) {
+            else if (packs) {
+                name = tower_pack_name(i);
+                if (tower_pack_owned(i)) right = "owned";
+                else { snprintf(cost, sizeof cost, "%d", tower_pack_cost(i)); right = cost; grey = tower_embers() < tower_pack_cost(i); }
+            } else if (relics) {
                 int r = i - 1;      // row 0: None
                 name = tower_relic_name(r);
                 if (tower_relic_equipped() == r) right = "equipped";
@@ -1431,6 +1453,7 @@ void menu_controller_draw(void)
             y += lineHeight + 1;
         }
         const char *desc = selectedOption == rows - 1 ? ""
+                         : packs ? tower_pack_desc(selectedOption)
                          : relics ? (selectedOption == 0 ? "Climb without a relic" : tower_relic_desc(selectedOption - 1))
                          : save_controller_skin_unlocked(selectedOption) ? "" : skin_lock_hint(selectedOption);
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
@@ -1576,21 +1599,22 @@ void menu_controller_draw(void)
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH }, FONT_UNBALANCED, x, y, "Back");
     } else if (currentMenu == MENU_RUN) {
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
-                         FONT_UNBALANCED, x, y + titleYOffset, runPage ? "BOONS" : "STATS");
+                         FONT_UNBALANCED, x, y + titleYOffset, runPage ? "BUILD" : "STATS");
         if (!runPage) {
             rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW + 40, .height = contentH, .wrap = WRAP_WORD },
                              FONT_UNBALANCED, x - 20, y + titleYOffset + 22, "%s", tower_run_summary());
         } else {
-            // one boon a line in two columns, down the left first: all of them fit
-            char boons[BOON_COUNT][24];
-            int n = tower_run_boons(boons, BOON_COUNT), rows = (n + 1) / 2;
-            int rowH = rows > 10 ? 14 : 16;
-            for (int i = 0; i < n; i++)
-                rdpq_text_printf(&(rdpq_textparms_t){ .width = (contentW + 40) / 2, .height = contentH }, FONT_UNBALANCED,
-                                 x - 20 + (i / rows) * ((contentW + 40) / 2), y + titleYOffset + 22 + (i % rows) * rowH, "%s", boons[i]);
-            if (!n) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH }, FONT_UNBALANCED, x, y + titleYOffset + 40, "None yet");
+            // the 3 skills, then the 5 boon slots (each in its family's colour, its level on the right)
+            char left[3 + TOWER_SLOTS][28], right[3 + TOWER_SLOTS][12]; int style[3 + TOWER_SLOTS];
+            int n = tower_build_rows(left, right, style, 3 + TOWER_SLOTS);
+            for (int i = 0; i < n; i++) {
+                int ry = y + titleYOffset + 22 + i * 16 + (i >= 3 ? 8 : 0);     // a gap between the skills and the slots
+                rdpq_text_printf(&(rdpq_textparms_t){ .width = contentW, .height = contentH, .style_id = style[i] }, FONT_UNBALANCED, x, ry, "%s", left[i]);
+                if (right[i][0])
+                    rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW, .height = contentH, .style_id = style[i] }, FONT_UNBALANCED, x, ry, "%s", right[i]);
+            }
         }
-        // the title row's corners: Stats has Back and Next, Boons only Prev
+        // the title row's corners: Stats has Back and Next, Build only Prev
         const int cornerW = 70, wideW = contentW + 40;
         for (int i = 0; i < (runPage ? 1 : 2); i++) {
             int cx = i ? x - 20 + wideW - cornerW : x - 20;

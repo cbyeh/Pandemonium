@@ -21,6 +21,7 @@ typedef enum {
     MENU_RUN,           // the Tower run's boons, pacts and totals (from the pause menu)
     MENU_RELICS,        // Shrine > Relics: every relic, bought and equipped here
     MENU_SKINS,         // Settings > Skin: every skin, worn from here
+    MENU_UNLOCKS,       // Shrine > Boon Packs: the families' new boons, bought here
 } MenuState;
 
 typedef enum {
@@ -98,7 +99,8 @@ typedef enum {
 #define MENU_SHRINE_UPGRADES 5
 #define MENU_SHRINE_RELIC    (MENU_SHRINE_UPGRADES)       // A: the Relics list
 #define MENU_SHRINE_NIGHTFARER   (MENU_SHRINE_UPGRADES + 1)   // A: buy the Nightfarer skin
-#define MENU_SHRINE_COUNT    (MENU_SHRINE_UPGRADES + 3)
+#define MENU_SHRINE_PACKS    (MENU_SHRINE_UPGRADES + 2)   // A: the Boon Packs list (the unlock ladder)
+#define MENU_SHRINE_COUNT    (MENU_SHRINE_UPGRADES + 4)
 
 typedef enum {
     MENU_ACTION_NONE = 0,

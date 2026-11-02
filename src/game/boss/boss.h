@@ -353,6 +353,8 @@ float boss_hp_loss_scale(void);    // the share of a blow taken off the player's
 #define BOSS_STAGGER_S 3.5f     // every boss stays down this long (boss_stagger_s): the opening is the reward (no damage bonus)
 void boss_apply_hit(Boss* boss, float amount, float poise);
 extern bool bossHitBySword;     // set round a sword hit's boss_apply_hit: only those feed Bloodthirst
+extern bool bossHitBySkill;     // round a skill's hit (Eclipse)
+extern bool bossHitByBleed;     // round a bleed's tick (Hemorrhage): no flinch, no Rally, a faint flash
 // Full health for its current phase, as the Skills setting or a Tower run sizes it.
 void boss_set_full_health(Boss* boss);
 

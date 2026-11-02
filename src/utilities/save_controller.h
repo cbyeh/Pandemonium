@@ -61,6 +61,7 @@ typedef struct {
     uint8_t  relics[3];      // before 1.0: found relics (two effects a byte), converted on load
     uint8_t  relicsOwned;    // bit per relic bought
     uint8_t  relicEquipped;  // 1-based, 0 none
+    uint16_t unlocks;        // 9 bits: the Shrine's ladder (bits 0-5 the families' packs, 6-8 the skills' second forms)
 } TowerSave;
 #define TOWER_FLAG_NIGHTFARER 0x01   // the Nightfarer skin, bought at the Shrine
 void save_controller_get_tower(TowerSave *out);

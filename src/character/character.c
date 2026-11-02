@@ -836,6 +836,7 @@ bool character_try_use_health_potion(void)
 
     character.healthPotions--;
     if (character.healthPotions < 0) character.healthPotions = 0;
+    tower_on_potion();      // (Sanguine Flask)
     audio_play_scene_sfx_dist(SCENE1_SFX_HEAL, 0.9f, 0.0f);
     return true;
 }
@@ -1285,6 +1286,7 @@ static void try_start_skill(const joypad_buttons_t *buttons)
 
     character_consume_stamina(SKILL_DEFS[s].stamina);
     skillCooldowns[s] = SKILL_DEFS[s].cooldown * tower_mod_skill_cooldown();
+    tower_on_skill_cast();      // (Waxing Moon)
     activeSkill = s;
     skillTime = 0.0f;
     skillStep = 0;
@@ -2900,7 +2902,7 @@ void character_update(void)
                 if (boss) {
                     bool finisher = attackComboIndex == 3;     // the combo's last hit lands heaviest
                     bossHitBySword = true;
-                    boss_apply_hit(boss, damage, (finisher ? FINISHER_POISE : 1.0f) * damage / POISE_DAMAGE);
+                    boss_apply_hit(boss, damage, (finisher ? FINISHER_POISE * tower_mod_finisher_poise() : 1.0f) * damage / POISE_DAMAGE);
                     bossHitBySword = false;
                     game_time_hitstop(finisher ? 0.08f : 0.045f);     // hit-stop: the blow lands with weight
                     if (finisher) screen_shake_set_shake_mag(3.0f);
@@ -2910,9 +2912,11 @@ void character_update(void)
                     { extern bool hle_limb_only; if (hle_limb_only) debugf("[hitvol] that hit met only a limb outside the capsule\n"); }
 #endif
 #endif
-                    float storm = tower_on_sword_hit();     // Storm Blade: lightning on every 4th hit
+                    float cut = tower_mod_hit_cooldown_cut();     // Lunar Tide
+                    for (int k = 0; k < SKILL_COUNT && cut > 0.0f; k++) skillCooldowns[k] = fmaxf(0.0f, skillCooldowns[k] - cut);
+                    float storm = tower_on_sword_hit(finisher);     // Storm Blade and the Storm boons: lightning
                     if (storm > 0.0f) {
-                        boss_apply_hit(boss, storm, 0.0f);     // a boon's damage: no stagger of its own
+                        boss_apply_hit(boss, storm, tower_lightning_poise() * damage / POISE_DAMAGE);     // a boon's damage: no stagger of its own (Conductor: a sword hit's)
                         skill_fx_spawn_pillar(boss->pos);
                         audio_play_scene_sfx_dist(character_random_hit_sfx(), 1.0f, 0.0f);   // a second sword hit
                     }
@@ -3397,6 +3401,12 @@ void character_apply_damage(float amount)
             tower_on_perfect_dodge();
             game_time_slowmo(0.45f, 0.35f);
             character.stamina = fminf(character.maxStamina, character.stamina + PERFECT_DODGE_STAMINA);
+            if (tower_boon_stacks(BOON_EVASION)) {      // the roll's stamina back too
+                character.stamina = fminf(character.maxStamina, character.stamina + STAMINA_COST_ROLL * tower_mod_roll_cost());
+#ifdef HLE_LOG_BOONFX
+                debugf("[boonfx] Evasion: the roll's %.0f stamina back, %.0f now\n", (double)(STAMINA_COST_ROLL * tower_mod_roll_cost()), (double)character.stamina);
+#endif
+            }
             skill_fx_spawn_burst(character.pos, character.rot[1]);
             audio_play_scene_sfx_dist(SCENE1_SFX_SPELL_CAST, 0.8f, 0.0f);
 #ifdef HLE_AUTOPLAY
@@ -3423,7 +3433,8 @@ void character_apply_damage(float amount)
         end_skill();
     }
 
-    amount *= tower_mod_damage_taken();     // 1 outside a Tower run
+    amount = tower_mod_blow(amount * tower_mod_damage_taken());     // 1 outside a Tower run (Stalwart, Vanish)
+    if (amount <= 0.0f) return;     // Vanish: the blow does nothing
     float before = character.health;
     character.health -= amount * boss_hp_loss_scale();     // the reactions below still go by the full blow
     if (character.health <= 0.0f && tower_mod_try_unbroken()) character.health = 1.0f;   // the Unbroken boon

@@ -37,6 +37,8 @@ enum {
     FONT_STYLE_GREY  = 2,     // unavailable
     FONT_STYLE_BLUE  = 3,     // rare
     FONT_STYLE_RED   = 4,     // danger: the Tower's ascensions and nights
+    FONT_STYLE_TEAL  = 5,     // the Tower's Moon family
+    FONT_STYLE_VIOLET = 6,    // the Tower's Shadow family
 };
 
 #endif

@@ -22,7 +22,13 @@ typedef enum {
     // Rare and legendary: change how a run plays
     BOON_PHANTOM_STEP, BOON_RIPOSTE, BOON_CRUSHING_BLOWS, BOON_EXECUTIONER, BOON_STORM_BLADE, BOON_BLOOD_PACT,
     BOON_RALLY,
-    // Skill cards: learn a skill for the run, then upgrade it
+    // The families' packs, bought at the Shrine (docs/design/TOWER_ROGUELIKE.md section 7)
+    BOON_HEMORRHAGE, BOON_SANGUINE_FLASK, BOON_RED_THIRST,                          // Blood
+    BOON_STATIC, BOON_THUNDERCLAP, BOON_CONDUCTOR, BOON_OVERCHARGE,                  // Storm
+    BOON_LUNAR_TIDE, BOON_ECLIPSE, BOON_WAXING_MOON,                                 // Moon
+    BOON_HEAVY_HAND, BOON_STALWART,                                                  // Iron
+    BOON_SHADOW_EDGE, BOON_EVASION, BOON_VANISH,                                     // Shadow
+    // Skill cards: learn a skill for the run, then upgrade it (no slot)
     BOON_LEARN_MOONBLADE, BOON_LEARN_HALFMOON, BOON_LEARN_CLEAVE, BOON_HALFMOON_PLUS, BOON_CLEAVE_PLUS,
     BOON_COUNT
 } BoonId;
@@ -59,7 +65,9 @@ void tower_draft_draw(void);
 void tower_hud_draw(void);              // floor / circle during a run fight
 const char* tower_death_summary(void);   // a line for the death screen
 const char* tower_run_summary(void);     // the run so far, for the pause menu's Stats page (several lines)
-int tower_run_boons(char out[][24], int max);   // the boons held (with stacks), one a line, for its Boons page; returns the count
+// The Build page: the 3 skills, then the 5 boon slots (name, its level on the right, a font style); returns the rows
+#define TOWER_SLOTS 5
+int tower_build_rows(char left[][28], char right[][12], int style[], int max);
 
 // ---- Nights: from the second circle each circle has one (a trade-off, more Embers) ----
 const char* tower_night_name(void);     // "" for none
@@ -79,6 +87,14 @@ bool tower_nightfarer_owned(void);
 int  tower_nightfarer_cost(void);
 bool tower_nightfarer_buy(void);
 
+// ---- The Shrine's unlock ladder: each family's new boons, a pack bought in the player's order ----
+int  tower_pack_count(void);
+const char* tower_pack_name(int i);
+const char* tower_pack_desc(int i);     // the boons it adds
+bool tower_pack_owned(int i);
+int  tower_pack_cost(int i);            // -1 owned
+bool tower_pack_buy(int i);
+
 // ---- Shrine (persistent, per save slot) ----
 int  tower_embers(void);
 int  tower_upgrade_level(UpgradeId u);
@@ -94,7 +110,8 @@ bool  tower_mod_skill_allowed(int skill);
 float tower_mod_skill_damage(int skill);    // the skill's upgrade card: 1.2
 float tower_mod_damage_dealt(void);
 float tower_mod_damage_taken(void);
-float tower_mod_damage_vs(float bossHealthFrac, bool staggered);   // pacts against this boss
+enum { TOWER_HIT_OTHER, TOWER_HIT_SWORD, TOWER_HIT_SKILL };
+float tower_mod_damage_vs(float bossHealthFrac, bool staggered, int kind);   // pacts and timed boons against this boss, for this hit
 bool  tower_hit_impaired(void);         // the Impaired curse: this hit does nothing
 void  tower_on_roll(void);              // a roll started (the Exposed curse)
 int   tower_mod_max_potions(void);
@@ -119,7 +136,14 @@ float tower_mod_stagger_time(void);     // how long a staggered boss stays down
 float tower_mod_stagger_damage(void);   // damage taken by a staggered boss
 float tower_mod_perfect_window(void);   // seconds of a roll that count as a perfect dodge
 void  tower_on_perfect_dodge(void);
-float tower_on_sword_hit(void);         // a landed sword hit: extra damage (Storm Blade), 0 mostly
+float tower_on_sword_hit(bool finisher); // a landed sword hit: its lightning's damage (Storm Blade, Static, Thunderclap, Overcharge), 0 mostly
+float tower_lightning_poise(void);      // a bolt's share of the stagger meter, in plain sword hits (Conductor: 1)
+float tower_mod_finisher_poise(void);   // the combo's 3rd hit's stagger (Heavy Hand)
+float tower_mod_hit_cooldown_cut(void); // seconds off every skill cooldown a sword hit (Lunar Tide)
+void  tower_on_potion(void);            // a potion drunk (Sanguine Flask)
+void  tower_on_skill_cast(void);        // a skill cast (Waxing Moon)
+void  tower_on_stagger(void);           // a boss staggered (Overcharge)
+float tower_mod_blow(float amount);     // a blow about to land, after damage taken: what it deals (Stalwart, Vanish)
 // Boss health in a run, from its usual (skills off) health for that phase
 float tower_boss_health_scale(int phase);
 // Between floors: the health and potions given back

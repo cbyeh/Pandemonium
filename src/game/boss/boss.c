@@ -578,6 +578,7 @@ static void boss_poise_update(Boss* boss, float dt)
     boss->poiseIdleT += rec;
     if (boss->poise >= 1.0f) {
         if (boss_try_stagger(boss)) {
+            tower_on_stagger();     // (Overcharge)
             screen_shake_set_shake_mag(8.0f);
             audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH2, 0.9f, 0.0f);
             game_time_hitstop(0.12f);           // the stance breaks: a beat of stillness, then a moment of slow motion
@@ -802,21 +803,24 @@ void boss_apply_damage(Boss* boss, float amount)
     boss_apply_hit(boss, amount, amount / POISE_DAMAGE);
 }
 
-bool bossHitBySword;
+bool bossHitBySword, bossHitBySkill, bossHitByBleed;
 
 void boss_apply_hit(Boss* boss, float amount, float poise)
 {
     if (!boss || amount <= 0.0f) return;
     if (boss->mode != BOSS_MODE_COMBAT) return;
     // its weight, before any boon: the damage or the stance damage, whichever is the more (a plain sword hit: 4 and 4)
-    boss->hitWeight = fmaxf(amount, poise * POISE_DAMAGE) / 4.0f;
-    boss->hitSeq++;
+    if (!bossHitByBleed) {      // (a bleed's tick: no flinch)
+        boss->hitWeight = fmaxf(amount, poise * POISE_DAMAGE) / 4.0f;
+        boss->hitSeq++;
+    }
 
     if (tower_active()) {     // Tower run: damage boons and upgrades, and Bloodthirst's lifesteal (sword hits)
         if (tower_hit_impaired()) return;      // the Impaired curse: this one does nothing
         if (bossHitBySword) character.health = fminf(character.maxHealth, character.health + amount * tower_mod_lifesteal());   // sword hits only, before boons
-        tower_on_boss_hurt(amount);     // Rally: also by the hit before boons (after them, a blow came back in two hits deep in a run)
-        amount *= tower_mod_damage_dealt() * tower_mod_damage_vs(boss->health / fmaxf(boss->maxHealth, 1.0f), boss->staggerT > 0.0f);
+        if (!bossHitByBleed) tower_on_boss_hurt(amount);     // Rally: also by the hit before boons (after them, a blow came back in two hits deep in a run); a bleed wins back nothing
+        amount *= tower_mod_damage_dealt() * tower_mod_damage_vs(boss->health / fmaxf(boss->maxHealth, 1.0f), boss->staggerT > 0.0f,
+                                                                 bossHitBySword ? TOWER_HIT_SWORD : bossHitBySkill ? TOWER_HIT_SKILL : TOWER_HIT_OTHER);
     }
     if (boss->staggerT > 0.0f) amount *= tower_mod_stagger_damage();     // staggered: only boons make hits land harder
     boss->health -= amount;
@@ -828,7 +832,7 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
         boss->poiseIdleT = 0.0f;
     }
 
-    boss->damageFlashTimer = 0.25f;
+    boss->damageFlashTimer = bossHitByBleed ? fmaxf(boss->damageFlashTimer, 0.0625f) : 0.25f;     // a bleed's tick: a quarter of a hit's flash
 
     if (boss->health <= 0.0f) {
         boss->state = BOSS_STATE_DEAD;

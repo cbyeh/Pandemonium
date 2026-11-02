@@ -270,8 +270,13 @@ static bool sphere_hits_boss(Boss *b, const float p[3], float r, float contact[3
 
 static void damage_boss(Boss *b, float damage, float poise, const float contact[3], float strength)
 {
+    bossHitBySkill = true;
     if (poise >= 0.0f) boss_apply_hit(b, damage, poise);
     else boss_apply_damage(b, damage);
+    bossHitBySkill = false;
+#ifdef HLE_LOG_BOONFX
+    debugf("[boonfx-run] a skill's hit of %.2f, boss %s\n", (double)damage, b->staggerT > 0.0f ? "staggered" : "standing");
+#endif
     blood_particles_fx_spawn_burst(contact[0], contact[1], contact[2], strength);
     audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_ATTACK_HIT1 + (int)(rand_custom_u32() % 6), 1.0f, 0.0f);
 }
