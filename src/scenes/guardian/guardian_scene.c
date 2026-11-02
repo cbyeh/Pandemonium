@@ -186,7 +186,7 @@ static const char *s_boss2LoopMusicPath = "rom:/audio/music/boss_phase2_cutscene
 static const char *s_boss3LoopMusicPath = "rom:/audio/music/whispers_of_the_abyss-22k.wav64";    // Fallen Warrior
 static BonusFight s_bonusFight = BONUS_NONE;   // set by the title Bonus menu
 static bool  s_tower;             // set by the title Tower menu: the next scene_init climbs
-static bool  s_towerDraft;        // choosing a boon between floors
+static bool  s_towerDraft;        // between floors: the draft, the map, a Rest
 static float s_towerDeadT;        // the floor's boss has lain dead this long
 static bool  s_towerLastL, s_towerLastR, s_towerLastA;
 static void scene_tower_begin_run(void);
@@ -1433,21 +1433,22 @@ static void scene_tower_begin_run(void)
     gameState = GAME_STATE_PLAYING;
     bossUiIntro = playerUiIntro = 0.0f;
     character_ui_set_intro(0.0f);
-    scene_tower_start_floor();
+    scene_tower_start_floor();        // the Guardian waits in the hall while the circle's map is up
+    tower_map_open();
+    s_towerDraft = true;
+    s_towerLastL = s_towerLastR = s_towerLastA = true;   // no carried-over press
 }
 
-// Between floors: the draft; once a boon is taken, the next floor
+// Between floors: the draft, then the map (and a Rest's screens); once a fight's node is entered, its floor
 static void scene_tower_draft_update(void)
 {
     bool l = btn.d_left || joypad.stick_x < -40, r = btn.d_right || joypad.stick_x > 40, a = btn.a;
     bool u = btn.d_up || joypad.stick_y > 40, d = btn.d_down || joypad.stick_y < -40;
     static bool lastU, lastD;
-    bool done = tower_draft_update(l && !s_towerLastL, r && !s_towerLastR, u && !lastU, d && !lastD, a && !s_towerLastA);
+    bool fight = tower_between_update(l && !s_towerLastL, r && !s_towerLastR, u && !lastU, d && !lastD, a && !s_towerLastA);
     s_towerLastL = l; s_towerLastR = r; s_towerLastA = a; lastU = u; lastD = d;
-    if (!done) return;
+    if (!fight) return;
     s_towerDraft = false;
-    tower_floor_restore();
-    tower_next_floor();
     scene_tower_start_floor();
 }
 
@@ -2555,10 +2556,10 @@ void scene_draw(T3DViewport *viewport)
 #endif
         if (s_tower) tower_hud_draw();
     }
-    if (s_towerDraft && !isDead) tower_draft_draw();
+    if (s_towerDraft && !isDead) tower_between_draw();
 
     // Slide-up overlay for boss title after fight starts (no fading)
-    if (!cutsceneActive && !isEndScreen && bossTitleFade > 0.0f && g_boss) {
+    if (!cutsceneActive && !isEndScreen && bossTitleFade > 0.0f && g_boss && !s_towerDraft) {   // (not over the Tower's map)
         rdpq_sync_pipe();
         rdpq_set_mode_standard();
         rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);

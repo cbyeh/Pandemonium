@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <stdlib.h>
 
 #include "tower.h"
 #include "character.h"
@@ -13,7 +14,6 @@
 #include "game/boss/boss.h"
 
 // ---- Tuning ----
-#define FLOORS_PER_CIRCLE   5
 // The climb starts well below the story fights and passes them by circle 3
 #define BOSS_HP_START       0.70f     // circle 1, then +BOSS_HP_PER_CIRCLE a circle
 #define BOSS_HP_PER_CIRCLE  0.30f
@@ -209,6 +209,24 @@ static const struct { uint8_t fx; const char *name; } RELICS[] = {
 #define RELIC_COST  200
 #define CIRCLE_EMBERS 25        // a circle cleared
 
+// ---- The map (docs/design/TOWER_ROGUELIKE.md section 2): 7 rows of 3 lanes a circle, climbed bottom to
+// top, each node linked to the one above it and its diagonal neighbours. Row 1 is the Guardian and row 7
+// Guardian Unbound (one node each), row 6 a Rest on every lane; rows 2-5 are rolled (map_generate)
+#define MAP_ROWS  7
+#define MAP_LANES 3
+enum { NODE_NONE, NODE_FIGHT, NODE_ELITE, NODE_EVENT, NODE_SHOP, NODE_REST, NODE_BOSS, NODE_TYPES };
+// Rows 2-5's odds (%). Events and Shops are stage 4: until then none are rolled (the design's 20 and 12)
+static const uint8_t NODE_ODDS[NODE_TYPES] = { [NODE_FIGHT] = 45, [NODE_ELITE] = 15, [NODE_EVENT] = 0, [NODE_SHOP] = 0, [NODE_REST] = 8 };
+static const char *const NODE_NAMES[NODE_TYPES] = { "", "Fight", "Elite", "Event", "Shop", "Rest", "Boss" };
+static const char *const BOSS_NAMES[] = { "Guardian", "Guardian Unbound", "Fallen Warrior", "Shackled Sun", "Shadowborne" };
+#define ELITE_HP      1.25f     // an Elite: the boss at x1.25 health (its affixes are stage 6)
+#define ELITE_EMBERS  1.5f
+#define REST_HEAL     0.40f     // a Rest: heal 40%, Temper +1 level, or +2 potions (and Release a boon, free)
+#define REST_POTIONS  2         // up to POTION_CAP: fights already bank potions past the run's max (section 12)
+enum { SCR_NONE, SCR_MAP, SCR_REST, SCR_TEMPER, SCR_RELEASE };
+enum { REST_HEAL_ROW, REST_TEMPER_ROW, REST_POTIONS_ROW, REST_ROWS };
+#define LIST_MAX 12
+
 typedef struct { const char *name, *desc; } UpgradeDef;
 
 static const UpgradeDef UPGRADES[UPG_COUNT] = {
@@ -225,9 +243,21 @@ static const int UPGRADE_COST[UPG_MAX_LEVEL] = { 30, 60, 100 };
 
 static struct {
     bool active;
-    int floor;
+    int floor, circle;              // a floor is a fight; a circle, a map
     uint32_t rng;
-    TowerBoss order[FLOORS_PER_CIRCLE];
+    struct {
+        uint8_t type[MAP_ROWS][MAP_LANES];  // a NODE_ (rows 1 and 7 only in the middle lane)
+        uint8_t boss[MAP_ROWS][MAP_LANES];  // a Fight's or Elite's boss (TowerBoss + 1), set once it's reachable
+        int8_t path[MAP_ROWS];              // the lane taken in each row (-1: not yet)
+        int8_t row, sel;                    // the row of the node last entered (-1: none yet), the cursor's lane in the next
+        uint8_t met;                        // the bosses met this circle (bit per TowerBoss)
+        uint8_t fights;                     // fights entered this circle
+    } map;
+    TowerBoss boss;                 // the fight under way (or the next: the Guardian at a circle's start)
+    bool elite;                     // it's an Elite (x1.25 health, a Rare-or-better draft, x1.5 Embers)
+    uint8_t scr;                    // the screen after the draft: the map, a Rest's (SCR_)
+    uint32_t scrOpenMs;
+    int8_t list[LIST_MAX], listN, listSel;  // a Rest screen's rows: a choice, a BoonId to Temper (-1 Back), a slot to Release (-1 keep)
     uint8_t skills;                 // learned this run (bit per CharacterSkill)
     uint8_t skillsOffered;          // whose Learn card has been on the table (taken or not)
     uint8_t stacks[BOON_COUNT];     // a boon's level (0: not held)
@@ -331,21 +361,99 @@ static uint32_t rng_next(void)
     return x;
 }
 
-static void shuffle_circle(void)
+// ---- The map ----
+
+static bool lone_row(int r) { return r == 0 || r == MAP_ROWS - 1; }
+// row r's lane a links to row r + 1's lane b: straight up or a diagonal (a lone node links every lane)
+static bool linked(int r, int a, int b) { return lone_row(r) || lone_row(r + 1) || abs(a - b) <= 1; }
+static bool is_fight(int t) { return t == NODE_FIGHT || t == NODE_ELITE || t == NODE_BOSS; }
+
+static int roll_node(void)
 {
-    // The Guardian opens every circle, the three Bonus bosses follow in a random order,
-    // and Guardian Unbound closes it (a floor of its own, no transformation cutscene)
-    s.order[0] = TOWER_GUARDIAN;
-    TowerBoss rest[3] = { TOWER_FALLEN_KNIGHT, TOWER_SHACKLED_SUN, TOWER_SHADOWBORN };
-    for (int i = 2; i > 0; i--) { int j = rng_next() % (i + 1); TowerBoss t = rest[i]; rest[i] = rest[j]; rest[j] = t; }
-#ifdef HLE_TOWER_SB_LAST    // test aid: the Fallen Warrior, the Sun, then Shadowborne (the heap's lowest point, the same path each run)
-    rest[0] = TOWER_FALLEN_KNIGHT; rest[1] = TOWER_SHACKLED_SUN; rest[2] = TOWER_SHADOWBORN;
+    int total = 0;
+    for (int t = 0; t < NODE_TYPES; t++) total += NODE_ODDS[t];
+    int r = rng_next() % total;
+    for (int t = 0; t < NODE_TYPES; t++) if ((r -= NODE_ODDS[t]) < 0) return t;
+    return NODE_FIGHT;
+}
+
+// Rows 2-5 (1-4 here) against section 2's rules
+static bool map_rules_ok(void)
+{
+    bool shop = false;
+    for (int l = 0; l < MAP_LANES; l++) {
+        int f = 0;
+        for (int r = 1; r <= 4; r++) f += s.map.type[r][l] == NODE_FIGHT;
+        if (f < 2 || s.map.type[1][l] == NODE_ELITE) return false;     // 2 Fights a lane or more; no Elite in row 2
+        shop |= s.map.type[2][l] == NODE_SHOP || s.map.type[3][l] == NODE_SHOP;
+    }
+    if (NODE_ODDS[NODE_SHOP] && !shop) return false;                    // a Shop in rows 3-4 on some lane (stage 4)
+    for (int r = 1; r <= 4; r++)        // no two Shops or Rests in a row on any path (row 6 is all Rests)
+        for (int a = 0; a < MAP_LANES; a++) for (int b = 0; b < MAP_LANES; b++) {
+            int t = s.map.type[r][a];
+            if ((t == NODE_SHOP || t == NODE_REST) && linked(r, a, b) && s.map.type[r + 1][b] == t) return false;
+        }
+    return true;
+}
+
+static int s_mapTries;      // the last map's rolls (the self-check logs them)
+// A circle's map: rows 2-5 rolled until they keep every rule (about 1 in 5 does)
+static void map_generate(void)
+{
+    memset(&s.map, 0, sizeof s.map);
+    s_mapTries = 0;
+    do {
+        s_mapTries++;
+        for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = roll_node();
+#ifdef HLE_TOWER_SB_LAST    // test aid: Fights only (with the bosses in order below: the Fallen Warrior, the Sun, then Shadowborne)
+        for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = NODE_FIGHT;
 #endif
-    for (int i = 0; i < 3; i++) s.order[1 + i] = rest[i];
-    s.order[4] = TOWER_UNBOUND;
+        for (int l = 0; l < MAP_LANES; l++) s.map.type[5][l] = NODE_REST;
+    } while (!map_rules_ok() && s_mapTries < 1000);
+    if (!map_rules_ok()) for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = NODE_FIGHT;
+    s.map.type[0][1] = s.map.type[MAP_ROWS - 1][1] = NODE_BOSS;
+    s.map.row = -1;
+    memset(s.map.path, -1, sizeof s.map.path);
+}
+
+// a node the cursor can go to: in the next row, linked to the node last entered
+static bool map_reachable(int r, int l)
+{
+    if (r != s.map.row + 1 || r >= MAP_ROWS || !s.map.type[r][l]) return false;
+    return s.map.row < 0 || linked(s.map.row, s.map.path[s.map.row], l);
+}
+
+// The next row's Fights and Elites get their boss once they're reachable: one not met this circle
+// while any are left (a path with 4 in the middle meets one twice)
+static void map_assign_bosses(void)
+{
+    int r = s.map.row + 1;
+    for (int l = 0; l < MAP_LANES; l++) {
+        int t = r < MAP_ROWS ? s.map.type[r][l] : NODE_NONE;
+        if (!map_reachable(r, l) || (t != NODE_FIGHT && t != NODE_ELITE) || s.map.boss[r][l]) continue;
+        int left[3], n = 0;
+        for (int b = TOWER_FALLEN_KNIGHT; b <= TOWER_SHADOWBORN; b++) if (!((s.map.met >> b) & 1)) left[n++] = b;
+        if (!n) for (int b = TOWER_FALLEN_KNIGHT; b <= TOWER_SHADOWBORN; b++) left[n++] = b;
+#ifdef HLE_TOWER_SB_LAST    // (the heap's lowest point, the same path each run)
+        s.map.boss[r][l] = (uint8_t)(left[0] + 1);
+#else
+        s.map.boss[r][l] = (uint8_t)(left[rng_next() % n] + 1);
+#endif
+    }
+}
+
+// A new circle: its map, its night (rolled when the last one was cleared)
+static void new_circle(void)
+{
+    s.circle++;
+    map_generate();
+    s.boss = TOWER_GUARDIAN;
+    s.elite = false;
     s.night = s.nextNight;
 #ifdef HLE_AUTOPLAY
-    debugf("[night] circle from floor %d: %s\n", s.floor, NIGHTS[s.night].name[0] ? NIGHTS[s.night].name : "none");
+    debugf("[night] circle %d from floor %d: %s\n", s.circle, s.floor, NIGHTS[s.night].name[0] ? NIGHTS[s.night].name : "none");
+    for (int r = MAP_ROWS - 2; r >= 1; r--)
+        debugf("[map] circle %d row %d: %s %s %s\n", s.circle, r + 1, NODE_NAMES[s.map.type[r][0]], NODE_NAMES[s.map.type[r][1]], NODE_NAMES[s.map.type[r][2]]);
 #endif
 }
 
@@ -430,7 +538,10 @@ void tower_begin_run(uint32_t seed)
 #ifdef HLE_TOWER_PACKS      // test aid: climb with these packs (bit per family) whatever the save holds
     s.packs = HLE_TOWER_PACKS;
 #endif
-    shuffle_circle();
+#ifdef HLE_TOWER_SEED       // test aid: a set run seed (the map, the drafts)
+    s.rng = HLE_TOWER_SEED;
+#endif
+    new_circle();
 #if defined(HLE_TEST_TOWER_STATS) && !defined(HLE_STATS_BARE)   // test aid (BARE: as the run starts): a full bar (two of a family, two new boons, all at their most), every skill and its cards, every pact twice
     {
         static const BoonId FULL[TOWER_SLOTS] = { BOON_BLOODTHIRST, BOON_RALLY, BOON_PHANTOM_STEP, BOON_STATIC, BOON_EMBER_EDGE };
@@ -497,17 +608,19 @@ void tower_begin_run(uint32_t seed)
     }
 }
 
-void tower_end_run(void) { s.active = false; s.draftOpen = false; }
+static void icons_free(void);
+void tower_end_run(void) { s.active = false; s.draftOpen = false; s.scr = SCR_NONE; icons_free(); }
 bool tower_active(void) { return s.active; }
 int  tower_floor(void) { return s.floor; }
-int  tower_circle(void) { return (s.floor - 1) / FLOORS_PER_CIRCLE + 1; }
-TowerBoss tower_floor_boss(void) { return s.order[(s.floor - 1) % FLOORS_PER_CIRCLE]; }
+int  tower_circle(void) { return s.circle; }
+TowerBoss tower_floor_boss(void) { return s.boss; }
 int  tower_run_embers(void) { return s.runEmbers; }
 int  tower_boon_stacks(BoonId b) { return (s.active && b < BOON_COUNT) ? s.stacks[b] : 0; }
 
 static int floor_embers(void)
 {
-    float e = (8 * tower_circle() + 3 * ((s.floor - 1) % FLOORS_PER_CIRCLE)) * NIGHTS[s.night].embers;
+    // (the fight's place in its circle: 0 for the Guardian, up to 5 for Unbound on a 6-fight path)
+    float e = (8 * tower_circle() + 3 * (s.map.fights - 1)) * NIGHTS[s.night].embers * (s.elite ? ELITE_EMBERS : 1.0f);
     if (has_relic(RELIC_EMBERS)) e *= 1.2f;
     if (has_relic(RELIC_AVARICE)) e *= 1.4f;
     return (int)(e + 0.5f);
@@ -518,7 +631,7 @@ void tower_floor_cleared(void)
     if (!s.active) return;
     TowerSave t;
     tower_load(&t);
-    s.circleCleared = s.floor % FLOORS_PER_CIRCLE == 0;
+    s.circleCleared = s.map.row == MAP_ROWS - 1;       // Guardian Unbound fell
     s.lastFloorEmbers = floor_embers() + (s.circleCleared ? CIRCLE_EMBERS : 0);
     s.runEmbers += s.lastFloorEmbers;
     int e = t.embers + s.lastFloorEmbers;
@@ -542,7 +655,7 @@ void tower_next_floor(void)
     for (int i = 0; i < 4; i++) s.boltAt[i] = 0.0;
     sync_max_health();      // (Steel Hearth's is for the floor)
     if (character.health > character.maxHealth) character.health = character.maxHealth;
-    if ((s.floor - 1) % FLOORS_PER_CIRCLE == 0) shuffle_circle();
+    if (s.map.row == MAP_ROWS - 1) new_circle();     // its map shows before the Guardian
 }
 
 // ---- Draft ----
@@ -590,7 +703,7 @@ void tower_draft_open(void)
         else if (s.slot[i]) famHeld[BOONS[s.slot[i] - 1].family]++;
     }
     for (int b = 0; b < BOON_COUNT; b++) {
-        if (!offerable(b)) continue;
+        if (!offerable(b) || (s.elite && BOONS[b].tier == TIER_COMMON)) continue;   // an Elite's draft: Rare or better
         if (is_skill_card(b)) skills[ns++] = b; else pool[n++] = b;
     }
     s.nChoices = 0;
@@ -622,7 +735,7 @@ void tower_draft_open(void)
         }
         int leg = 6 + 4 * (tower_circle() - 1), r = rng_next() % 100;
         if (leg > 25) leg = 25;
-        int want = r < leg ? TIER_LEGENDARY : r < leg + 30 ? TIER_RARE : TIER_COMMON;
+        int want = r < leg ? TIER_LEGENDARY : (r < leg + 30 || s.elite) ? TIER_RARE : TIER_COMMON;
         int k = -1;
         for (int tries = 0; tries < 3 && k < 0; tries++) {     // that tier, or the next lower one (wrapping)
             int tier = (want + 3 - tries) % 3, cand[2 * BOON_COUNT], nc = 0;
@@ -667,7 +780,7 @@ void tower_draft_open(void)
         if (c < BOON_COUNT) debugf(" %s (%d)", BOONS[c].name, BOONS[c].tier);
         else debugf(" Pact of %s / %s", BLESSINGS[(c - BOON_COUNT) / PC_COUNT].name, CURSES[(c - BOON_COUNT) % PC_COUNT].name);
     }
-    debugf("%s\n", s.circleCleared ? " | circle cleared" : "");
+    debugf("%s%s\n", s.circleCleared ? " | circle cleared" : "", s.elite ? " | elite" : "");
 #endif
 }
 
@@ -703,7 +816,7 @@ void tower_draft_pick(int index)
 
 #define DRAFT_INPUT_DELAY_MS 750
 
-bool tower_draft_update(bool left, bool right, bool up, bool down, bool confirm)
+static bool tower_draft_update(bool left, bool right, bool up, bool down, bool confirm)
 {
     if (!s.draftOpen) return false;
     // A dodge (A) pressed as the cards come up took the first one unseen (always a skill card while
@@ -735,7 +848,7 @@ static void flat_mode(void)
     rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
 }
 
-void tower_draft_draw(void)
+static void tower_draft_draw(void)
 {
     if (!s.draftOpen) return;
     flat_mode();
@@ -833,7 +946,7 @@ void tower_draft_draw(void)
     rdpq_fill_rectangle(bx, by, bx + bw, by + bh);
     snprintf(line, sizeof line, "Skip: +%d Embers", SKIP_EMBERS);
     text_style(bx, by + 12, bw, ALIGN_CENTER, skip ? FONT_STYLE_GOLD : FONT_STYLE_GREY, line);
-    if (s.floor % FLOORS_PER_CIRCLE == 0) {     // a new circle: stronger, and its night
+    if (s.circleCleared) {     // a new circle: stronger, and its night
         // the next circle: stronger bosses, and its night (two lines at most)
         snprintf(line, sizeof line, "Next: floor %d, %s. %s", s.floor + 1, NIGHTS[s.nextNight].name, NIGHTS[s.nextNight].desc);
         text_style(12, y0 + ch + 31, SCREEN_WIDTH - 24, ALIGN_CENTER, FONT_STYLE_RED, line);
@@ -843,9 +956,292 @@ void tower_draft_draw(void)
     }
 }
 
+// ---- The map screen, and a Rest's ----
+
+static sprite_t *s_icons;       // the six node icons (16x16 I4 one above the next: Fight, Elite, Event, Shop, Rest, Boss), loaded with the map
+static void icons_free(void) { if (s_icons) { rspq_wait(); sprite_free(s_icons); s_icons = NULL; } }
+
+bool tower_map_is_open(void) { return s.scr == SCR_MAP; }
+bool tower_rest_is_open(void) { return s.scr >= SCR_REST; }
+bool tower_between_open(void) { return s.draftOpen || s.scr != SCR_NONE; }
+
+void tower_map_open(void)
+{
+    s.scr = SCR_MAP;
+    s.scrOpenMs = get_ticks_ms();
+    if (!s_icons) s_icons = sprite_load("rom:/ui/map/map_icons.i4.sprite");
+    map_assign_bosses();
+    int r = s.map.row + 1, l = s.map.row >= 0 ? s.map.path[s.map.row] : 1;     // the cursor: straight up, else the first reachable
+    if (!map_reachable(r, l)) for (l = 0; l < MAP_LANES - 1 && !map_reachable(r, l); l++) {}
+    s.map.sel = (int8_t)l;
+#ifdef HLE_AUTOPLAY
+    debugf("[map] open: circle %d, floor %d next, row %d next:", s.circle, s.floor, r + 1);
+    for (int k = 0; k < MAP_LANES; k++) if (map_reachable(r, k))
+        debugf(" lane %d %s%s%s", k, NODE_NAMES[s.map.type[r][k]], s.map.boss[r][k] ? " " : "", s.map.boss[r][k] ? BOSS_NAMES[s.map.boss[r][k] - 1] : "");
+    debugf(", cursor %d\n", l);
+#endif
+}
+
+// Enter the node under the cursor (its fight, or a Rest); returns its NODE_
+static int map_enter(void)
+{
+    int r = ++s.map.row, l = s.map.sel, t = s.map.type[r][l];
+    s.map.path[r] = (int8_t)l;
+    s.elite = t == NODE_ELITE;
+    if (t == NODE_BOSS) s.boss = r ? TOWER_UNBOUND : TOWER_GUARDIAN;
+    else if (t == NODE_FIGHT || t == NODE_ELITE) s.boss = (TowerBoss)(s.map.boss[r][l] - 1);
+    if (is_fight(t)) { s.map.fights++; s.map.met |= 1 << s.boss; }
+#ifdef HLE_AUTOPLAY
+    debugf("[map] entered row %d lane %d: %s%s%s (floor %d, fight %d of the circle)\n", r + 1, l, NODE_NAMES[t], is_fight(t) ? " " : "",
+           is_fight(t) ? BOSS_NAMES[s.boss] : "", s.floor, s.map.fights);
+#endif
+    return t;
+}
+
+static bool is_learn(int b) { return b >= BOON_LEARN_MOONBLADE && b <= BOON_LEARN_CLEAVE; }
+// What a Rest can Temper: a level of a slotted boon below its max, a "+" unlocked by a maxed one, a
+// known skill's "+" card (stage 5 turns those into levels); never a new boon or a duo
+static int temper_targets(int8_t out[], int max)
+{
+    int n = 0;
+    for (int b = 0; b < BOON_COUNT && n < max; b++)
+        if (offerable(b) && !BOONS[b].duo && !is_learn(b) && (s.stacks[b] || BOONS[b].up || is_skill_card(b))) out[n++] = (int8_t)b;
+    return n;
+}
+
+static bool row_ok(int i)
+{
+    if (s.scr != SCR_REST) return true;
+    int8_t t[LIST_MAX];
+    if (s.list[i] == REST_TEMPER_ROW) return temper_targets(t, LIST_MAX) > 0;
+    if (s.list[i] == REST_POTIONS_ROW) return character.healthPotions < POTION_CAP;
+    return true;
+}
+
+static void list_open(int scr)
+{
+    s.scr = (uint8_t)scr;
+    s.listN = s.listSel = 0;
+    if (scr == SCR_REST) for (int i = 0; i < REST_ROWS; i++) s.list[s.listN++] = (int8_t)i;
+    else if (scr == SCR_TEMPER) { s.listN = (int8_t)temper_targets(s.list, LIST_MAX - 1); s.list[s.listN++] = -1; }     // then Back
+    else { s.list[s.listN++] = -1; for (int i = 0; i < TOWER_SLOTS; i++) if (s.slot[i]) s.list[s.listN++] = (int8_t)i; }   // Keep, then the slots
+    while (s.listSel < s.listN - 1 && !row_ok(s.listSel)) s.listSel++;
+}
+
+// Release (free at a Rest, with its choice): the slot's boon and its levels are gone ("+" too; a duo
+// with its two boons), the slot opens. A rival it locked out stays locked (stage 2's call)
+static void release_slot(int i)
+{
+    int parts[3] = { s.slot[i] - 1, s.merged[i][0] - 1, s.merged[i][1] - 1 };
+#ifdef HLE_AUTOPLAY
+    debugf("[rest] release slot %d: %s Lv %d%s\n", i + 1, BOONS[parts[0]].name, s.stacks[parts[0]], parts[1] >= 0 ? " (a duo, with its two)" : "");
+#endif
+    for (int k = 0; k < 3; k++) {
+        if (parts[k] < 0) continue;
+        s.stacks[parts[k]] = 0;
+        for (int u = 0; u < BOON_COUNT; u++) if (BOONS[u].up == parts[k] + 1) s.stacks[u] = 0;
+    }
+    s.slot[i] = 0; s.merged[i][0] = s.merged[i][1] = 0;
+    sync_max_health();
+    if (character.health > character.maxHealth) character.health = character.maxHealth;
+}
+
+static void release_open(void)
+{
+    if (slots_used()) list_open(SCR_RELEASE);
+    else tower_map_open();
+}
+
+static void rest_take(int v)
+{
+    float mh = character.maxHealth, h = character.health;
+    int p = character.healthPotions, pm = POTION_CAP;
+    if (v == REST_HEAL_ROW) character.health = fminf(mh, h + REST_HEAL * mh);
+    else if (p < pm) character.healthPotions = p + REST_POTIONS < pm ? p + REST_POTIONS : pm;
+#ifdef HLE_AUTOPLAY
+    if (v == REST_HEAL_ROW) debugf("[rest] heal 40%%: %.0f -> %.0f of %.0f\n", (double)h, (double)character.health, (double)mh);
+    else debugf("[rest] +2 potions: %d -> %d (up to %d)\n", p, character.healthPotions, pm);
+#endif
+}
+
+bool tower_between_update(bool left, bool right, bool up, bool down, bool confirm)
+{
+    if (s.draftOpen) {
+        if (tower_draft_update(left, right, up, down, confirm)) { tower_floor_restore(); tower_next_floor(); tower_map_open(); }
+        return false;
+    }
+    if (!s.scr || get_ticks_ms() - s.scrOpenMs < DRAFT_INPUT_DELAY_MS) return false;    // (as the draft: no press taken unseen)
+    if (s.scr == SCR_MAP) {     // Left/Right along the next row's reachable nodes; A or Up enters
+        int d = right - left, r = s.map.row + 1;
+        for (int l = s.map.sel + d; d && l >= 0 && l < MAP_LANES; l += d) if (map_reachable(r, l)) { s.map.sel = (int8_t)l; break; }
+        if (!confirm && !up) return false;
+        if (map_enter() == NODE_REST) { list_open(SCR_REST); s.scrOpenMs = get_ticks_ms(); return false; }
+        s.scr = SCR_NONE;
+        icons_free();
+        return true;
+    }
+    // a Rest's screens: Up/Down along the rows (past any that can't be chosen), A takes one
+    int d = down - up;
+    for (int i = s.listSel + d; d && i >= 0 && i < s.listN; i += d) if (row_ok(i)) { s.listSel = (int8_t)i; break; }
+    if (!confirm) return false;
+    int v = s.list[s.listSel];
+    if (s.scr == SCR_REST) {
+        if (v == REST_TEMPER_ROW) list_open(SCR_TEMPER);
+        else { rest_take(v); release_open(); }
+    } else if (s.scr == SCR_TEMPER) {
+        if (v < 0) list_open(SCR_REST);
+        else {
+#ifdef HLE_AUTOPLAY
+            debugf("[rest] temper: %s Lv %d -> %d\n", BOONS[v].name, s.stacks[v], s.stacks[v] + 1);
+#endif
+            take_boon((BoonId)v);
+            release_open();
+        }
+    } else {
+#ifdef HLE_AUTOPLAY
+        if (v < 0) debugf("[rest] release: none\n");
+#endif
+        if (v >= 0) release_slot(v);
+        tower_map_open();
+    }
+    return false;
+}
+
+#define MAP_X(l) (100 + 60 * (l))
+#define MAP_Y(r) (198 - 26 * (r))
+// a 1 px line up the screen (y1 < y0) in fill-rectangle steps, as the menus draw their frames
+static void line_up(int x0, int y0, int x1, int y1)
+{
+    int dy = y0 - y1;
+    for (int i = 0; i < dy; i++) {
+        int xa = x0 + (x1 - x0) * i / dy, xb = x0 + (x1 - x0) * (i + 1) / dy;
+        if (xb < xa) { int t = xa; xa = xb; xb = t; }
+        rdpq_fill_rectangle(xa, y0 - i - 1, xb + 1, y0 - i);
+    }
+}
+// the menus' selection box (menu_controller.c)
+static void select_box(int x0, int y0, int x1, int y1)
+{
+    flat_mode();
+    rdpq_set_prim_color(RGBA32(0, 0, 0, 140));
+    rdpq_fill_rectangle(x0, y0, x1, y1);
+    rdpq_set_prim_color(RGBA32(255, 255, 255, 70));
+    rdpq_fill_rectangle(x0, y0, x1, y0 + 1);
+    rdpq_fill_rectangle(x0, y1 - 1, x1, y1);
+    rdpq_fill_rectangle(x0, y0, x0 + 1, y1);
+    rdpq_fill_rectangle(x1 - 1, y0, x1, y1);
+}
+
+static void map_draw(void)
+{
+    flat_mode();
+    rdpq_set_prim_color(RGBA32(0, 0, 0, 200));     // (darker than the draft's: the hall's boss stands behind the nodes)
+    rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    // the links: the path taken and the way on bright, the rest dim (the rows behind dimmer)
+    for (int r = 0; r < MAP_ROWS - 1; r++) for (int a = 0; a < MAP_LANES; a++) for (int b = 0; b < MAP_LANES; b++) {
+        if (!s.map.type[r][a] || !s.map.type[r + 1][b] || !linked(r, a, b)) continue;
+        bool taken = s.map.path[r] == a && s.map.path[r + 1] == b, next = r == s.map.row && s.map.path[r] == a && map_reachable(r + 1, b);
+        rdpq_set_prim_color(next ? RGBA32(235, 215, 170, 255) : taken ? RGBA32(150, 130, 105, 255) : r < s.map.row ? RGBA32(55, 48, 42, 255) : RGBA32(105, 92, 78, 255));
+        // centre to centre, from where it leaves one icon's box (10 px each way) to where it enters the other's
+        int dx = MAP_X(b) - MAP_X(a), dy = MAP_Y(r + 1) - MAP_Y(r);
+        float t = fminf(dx ? 10.0f / abs(dx) : 1.0f, 10.0f / abs(dy));
+        int ox = (int)(dx * t), oy = (int)(dy * t);
+        line_up(MAP_X(a) + ox, MAP_Y(r) + oy, MAP_X(b) - ox, MAP_Y(r + 1) - oy);
+    }
+    int cr = s.map.row + 1, cl = s.map.sel;
+    if (cr < MAP_ROWS) select_box(MAP_X(cl) - 11, MAP_Y(cr) - 11, MAP_X(cl) + 11, MAP_Y(cr) + 11);
+    if (s_icons) {
+        static const color_t TINT[NODE_TYPES] = {
+            [NODE_FIGHT] = RGBA32(200, 200, 215, 255), [NODE_ELITE] = RGBA32(230, 70, 60, 255), [NODE_EVENT] = RGBA32(90, 200, 200, 255),
+            [NODE_SHOP] = RGBA32(235, 190, 70, 255), [NODE_REST] = RGBA32(255, 150, 60, 255), [NODE_BOSS] = RGBA32(255, 215, 90, 255),
+        };
+        rdpq_sync_pipe();
+        rdpq_set_mode_standard();
+        rdpq_mode_combiner(RDPQ_COMBINER1((TEX0, 0, PRIM, 0), (TEX0, 0, PRIM, 0)));
+        rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+        for (int r = 0; r < MAP_ROWS; r++) for (int l = 0; l < MAP_LANES; l++) {
+            int t = s.map.type[r][l];
+            if (!t) continue;
+            // visited dimmed, passed by dimmer, reachable full colour, the rows ahead a little dim
+            int k = r <= s.map.row ? (s.map.path[r] == l ? 45 : 22) : map_reachable(r, l) ? 100 : 70;
+            color_t c = TINT[t];
+            rdpq_set_prim_color(RGBA32(c.r * k / 100, c.g * k / 100, c.b * k / 100, 255));
+            rdpq_sprite_blit(s_icons, MAP_X(l) - 8, MAP_Y(r) - 8, &(rdpq_blitparms_t){ .t0 = 16 * (t - 1), .width = 16, .height = 16 });
+        }
+    }
+    // the top line: floor, Ascension, night (gold is stage 4); the bottom: the node under the cursor
+    char line[80];
+    int n = snprintf(line, sizeof line, "Floor %d", s.floor);
+    if (s.circle > 1) n += snprintf(line + n, sizeof line - n, "   Ascension %d", s.circle - 1);
+    if (s.night) snprintf(line + n, sizeof line - n, "   %s", NIGHTS[s.night].name);
+    text_style(0, 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
+    if (cr < MAP_ROWS) {
+        int t = s.map.type[cr][cl];
+        const char *boss = t == NODE_BOSS ? BOSS_NAMES[cr ? TOWER_UNBOUND : TOWER_GUARDIAN] : s.map.boss[cr][cl] ? BOSS_NAMES[s.map.boss[cr][cl] - 1] : "";
+        if (t == NODE_ELITE) snprintf(line, sizeof line, "Elite: %s, rare draft, x1.5 Embers", boss);
+        else if (t == NODE_FIGHT) snprintf(line, sizeof line, "Fight: %s", boss);
+        else if (t == NODE_REST) snprintf(line, sizeof line, "Rest: heal, Temper or potions");
+        else snprintf(line, sizeof line, "%s", boss);
+        text_style(0, 227, SCREEN_WIDTH, ALIGN_CENTER, t == NODE_ELITE ? FONT_STYLE_RED : FONT_STYLE_WHITE, line);
+    }
+}
+
+static void rest_draw(void)
+{
+    flat_mode();
+    rdpq_set_prim_color(RGBA32(0, 0, 0, 170));
+    rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    static const char *const HEAD[] = { [SCR_REST] = "Rest: choose one", [SCR_TEMPER] = "Temper: +1 level", [SCR_RELEASE] = "Release a boon? Free, with its levels" };
+    text_style(0, 40, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, HEAD[s.scr]);
+    char line[80];
+    snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d", (double)character.health, (double)character.maxHealth, character.healthPotions);
+    text_style(0, 56, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+    const int x = 50, w = SCREEN_WIDTH - 100, y0 = 84, pitch = 15;
+    for (int i = 0; i < s.listN; i++) {
+        int v = s.list[i], y = y0 + pitch * i, style = row_ok(i) ? FONT_STYLE_WHITE : FONT_STYLE_GREY;
+        if (i == s.listSel) select_box(x - 6, y - 11, x + w + 6, y + 3);
+        if (s.scr == SCR_REST) {
+            int p = character.healthPotions, pm = POTION_CAP;
+            if (v == REST_HEAL_ROW) snprintf(line, sizeof line, "Heal 40%%: +%.0f health", (double)fminf(REST_HEAL * character.maxHealth, character.maxHealth - character.health));
+            else if (v == REST_TEMPER_ROW) snprintf(line, sizeof line, row_ok(i) ? "Temper: +1 level on a boon or skill" : "Temper: nothing to raise");
+            else if (p < pm) snprintf(line, sizeof line, "+2 potions (%d -> %d)", p, p + REST_POTIONS < pm ? p + REST_POTIONS : pm);
+            else snprintf(line, sizeof line, "+2 potions: full");
+        } else if (v < 0) snprintf(line, sizeof line, s.scr == SCR_TEMPER ? "Back" : "Keep them all");
+        else if (s.scr == SCR_TEMPER) {
+            const BoonDef *bd = &BOONS[v];
+            if (bd->up) snprintf(line, sizeof line, "%s (top level)", bd->name);
+            else if (is_skill_card(v)) snprintf(line, sizeof line, "%s (skill)", bd->name);
+            else snprintf(line, sizeof line, "%s   Lv %d -> %d", bd->name, s.stacks[v], s.stacks[v] + 1);
+            style = FAMILIES[bd->family].style;
+        } else {
+            BoonId b = (BoonId)(s.slot[v] - 1);
+            if (s.merged[v][0]) snprintf(line, sizeof line, "%s (duo: %s + %s)", BOONS[b].name, BOONS[s.merged[v][0] - 1].name, BOONS[s.merged[v][1] - 1].name);
+            else snprintf(line, sizeof line, "%s   Lv %d", BOONS[b].name, s.stacks[b]);
+            style = BOONS[b].duo ? FONT_STYLE_GOLD : FAMILIES[BOONS[b].family].style;
+        }
+        text_style(x, y, w, ALIGN_CENTER, style, line);
+    }
+    if (s.scr == SCR_REST && slots_used()) text_style(0, y0 + pitch * s.listN + 12, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, "Then, free: Release a boon if you wish");
+}
+
+#ifdef HLE_AUTOPLAY     // test aids: where the map and a Rest's screens stand (HLE_MAP_WALK)
+int tower_screen(void) { return s.draftOpen ? -1 : s.scr; }
+int tower_map_row(void) { return s.map.row; }
+int tower_map_sel(void) { return s.map.sel; }
+int tower_map_next(int l) { return map_reachable(s.map.row + 1, l) ? s.map.type[s.map.row + 1][l] : 0; }     // a reachable node's NODE_, else 0
+int tower_list_sel(void) { return s.listSel; }
+#endif
+
+void tower_between_draw(void)
+{
+    if (s.draftOpen) tower_draft_draw();
+    else if (s.scr == SCR_MAP) map_draw();
+    else if (s.scr) rest_draw();
+}
+
 void tower_hud_draw(void)
 {
-    if (!s.active || s.draftOpen) return;     // the draft has its own header
+    if (!s.active || tower_between_open()) return;     // the screens between fights have their own header
     char line[32];
     // inside the title-safe area, like the rest of the HUD (TVs and accurate emulators show the edges)
     const int w = SCREEN_WIDTH - ui_safe_margin_x(), top = ui_safe_margin_y() + 10;
@@ -1608,6 +2004,179 @@ int tower_test_stage2(void)
     debugf("[stage2] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     return fails;
 }
+
+// Stage 3's self-check (HLE_TEST_TOWER): 1,000 seeded maps against section 2's rules (checked path by
+// path, apart from map_rules_ok), walks through whole circles by the screens' own presses, a Rest's
+// choices and Release, Elites; returns the failures
+static int s_mapFails;
+#define MCHECK(c, ...) do { if (!(c)) { s_mapFails++; debugf("[map] FAIL: " __VA_ARGS__); debugf("\n"); } } while (0)
+static bool test_press(int key)     // a press on the screens between fights, past their input delay
+{
+    s.scrOpenMs = s.draftOpenMs = get_ticks_ms() - DRAFT_INPUT_DELAY_MS - 1;
+    return tower_between_update(key == 'L', key == 'R', key == 'U', key == 'D', key == 'A');
+}
+// One circle through the map from its first screen: random moves, A or Up to enter; a Rest heals and
+// keeps the boons; a fight is won (with its draft's first card, or none); returns its fights
+static int walk_circle(bool drafts)
+{
+    int c = s.circle, fights = 0, floor0 = s.floor, nb = 0, last = -1;
+    uint8_t seen = 0; bool distinct = true, onlyReach = true;
+    MCHECK(tower_map_is_open() && s.map.row == -1 && map_reachable(0, 1) && !map_reachable(0, 0) && !map_reachable(0, 2) && s.boss == TOWER_GUARDIAN,
+           "circle %d: the map is up before its first fight, the Guardian the only node to enter", c);
+    for (int step = 0; step < 12 && s.circle == c; step++) {
+        for (int m = rng_next() % 3; m > 0; m--) test_press(rng_next() % 2 ? 'L' : 'R');
+        onlyReach &= map_reachable(s.map.row + 1, s.map.sel);
+        if (!test_press(rng_next() % 2 ? 'A' : 'U')) {      // a Rest
+            MCHECK(tower_rest_is_open() && s.map.type[s.map.row][s.map.path[s.map.row]] == NODE_REST, "a node that isn't a fight opens a Rest");
+            test_press('A');
+            if (s.scr == SCR_RELEASE) test_press('A');
+            MCHECK(tower_map_is_open() && s.floor == floor0 + fights, "after a Rest, the map again, no floor counted (%d)", s.floor);
+            continue;
+        }
+        fights++;
+        MCHECK(s.floor == floor0 + fights - 1 && s.map.fights == fights && is_fight(s.map.type[s.map.row][s.map.path[s.map.row]]), "a fight is the next floor (%d)", s.floor);
+        if (fights == 1) MCHECK(s.boss == TOWER_GUARDIAN, "the Guardian first (%d)", s.boss);
+        if (s.boss >= TOWER_FALLEN_KNIGHT) { if (nb < 3 && ((seen >> s.boss) & 1)) distinct = false; seen |= 1 << s.boss; nb++; }
+        last = s.boss;
+        if (drafts) { tower_floor_cleared(); test_press('A'); }
+        else { tower_next_floor(); tower_map_open(); }
+    }
+    MCHECK(onlyReach, "the cursor stays on reachable nodes");
+    MCHECK(last == TOWER_UNBOUND && fights >= 4 && fights <= 6 && distinct && s.circle == c + 1 && s.floor == floor0 + fights,
+           "circle %d: Unbound last (%d), 4-6 fights (%d), no Bonus boss twice before all three (%d), then circle %d (floor %d)", c, last, fights, distinct, s.circle, s.floor);
+    return fights;
+}
+int tower_test_map(void)
+{
+    s_mapFails = 0;
+    bool skillsWere = character_skills_enabled();
+    character_set_skills_enabled(true);
+    // 1. 1,000 maps
+    int count[NODE_TYPES] = { 0 }, tries = 0, most = 0, bad = 0, paths[8] = { 0 };
+    for (uint32_t seed = 1; seed <= 1000; seed++) {
+        s.rng = seed * 2654435761u | 1;
+        map_generate();
+        tries += s_mapTries; if (s_mapTries > most) most = s_mapTries;
+        int b = 0;
+        b += s.map.type[0][0] || s.map.type[0][2] || s.map.type[0][1] != NODE_BOSS || s.map.type[6][0] || s.map.type[6][2] || s.map.type[6][1] != NODE_BOSS;  // rows 1 and 7: one node, a boss
+        for (int l = 0; l < MAP_LANES; l++) {
+            int f = 0;
+            b += s.map.type[5][l] != NODE_REST;                                         // row 6: a Rest on every lane
+            for (int r = 1; r <= 4; r++) {
+                int t = s.map.type[r][l];
+                count[t]++; f += t == NODE_FIGHT;
+                b += t != NODE_FIGHT && t != NODE_ELITE && t != NODE_REST;              // stage 3: no Events or Shops
+                b += r == 1 && t == NODE_ELITE;                                         // no Elite in row 2
+            }
+            b += f < 2;                                                                 // 2 Fights a lane at least
+        }
+        for (int p = 0; p < 243; p++) {     // every path: a lane in row 2, then up or a diagonal each row to row 6
+            int lane[MAP_ROWS] = { 1, p % 3 }, q = p / 3, fights = 0; bool ok = true;
+            for (int r = 2; r <= 5; r++, q /= 3) { lane[r] = lane[r - 1] + q % 3 - 1; ok &= lane[r] >= 0 && lane[r] < MAP_LANES; }
+            if (!ok) continue;
+            lane[6] = 1;
+            for (int r = 0; r < MAP_ROWS; r++) {
+                int t = s.map.type[r][lane[r]];
+                fights += is_fight(t);
+                if (r < MAP_ROWS - 1) { int u = s.map.type[r + 1][lane[r + 1]]; b += (t == NODE_REST || t == NODE_SHOP) && u == t; }     // no two Rests or Shops in a row
+            }
+            paths[fights]++;
+            b += fights < 4 || fights > 6;                                              // 4-6 fights a path
+        }
+        if (b && bad++ < 3) debugf("[map] seed %lu breaks %d rules\n", (unsigned long)seed, b);
+    }
+    int cells = 12000;
+    debugf("[map] 1000 maps: %d break a rule; rows 2-5: Fight %d.%d%%, Elite %d.%d%%, Rest %d.%d%%, Event %d, Shop %d; %d.%d rolls a map (most %d); paths with 4/5/6 fights: %d %d %d\n",
+           bad, count[NODE_FIGHT] * 100 / cells, count[NODE_FIGHT] * 1000 / cells % 10, count[NODE_ELITE] * 100 / cells, count[NODE_ELITE] * 1000 / cells % 10,
+           count[NODE_REST] * 100 / cells, count[NODE_REST] * 1000 / cells % 10, count[NODE_EVENT], count[NODE_SHOP], tries / 1000, tries / 100 % 10, most, paths[4], paths[5], paths[6]);
+    MCHECK(!bad, "every map keeps the rules (%d don't)", bad);
+    MCHECK(count[NODE_ELITE] && count[NODE_REST] && count[NODE_FIGHT], "all three kinds rolled");
+    // the generator's own check turns each rule down
+    // the generator's own check turns each rule down, one at a time on a map of Fights
+    { int no = 0;
+      #define FIGHTS() for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = NODE_FIGHT
+      FIGHTS(); bool base = map_rules_ok();
+      s.map.type[1][0] = s.map.type[3][0] = s.map.type[4][0] = NODE_ELITE; no += !map_rules_ok(); FIGHTS();   // a lane with 1 Fight
+      s.map.type[1][2] = NODE_ELITE; no += !map_rules_ok(); FIGHTS();                                         // an Elite in row 2
+      s.map.type[4][0] = NODE_REST; no += !map_rules_ok(); FIGHTS();                                          // a Rest under row 6's
+      s.map.type[2][1] = s.map.type[3][2] = NODE_REST; no += !map_rules_ok(); FIGHTS();                       // a Rest, then a diagonal Rest
+      #undef FIGHTS
+      MCHECK(base && no == 4, "map_rules_ok turns down each broken rule (%d of 4)", no); }
+    // 2. walks: whole circles by the screens' presses, with drafts (their Embers and best floor put back after)
+    TowerSave was; tower_load(&was);
+    int hist[8] = { 0 };
+    for (uint32_t seed = 1; seed <= 40; seed++) {
+        tower_begin_run(seed);
+        character.maxHealth = tower_mod_max_health(); character.health = character.maxHealth; character.healthPotions = START_POTIONS;
+        tower_map_open();
+        for (int c = 0; c < 2; c++) hist[walk_circle(true)]++;
+    }
+    debugf("[map] 80 circles walked: %d with 4 fights, %d with 5, %d with 6\n", hist[4], hist[5], hist[6]);
+    save_controller_set_tower(&was);
+    // 3. the circle's scaling, by maps (no drafts: no skills offered, no nights)
+    tower_begin_run(7); tower_map_open();
+    walk_circle(false);
+    MCHECK(fabsf(tower_boss_health_scale(1) - 1.0f) < 0.01f, "circle 2: x1.0 (%.2f)", (double)tower_boss_health_scale(1));
+    for (int c = 0; c < 4; c++) walk_circle(false);
+    MCHECK(s.circle == 6 && fabsf(tower_boss_health_scale(1) - 2.3f) < 0.01f, "circle 6: 0.7 + 4 x 0.3 + 0.4 (%.2f)", (double)tower_boss_health_scale(1));
+    // 4. a Rest's choices, by its screens: heal 40%, +2 potions, Temper, Release (free), a row that can't be chosen passed by
+    #define RUN(seed) do { tower_begin_run(seed); s.packs = (1 << FAM_COUNT) - 1; s.relicFx[0] = s.relicFx[1] = 0; character.maxHealth = tower_mod_max_health(); } while (0)
+    RUN(41);
+    float mh0 = character.maxHealth;
+    character.health = 50.0f; character.healthPotions = 1;
+    list_open(SCR_REST); test_press('A');
+    MCHECK(fabsf(character.health - 50.0f - 0.4f * mh0) < 0.01f && tower_map_is_open(), "heal 40%%: 50 -> %.0f of %.0f, no boon to release: the map", (double)character.health, (double)mh0);
+    list_open(SCR_REST); test_press('D');
+    MCHECK(s.listSel == REST_POTIONS_ROW, "nothing to Temper: Down passes it (row %d)", s.listSel);
+    test_press('A');
+    MCHECK(character.healthPotions == 3, "+2 potions: 1 -> 3 (%d)", character.healthPotions);
+    character.healthPotions = POTION_CAP - 1; list_open(SCR_REST); s.listSel = REST_POTIONS_ROW; test_press('A');
+    MCHECK(character.healthPotions == POTION_CAP, "+2 potions stop at the cap of %d (%d)", POTION_CAP, character.healthPotions);
+    list_open(SCR_REST);
+    MCHECK(!row_ok(REST_POTIONS_ROW) && !row_ok(REST_TEMPER_ROW) && row_ok(REST_HEAL_ROW), "potions full and nothing to Temper: only Heal");
+    take_boon(BOON_EMBER_EDGE); take_boon(BOON_STORM_BLADE); take_boon(BOON_LEARN_HALFMOON);
+    list_open(SCR_REST); test_press('D'); test_press('A');
+    MCHECK(s.scr == SCR_TEMPER && s.listN == 4 && s.list[0] == BOON_EMBER_EDGE && s.list[1] == BOON_HALFMOON_PLUS && s.list[2] == BOON_STORM_BLADE_PLUS && s.list[3] == -1,
+           "Temper's list: Ember Edge's level, Halfmoon Slash+, Storm Blade+ (a maxed boon's \"+\"), Back (%d rows)", s.listN);
+    test_press('D'); test_press('D'); test_press('D'); test_press('A');
+    MCHECK(s.scr == SCR_REST, "Back: the Rest's choices again");
+    test_press('D'); test_press('A'); test_press('A');
+    MCHECK(s.stacks[BOON_EMBER_EDGE] == 2 && s.scr == SCR_RELEASE && s.listN == 3 && s.listSel == 0, "Temper: Ember Edge Lv 1 -> 2, then Release (Keep first)");
+    take_boon(BOON_STORM_BLADE_PLUS);
+    test_press('D'); test_press('D'); test_press('A');
+    MCHECK(!s.stacks[BOON_STORM_BLADE] && !s.stacks[BOON_STORM_BLADE_PLUS] && !s.slot[1] && slots_used() == 1 && s.locked[BOON_EXECUTIONER] && !offerable(BOON_EXECUTIONER)
+           && offerable(BOON_STORM_BLADE) && tower_map_is_open(), "Release: Storm Blade and its \"+\" gone, its slot open, its rival still locked, the map");
+    take_boon(BOON_VIGOR);
+    MCHECK(s.slot[1] == BOON_VIGOR + 1, "the opened slot takes the next new boon");
+    for (int i = 0; i < 4; i++) take_boon(BOON_VIGOR);
+    character.health = character.maxHealth;
+    list_open(SCR_RELEASE); test_press('D'); test_press('D'); test_press('A');
+    MCHECK(character.maxHealth == mh0 && character.health == mh0 && !s.stacks[BOON_VIGOR], "Release Vigor Lv 5: max health %.0f -> %.0f (%.0f, health %.0f)", (double)(mh0 + 125.0f), (double)mh0, (double)character.maxHealth, (double)character.health);
+    RUN(42);
+    while (s.stacks[BOON_BLOODTHIRST] < 2) take_boon(BOON_BLOODTHIRST);
+    take_boon(BOON_STORM_BLADE); take_boon(BOON_CRIMSON_STORM);
+    list_open(SCR_RELEASE); test_press('D'); test_press('A');
+    MCHECK(!s.stacks[BOON_CRIMSON_STORM] && !s.stacks[BOON_BLOODTHIRST] && !s.stacks[BOON_STORM_BLADE] && !slots_used(), "Release a duo: all three gone (%d slots used)", slots_used());
+    // 5. Elites: x1.25 health (Bonus bosses only), a Rare-or-better draft, x1.5 Embers
+    RUN(43);
+    s.elite = true; s.map.fights = 2;
+    { int counts[BOON_COUNT], common = 0, cards = 0;
+      draft_counts(500, counts);
+      for (int b = 0; b < BOON_COUNT; b++) { cards += counts[b]; if (BOONS[b].tier == TIER_COMMON) common += counts[b]; }
+      float h3 = tower_boss_health_scale(3), h1 = tower_boss_health_scale(1); int e = floor_embers();
+      s.elite = false;
+      float n3 = tower_boss_health_scale(3); int ne = floor_embers();
+      debugf("[map] elite: 500 drafts, %d boon cards, %d Common; Bonus health x%.3f (plain x%.3f), Guardian x%.2f; Embers %d (plain %d)\n", cards, common, (double)h3, (double)n3, (double)h1, e, ne);
+      MCHECK(!common && cards > 1000 && fabsf(h3 / n3 - 1.25f) < 0.001f && h1 == tower_boss_health_scale(1) && e == 17 && ne == 11,
+             "an Elite: no Common card, x1.25 health on a Bonus boss only, Embers x1.5 (17 for 11)"); }
+    #undef RUN
+    tower_end_run();
+    character.maxHealth = tower_mod_max_health(); character.health = character.maxHealth;
+    character_set_skills_enabled(skillsWere);
+    debugf("[map] self-check: %s (%d failed)\n", s_mapFails ? "FAIL" : "ok", s_mapFails);
+    return s_mapFails;
+}
+#undef MCHECK
 #endif
 
 bool tower_mod_try_unbroken(void)
@@ -1632,6 +2201,7 @@ float tower_boss_health_scale(int phase)
     int c = tower_circle(), late = c >= BOSS_HP_LATE_CIRCLE ? c - BOSS_HP_LATE_CIRCLE + 1 : 0;
     float k = (BOSS_HP_START + BOSS_HP_PER_CIRCLE * (c - 1 - late) + BOSS_HP_PER_LATE * late) * (1.0f + HP_PER_SKILL * n);
     if (s.night == NIGHT_IRON) k *= 1.25f;
+    if (s.elite && phase >= 3) k *= ELITE_HP;
     return phase >= 3 ? k * BONUS_HP_IN_TOWER : k;     // phases 3+ are the Bonus bosses
 }
 

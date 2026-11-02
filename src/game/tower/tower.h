@@ -4,10 +4,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// The Tower: a boss-rush roguelite. A run climbs floors (one fight each); every
-// five floors make a circle (the Guardian, the three Bonus bosses in a random order,
-// then Guardian Unbound), and the bosses start well below the story fights' strength
-// and grow every circle.
+// The Tower: a boss-rush roguelite. A run climbs floors (one fight each). A circle is a
+// map of 7 rows (docs/design/TOWER_ROGUELIKE.md section 2): the Guardian, four rows of
+// Fights (Bonus bosses), Elites and Rests to choose a path through, a Rest on every lane,
+// then Guardian Unbound: 4-6 floors by the path. The bosses start well below the story
+// fights' strength and grow every circle.
 // A run starts as the original game did: 3 potions and the sword only. Between
 // floors the player drafts a Boon (run-only); one of the three is always a skill
 // card while any are left: learn a D-pad skill, or upgrade one learned this run.
@@ -62,13 +63,17 @@ void tower_floor_cleared(void);
 void tower_draft_pick(int index);
 void tower_next_floor(void);
 
-// ---- Draft screen ----
+// ---- Between fights: the draft, then the map (and a Rest's screens) ----
 void tower_draft_open(void);
 bool tower_draft_is_open(void);
-// Returns true once a boon was taken (the scene starts the next floor).
-bool tower_draft_update(bool left, bool right, bool up, bool down, bool confirm);
 int  tower_draft_selected(void);        // the card under the cursor (nChoices: Skip)
-void tower_draft_draw(void);
+void tower_map_open(void);              // the circle's map (the scene opens it at a run's start)
+bool tower_map_is_open(void);
+bool tower_rest_is_open(void);          // a Rest's screens (its choice, Temper's list, Release)
+bool tower_between_open(void);          // any of them
+// Returns true once a fight's node is entered on the map (the scene starts tower_floor_boss's fight)
+bool tower_between_update(bool left, bool right, bool up, bool down, bool confirm);
+void tower_between_draw(void);
 void tower_hud_draw(void);              // floor / circle during a run fight
 const char* tower_death_summary(void);   // a line for the death screen
 const char* tower_run_summary(void);     // the run so far, for the pause menu's Stats page (several lines)
