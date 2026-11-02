@@ -447,6 +447,15 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             debugf("[tower] unbroken: %s (bits %d)\n", uf ? "FAIL" : "ok", uf);
             if (uf) fails++;
         }
+        {   // Vigor and Vitality taken mid-run raise the bar's top, not just health
+            extern void tower_test_pick_vigor(void); extern float tower_mod_max_health(void);
+            tower_begin_run(3); character.maxHealth = tower_mod_max_health(); character.health = 100.0f;
+            tower_test_pick_vigor();
+            float mh = character.maxHealth, h = character.health;
+            debugf("[tower] vigor mid-run: max %.0f (175), health %.0f (125)\n", (double)mh, (double)h);
+            if (mh != 175.0f || h != 125.0f) fails++;
+            tower_end_run(); character.maxHealth = 150.0f; character.health = 150.0f;
+        }
         if (tower_mod_max_potions() != 3 || !tower_mod_skill_allowed(0) || tower_boss_health_scale(3) != 1.0f) fails++;
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }

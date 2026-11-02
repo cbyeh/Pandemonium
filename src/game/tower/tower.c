@@ -499,6 +499,8 @@ void tower_draft_pick(int index)
         if (b == BOON_LEARN_CLEAVE)    s.skills |= 1 << SKILL_CRESCENT_CLEAVE;
         if (b == BOON_VIGOR) character.health += 25.0f;
     }
+    character.maxHealth = tower_mod_max_health();     // Vigor, Vitality (set only at the run's start, they added to health but not the bar's top)
+    if (character.health > character.maxHealth) character.health = character.maxHealth;
     s.draftOpen = false;
 }
 
@@ -870,6 +872,7 @@ int   tower_mod_extra_mbd_waves(void) { return tower_boon_stacks(BOON_CRESCENT_E
 
 #ifdef HLE_TEST_TOWER
 void tower_test_grant_unbroken(void) { s.stacks[BOON_UNBROKEN]++; }     // test aid: the boon without the draft
+void tower_test_pick_vigor(void) { s.choices[0] = BOON_VIGOR; s.nChoices = 1; s.draftOpen = true; tower_draft_pick(0); }   // test aid: Vigor taken from a draft
 #endif
 
 bool tower_mod_try_unbroken(void)
