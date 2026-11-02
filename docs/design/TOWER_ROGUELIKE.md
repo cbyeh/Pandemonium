@@ -1,6 +1,6 @@
 # The Tower as a roguelike: design for approval
 
-Scope approved by the user (2026-11-01): a branching map each circle (4-6 fights a path), Vampire Survivors-style slots (3 skill slots, 5 boon slots, boons levelling inside their slot), boon families with duos as evolutions, rival pairs and "+" upgrades, and elite affixes. Not in scope: rerolls, removing boons, relics found mid-run. Nothing here is built yet. Numbers are starting points for the balance pass (stage 5).
+Scope approved by the user (2026-11-01): a branching map each circle (4-6 fights a path), Vampire Survivors-style slots (5 boon slots, boons levelling inside their slot; the three skills level outside them, with two final forms each, and no new skills), boon families with duos as evolutions, rival pairs and "+" upgrades, and elite affixes. Not in scope: rerolls, removing boons, relics found mid-run. Nothing here is built yet. Numbers are starting points for the balance pass (stage 5).
 
 ## 1. Why every deep run ends the same
 - A run drafts once per floor. All 24 boons together have **34 stacks**. By floor 35 a player has had 34 drafts, so a deep run can own everything. The screenshot from 2026-11-01 showed exactly that.
@@ -8,8 +8,8 @@ Scope approved by the user (2026-11-01): a branching map each circle (4-6 fights
 - The Bonus fights in a circle always come in the same order; only the shuffle changes.
 
 The fix has four parts:
-- **Slots:** a build holds 3 skills and 5 boons, no more. Every run leaves most of the pool behind, so what you keep is the run's identity (section 6).
-- **A pool too big to see:** 41 boons in six families, 5 skills, 8 duos and 13 "+" upgrades. A run slots 5 of the 41 boons.
+- **Slots:** a build holds 5 boons, no more, and draft picks are split between them and the 3 skills' levels: a run goes deep on one skill or on the sword, never on everything (section 6).
+- **A pool too big to see:** 41 boons in six families, 3 skills with 5 levels and 2 final forms each, 9 duos and 13 "+" upgrades. A run slots 5 of the 41 boons.
 - **Choices that close doors:** rival pairs, and a full slot bar.
 - **A route you choose:** the map.
 
@@ -84,7 +84,7 @@ Each event is one screen of text with 2-3 choices, the last always **Leave**.
 | **A Knight's Grave** | Take the 60 gold left on it. / Pray: heal 40%. |
 | **Mirror of Shadows** | One random slotted boon gets +1 level (its "+" if maxed), and you take a random curse. / Leave. |
 | **Merchant of Ash** | 1 potion for 70 gold. / 2 potions for a Rare boon. / Leave. |
-| **Moonlit Pool** | A skill you don't hold, into a free skill slot or in place of one (its levels lost). / +1 level on a slotted skill. / Leave. |
+| **Moonlit Pool** | Learn a skill you don't know (if any). / +1 level on a skill you know (below Lv 4). / Leave. |
 | **The Chained Prisoner** | Free it: the next Fight becomes an Elite, and its draft is all Legendary. / Leave. |
 | **Gambler's Bones** | Pay 50 gold: half the time 120 back, half the time nothing (run seed). / Leave. |
 | **Ember Brazier** | Bank 30 x circle Embers now. / A blessing without a curse (half a pact's stack). |
@@ -99,22 +99,64 @@ Also, free with any choice: **Release** one slotted boon (it and its levels are 
 
 Row 6 is always a Rest, so going into Unbound is a real choice between healing and power.
 
-## 6. Slots (Vampire Survivors style)
-A build is **3 skill slots and 5 boon slots**. Pacts sit outside the slots.
+## 6. Slots and skill builds (Vampire Survivors style)
+A build is **5 boon slots** plus **the 3 skills**, which level outside the slots. Pacts sit outside the slots too.
 
-### Skill slots (active: the D-pad)
-- D-up, D-right and D-down each hold one skill (D-left stays the potion). The Tower offers 5 skills, so a run holds at most 3.
-- A skill card with all 3 slots full names the slot it replaces ("Replaces: Halfmoon Slash", its levels lost). Skip keeps what you have.
-- Skills level 1-3: Lv 1 learns it, Lv 2 +25% damage, Lv 3 is its "+" form (Moon Blade Dance+ etc. as now).
+### The 3 skills (no new skills)
+- The three skills stay the only ones: new skills would need their own animation, effects, sound, timing and review. Each skill now has a **level track** of mechanical upgrades (more crosses, more blades, a follow-up slash) built from its existing waves, beams and slash, and **two final forms** at Lv 5 (choose one, like a Hades aspect).
+- Skills take no boon slot, but every level is a draft pick: maxing all three skills (15 picks) and five boons (about 20) is more than a run gets, so a run picks a lane: **a skill build** (one skill to Lv 5, Moon boons in the slots) or **a sword build** (skills left low or unlearned).
+- Lv 1 is the Learn card, as now. At Lv 4, the next draft shows both final forms as two of its three cards; taking one locks the other for the run.
 - The +8% boss health per skill offered stays (it counts skill cards offered, as now).
 
-| Skill | Status | What it is | Cost |
+### Where the skills stand today (circle 1, before damage boons; the sword: 4 a hit, about 0.65 s, so 6.2 a second in an opening)
+| Skill | A cast | Cooldown | Per minute at its cooldown | A second of the cast |
+|---|---|---|---|---|
+| Moon Blade Dance | 5 crosses x 0.8 = **4** (7 crosses = 5.6 with MBD+) | 15 s | 16 (22) | 1.8 (sword 6.2): a dodge, not damage |
+| Halfmoon Slash | **28** (Halfmoon+: 34, +20% since the nerf) | 45 s | 37 (45) | 8.8, but rooted 2 s, and a hit breaks it |
+| Crescent Cleave | 5 blades, about 8 ticks in reach x 1.25 = **10** (Cleave+: 12) | 18 s | 33 (40) | 5.9 |
+
+Why Halfmoon+ was nerfed (0696734): at +50% it did 42 a cast, about 48% of a circle-1 boss (87 HP with three skills offered), and with Moon Mastery x2 and Starfall its 45 s fell to about 20 s, so 2-3 casts took most of a fight. That sets the ceiling below: no single cast over about a quarter of a floor's boss at the depth its Lv 5 is reached (circle 3: about 185 HP).
+
+### Level tracks
+Non-damage levels (charge time, wind-up, reach) make a skill safer to use; damage comes from more of the same projectiles, not flat multipliers.
+
+| Lv | Moon Blade Dance | Halfmoon Slash | Crescent Cleave |
 |---|---|---|---|
-| Moon Blade Dance | as now | jump, rain X-waves | none |
-| Halfmoon Slash | as now | rooted charge, 180-degree slash | none |
-| Crescent Cleave | as now | the cleave beam | none |
-| **Storm Call** | New | after a 0.4 s raise of the sword, Storm Blade's pillar falls on the boss (its hit, sound and FX) | small: the Storm Blade hit + `skill_fx_spawn_pillar`, an existing cast pose |
-| **Twin Crescent** | New | two Crescent Cleave beams in a narrow V, 60% damage each | small-medium: the cleave beam spawned twice at an angle; check two beams' draw cost in Ares |
+| 1 | Learn: 5 crosses x 0.8 (4) | Learn: 28 | Learn: 5 blades (10) |
+| 2 | crosses 1.5 each (7.5) | charge 1.6 s (was 2.0) | +20% (12): today's Cleave+ |
+| 3 | +2 crosses: 7 (10.5): today's MBD+ | +20% (34): today's Halfmoon+ | +2 blades, the fan tightened: 7 blades, about 11 ticks in reach (16) |
+| 4 | cooldown 12 s (was 15) | reach +25% (85 to 106): easier to land | wind-up 0.6 s (was 0.85): safer to start |
+| 5 A | **Full Moon Dance:** 10 crosses (+3), 2.0 each: **20** | **Twin Moon:** a follow-up slash 0.35 s after, the same arc at 40%: **48** | **Crescent Storm:** a second volley of 7 blades 0.5 s after, at 50%: about **25** |
+| 5 B | **Shattering Dance:** 7 crosses, each fills the stagger meter like half a sword hit: a break about every 3 casts (with Iron's Executioner, a stagger build) | **Full Moon:** a 360-degree slash, its charge can't be broken, stagger 60% (was 30%): a break about every 2 casts | **Long Cleave:** blades go 1.6x as far and hit 6 times (was 4): about 24, from range |
+
+### A maxed skill build against a maxed sword build (base damage a minute, before the damage boons both share)
+Assumes a fight where you swing in openings about 24 s a minute (148 a minute with the plain sword), and the build's slots hold Moon Mastery Lv 2 (cooldowns x0.64). Starfall nights add x0.7 on top.
+
+| Build | Its engine | A minute | Total with the sword it still swings |
+|---|---|---|---|
+| Sword: Ember Edge, Storm Blade+Static, Thunderclap, Riposte | lightning on every 4th hit (+12, +4 a Static level) | about +110 on the sword's 148 | about **260** |
+| Full Moon Dance | 20 a cast every 7.7 s, airborne 2.9 s a cast (it doubles as the dodge) | about 155 | about 155 + 80 = **235** |
+| Twin Moon | 48 a cast every 29 s (Starfall: 20 s) | about 100 (Starfall 145) | about 100 + 130 = **230** (275) |
+| Crescent Storm | 25 a cast every 11.5 s, 2.2 s a cast | about 130 | about 130 + 110 = **240** |
+
+- Each maxed skill build lands within about 10% of the sword build, so a skill build is a real path, not a gimmick or the best pick.
+- The ceiling check: Twin Moon's 48 is about 26% of a circle-3 boss a cast (Halfmoon+ at +50% was 48% at circle 1). Full Moon Dance's 20 is about 11% a cast, spread over 10 crosses.
+- Numbers to measure in stage 5 with `HLE_TEST_SKILL_DMG` and `HLE_SDMG_TOWER`; tune the per-cross / follow-up / second-volley shares first.
+
+### Cost and risk of each mechanic (all reuse existing code)
+| Mechanic | Implementation | Perf / memory risk |
+|---|---|---|
+| More crosses (MBD Lv 3, Full Moon Dance) | `mbd_waves()` already takes extra waves (Crescent Echo) | low: crosses fly 0.25 s apart and live about 1 s, so about 5 are alive at once as now (104 triangles each) |
+| Cross damage, stagger | the wave's damage and `skill_fx_next_poise`, as the Cleave does | none |
+| Halfmoon follow-up (Twin Moon) | replay the arc's hit and FX once more 0.35 s later | low: one more arc for 0.3 s |
+| Halfmoon 360 degrees, unbreakable charge | the arc's angle, skip the break check | low |
+| More blades, second volley (Crescent Storm) | the blade loop runs twice, 7 entries in `spread[]` | **medium:** up to 14 blades and 14 bursts alive (1.6 s) in a pool of 40 shared with the bosses' FX (the Sun's spiral uses 20): raise `SKILL_FX_MAX` to 56 (static, about 1-2 KB) so no blade silently fails to spawn, and measure the cast's draw time in Ares at 4 MB and on Delta's core against today's 5 blades |
+| Long Cleave | the blade's speed, life and hit count | low-medium: 7 blades alive 2.5 s |
+
+### Families and skills
+- **Moon** holds the skill-build boons (Moon Mastery, Lunar Tide, Eclipse, Waxing Moon): a skill build fills its slots there.
+- **Storm + Moon duo, Skyfall** (new, below): a skill hit calls Storm Blade's pillar once a cast (+12, its existing hit and FX).
+- **Iron's Executioner** pairs with the stagger forms (Shattering Dance, Full Moon).
 
 ### Boon slots (passive)
 - 5 slots. A new boon takes a free slot at Lv 1. With 5 slots full, drafts offer only **levels of slotted boons**, their "+" (the top level), duos, skill cards and pacts.
@@ -133,11 +175,14 @@ Outside the slots, as now: they stack without end and fill drafts once a build i
 ### Why runs no longer converge
 | | Picks |
 |---|---|
-| A complete build: 5 boons to their max (about 3.5 levels each), 2-3 "+", 1-2 duos, 3 skills to Lv 3 | about 30 |
+| 5 boons to their max (about 3.5 levels each), 2-3 "+", 1-2 duos | about 22 |
+| One skill to Lv 5 (a skill build) | 5 |
+| All three skills to Lv 5 | 15 |
 | Drafts by floor 35 (7 circles, 4-6 fights each) | about 33 (plus Rests and Shops) |
 
-- A deep run completes one build, but it holds 5 of 41 boons and 3 of 5 skills: two deep runs share a boon or two, not the whole list.
-- Late drafts are levels, "+", duos and pacts; when a build is complete, pacts and a **+40 gold** card fill the rest.
+- A skill build (22 + 5, plus a second skill partly) or a sword build (22, skills low) is complete around floor 30-35, but everything (22 + 15 = 37) is more than a run gets.
+- A deep run holds 5 of 41 boons and one of six skill forms: two deep runs share a boon or two, not the whole list.
+- Late drafts are levels, "+", duos, skill levels and pacts; when a build is complete, pacts and a **+40 gold** card fill the rest.
 - Slots fill by about floor 6-8, so what to slot is the first two circles' big decision.
 
 ## 7. Boon families
@@ -177,7 +222,7 @@ Any visual reuses existing effects: the Storm pillar, the skill waves, the red w
 | **Conductor** (New) | Rare | 1 | lightning fills the stagger meter like a sword hit |
 | **Overcharge** (New) | Legendary | 1 | each stagger: the next 5 hits all call lightning |
 
-### Moon: skills (the skills themselves are in the skill slots, section 6)
+### Moon: skills (the skills' own levels and forms are in section 6)
 | Boon | Tier | Lv | Effect |
 |---|---|---|---|
 | Moon Mastery | Rare | 3 | cooldowns -20% a level |
@@ -217,7 +262,7 @@ Any visual reuses existing effects: the Storm pillar, the skill waves, the red w
 | **Fortified Draught** (New) | Common | 1 | a potion gives -25% damage taken for 5 s |
 | **Prospector** (New) | Common | 3 | +20% gold |
 
-**Totals:** 41 boons for the boon slots (the Learn and skill-"+" cards moved to the skill slots), about 100 levels, plus 5 skills (15 levels). A run slots 5.
+**Totals:** 41 boons for the boon slots (the Learn and skill-"+" cards became skill levels), about 100 levels, plus 3 skills (5 levels each, 2 forms at Lv 5). A run slots 5.
 
 Healing check: no new boon heals; Hemorrhage and the rest deal damage. The existing healing sources keep the just-shipped values (Bloodthirst 12% of base a level, Rally from base damage, Phantom Step 2%), each about 15-25% of a floor. Rally Lv 2 is the one healing level added: check it in stage 6.
 
@@ -232,6 +277,7 @@ Healing check: no new boon heals; Hemorrhage and the rest deal damage. The exist
 | Anvil of Storms | Iron + Storm | lightning on a staggered boss deals double |
 | Waning Light | Moon + Shadow | a perfect dodge cuts skill cooldowns by 2 s |
 | Steel Hearth | Hearth + Iron | each potion drunk adds +5 max health for the floor (up to +25) |
+| Skyfall | Storm + Moon | a skill that hits calls Storm Blade's pillar on the boss once a cast (+12) |
 
 ## 9. Rival pairs (taking one removes the other from the run)
 | Pair | The fork |
@@ -287,10 +333,10 @@ A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists loc
 - **Embers:** per fight as now. Elites x1.5. +25 for a cleared circle. Shops and events don't give Embers, except the Ember Brazier.
 - **Shrine:** unchanged; the upgrades and relics keep working. A possible later Shrine item could unlock a seventh family or more events (open question 6).
 - **Pacts:** outside the slots, unchanged. They fill drafts once a build is complete, one sits on every shop's shelf, and they're part of Mirror of Shadows.
-- **Skills:** a skill card stays first in each draft while a skill slot is empty or a slotted skill is below Lv 3. The +8% boss health per skill offered stays.
-- **Shrine relic "Sage"** (teaches a skill): fills a skill slot at Lv 1.
-- **Draft card:** the family tag over the name, then a slot line: "New: slot 4 of 5", "Lv 2 → 3", "+ (top level)", "Duo: merges Storm Blade + Riposte", or for skills "Replaces: Halfmoon Slash"; the rival line under it. Text and rectangles only.
-- **Stats menu:** Stats (as now, plus gold and pacts) and **Build**, which replaces the Boons page: the 3 skill slots (D-pad direction, name, Lv), the 5 boon slots (family colour, name, "Lv 3/5"; a duo shows both names), then locked rivals greyed out. About 10 lines: fits the panel.
+- **Skills:** a skill card stays first in each draft while any skill is below Lv 5 (a Learn card while one is unknown). The +8% boss health per skill offered stays.
+- **Shrine relic "Sage"** (teaches a skill): that skill starts at Lv 1.
+- **Draft card:** the family tag over the name, then a slot line: "New: slot 4 of 5", "Lv 2 → 3", "+ (top level)", "Duo: merges Storm Blade + Riposte"; for skills "Halfmoon Slash Lv 3 → 4" or, for a form, "Lv 5 form: Twin Moon (locks out Full Moon)"; the rival line under it. Text and rectangles only.
+- **Stats menu:** Stats (as now, plus gold and pacts) and **Build**, which replaces the Boons page: the 3 skills (D-pad direction, name, "Lv 4/5" or the form's name), the 5 boon slots (family colour, name, "Lv 3/5"; a duo shows both names), then locked rivals and forms greyed out. About 10 lines: fits the panel.
 
 ## 13. Balance case (the agreed metric)
 - **Fight cost:** a floor still costs about a Guardian phase. Per-fight scaling is untouched; only the number of fights per circle varies (4-6).
@@ -317,7 +363,8 @@ A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists loc
 ## 15. Memory and ROM
 - **Heap:**
   - map state: 21 nodes × 2 bytes;
-  - run state: about 70 more bytes (gold, 3 + 5 slots with levels, duo merges, rivals, "+" bits, affixes);
+  - run state: about 70 more bytes (gold, 5 slots with levels, 3 skill levels and forms, duo merges, rivals, "+" bits, affixes);
+  - `SKILL_FX_MAX` 40 to 56 for Crescent Storm's blades (static, about 1-2 KB);
   - all definitions are const in ROM;
   - the map, shop and event screens are drawn as text and rectangles over the paused hall, with no new 3D;
   - the 6 node icons are I4 16x16, about 1 KB, loaded with the draft UI and freed with it.
@@ -327,16 +374,16 @@ A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists loc
   - code: about 15-20 KB;
   - icons: 1 KB.
 - **ROM size risk:** HLE slack was about 12.9 KB at a short path, so the release ROMs probably grow one 16 KiB step. The rule that sizes read exactly 20.6 / 12.6 MB may need dropping, or audio trimmed to pay for it: that's the user's call.
-- **Frame time:** none in fights. Elite affixes are table lookups; Smouldering reuses Shadowborne's fire patches, so measure that fight in Ares at 4 MB.
+- **Frame time:** none in fights, except where noted. Elite affixes are table lookups; Smouldering reuses Shadowborne's fire patches, and Crescent Storm draws up to 14 blades: measure both in Ares at 4 MB and on Delta's core.
 
 ## 16. Build order (each stage on branch tower-rogue, with a pre-release for the user to play)
 | Stage | What | Test aids |
 |---|---|---|
-| 1. Slots and families | 3 skill slots and 5 boon slots with levels; stacks become levels; 41 boons in families (20 new); family weighting; the card's slot line; Stats > Build | `HLE_TEST_TOWER` gains slot, level, full-bar and weighting checks (self-check); `HLE_DRAFT_GALLERY` for card text fit; `HLE_TEST_TOWER_STATS` shows a full Build page; `HLE_LOG_BOONFX` logs each new effect firing in a fight |
-| 2. Rivals, "+", duos | rival lockout in `offerable()`; "+" as top levels; 8 duos merging two slots | self-check: a duo offered only with two maxed boons of different families, merging them and opening a slot; `HLE_TOWER_GIVE` for each duo in a fight |
+| 1. Slots and families | 5 boon slots with levels; stacks become levels; 41 boons in families (20 new); family weighting; the card's slot line; Stats > Build | `HLE_TEST_TOWER` gains slot, level, full-bar and weighting checks (self-check); `HLE_DRAFT_GALLERY` for card text fit; `HLE_TEST_TOWER_STATS` shows a full Build page; `HLE_LOG_BOONFX` logs each new effect firing in a fight |
+| 2. Rivals, "+", duos | rival lockout in `offerable()`; "+" as top levels; 9 duos merging two slots | self-check: a duo offered only with two maxed boons of different families, merging them and opening a slot; `HLE_TOWER_GIVE` for each duo in a fight |
 | 3. The map | generation rules, the map screen, Fight/Elite/Rest nodes (Temper, Release), floor/circle bookkeeping | `HLE_TEST_TOWER_MAP`: 1,000 seeded maps checked against the rules (self-check); a scripted path through a circle with shots of the map |
 | 4. Gold, shop, events | economy, shop menu (levels, Release), 8 events | `HLE_TEST_TOWER_SHOP`, `HLE_EVENT_FORCE=n` with shots of each screen and logged results |
-| 5. New skills | Storm Call, Twin Crescent; skill cards that replace a slotted skill | `HLE_SKILL_FORCE` with videos per skill; `[hit]` logs proving each lands where it's drawn; Ares frame time for Twin Crescent |
+| 5. Skill builds | the three level tracks and six Lv 5 forms (more crosses, Twin Moon's follow-up, more blades and a second volley, the stagger forms); Skyfall; `SKILL_FX_MAX` 56 | `HLE_SKILL_LV=<skill>,<lv>,<form>` with videos per level; `HLE_TEST_SKILL_DMG` + `HLE_SDMG_TOWER` for damage a cast against the tables; `[hit]` logs proving every cross, slash and blade lands where it's drawn; Ares and Delta frame time for Crescent Storm |
 | 6. Elite affixes + balance | 6 affixes on the Bonus bosses; the cost measurements in section 13 | `HLE_ELITE_FORCE=affix` + `HLE_TEST_DUMMY`; `HLE_RUN_CLIMB` with `HLE_RUN_PATH=safe/normal/greedy`; Ares at 4 MB for heap and frame time |
 
 Each stage closes with:
@@ -344,15 +391,15 @@ Each stage closes with:
 - a Delta-core run, which halts on NaN compares.
 
 ## 17. Open questions for the user
-Answered: fights a path stay 4-6; families have no cap (weighting only); slots are 3 skills + 5 boons.
+Answered: fights a path stay 4-6; families have no cap (weighting only); 5 boon slots; no new skills: the three skills get level tracks and two forms each.
 
 1. **Potions:** keep one per fight up to the max (as above), cut it to one per circle and let Rests carry the healing, or leave it as today?
 2. **Gold at death:** lost (as above), or a share turned into Embers?
 3. **Smouldering:** OK to reuse Shadowborne's floor fire on other bosses, or keep affixes to stats only?
 4. **Node icons:** six new 16x16 icons, or letters (F, E, ?, $, R) to save the art?
-5. **The new boons and skills:** any of the 20 new boons, or Storm Call / Twin Crescent, to cut or change? Are the levels right (Commons 3-5, Rares 1-3)? Should Hemorrhage's bleed be shown, e.g. by the boss's hit flash?
+5. **The new boons:** any of the 20 new boons to cut or change? Are the levels right (Commons 3-5, Rares 1-3)? Should Hemorrhage's bleed be shown, e.g. by the boss's hit flash?
 6. **The Shrine:** should Embers unlock part of the new content (families, duos, events), so it is earned over runs, or should everything be in from the start?
 7. **Run seed:** show a seed at the end of a run so it can be shared and replayed (it's in ROADMAP's ideas; the map makes it more interesting)?
 8. **ROM size:** if the release ROMs grow past 20.6 / 12.6 MB, accept it or trim elsewhere?
 9. **Swapping:** Release free at a Rest and 20 gold at a Shop (as above), or Shops only?
-10. **Skill replacement:** may a skill card in a draft replace a slotted skill (as above), or only at Rests?
+10. **Skill forms:** are the six Lv 5 forms the right ones (Full Moon Dance / Shattering Dance, Twin Moon / Full Moon, Crescent Storm / Long Cleave)? Should skill levels be offered in every draft (as above) or only after a fight with a skill used?
