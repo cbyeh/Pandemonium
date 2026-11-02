@@ -530,17 +530,13 @@ static float boss_poise_scale(const Boss *b)
 
 static inline float boss_target_max_health(int phase)
 {
-    // The Tower keeps its own tuning on the old bases (BONUS_HP_IN_TOWER of them)
-    if (tower_active()) {
-        float base = (phase == FALLEN_KNIGHT_PHASE) ? 180.0f : (phase == SUN_BOSS_PHASE) ? 240.0f :
-                     (phase == DRAGON_BOSS_PHASE) ? 275.0f : 100.0f;
-        return base * tower_boss_health_scale(phase);   // the climb and its unlocked skills
-    }
-    // Bonus fights: the Fallen Warrior about the Guardian's cost (~26% of the player's health and
-    // potions), the Sun ~51%, Shadowborne ~60%, with each lingering hazard counted once a cast
-    // (HLE_TEST_DUMMY + HLE_LOG_MOVES; at 180/240/275 they cost 47/77/68%)
-    return (phase == FALLEN_KNIGHT_PHASE) ? 100.0f : (phase == SUN_BOSS_PHASE) ? 160.0f :
-           (phase == DRAGON_BOSS_PHASE) ? 245.0f : 100.0f;
+    // The Bonus bosses climb after the story: about 45%, 52% and 60% of the player's health and
+    // potions spent in a fight (the story's two phases together: 58%), mostly through damage
+    // (boss_damage_scale) so the fights don't drag; measured with HLE_TEST_DUMMY
+    float base = (phase == FALLEN_KNIGHT_PHASE) ? 180.0f : (phase == SUN_BOSS_PHASE) ? 240.0f :
+                 (phase == DRAGON_BOSS_PHASE) ? 275.0f : 100.0f;
+    if (tower_active()) return base * tower_boss_health_scale(phase);   // the climb and its unlocked skills
+    return base;
 }
 
 /** Full health for its current phase (a Tower floor's boss). */

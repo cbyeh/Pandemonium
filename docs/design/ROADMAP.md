@@ -20,11 +20,11 @@ Each half measured on its own (`HLE_DUMMY_HALF` for the second, 45% of the healt
 |---|---|---|---|---|
 | Guardian | 100 | 890 / 840 | 1.42 / 1.43 s | 26% |
 | Unbound | 100 | 1095 / 1090 | 2.01 / 2.05 s | 27% |
-| Fallen Warrior | 100 (was 180: 47%), blows x1.125 | 880 / 915 | 2.45 / 2.60 s | 26% |
-| Shackled Sun | 160 (was 240: 77%), blows x1.55 | 893 / 1469 | 2.33 / 2.00 s | 51% |
-| Shadowborne | 245 (was 275: 68%), blows x1.5 | 790 / 891 | 2.54 / 1.97 s | 60% |
+| Fallen Warrior | 180, blows x1.125 | 880 / 915 | 2.45 / 2.60 s | 47% |
+| Shackled Sun | 240, blows x1.55 | 893 / 1469 | 2.33 / 2.00 s | 77% |
+| Shadowborne | 275, blows x1.5 | 790 / 891 | 2.54 / 1.97 s | 68% |
 
-The Tower keeps the old Bonus health (180/240/275) as the base of `BONUS_HP_IN_TOWER`.
+Measured 2026-11-01. The older estimate (Fallen Warrior ~48%, Sun ~52%, Shadowborne ~60%) counted every hazard tick and missed the Sun's second half; at these values the Sun costs more than Shadowborne.
 
 The Bonus bosses climb past the story (`boss_target_max_health`, `boss_damage_scale`). It ignores how readable attacks are: a random-roll test showed the Bonus bosses' attacks are much easier to avoid than the Guardian's. `HLE_DUMMY_REAL` is a bot that fights back (strikes in openings, rolls out of attacks); it is too weak to win, so it only compares survival.
 
