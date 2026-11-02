@@ -86,6 +86,25 @@ The first card is a skill card (learn a skill or upgrade one) while any are left
 
 Not built yet: Hearth's pack (Quick Draught needs a drinking time, which potions don't have; Prospector needs gold, stage 4), so the Shrine sells five packs.
 
+**Rivals, "+" and duos** (tower-rogue stage 2):
+- **Rivals:** taking one locks the other out for the run (never offered after, never on one draft together): Riposte / Iron Skin, Blood Pact / Kindled Flask, Storm Blade / Executioner, Last Stand / Vigor, Bloodthirst / Moon Mastery, Vanish / Unbroken. The card names the rival ("Locks out"); Build lists the locked ones, greyed.
+- **"+"** (Rare, no slot, offered once its boon is at its max; Build shows "Lv 5/5+"): Ember Edge+ finishers +25%; Iron Skin+ the first blow a floor deals half; Storm Blade+ every 3rd hit; Executioner+ +90%; Crushing Blows+ no stagger drain for 3 s after the boss rises; Riposte+ 4 s; Unbroken+ heals 20% when it saves you; Bloodthirst+ 16% a level; Rally+ each hit wins back 1.5x its base (6 a sword hit); Phantom Step+ 0.31 s window; Static+ Storm Blade's and Static's bolts +50%; Thunderclap+ its bolt 12; Moon Mastery+ -25% a level. Second Wind+ is held back (a potion is drunk at once).
+- **Duos** (Legendary): offered once a maxed boon of each of its two families is slotted and both families' packs are bought (Hearth has none yet: open). Taking one merges those two (the first maxed of each family) into one slot, both still at their max, and opens the other slot; Build shows the duo and its two boons.
+
+| Duo | Families | Effect |
+|---|---|---|
+| Crimson Storm | Blood + Storm | lightning heals half a sword hit's Bloodthirst rate of its damage (0.72 a bolt of 6 at Lv 2); no Bloodthirst: lightning +25% |
+| Thunderstep | Storm + Shadow | a perfect dodge calls two of Storm Blade's bolts (6, +3 a Static level), 0.3 s apart |
+| Blood Moon Rite | Blood + Moon | a skill cast costs 3% of max health (never the last 1), skill hits +40% |
+| Iron Tide | Iron + Moon | a stagger resets every skill cooldown |
+| Shade's Mercy | Shadow + Blood | blows fill a Rally pool (even without Rally); in Riposte's window after a perfect dodge (2.5 s, even without Riposte) hits win back 60% of their base |
+| Anvil of Storms | Iron + Storm | lightning on a staggered boss x2 |
+| Waning Light | Moon + Shadow | a perfect dodge cuts skill cooldowns 2 s |
+| Steel Hearth | Hearth + Iron | a potion: +10 max health for the floor (to +30), x0.6 damage taken for 4 s |
+| Skyfall | Storm + Moon | a skill's first hit a cast calls Storm Blade's pillar (6) |
+
+Vigor and Vitality now raise max health when taken mid-run (before, only the health; max health was set at the run's start).
+
 **Pacts** (a blessing and a curse, rolled for the card, stacking without end; a curse never undoes its blessing):
 
 | Blessing | Per stack | | Curse | Per stack |

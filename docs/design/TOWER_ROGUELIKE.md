@@ -9,6 +9,14 @@ Stage 1 built (2026-11-01, pre-release v1.1-beta.1): 5 slots with levels, famili
 - The B forms' 3 bits are kept but not sold until stage 5.
 - Stats keeps its page; gold isn't there until stage 4.
 
+Stage 2 built (2026-11-02, pre-release v1.1-beta.2): rival lockout, 13 "+" cards, the 9 duos merging two slots (ROADMAP has the numbers). Calls made while building it:
+- A rival stays locked for the run once its pair is taken (a later Release, stage 3, won't free it), and a draft never holds both.
+- "+" cards are their own cards (Rare, no slot, the boon's family tag; "+ (top level)"). **Second Wind+ is held back:** potions are drunk at once, so there's no drink to keep stamina through. Static+ raises Storm Blade's and Static's bolts; Thunderclap+ its own (8 to 12). Unbroken+ heals 20% of max on top of the 1 HP.
+- A duo merges the first maxed boon (lowest slot) of each of its families; its card lists the two ("Merges / A / + B"). Duos join the pool once both families' packs are bought (section 14b); Hearth has no pack yet, so it counts as bought (Steel Hearth needs only the Iron pack).
+- Crimson Storm's healing is half of Bloodthirst's rate applied to the bolt. Thunderstep's bolts are Storm Blade's (6, +3 a Static level) with or without Storm Blade. Shade's Mercy keeps a Rally pool and opens Riposte's window on a perfect dodge without either boon; hits in it win back 60% of their base (1.6x with Rally). Blood Moon Rite never takes the last health. Iron Tide resets cooldowns when the stagger starts.
+- **Skyfall is built here** (stage 2 lists all 9 duos; stage 5 mentions it with the skill builds): a skill's first hit a cast calls the pillar for 6.
+- Vigor and Vitality raised only the health mid-run (max health was set once, at the run's start; main has this too): they now raise max health, as Steel Hearth needs.
+
 Scope approved by the user (2026-11-01): a branching map each circle (4-6 fights a path), Vampire Survivors-style slots (5 boon slots, boons levelling inside their slot; the three skills level outside them, with two final forms each, and no new skills), boon families with duos as evolutions, rival pairs and "+" upgrades, and elite affixes. Not in scope: rerolls, removing boons, relics found mid-run. Nothing here is built yet. Numbers are starting points for the balance pass (stage 5).
 
 ## 1. Why every deep run ends the same
