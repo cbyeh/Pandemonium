@@ -78,6 +78,7 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_SHADOW_EDGE]   = { "Shadow Edge",   "+8% damage for 2 s after a roll", 4, TIER_COMMON, FAM_SHADOW, 1 },
     [BOON_EVASION]       = { "Evasion",       "Perfect dodges refund the roll", 1, TIER_RARE, FAM_SHADOW, 1 },
     [BOON_VANISH]        = { "Vanish",        "3 perfect dodges: a blow deals 0", 1, TIER_LEGENDARY, FAM_SHADOW, 1 },
+    [BOON_PROSPECTOR]    = { "Prospector",    "+20% gold",                    3, TIER_COMMON, FAM_HEARTH, 1 },   // (Quick Draught is still held back)
     [BOON_LEARN_MOONBLADE] = { "Moon Blade Dance", "Learn it: D-up", 1, TIER_COMMON, FAM_SKILL },
     [BOON_LEARN_HALFMOON]  = { "Halfmoon Slash",   "Learn it: D-right", 1, TIER_COMMON, FAM_SKILL },
     [BOON_LEARN_CLEAVE]    = { "Crescent Cleave",  "Learn it: D-down", 1, TIER_COMMON, FAM_SKILL },
@@ -158,7 +159,24 @@ static const struct { const char *name, *desc; } CURSES[PC_COUNT] = {
 #define STORM_BOLT  6.0f        // Storm Blade's lightning (+12 was best in every build: section 14 of the design)
 #define STATIC_BOLT 3.0f        // Static: a level
 #define PACT_CARD(b, c) (BOON_COUNT + (b) * PC_COUNT + (c))
+#define GOLD_CARD   PACT_CARD(PB_COUNT, 0)  // a complete build's draft: +40 gold (section 6)
 #define SKIP_EMBERS 5
+
+// ---- Gold (section 3): this run only, lost when it ends ----
+#define GOLD_FIGHT      25      // a fight (Guardian, Unbound, a Bonus boss): 25 + 5 x circle
+#define GOLD_PER_CIRCLE 5
+#define ELITE_GOLD      1.5f
+#define SKIP_GOLD       15
+#define GOLD_CARD_GOLD  40
+#define PROSPECTOR_GOLD 0.20f   // a level
+// The Shop's prices: the same every circle (gold grows with the circle)
+static const int TIER_PRICE[3] = { 60, 110, 180 };
+#define PRICE_PLUS    150
+#define PRICE_LEVEL   70
+#define PRICE_RELEASE 20
+#define PRICE_POTION  45
+#define PRICE_MEND    50
+#define MEND_HEAL     0.35f
 
 // ---- Nights (from the second circle) ----
 typedef enum { NIGHT_NONE, NIGHT_BLOOD_MOON, NIGHT_IRON, NIGHT_STARFALL, NIGHT_COUNT } Night;
@@ -215,15 +233,20 @@ static const struct { uint8_t fx; const char *name; } RELICS[] = {
 #define MAP_ROWS  7
 #define MAP_LANES 3
 enum { NODE_NONE, NODE_FIGHT, NODE_ELITE, NODE_EVENT, NODE_SHOP, NODE_REST, NODE_BOSS, NODE_TYPES };
-// Rows 2-5's odds (%). Events and Shops are stage 4: until then none are rolled (the design's 20 and 12)
-static const uint8_t NODE_ODDS[NODE_TYPES] = { [NODE_FIGHT] = 45, [NODE_ELITE] = 15, [NODE_EVENT] = 0, [NODE_SHOP] = 0, [NODE_REST] = 8 };
+// Rows 2-5's odds (%)
+static const uint8_t NODE_ODDS[NODE_TYPES] = { [NODE_FIGHT] = 45, [NODE_ELITE] = 15, [NODE_EVENT] = 20, [NODE_SHOP] = 12, [NODE_REST] = 8 };
 static const char *const NODE_NAMES[NODE_TYPES] = { "", "Fight", "Elite", "Event", "Shop", "Rest", "Boss" };
 static const char *const BOSS_NAMES[] = { "Guardian", "Guardian Unbound", "Fallen Warrior", "Shackled Sun", "Shadowborne" };
 #define ELITE_HP      1.25f     // an Elite: the boss at x1.25 health (its affixes are stage 6)
 #define ELITE_EMBERS  1.5f
 #define REST_HEAL     0.40f     // a Rest: heal 40%, Temper +1 level, or +2 potions (and Release a boon, free)
 #define REST_POTIONS  2         // up to POTION_CAP: fights already bank potions past the run's max (section 12)
-enum { SCR_NONE, SCR_MAP, SCR_REST, SCR_TEMPER, SCR_RELEASE };
+enum { SCR_NONE, SCR_MAP, SCR_REST, SCR_TEMPER, SCR_RELEASE, SCR_SHOP, SCR_SHOP_LEVEL, SCR_SHOP_PLUS, SCR_SHOP_RELEASE, SCR_EVENT };
+// The Shop's shelf: three rows of three, then Leave (Left/Right along it, Up/Down a row)
+enum { SHOP_CARD0, SHOP_CARD1, SHOP_CARD2, SHOP_LEVEL, SHOP_PLUS, SHOP_PACT, SHOP_POTION, SHOP_MEND, SHOP_RELEASE, SHOP_LEAVE, SHOP_ITEMS };
+// The Events (section 4): 1-4 from the start, 5-8 by best floor 10, 15, 20, 25 (section 14b)
+enum { EV_ALTAR, EV_GRAVE, EV_MIRROR, EV_MERCHANT, EV_POOL, EV_PRISONER, EV_BONES, EV_BRAZIER, EV_COUNT };
+static const uint8_t EVENT_FLOOR[EV_COUNT] = { 0, 0, 0, 0, 10, 15, 20, 25 };
 enum { REST_HEAL_ROW, REST_TEMPER_ROW, REST_POTIONS_ROW, REST_ROWS };
 #define LIST_MAX 12
 
@@ -254,7 +277,17 @@ static struct {
         uint8_t fights;                     // fights entered this circle
     } map;
     TowerBoss boss;                 // the fight under way (or the next: the Guardian at a circle's start)
-    bool elite;                     // it's an Elite (x1.25 health, a Rare-or-better draft, x1.5 Embers)
+    bool elite;                     // it's an Elite (x1.25 health, a Rare-or-better draft, x1.5 gold and Embers)
+    bool legendDraft;               // its draft is all Legendary (the Chained Prisoner's Elite)
+    bool prisoner;                  // the Chained Prisoner freed: the next Fight is such an Elite
+    int gold, lastFloorGold;
+    float altarHp;                  // max health given to the Bleeding Altar
+    uint8_t halfBless[PB_COUNT];    // the Ember Brazier's blessings, half a pact's stack each
+    uint8_t eventsSeen;             // bit per event (no repeat in a run while any are left)
+    int8_t event, eventPick;        // the Event on screen, its rolled blessing (the Brazier)
+    bool eventDone;                 // its choice taken: the result, then Continue
+    char eventResult[96];
+    struct { int16_t card[3]; int pact; uint16_t sold; int8_t sel; } shop;  // a visit: the cards (-1 none), its pact, bought items (bit per SHOP_)
     uint8_t scr;                    // the screen after the draft: the map, a Rest's (SCR_)
     uint32_t scrOpenMs;
     int8_t list[LIST_MAX], listN, listSel;  // a Rest screen's rows: a choice, a BoonId to Temper (-1 Back), a slot to Release (-1 keep)
@@ -387,7 +420,20 @@ static bool map_rules_ok(void)
         if (f < 2 || s.map.type[1][l] == NODE_ELITE) return false;     // 2 Fights a lane or more; no Elite in row 2
         shop |= s.map.type[2][l] == NODE_SHOP || s.map.type[3][l] == NODE_SHOP;
     }
-    if (NODE_ODDS[NODE_SHOP] && !shop) return false;                    // a Shop in rows 3-4 on some lane (stage 4)
+    if (!shop) return false;                                            // a Shop in rows 3-4 on some lane
+    // every path 2-4 fights in rows 2-5 (4-6 a circle with the two bosses): the fewest from each node up
+    int least[MAP_LANES];
+    for (int l = 0; l < MAP_LANES; l++) least[l] = is_fight(s.map.type[4][l]);
+    for (int r = 3; r >= 1; r--) {
+        int up[MAP_LANES];
+        for (int l = 0; l < MAP_LANES; l++) {
+            int m = 99;
+            for (int k = 0; k < MAP_LANES; k++) if (linked(r, l, k) && least[k] < m) m = least[k];
+            up[l] = m + is_fight(s.map.type[r][l]);
+        }
+        memcpy(least, up, sizeof least);
+    }
+    for (int l = 0; l < MAP_LANES; l++) if (least[l] < 2) return false;
     for (int r = 1; r <= 4; r++)        // no two Shops or Rests in a row on any path (row 6 is all Rests)
         for (int a = 0; a < MAP_LANES; a++) for (int b = 0; b < MAP_LANES; b++) {
             int t = s.map.type[r][a];
@@ -397,7 +443,7 @@ static bool map_rules_ok(void)
 }
 
 static int s_mapTries;      // the last map's rolls (the self-check logs them)
-// A circle's map: rows 2-5 rolled until they keep every rule (about 1 in 5 does)
+// A circle's map: rows 2-5 rolled until they keep every rule
 static void map_generate(void)
 {
     memset(&s.map, 0, sizeof s.map);
@@ -405,12 +451,23 @@ static void map_generate(void)
     do {
         s_mapTries++;
         for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = roll_node();
-#ifdef HLE_TOWER_SB_LAST    // test aid: Fights only (with the bosses in order below: the Fallen Warrior, the Sun, then Shadowborne)
-        for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = NODE_FIGHT;
-#endif
         for (int l = 0; l < MAP_LANES; l++) s.map.type[5][l] = NODE_REST;
     } while (!map_rules_ok() && s_mapTries < 1000);
-    if (!map_rules_ok()) for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = NODE_FIGHT;
+    if (!map_rules_ok()) {      // (never seen in 1,000 maps) Fights, and the Shop the rules ask for
+        for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = NODE_FIGHT;
+        s.map.type[2][1] = NODE_SHOP;
+    }
+#ifdef HLE_TOWER_SB_LAST    // test aid: Fights only (with the bosses in order below: the Fallen Warrior, the Sun, then Shadowborne)
+    for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = NODE_FIGHT;
+#endif
+#if defined(HLE_TEST_TOWER_SHOP) && !defined(HLE_TEST_TOWER)    // test aids: straight up from the Guardian, a Shop (and an Event above it)
+    s.map.type[1][1] = NODE_SHOP;
+#ifdef HLE_EVENT_FORCE
+    s.map.type[2][1] = NODE_EVENT;
+#endif
+#elif defined(HLE_EVENT_FORCE) && !defined(HLE_TEST_TOWER)
+    s.map.type[1][1] = NODE_EVENT;
+#endif
     s.map.type[0][1] = s.map.type[MAP_ROWS - 1][1] = NODE_BOSS;
     s.map.row = -1;
     memset(s.map.path, -1, sizeof s.map.path);
@@ -576,8 +633,14 @@ void tower_begin_run(uint32_t seed)
     }
 #endif
 #ifdef HLE_TOWER_GIVE_NEW   // test aid (HLE_LOG_BOONFX): every pack's boon at its top level (past the 5 slots) and every skill
-    for (int b = BOON_HEMORRHAGE; b <= BOON_VANISH; b++) s.stacks[b] = BOONS[b].maxStacks;
+    for (int b = BOON_HEMORRHAGE; b <= BOON_PROSPECTOR; b++) s.stacks[b] = BOONS[b].maxStacks;
     s.skills = (1 << SKILL_COUNT) - 1;
+#endif
+#ifdef HLE_RUN_GOLD         // test aid: start the climb with this much gold
+    s.gold = HLE_RUN_GOLD;
+#endif
+#if defined(HLE_TEST_TOWER_SHOP) && !defined(HLE_TEST_TOWER)    // test aid: a level to buy (Vigor), a "+" (Storm Blade's), boons to release
+    take_boon(BOON_STORM_BLADE); take_boon(BOON_VIGOR);
 #endif
     // The equipped relic holds for the whole climb
     int e = tower_relic_equipped();
@@ -626,12 +689,32 @@ static int floor_embers(void)
     return (int)(e + 0.5f);
 }
 
+// Gold won (Prospector: +20% a level, on every gain); returns it
+static int gold_with(int g) { return (int)(g * (1.0f + PROSPECTOR_GOLD * tower_boon_stacks(BOON_PROSPECTOR)) + 0.5f); }
+static int gain_gold(int g)
+{
+    g = gold_with(g);
+    s.gold += g;
+    return g;
+}
+int tower_gold(void) { return s.active ? s.gold : 0; }
+
+// Embers banked now (the save and the run's count)
+static void bank_embers(int e)
+{
+    TowerSave t; tower_load(&t);
+    int m = t.embers + e; t.embers = m > 65535 ? 65535 : m;
+    save_controller_set_tower(&t);
+    s.runEmbers += e;
+}
+
 void tower_floor_cleared(void)
 {
     if (!s.active) return;
     TowerSave t;
     tower_load(&t);
     s.circleCleared = s.map.row == MAP_ROWS - 1;       // Guardian Unbound fell
+    s.lastFloorGold = gain_gold((int)((GOLD_FIGHT + GOLD_PER_CIRCLE * s.circle) * (s.elite ? ELITE_GOLD : 1.0f) + 0.5f));
     s.lastFloorEmbers = floor_embers() + (s.circleCleared ? CIRCLE_EMBERS : 0);
     s.runEmbers += s.lastFloorEmbers;
     int e = t.embers + s.lastFloorEmbers;
@@ -693,17 +776,68 @@ static bool offerable(BoonId b)
     }
 }
 
-void tower_draft_open(void)
+// Hades' focus: a family with 2+ boons slotted comes up twice as often
+static void fam_held(int famHeld[FAM_COUNT + 1])
 {
-    // Three different boons; the first a skill card (learn or upgrade) while any are left
-    BoonId pool[BOON_COUNT], skills[BOON_COUNT]; int n = 0, ns = 0;
-    int famHeld[FAM_COUNT + 1] = { 0 };     // Hades' focus: a family with 2+ boons slotted comes up twice as often
+    memset(famHeld, 0, sizeof(int) * (FAM_COUNT + 1));
     for (int i = 0; i < TOWER_SLOTS; i++) {
         if (s.merged[i][0]) { famHeld[BOONS[s.merged[i][0] - 1].family]++; famHeld[BOONS[s.merged[i][1] - 1].family]++; }
         else if (s.slot[i]) famHeld[BOONS[s.slot[i] - 1].family]++;
     }
+}
+
+// A card from the pool by rarity (legendary 6% on the first circle, +4% a circle, up to 25%; rare
+// 30%; an Elite's Rare or better), family weighting included; it and its rival leave the pool
+static BoonId pick_card(BoonId pool[], int *n, const int famHeld[])
+{
+    int leg = 6 + 4 * (tower_circle() - 1), r = rng_next() % 100;
+    if (leg > 25) leg = 25;
+    int want = r < leg ? TIER_LEGENDARY : (r < leg + 30 || s.elite) ? TIER_RARE : TIER_COMMON;
+    int k = -1;
+    for (int tries = 0; tries < 3 && k < 0; tries++) {     // that tier, or the next lower one (wrapping)
+        int tier = (want + 3 - tries) % 3, cand[2 * BOON_COUNT], nc = 0;
+        for (int i = 0; i < *n; i++) if (BOONS[pool[i]].tier == tier) {
+            cand[nc++] = i;
+            int f = BOONS[pool[i]].family;
+            if (f < FAM_COUNT && famHeld[f] >= 2) cand[nc++] = i;
+        }
+        if (nc) k = cand[rng_next() % nc];
+    }
+    BoonId b = pool[k];
+    int rv = rival_of(b);
+    pool[k] = pool[--*n];
+    for (int i = 0; i < *n; i++) if (pool[i] == rv) { pool[i] = pool[--*n]; break; }     // never both rivals on the table
+    return b;
+}
+
+// A pact card not on the table yet (never a curse that undoes its blessing)
+static int roll_pact(const int table[], int nTable)
+{
+    int card = 0;
+    for (int tries = 0; tries < 8; tries++) {
+        int b = rng_next() % PB_COUNT, c;
+        do c = rng_next() % PC_COUNT;
+        while ((b == PB_BULWARK && c == PC_FRAILTY) || (b == PB_MIGHT && c == PC_WEAKNESS));
+#ifdef HLE_PACT_CURSE       // test aid: every pact with this curse
+        c = HLE_PACT_CURSE;
+#endif
+        card = PACT_CARD(b, c);
+        bool dup = false;
+        for (int i = 0; i < nTable; i++) dup |= table[i] == card;
+        if (!dup) break;
+    }
+    return card;
+}
+
+void tower_draft_open(void)
+{
+    // Three different boons; the first a skill card (learn or upgrade) while any are left
+    BoonId pool[BOON_COUNT], skills[BOON_COUNT]; int n = 0, ns = 0;
+    int famHeld[FAM_COUNT + 1];
+    fam_held(famHeld);
     for (int b = 0; b < BOON_COUNT; b++) {
         if (!offerable(b) || (s.elite && BOONS[b].tier == TIER_COMMON)) continue;   // an Elite's draft: Rare or better
+        if (s.legendDraft && BOONS[b].tier != TIER_LEGENDARY) continue;             // the Prisoner's Elite: all Legendary
         if (is_skill_card(b)) skills[ns++] = b; else pool[n++] = b;
     }
     s.nChoices = 0;
@@ -713,43 +847,12 @@ void tower_draft_open(void)
         skills[k] = skills[--ns];
         for (int i = 0; i < ns; i++) pool[n++] = skills[i];   // the rest may still turn up
     }
-    // The rest by rarity: legendary 6% on the first circle, +4% a circle (up to 25%); rare 30%.
-    // A pact now and then, and always once the boons run out
+    // The rest by rarity, a pact now and then; once the boons run out, a +40 gold card and pacts
+    bool purse = false;
     while (s.nChoices < DRAFT_CHOICES) {
-        if (n == 0 || (int)(rng_next() % 100) < PACT_CHANCE) {
-            int card = 0;
-            for (int tries = 0; tries < 8; tries++) {       // a pact not on the table yet
-                int b = rng_next() % PB_COUNT, c;
-                do c = rng_next() % PC_COUNT;               // never a curse that undoes its blessing
-                while ((b == PB_BULWARK && c == PC_FRAILTY) || (b == PB_MIGHT && c == PC_WEAKNESS));
-#ifdef HLE_PACT_CURSE       // test aid: every pact with this curse
-                c = HLE_PACT_CURSE;
-#endif
-                card = PACT_CARD(b, c);
-                bool dup = false;
-                for (int i = 0; i < s.nChoices; i++) dup |= s.choices[i] == card;
-                if (!dup) break;
-            }
-            s.choices[s.nChoices++] = card;
-            continue;
-        }
-        int leg = 6 + 4 * (tower_circle() - 1), r = rng_next() % 100;
-        if (leg > 25) leg = 25;
-        int want = r < leg ? TIER_LEGENDARY : (r < leg + 30 || s.elite) ? TIER_RARE : TIER_COMMON;
-        int k = -1;
-        for (int tries = 0; tries < 3 && k < 0; tries++) {     // that tier, or the next lower one (wrapping)
-            int tier = (want + 3 - tries) % 3, cand[2 * BOON_COUNT], nc = 0;
-            for (int i = 0; i < n; i++) if (BOONS[pool[i]].tier == tier) {
-                cand[nc++] = i;
-                int f = BOONS[pool[i]].family;
-                if (f < FAM_COUNT && famHeld[f] >= 2) cand[nc++] = i;
-            }
-            if (nc) k = cand[rng_next() % nc];
-        }
-        s.choices[s.nChoices++] = pool[k];
-        int rv = rival_of(pool[k]);
-        pool[k] = pool[--n];
-        for (int i = 0; i < n; i++) if (pool[i] == rv) { pool[i] = pool[--n]; break; }     // never both rivals on the table
+        if (n == 0 && !purse) { purse = true; s.choices[s.nChoices++] = GOLD_CARD; continue; }
+        if (n == 0 || (int)(rng_next() % 100) < PACT_CHANCE) { s.choices[s.nChoices] = roll_pact(s.choices, s.nChoices); s.nChoices++; continue; }
+        s.choices[s.nChoices++] = pick_card(pool, &n, famHeld);
     }
 #ifdef HLE_DRAFT_GALLERY     // test aid: each floor shows set cards (every boon, the longest pacts) for a look
     {
@@ -778,9 +881,10 @@ void tower_draft_open(void)
     for (int i = 0; i < s.nChoices; i++) {
         int c = s.choices[i];
         if (c < BOON_COUNT) debugf(" %s (%d)", BOONS[c].name, BOONS[c].tier);
+        else if (c == GOLD_CARD) debugf(" +%d gold", GOLD_CARD_GOLD);
         else debugf(" Pact of %s / %s", BLESSINGS[(c - BOON_COUNT) / PC_COUNT].name, CURSES[(c - BOON_COUNT) % PC_COUNT].name);
     }
-    debugf("%s%s\n", s.circleCleared ? " | circle cleared" : "", s.elite ? " | elite" : "");
+    debugf("%s%s%s | +%d gold, %d now\n", s.circleCleared ? " | circle cleared" : "", s.elite ? " | elite" : "", s.legendDraft ? " (all Legendary)" : "", s.lastFloorGold, s.gold);
 #endif
 }
 
@@ -788,26 +892,47 @@ bool tower_draft_is_open(void) { return s.draftOpen; }
 int  tower_draft_selected(void) { return s.sel; }
 int  tower_draft_card(int i) { return (i >= 0 && i < s.nChoices && s.choices[i] < BOON_COUNT) ? s.choices[i] : -1; }   // a boon, -1 a pact
 
+// A curse taken (a pact's, the Mirror of Shadows'): Thirst takes a potion now, or the next one owed
+static void add_curse(int c)
+{
+    s.curse[c]++;
+#ifdef HLE_PACT_CURSE
+    character.healthPotions = 0;      // test aid: no potion to give up
+#endif
+    if (c == PC_THIRST) { if (character.healthPotions > 0) character.healthPotions--; else s.potionDebt++; }
+}
+
+// A pact card taken (a draft's, the Shop's free one): its blessing and its curse
+static void take_pact(int card)
+{
+    int b = (card - BOON_COUNT) / PC_COUNT, c = (card - BOON_COUNT) % PC_COUNT;
+    s.bless[b]++;
+    if (b == PB_VITALITY) { character.health += 12.0f; sync_max_health(); }
+    add_curse(c);
+#ifdef HLE_AUTOPLAY
+    debugf("[pact] took %s (%d) / %s (%d): damage x%.2f, taken x%.2f, max health %.0f, potions %d (owed %d)\n", BLESSINGS[b].name, s.bless[b],
+           CURSES[c].name, s.curse[c], (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken(), (double)tower_mod_max_health(),
+           character.healthPotions, s.potionDebt);
+#endif
+}
+
 void tower_draft_pick(int index)
 {
-    if (index == s.nChoices) {          // Skip: a few Embers instead
-        TowerSave t; tower_load(&t);
-        int e = t.embers + SKIP_EMBERS; t.embers = e > 65535 ? 65535 : e;
-        save_controller_set_tower(&t);
-        s.runEmbers += SKIP_EMBERS;
-    } else if (index >= 0 && index < s.nChoices && s.choices[index] >= BOON_COUNT) {
-        int b = (s.choices[index] - BOON_COUNT) / PC_COUNT, c = (s.choices[index] - BOON_COUNT) % PC_COUNT;
-        s.bless[b]++; s.curse[c]++;
-        if (b == PB_VITALITY) { character.health += 12.0f; sync_max_health(); }
-#ifdef HLE_PACT_CURSE
-        character.healthPotions = 0;      // test aid: no potion to give up
-#endif
-        if (c == PC_THIRST) { if (character.healthPotions > 0) character.healthPotions--; else s.potionDebt++; }
+    if (index == s.nChoices) {          // Skip: a few Embers and some gold instead
+        bank_embers(SKIP_EMBERS);
+        int g = gain_gold(SKIP_GOLD);
 #ifdef HLE_AUTOPLAY
-        debugf("[pact] took %s (%d) / %s (%d): damage x%.2f, taken x%.2f, max health %.0f, potions %d (owed %d)\n", BLESSINGS[b].name, s.bless[b],
-               CURSES[c].name, s.curse[c], (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken(), (double)tower_mod_max_health(),
-               character.healthPotions, s.potionDebt);
+        debugf("[gold] skip: +%d, %d now\n", g, s.gold);
 #endif
+        (void)g;
+    } else if (index >= 0 && index < s.nChoices && s.choices[index] == GOLD_CARD) {
+        int g = gain_gold(GOLD_CARD_GOLD);
+#ifdef HLE_AUTOPLAY
+        debugf("[gold] the purse card: +%d, %d now\n", g, s.gold);
+#endif
+        (void)g;
+    } else if (index >= 0 && index < s.nChoices && s.choices[index] >= BOON_COUNT) {
+        take_pact(s.choices[index]);
     } else if (index >= 0 && index < s.nChoices) {
         take_boon((BoonId)s.choices[index]);
     }
@@ -848,6 +973,15 @@ static void flat_mode(void)
     rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
 }
 
+// A card's frame tells the rarity: bronze, blue, gold; a pact crimson (brighter when selected)
+static const color_t FRAME[4][2] = {
+    { RGBA32(90, 70, 50, 255),  RGBA32(230, 150, 50, 255) },
+    { RGBA32(50, 80, 150, 255), RGBA32(110, 170, 255, 255) },
+    { RGBA32(150, 115, 30, 255), RGBA32(255, 215, 90, 255) },
+    { RGBA32(120, 20, 30, 255), RGBA32(230, 50, 60, 255) },
+};
+static const int NAME_STYLE[3] = { FONT_STYLE_WHITE, FONT_STYLE_BLUE, FONT_STYLE_GOLD };
+
 static void tower_draft_draw(void)
 {
     if (!s.draftOpen) return;
@@ -856,7 +990,7 @@ static void tower_draft_draw(void)
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
     char line[80];
-    snprintf(line, sizeof line, "Floor %d cleared   +%d Embers", s.floor, s.lastFloorEmbers);
+    snprintf(line, sizeof line, "Floor %d cleared   +%d Embers   +%d gold", s.floor, s.lastFloorEmbers, s.lastFloorGold);
     text_style(0, 26, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
     if (s.circleCleared) {
         snprintf(line, sizeof line, "Circle cleared: +%d Embers", CIRCLE_EMBERS);
@@ -868,17 +1002,10 @@ static void tower_draft_draw(void)
     int x0 = (SCREEN_WIDTH - (cw * s.nChoices + gap * (s.nChoices - 1))) / 2;
     for (int i = 0; i < s.nChoices; i++) {
         int x = x0 + i * (cw + gap), card = s.choices[i];
-        bool pact = card >= BOON_COUNT;
-        int tier = pact ? 3 : BOONS[card].tier;
+        bool pact = card >= BOON_COUNT && card != GOLD_CARD;
+        int tier = pact ? 3 : card == GOLD_CARD ? TIER_LEGENDARY : BOONS[card].tier;
         flat_mode();
         bool on = i == s.sel;
-        // The frame tells the rarity: bronze, blue, gold; a pact crimson (brighter when selected)
-        static const color_t FRAME[4][2] = {
-            { RGBA32(90, 70, 50, 255),  RGBA32(230, 150, 50, 255) },
-            { RGBA32(50, 80, 150, 255), RGBA32(110, 170, 255, 255) },
-            { RGBA32(150, 115, 30, 255), RGBA32(255, 215, 90, 255) },
-            { RGBA32(120, 20, 30, 255), RGBA32(230, 50, 60, 255) },
-        };
         rdpq_set_prim_color(FRAME[tier][on]);
         rdpq_fill_rectangle(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2);
         rdpq_set_prim_color(on ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
@@ -896,8 +1023,14 @@ static void tower_draft_draw(void)
             text_style(x + 6, y0 + 92, cw - 12, ALIGN_CENTER, FONT_STYLE_WHITE, CURSES[c].desc);
             continue;
         }
+        if (card == GOLD_CARD) {    // a complete build's purse
+            text_style(x + 4, y0 + 27, cw - 8, ALIGN_CENTER, FONT_STYLE_GOLD, "Purse");
+            snprintf(line, sizeof line, "+%d gold", GOLD_CARD_GOLD);
+            text(x + 6, y0 + 48, cw - 12, ALIGN_CENTER, line);
+            text_style(x - 1, y0 + ch - 3, cw + 2, ALIGN_CENTER, FONT_STYLE_GREY, "No slot");
+            continue;
+        }
         const BoonDef *bd = &BOONS[card];
-        static const int NAME_STYLE[3] = { FONT_STYLE_WHITE, FONT_STYLE_BLUE, FONT_STYLE_GOLD };
         // the family's tag over the name, in its colour (a duo's two families, gold)
         if (bd->duo) {
             snprintf(line, sizeof line, "%s+%s", FAMILIES[bd->family].name, FAMILIES[bd->duo - 1].name);
@@ -938,13 +1071,13 @@ static void tower_draft_draw(void)
     // Skip, under the cards
     // A button of its own under the cards, framed like them: Down to it, Up back to the card
     bool skip = s.sel == s.nChoices;
-    const int bw = 132, bh = 16, bx = (SCREEN_WIDTH - bw) / 2, by = y0 + ch + 4;
+    const int bw = 180, bh = 16, bx = (SCREEN_WIDTH - bw) / 2, by = y0 + ch + 4;
     flat_mode();
     rdpq_set_prim_color(skip ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
     rdpq_fill_rectangle(bx - 2, by - 2, bx + bw + 2, by + bh + 2);
     rdpq_set_prim_color(skip ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
     rdpq_fill_rectangle(bx, by, bx + bw, by + bh);
-    snprintf(line, sizeof line, "Skip: +%d Embers", SKIP_EMBERS);
+    snprintf(line, sizeof line, "Skip: +%d Embers, +%d gold", SKIP_EMBERS, gold_with(SKIP_GOLD));
     text_style(bx, by + 12, bw, ALIGN_CENTER, skip ? FONT_STYLE_GOLD : FONT_STYLE_GREY, line);
     if (s.circleCleared) {     // a new circle: stronger, and its night
         // the next circle: stronger bosses, and its night (two lines at most)
@@ -988,6 +1121,8 @@ static int map_enter(void)
     int r = ++s.map.row, l = s.map.sel, t = s.map.type[r][l];
     s.map.path[r] = (int8_t)l;
     s.elite = t == NODE_ELITE;
+    s.legendDraft = false;
+    if (t == NODE_FIGHT && s.prisoner) { s.elite = s.legendDraft = true; s.prisoner = false; }     // the Chained Prisoner's jailer
     if (t == NODE_BOSS) s.boss = r ? TOWER_UNBOUND : TOWER_GUARDIAN;
     else if (t == NODE_FIGHT || t == NODE_ELITE) s.boss = (TowerBoss)(s.map.boss[r][l] - 1);
     if (is_fight(t)) { s.map.fights++; s.map.met |= 1 << s.boss; }
@@ -1009,8 +1144,93 @@ static int temper_targets(int8_t out[], int max)
     return n;
 }
 
+
+// ---- What a Shop and an Event can give ----
+
+// A Shop's boon card: a new boon or a duo (no skill card, no "+": the shelf sells those as levels)
+static bool shop_card_ok(BoonId b) { return offerable(b) && !is_skill_card(b) && !BOONS[b].up && !s.stacks[b]; }
+// A level the Shop sells: a slotted boon below its max (a duo has none)
+static int level_targets(int8_t out[], int max)
+{
+    int n = 0;
+    for (int i = 0; i < TOWER_SLOTS && n < max; i++) {
+        BoonId b = (BoonId)(s.slot[i] - 1);
+        if (s.slot[i] && !s.merged[i][0] && s.stacks[b] < BOONS[b].maxStacks) out[n++] = (int8_t)b;
+    }
+    return n;
+}
+// A "+" the Shop sells: a maxed boon's, held
+static int plus_targets(int8_t out[], int max)
+{
+    int n = 0;
+    for (int b = 0; b < BOON_COUNT && n < max; b++) if (BOONS[b].up && offerable(b)) out[n++] = (int8_t)b;
+    return n;
+}
+// An Event's random Rare boon (a new one or a level; never a skill card, a "+" or a duo); -1 none.
+// roll false: only whether there is one (no roll used)
+static int rare_boon(bool roll)
+{
+    int pool[BOON_COUNT], n = 0;
+    for (int b = 0; b < BOON_COUNT; b++) if (offerable(b) && BOONS[b].tier == TIER_RARE && !is_skill_card(b) && !BOONS[b].up) pool[n++] = b;
+    return !n ? -1 : roll ? pool[rng_next() % n] : pool[0];
+}
+// The Mirror of Shadows: a slotted boon's next level, or its "+" at its max
+static int mirror_targets(int out[])
+{
+    int n = 0;
+    for (int i = 0; i < TOWER_SLOTS; i++) {
+        BoonId b = (BoonId)(s.slot[i] - 1);
+        if (!s.slot[i] || s.merged[i][0]) continue;
+        if (s.stacks[b] < BOONS[b].maxStacks) { out[n++] = b; continue; }
+        for (int p = 0; p < BOON_COUNT; p++) if (BOONS[p].up == b + 1 && offerable(p)) out[n++] = p;
+    }
+    return n;
+}
+// The Moonlit Pool: a skill to learn, or a known skill's "+" (its only level before stage 5)
+static int pool_targets(bool learn, int out[])
+{
+    static const BoonId LEARN[SKILL_COUNT] = { BOON_LEARN_MOONBLADE, BOON_LEARN_HALFMOON, BOON_LEARN_CLEAVE };
+    static const BoonId PLUS[SKILL_COUNT] = { BOON_CRESCENT_ECHO, BOON_HALFMOON_PLUS, BOON_CLEAVE_PLUS };
+    int n = 0;
+    for (int k = 0; k < SKILL_COUNT; k++) if (offerable(learn ? LEARN[k] : PLUS[k])) out[n++] = learn ? LEARN[k] : PLUS[k];
+    return n;
+}
+
+static const struct { const char *name, *text; uint8_t choices; } EVENTS[EV_COUNT] = {
+    [EV_ALTAR]    = { "The Bleeding Altar",  "An altar of red stone, still wet. It asks for blood, for the rest of the climb.", 2 },
+    [EV_GRAVE]    = { "A Knight's Grave",    "A knight lies under his shield. Coins were left on the stone, and a prayer is carved in it.", 3 },
+    [EV_MIRROR]   = { "Mirror of Shadows",   "Your reflection holds out its hand. It will make a boon of yours stronger, and leave something of itself in you.", 2 },
+    [EV_MERCHANT] = { "Merchant of Ash",     "A merchant by a cold fire. He sells potions past what your belt should hold, and buys them back.", 3 },
+    [EV_POOL]     = { "Moonlit Pool",        "Moonlight lies on still water. Something in it remembers the old techniques.", 3 },
+    [EV_PRISONER] = { "The Chained Prisoner","A prisoner begs to be freed. Its jailer will come for you at your next fight, and bring its treasure.", 2 },
+    [EV_BONES]    = { "Gambler's Bones",     "A cup of bones, a voice in the dark: fifty to play, a hundred and twenty back if they fall your way.", 2 },
+    [EV_BRAZIER]  = { "Ember Brazier",       "A brazier burns without fuel. Take its embers to the Shrine, or its warmth into the climb.", 3 },
+};
+#define MERCHANT_POTION 70      // over the Shop's 45: it sells past the run's max (up to POTION_CAP)
+#define GRAVE_GOLD      60
+#define BONES_STAKE     50
+#define BONES_WIN       120
+#define BRAZIER_EMBERS  30      // x circle
+
+// can choice i of the Event on screen be taken now (the last, Leave, always)
+static bool event_ok(int i)
+{
+    int e = s.event, t[BOON_COUNT];
+    if (i == EVENTS[e].choices - 1) return true;
+    switch (e) {
+    case EV_ALTAR:    return rare_boon(false) >= 0;
+    case EV_GRAVE:    return i == 0 || character.health < character.maxHealth;
+    case EV_MIRROR:   return mirror_targets(t) > 0;
+    case EV_MERCHANT: return i == 0 ? s.gold >= MERCHANT_POTION && character.healthPotions < POTION_CAP : character.healthPotions >= 2 && rare_boon(false) >= 0;
+    case EV_POOL:     return pool_targets(i == 0, t) > 0;
+    case EV_BONES:    return s.gold >= BONES_STAKE;
+    default:          return true;
+    }
+}
+
 static bool row_ok(int i)
 {
+    if (s.scr == SCR_EVENT) return s.eventDone || event_ok(s.list[i]);
     if (s.scr != SCR_REST) return true;
     int8_t t[LIST_MAX];
     if (s.list[i] == REST_TEMPER_ROW) return temper_targets(t, LIST_MAX) > 0;
@@ -1024,6 +1244,10 @@ static void list_open(int scr)
     s.listN = s.listSel = 0;
     if (scr == SCR_REST) for (int i = 0; i < REST_ROWS; i++) s.list[s.listN++] = (int8_t)i;
     else if (scr == SCR_TEMPER) { s.listN = (int8_t)temper_targets(s.list, LIST_MAX - 1); s.list[s.listN++] = -1; }     // then Back
+    else if (scr == SCR_SHOP_LEVEL) { s.listN = (int8_t)level_targets(s.list, LIST_MAX - 1); s.list[s.listN++] = -1; }
+    else if (scr == SCR_SHOP_PLUS) { s.listN = (int8_t)plus_targets(s.list, LIST_MAX - 1); s.list[s.listN++] = -1; }
+    else if (scr == SCR_SHOP_RELEASE) { for (int i = 0; i < TOWER_SLOTS; i++) if (s.slot[i]) s.list[s.listN++] = (int8_t)i; s.list[s.listN++] = -1; }
+    else if (scr == SCR_EVENT) { int n = s.eventDone ? 1 : EVENTS[s.event].choices; for (int i = 0; i < n; i++) s.list[s.listN++] = (int8_t)i; }   // its choices (Leave last), or Continue
     else { s.list[s.listN++] = -1; for (int i = 0; i < TOWER_SLOTS; i++) if (s.slot[i]) s.list[s.listN++] = (int8_t)i; }   // Keep, then the slots
     while (s.listSel < s.listN - 1 && !row_ok(s.listSel)) s.listSel++;
 }
@@ -1064,7 +1288,213 @@ static void rest_take(int v)
 #endif
 }
 
-bool tower_between_update(bool left, bool right, bool up, bool down, bool confirm)
+
+// ---- The Shop: one menu, Left/Right along the shelf, A buys, B (or Leave) leaves ----
+
+static int shop_price(int i)
+{
+    static const int P[SHOP_ITEMS] = { [SHOP_LEVEL] = PRICE_LEVEL, [SHOP_PLUS] = PRICE_PLUS, [SHOP_POTION] = PRICE_POTION, [SHOP_MEND] = PRICE_MEND, [SHOP_RELEASE] = PRICE_RELEASE };
+    if (i <= SHOP_CARD2) return s.shop.card[i] >= 0 ? TIER_PRICE[BOONS[s.shop.card[i]].tier] : 0;
+    return i < SHOP_ITEMS ? P[i] : 0;
+}
+// why item i can't be bought now ("": it can). Each item once a visit (one of the three cards); potions up to the run's max
+static const char *shop_block(int i)
+{
+    int8_t t[LIST_MAX];
+    if (i == SHOP_LEAVE) return "";
+    if (i <= SHOP_CARD2 && s.shop.card[i] < 0) return "No new boon fits";
+    if ((s.shop.sold >> i) & 1) return "Sold";
+    if (i == SHOP_LEVEL && !level_targets(t, LIST_MAX)) return "No slotted boon below its max";
+    if (i == SHOP_PLUS && !plus_targets(t, LIST_MAX)) return "No maxed boon with a \"+\"";
+    if (i == SHOP_POTION && character.healthPotions >= tower_mod_max_potions()) return "Potions at the run's max";
+    if (i == SHOP_MEND && character.health >= character.maxHealth) return "Health full";
+    if (i == SHOP_RELEASE && !slots_used()) return "No boon slotted";
+    if (s.gold < shop_price(i)) return "Not enough gold";
+    return "";
+}
+#ifdef HLE_AUTOPLAY
+static const char *const SHOP_NAMES[SHOP_ITEMS] = { "a boon", "a boon", "a boon", "a level", "a \"+\"", "the pact", "a potion", "Mend", "Release", "Leave" };
+#endif
+
+// pay for item i (never below 0: shop_block checked it); the item is sold for this visit (a card: all three)
+static void shop_pay(int i, const char *what)
+{
+    int g = s.gold, p = shop_price(i);
+    s.gold -= p;
+    if (i != SHOP_POTION) s.shop.sold |= i <= SHOP_CARD2 ? 7 : 1 << i;
+#ifdef HLE_AUTOPLAY
+    debugf("[shop] bought %s (%s) for %d: gold %d -> %d%s\n", SHOP_NAMES[i], what, p, g, s.gold, s.gold < 0 ? " NEGATIVE" : "");
+#endif
+    (void)g; (void)what;
+}
+
+static void shop_open(void)
+{
+    BoonId pool[BOON_COUNT]; int n = 0, famHeld[FAM_COUNT + 1];
+    fam_held(famHeld);
+    for (int b = 0; b < BOON_COUNT; b++) if (shop_card_ok(b)) pool[n++] = b;
+    for (int i = 0; i < 3; i++) s.shop.card[i] = (int16_t)(n ? pick_card(pool, &n, famHeld) : -1);     // rolled as a draft's (family weighting too)
+    s.shop.pact = roll_pact(NULL, 0);
+    s.shop.sold = 0; s.shop.sel = 0;
+    s.scr = SCR_SHOP; s.scrOpenMs = get_ticks_ms();
+#ifdef HLE_AUTOPLAY
+    int b = (s.shop.pact - BOON_COUNT) / PC_COUNT, c = (s.shop.pact - BOON_COUNT) % PC_COUNT;
+    debugf("[shop] open, gold %d: cards", s.gold);
+    for (int i = 0; i < 3; i++) debugf(" %s (%d)", s.shop.card[i] >= 0 ? BOONS[s.shop.card[i]].name : "-", s.shop.card[i] >= 0 ? shop_price(i) : 0);
+    debugf(", pact %s / %s, health %.0f/%.0f, potions %d/%d\n", BLESSINGS[b].name, CURSES[c].name, (double)character.health, (double)character.maxHealth,
+           character.healthPotions, tower_mod_max_potions());
+#endif
+}
+
+static void shop_buy(int i)
+{
+    const char *why = shop_block(i);
+    if (i == SHOP_LEAVE) {
+#ifdef HLE_AUTOPLAY
+        debugf("[shop] left with %d gold\n", s.gold);
+#endif
+        tower_map_open();
+        return;
+    }
+    if (why[0]) {
+#ifdef HLE_AUTOPLAY
+        debugf("[shop] %s: can't (%s), gold %d\n", SHOP_NAMES[i], why, s.gold);
+#endif
+        return;
+    }
+    char what[48] = "";
+    switch (i) {
+    case SHOP_LEVEL:   list_open(SCR_SHOP_LEVEL); return;      // (paid when one is chosen)
+    case SHOP_PLUS:    list_open(SCR_SHOP_PLUS); return;
+    case SHOP_RELEASE: list_open(SCR_SHOP_RELEASE); return;
+    case SHOP_PACT:
+        snprintf(what, sizeof what, "%s / %s", BLESSINGS[(s.shop.pact - BOON_COUNT) / PC_COUNT].name, CURSES[(s.shop.pact - BOON_COUNT) % PC_COUNT].name);
+        shop_pay(i, what); take_pact(s.shop.pact); return;
+    case SHOP_POTION:
+        character.healthPotions++;
+        snprintf(what, sizeof what, "%d of %d now", character.healthPotions, tower_mod_max_potions());
+        shop_pay(i, what); return;
+    case SHOP_MEND: {
+        float h = character.health;
+        character.health = fminf(character.maxHealth, h + MEND_HEAL * character.maxHealth);
+        snprintf(what, sizeof what, "health %.0f -> %.0f of %.0f", (double)h, (double)character.health, (double)character.maxHealth);
+        shop_pay(i, what); return; }
+    default: {
+        BoonId b = (BoonId)s.shop.card[i];
+        snprintf(what, sizeof what, "%s, tier %d", BOONS[b].name, BOONS[b].tier);
+        shop_pay(i, what); take_boon(b); return; }
+    }
+}
+
+static void shop_update(bool left, bool right, bool up, bool down, bool confirm, bool back)
+{
+    int i = s.shop.sel;
+    if (left) i = (i + SHOP_ITEMS - 1) % SHOP_ITEMS;
+    else if (right) i = (i + 1) % SHOP_ITEMS;
+    else if (down) i = i >= SHOP_POTION ? SHOP_LEAVE : i + 3;           // rows of three, then Leave
+    else if (up) i = i == SHOP_LEAVE ? SHOP_MEND : i >= 3 ? i - 3 : i;
+    s.shop.sel = (int8_t)i;
+    if (back) shop_buy(SHOP_LEAVE);
+    else if (confirm) shop_buy(i);
+}
+
+// ---- Events: one screen, 2-3 choices (the last Leave), then the result and Continue ----
+
+static void event_open(void)
+{
+    int best = tower_best_floor(), pick[EV_COUNT], n = 0;
+    uint8_t open = 0;
+    for (int e = 0; e < EV_COUNT; e++) if (best >= EVENT_FLOOR[e]) open |= 1 << e;
+    if (!(open & ~s.eventsSeen)) s.eventsSeen &= ~open;     // every one met this run: they come round again
+    for (int e = 0; e < EV_COUNT; e++) if ((open & ~s.eventsSeen) >> e & 1) pick[n++] = e;
+    s.event = (int8_t)pick[rng_next() % n];
+#ifdef HLE_EVENT_FORCE      // test aid: every Event is this one (1-8)
+    s.event = HLE_EVENT_FORCE - 1;
+#endif
+    s.eventsSeen |= 1 << s.event;
+    s.eventPick = (int8_t)(rng_next() % PB_COUNT);         // the Brazier's blessing
+    s.eventDone = false;
+    list_open(SCR_EVENT);
+    s.scrOpenMs = get_ticks_ms();
+#ifdef HLE_AUTOPLAY
+    debugf("[event] %s (best floor %d: open %02x, seen %02x), gold %d, health %.0f/%.0f, potions %d\n", EVENTS[s.event].name, best, open, s.eventsSeen,
+           s.gold, (double)character.health, (double)character.maxHealth, character.healthPotions);
+#endif
+}
+
+static const char *boon_lv(int b, char *buf, int n)     // "Riposte", "Rally Lv 2"
+{
+    if (BOONS[b].maxStacks > 1 && s.stacks[b] > 1) snprintf(buf, n, "%s Lv %d", BOONS[b].name, s.stacks[b]);
+    else snprintf(buf, n, "%s", BOONS[b].name);
+    return buf;
+}
+
+static void event_take(int i)
+{
+    int e = s.event, t[BOON_COUNT], k;
+    char *r = s.eventResult, nm[40];
+    const int rn = sizeof s.eventResult;
+    if (i == EVENTS[e].choices - 1) snprintf(r, rn, "You leave it be.");
+    else switch (e) {
+    case EV_ALTAR: {
+        float cut = 0.15f * character.maxHealth;
+        int b = rare_boon(true);
+        s.altarHp += cut;
+        sync_max_health();
+        if (character.health > character.maxHealth) character.health = character.maxHealth;
+        take_boon((BoonId)b);
+        snprintf(r, rn, "The altar drinks %.0f max health. It gives you %s.", (double)cut, boon_lv(b, nm, sizeof nm));
+        break; }
+    case EV_GRAVE:
+        if (i == 0) snprintf(r, rn, "You take %d gold from the stone.", gain_gold(GRAVE_GOLD));
+        else { float h = character.health; character.health = fminf(character.maxHealth, h + REST_HEAL * character.maxHealth);
+               snprintf(r, rn, "You pray: +%.0f health.", (double)(character.health - h)); }
+        break;
+    case EV_MIRROR: {
+        int b = t[rng_next() % mirror_targets(t)], c = rng_next() % PC_COUNT;
+        take_boon((BoonId)b);
+        add_curse(c);
+        snprintf(r, rn, "%s. Its curse: %s (%s).", boon_lv(b, nm, sizeof nm), CURSES[c].name, CURSES[c].desc);
+        break; }
+    case EV_MERCHANT:
+        if (i == 0) { s.gold -= MERCHANT_POTION; character.healthPotions++; snprintf(r, rn, "One potion for %d gold: %d held.", MERCHANT_POTION, character.healthPotions); }
+        else { int b = rare_boon(true); character.healthPotions -= 2; take_boon((BoonId)b); snprintf(r, rn, "Two potions for %s.", boon_lv(b, nm, sizeof nm)); }
+        break;
+    case EV_POOL:
+        k = pool_targets(i == 0, t);
+        { int b = t[rng_next() % k];
+          take_boon((BoonId)b);
+          if (is_learn(b)) s.skillsOffered |= 1 << (b - BOON_LEARN_MOONBLADE);
+          snprintf(r, rn, i == 0 ? "You learn %s." : "The water sharpens it: %s.", BOONS[b].name); }
+        break;
+    case EV_PRISONER:
+        s.prisoner = true;
+        snprintf(r, rn, "The chains fall. Your next Fight is an Elite, its draft all Legendary.");
+        break;
+    case EV_BONES:
+        s.gold -= BONES_STAKE;
+        if (rng_next() % 2) snprintf(r, rn, "The bones fall your way: +%d gold.", gain_gold(BONES_WIN));
+        else snprintf(r, rn, "The bones fall against you: the %d gold is gone.", BONES_STAKE);
+        break;
+    case EV_BRAZIER:
+        if (i == 0) { int em = BRAZIER_EMBERS * s.circle; bank_embers(em); snprintf(r, rn, "You bank %d Embers.", em); }
+        else {
+            s.halfBless[s.eventPick]++;
+            if (s.eventPick == PB_VITALITY) { character.health += 6.0f; sync_max_health(); }
+            snprintf(r, rn, "Half a blessing, without a curse: %s.", BLESSINGS[s.eventPick].name);
+        }
+        break;
+    }
+#ifdef HLE_AUTOPLAY
+    debugf("[event] %s, choice %d: %s | gold %d, health %.0f/%.0f, potions %d, damage x%.2f, taken x%.2f, Embers %d\n", EVENTS[e].name, i + 1, r, s.gold,
+           (double)character.health, (double)character.maxHealth, character.healthPotions, (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken(), s.runEmbers);
+#endif
+    s.eventDone = true;
+    list_open(SCR_EVENT);
+    s.scrOpenMs = get_ticks_ms();       // (the result is read before Continue takes a press)
+}
+
+bool tower_between_update(bool left, bool right, bool up, bool down, bool confirm, bool back)
 {
     if (s.draftOpen) {
         if (tower_draft_update(left, right, up, down, confirm)) { tower_floor_restore(); tower_next_floor(); tower_map_open(); }
@@ -1075,17 +1505,38 @@ bool tower_between_update(bool left, bool right, bool up, bool down, bool confir
         int d = right - left, r = s.map.row + 1;
         for (int l = s.map.sel + d; d && l >= 0 && l < MAP_LANES; l += d) if (map_reachable(r, l)) { s.map.sel = (int8_t)l; break; }
         if (!confirm && !up) return false;
-        if (map_enter() == NODE_REST) { list_open(SCR_REST); s.scrOpenMs = get_ticks_ms(); return false; }
+        int t = map_enter();
+        if (t == NODE_REST) { list_open(SCR_REST); s.scrOpenMs = get_ticks_ms(); return false; }
+        if (t == NODE_SHOP) { shop_open(); return false; }
+        if (t == NODE_EVENT) { event_open(); return false; }
         s.scr = SCR_NONE;
         icons_free();
         return true;
     }
-    // a Rest's screens: Up/Down along the rows (past any that can't be chosen), A takes one
+    if (s.scr == SCR_SHOP) { shop_update(left, right, up, down, confirm, back); return false; }
+    bool shopList = s.scr >= SCR_SHOP_LEVEL && s.scr <= SCR_SHOP_RELEASE;
+    if (shopList && back) { s.scr = SCR_SHOP; return false; }      // B: back to the shelf
+    // a list (a Rest's screens, the Shop's, an Event's): Up/Down along the rows (past any that can't be chosen), A takes one
     int d = down - up;
     for (int i = s.listSel + d; d && i >= 0 && i < s.listN; i += d) if (row_ok(i)) { s.listSel = (int8_t)i; break; }
-    if (!confirm) return false;
+    if (!confirm || !row_ok(s.listSel)) return false;
     int v = s.list[s.listSel];
-    if (s.scr == SCR_REST) {
+    if (s.scr == SCR_EVENT) {
+        if (s.eventDone) tower_map_open();
+        else event_take(v);
+    } else if (shopList) {
+        if (v >= 0) {
+            char nm[40];
+            if (s.scr == SCR_SHOP_RELEASE) {
+                snprintf(nm, sizeof nm, "%s", BOONS[s.slot[v] - 1].name);
+                shop_pay(SHOP_RELEASE, nm); release_slot(v);
+            } else {
+                snprintf(nm, sizeof nm, "%s Lv %d -> %d", BOONS[v].name, s.stacks[v], s.stacks[v] + 1);
+                shop_pay(s.scr == SCR_SHOP_LEVEL ? SHOP_LEVEL : SHOP_PLUS, nm); take_boon((BoonId)v);
+            }
+        }
+        s.scr = SCR_SHOP;
+    } else if (s.scr == SCR_REST) {
         if (v == REST_TEMPER_ROW) list_open(SCR_TEMPER);
         else { rest_take(v); release_open(); }
     } else if (s.scr == SCR_TEMPER) {
@@ -1169,20 +1620,25 @@ static void map_draw(void)
             rdpq_sprite_blit(s_icons, MAP_X(l) - 8, MAP_Y(r) - 8, &(rdpq_blitparms_t){ .t0 = 16 * (t - 1), .width = 16, .height = 16 });
         }
     }
-    // the top line: floor, Ascension, night (gold is stage 4); the bottom: the node under the cursor
+    // the top line: floor, Ascension, night, gold; the bottom: the node under the cursor
     char line[80];
     int n = snprintf(line, sizeof line, "Floor %d", s.floor);
     if (s.circle > 1) n += snprintf(line + n, sizeof line - n, "   Ascension %d", s.circle - 1);
-    if (s.night) snprintf(line + n, sizeof line - n, "   %s", NIGHTS[s.night].name);
+    if (s.night) n += snprintf(line + n, sizeof line - n, "   %s", NIGHTS[s.night].name);
+    snprintf(line + n, sizeof line - n, "   Gold %d", s.gold);
     text_style(0, 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
     if (cr < MAP_ROWS) {
         int t = s.map.type[cr][cl];
         const char *boss = t == NODE_BOSS ? BOSS_NAMES[cr ? TOWER_UNBOUND : TOWER_GUARDIAN] : s.map.boss[cr][cl] ? BOSS_NAMES[s.map.boss[cr][cl] - 1] : "";
-        if (t == NODE_ELITE) snprintf(line, sizeof line, "Elite: %s, rare draft, x1.5 Embers", boss);
+        bool jailer = t == NODE_FIGHT && s.prisoner;      // the Chained Prisoner's: the next Fight is an Elite
+        if (t == NODE_ELITE) snprintf(line, sizeof line, "Elite: %s, rare draft, x1.5 gold and Embers", boss);
+        else if (jailer) snprintf(line, sizeof line, "Elite: %s, the jailer: legendary draft", boss);
         else if (t == NODE_FIGHT) snprintf(line, sizeof line, "Fight: %s", boss);
         else if (t == NODE_REST) snprintf(line, sizeof line, "Rest: heal, Temper or potions");
+        else if (t == NODE_SHOP) snprintf(line, sizeof line, "Shop: boons, levels, potions, Mend");
+        else if (t == NODE_EVENT) snprintf(line, sizeof line, "Event: ?");
         else snprintf(line, sizeof line, "%s", boss);
-        text_style(0, 227, SCREEN_WIDTH, ALIGN_CENTER, t == NODE_ELITE ? FONT_STYLE_RED : FONT_STYLE_WHITE, line);
+        text_style(0, 227, SCREEN_WIDTH, ALIGN_CENTER, t == NODE_ELITE || jailer ? FONT_STYLE_RED : FONT_STYLE_WHITE, line);
     }
 }
 
@@ -1191,10 +1647,13 @@ static void rest_draw(void)
     flat_mode();
     rdpq_set_prim_color(RGBA32(0, 0, 0, 170));
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    static const char *const HEAD[] = { [SCR_REST] = "Rest: choose one", [SCR_TEMPER] = "Temper: +1 level", [SCR_RELEASE] = "Release a boon? Free, with its levels" };
+    static const char *const HEAD[] = { [SCR_REST] = "Rest: choose one", [SCR_TEMPER] = "Temper: +1 level", [SCR_RELEASE] = "Release a boon? Free, with its levels",
+                                        [SCR_SHOP_LEVEL] = "A level: 70 gold", [SCR_SHOP_PLUS] = "A \"+\": 150 gold", [SCR_SHOP_RELEASE] = "Release a boon: 20 gold, with its levels" };
     text_style(0, 40, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, HEAD[s.scr]);
     char line[80];
-    snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d", (double)character.health, (double)character.maxHealth, character.healthPotions);
+    bool shopList = s.scr >= SCR_SHOP_LEVEL, boonRows = s.scr == SCR_TEMPER || s.scr == SCR_SHOP_LEVEL || s.scr == SCR_SHOP_PLUS;
+    if (shopList) snprintf(line, sizeof line, "Gold %d   (B: back)", s.gold);
+    else snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d", (double)character.health, (double)character.maxHealth, character.healthPotions);
     text_style(0, 56, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
     const int x = 50, w = SCREEN_WIDTH - 100, y0 = 84, pitch = 15;
     for (int i = 0; i < s.listN; i++) {
@@ -1206,8 +1665,8 @@ static void rest_draw(void)
             else if (v == REST_TEMPER_ROW) snprintf(line, sizeof line, row_ok(i) ? "Temper: +1 level on a boon or skill" : "Temper: nothing to raise");
             else if (p < pm) snprintf(line, sizeof line, "+2 potions (%d -> %d)", p, p + REST_POTIONS < pm ? p + REST_POTIONS : pm);
             else snprintf(line, sizeof line, "+2 potions: full");
-        } else if (v < 0) snprintf(line, sizeof line, s.scr == SCR_TEMPER ? "Back" : "Keep them all");
-        else if (s.scr == SCR_TEMPER) {
+        } else if (v < 0) snprintf(line, sizeof line, s.scr == SCR_RELEASE ? "Keep them all" : "Back");
+        else if (boonRows) {
             const BoonDef *bd = &BOONS[v];
             if (bd->up) snprintf(line, sizeof line, "%s (top level)", bd->name);
             else if (is_skill_card(v)) snprintf(line, sizeof line, "%s (skill)", bd->name);
@@ -1230,12 +1689,141 @@ int tower_map_row(void) { return s.map.row; }
 int tower_map_sel(void) { return s.map.sel; }
 int tower_map_next(int l) { return map_reachable(s.map.row + 1, l) ? s.map.type[s.map.row + 1][l] : 0; }     // a reachable node's NODE_, else 0
 int tower_list_sel(void) { return s.listSel; }
+int tower_shop_sel(void) { return s.shop.sel; }
+int tower_event_id(void) { return s.event; }
+bool tower_event_done(void) { return s.eventDone; }
+void tower_test_set_gold(int g) { s.gold = g; }
 #endif
+
+// a framed button (the draft's Skip)
+static void button(int x, int y, int w, int h, bool on, bool ok, const char *label)
+{
+    flat_mode();
+    rdpq_set_prim_color(on ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
+    rdpq_fill_rectangle(x - 2, y - 2, x + w + 2, y + h + 2);
+    rdpq_set_prim_color(on ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
+    rdpq_fill_rectangle(x, y, x + w, y + h);
+    text_style(x, y + 12, w, ALIGN_CENTER, !ok ? FONT_STYLE_GREY : on ? FONT_STYLE_GOLD : FONT_STYLE_WHITE, label);
+}
+
+static void shop_draw(void)
+{
+    flat_mode();
+    rdpq_set_prim_color(RGBA32(0, 0, 0, 170));
+    rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    char line[96];
+    snprintf(line, sizeof line, "Shop   Gold %d", s.gold);
+    text_style(0, 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
+    snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d/%d", (double)character.health, (double)character.maxHealth, character.healthPotions, tower_mod_max_potions());
+    text_style(0, 35, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+    // the three boon cards, as the draft's (shorter: the price at the foot)
+    const int cw = 96, ch = 100, gap = 6, y0 = 43, x0 = (SCREEN_WIDTH - (3 * cw + 2 * gap)) / 2;     // (room for 3 lines of text over the price)
+    for (int i = 0; i < 3; i++) {
+        int x = x0 + i * (cw + gap), card = s.shop.card[i];
+        bool on = i == s.shop.sel, sold = (s.shop.sold >> i) & 1;
+        flat_mode();
+        rdpq_set_prim_color(FRAME[card >= 0 ? BOONS[card].tier : 0][on]);
+        rdpq_fill_rectangle(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2);
+        rdpq_set_prim_color(on ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
+        rdpq_fill_rectangle(x, y0, x + cw, y0 + ch);
+        if (card < 0) { text_style(x + 4, y0 + 46, cw - 8, ALIGN_CENTER, FONT_STYLE_GREY, "No new boon fits"); continue; }
+        const BoonDef *bd = &BOONS[card];
+        if (bd->duo) snprintf(line, sizeof line, "%s+%s", FAMILIES[bd->family].name, FAMILIES[bd->duo - 1].name);
+        text_style(x + 2, y0 + 12, cw - 4, ALIGN_CENTER, bd->duo ? FONT_STYLE_GOLD : FAMILIES[bd->family].style, bd->duo ? line : FAMILIES[bd->family].name);
+        int nl = text_style(x + 4, y0 + 27, cw - 8, ALIGN_CENTER, sold ? FONT_STYLE_GREY : NAME_STYLE[bd->tier], bd->name);
+        text_style(x + 6, y0 + 31 + 17 * (nl > 1 ? nl : 1), cw - 12, ALIGN_CENTER, sold ? FONT_STYLE_GREY : FONT_STYLE_WHITE, bd->desc);
+        if (sold) snprintf(line, sizeof line, "Sold");
+        else snprintf(line, sizeof line, "%d gold", shop_price(i));
+        text_style(x, y0 + ch - 3, cw, ALIGN_CENTER, !shop_block(i)[0] ? FONT_STYLE_GOLD : FONT_STYLE_GREY, line);
+    }
+    // the services, two rows of three under the cards, then Leave
+    for (int i = SHOP_LEVEL; i <= SHOP_RELEASE; i++) {
+        static const char *const LABEL[SHOP_ITEMS] = { [SHOP_LEVEL] = "A level", [SHOP_PLUS] = "A \"+\"", [SHOP_PACT] = "Pact", [SHOP_POTION] = "Potion",
+                                                       [SHOP_MEND] = "Mend", [SHOP_RELEASE] = "Release" };
+        int k = i - SHOP_LEVEL, x = x0 + (k % 3) * (cw + gap), y = y0 + ch + 7 + 19 * (k / 3);
+        if ((s.shop.sold >> i) & 1) snprintf(line, sizeof line, "%s: sold", LABEL[i]);
+        else if (shop_price(i)) snprintf(line, sizeof line, "%s  %d", LABEL[i], shop_price(i));
+        else snprintf(line, sizeof line, "%s  free", LABEL[i]);
+        button(x, y, cw, 15, s.shop.sel == i, !shop_block(i)[0], line);
+    }
+    const int bw = 132, by = y0 + ch + 7 + 38;
+    button((SCREEN_WIDTH - bw) / 2, by, bw, 15, s.shop.sel == SHOP_LEAVE, true, "Leave");
+    // what the selected one does, and why it can't be bought
+    int i = s.shop.sel, b = (s.shop.pact - BOON_COUNT) / PC_COUNT, c = (s.shop.pact - BOON_COUNT) % PC_COUNT;
+    line[0] = 0;
+    if (i <= SHOP_CARD2 && s.shop.card[i] >= 0) {
+        int card = s.shop.card[i], sa, sb, r = rival_of(card);
+        if (BOONS[card].duo && duo_pair(card, &sa, &sb)) snprintf(line, sizeof line, "Duo: merges %s + %s", BOONS[s.slot[sa] - 1].name, BOONS[s.slot[sb] - 1].name);
+        else if (r >= 0) snprintf(line, sizeof line, "New: slot %d/%d. Locks out %s", slots_used() + 1, TOWER_SLOTS, BOONS[r].name);
+        else snprintf(line, sizeof line, "New: slot %d/%d", slots_used() + 1, TOWER_SLOTS);
+    } else if (i == SHOP_LEVEL) snprintf(line, sizeof line, "+1 level on a slotted boon (choose it)");
+    else if (i == SHOP_PLUS) snprintf(line, sizeof line, "A maxed boon's \"+\", its top level (choose it)");
+    else if (i == SHOP_PACT) snprintf(line, sizeof line, "%s: %s", BLESSINGS[b].name, BLESSINGS[b].desc);
+    else if (i == SHOP_POTION) snprintf(line, sizeof line, "+1 potion, up to the run's %d", tower_mod_max_potions());
+    else if (i == SHOP_MEND) snprintf(line, sizeof line, "Heal 35%%: +%.0f health", (double)fminf(MEND_HEAL * character.maxHealth, character.maxHealth - character.health));
+    else if (i == SHOP_RELEASE) snprintf(line, sizeof line, "Free a slot: a boon and its levels are gone");
+    else snprintf(line, sizeof line, "Back to the map");
+    text_style(0, by + 30, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_WHITE, line);
+    // the second line: why it can't be bought, a pact's curse (its price), else the buttons
+    const char *why = shop_block(i);
+    if (!why[0] && i == SHOP_PACT) { snprintf(line, sizeof line, "The price, %s: %s", CURSES[c].name, CURSES[c].desc); why = line; }
+    text_style(0, by + 42, SCREEN_WIDTH, ALIGN_CENTER, why[0] ? FONT_STYLE_RED : FONT_STYLE_GREY, why[0] ? why : "A: buy   B: leave");
+}
+
+static void event_label(int i, char *out, int n)
+{
+    int e = s.event;
+    if (s.eventDone) { snprintf(out, n, "Continue"); return; }
+    if (i == EVENTS[e].choices - 1) { snprintf(out, n, "Leave"); return; }
+    switch (e) {
+    case EV_ALTAR:    snprintf(out, n, "Give %.0f max health: a Rare boon", (double)(0.15f * character.maxHealth)); break;
+    case EV_GRAVE:
+        if (i == 0) snprintf(out, n, "Take the %d gold", gold_with(GRAVE_GOLD));
+        else snprintf(out, n, "Pray: heal 40%% (+%.0f)", (double)fminf(REST_HEAL * character.maxHealth, character.maxHealth - character.health));
+        break;
+    case EV_MIRROR:   snprintf(out, n, "A boon +1 level, and a curse"); break;
+    case EV_MERCHANT: if (i == 0) snprintf(out, n, "1 potion for %d gold", MERCHANT_POTION); else snprintf(out, n, "2 potions for a Rare boon"); break;
+    case EV_POOL:     snprintf(out, n, i == 0 ? "Learn a skill you don't know" : "A skill you know: its \"+\""); break;
+    case EV_PRISONER: snprintf(out, n, "Free it: your next Fight is an Elite"); break;
+    case EV_BONES:    snprintf(out, n, "Pay %d gold: %d back, half the time", BONES_STAKE, gold_with(BONES_WIN)); break;
+    case EV_BRAZIER:
+        if (i == 0) snprintf(out, n, "Bank %d Embers", BRAZIER_EMBERS * s.circle);
+        else snprintf(out, n, "Half a blessing: %s", BLESSINGS[s.eventPick].name);
+        break;
+    }
+}
+
+static void event_draw(void)
+{
+    flat_mode();
+    rdpq_set_prim_color(RGBA32(0, 0, 0, 170));
+    rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    text_style(0, 36, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, EVENTS[s.event].name);
+    const int lh = 16;      // the font's line pitch
+    int y = 56 + lh * text_style(36, 56, SCREEN_WIDTH - 72, ALIGN_CENTER, FONT_STYLE_WHITE, EVENTS[s.event].text);
+    char line[96];
+    if (s.event == EV_BRAZIER && !s.eventDone) {     // the blessing's own words (a full pact's stack)
+        snprintf(line, sizeof line, "%s: %s at a full stack", BLESSINGS[s.eventPick].name, BLESSINGS[s.eventPick].desc);
+        y += lh * text_style(36, y, SCREEN_WIDTH - 72, ALIGN_CENTER, FONT_STYLE_GREY, line);
+    }
+    if (s.eventDone) y += lh * text_style(36, y + 4, SCREEN_WIDTH - 72, ALIGN_CENTER, FONT_STYLE_GOLD, s.eventResult) + 4;
+    const int x = 50, w = SCREEN_WIDTH - 100, pitch = 15;
+    y += 12;
+    for (int i = 0; i < s.listN; i++, y += pitch) {
+        if (i == s.listSel) select_box(x - 6, y - 11, x + w + 6, y + 3);
+        event_label(s.list[i], line, sizeof line);
+        text_style(x, y, w, ALIGN_CENTER, row_ok(i) ? FONT_STYLE_WHITE : FONT_STYLE_GREY, line);
+    }
+    snprintf(line, sizeof line, "Gold %d   Health %.0f/%.0f   Potions %d", s.gold, (double)character.health, (double)character.maxHealth, character.healthPotions);
+    text_style(0, 222, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+}
 
 void tower_between_draw(void)
 {
     if (s.draftOpen) tower_draft_draw();
     else if (s.scr == SCR_MAP) map_draw();
+    else if (s.scr == SCR_SHOP) shop_draw();
+    else if (s.scr == SCR_EVENT) event_draw();
     else if (s.scr) rest_draw();
 }
 
@@ -1262,12 +1850,15 @@ const char* tower_run_summary(void)
     ADD("Floor %d", s.floor);
     if (tower_circle() > 1) ADD(", Ascension %d", tower_circle() - 1);
     if (s.night) ADD(", %s", NIGHTS[s.night].name);
-    ADD("\nRelic: %s\n", tower_relic_name(tower_relic_equipped()));
+    ADD("\nGold %d   Relic: %s\n", s.gold, tower_relic_name(tower_relic_equipped()));
     ADD("Damage x%.2f, damage taken x%.2f\n", (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken());
     ADD("Max health %.0f, potions %d", (double)tower_mod_max_health(), character.healthPotions);
     if (s.potionDebt) ADD(" (%d owed)", s.potionDebt);
     ADD("\nBlessings:"); int k = 0;
-    for (int i = 0; i < PB_COUNT; i++) if (s.bless[i]) ADD("%s %s %d", k++ ? "," : "", BLESSINGS[i].name, s.bless[i]);
+    for (int i = 0; i < PB_COUNT; i++) if (s.bless[i] || s.halfBless[i]) {     // (a Brazier's half: "1.5")
+        int h = 2 * s.bless[i] + s.halfBless[i];
+        ADD("%s %s %d%s", k++ ? "," : "", BLESSINGS[i].name, h / 2, h % 2 ? ".5" : "");
+    }
     if (!k) ADD(" none");
     ADD("\nCurses:"); k = 0;
     for (int i = 0; i < PC_COUNT; i++) if (s.curse[i]) ADD("%s %s %d", k++ ? "," : "", CURSES[i].name, s.curse[i]);
@@ -1408,6 +1999,8 @@ const char* tower_upgrade_desc(UpgradeId u) { return UPGRADES[u].desc; }
 static int shrine(UpgradeId u) { return s.active ? tower_upgrade_level(u) : 0; }
 
 static float powf_int(float b, int e) { float r = 1.0f; while (e-- > 0) r *= b; return r; }
+// a blessing's stacks: the pacts', and the Ember Brazier's halves
+static float bl(int b) { return s.bless[b] + 0.5f * s.halfBless[b]; }
 
 // The climb's baseline: each circle cleared, +10% damage and 6% less taken, through circle 5 (it
 // helps a run catch up; past it, only boons and pacts grow, so even a full set runs out of floors)
@@ -1424,8 +2017,8 @@ float tower_mod_damage_dealt(void)
     float m = (1.0f + 0.08f * shrine(UPG_HONED_BLADE)) * (1.0f + 0.15f * (ee < 3 ? ee : 3) + 0.10f * (ee > 3 ? ee - 3 : 0));
     if (s.active) {
         m *= 1.0f + 0.10f * circles_cleared();
-        m *= (1.0f + 0.08f * s.bless[PB_MIGHT]) * powf_int(0.95f, s.curse[PC_WEAKNESS]);
-        if (character.health < character.maxHealth * 0.3f) m *= 1.0f + 0.15f * s.bless[PB_LAST_BREATH];
+        m *= (1.0f + 0.08f * bl(PB_MIGHT)) * powf_int(0.95f, s.curse[PC_WEAKNESS]);
+        if (character.health < character.maxHealth * 0.3f) m *= 1.0f + 0.15f * bl(PB_LAST_BREATH);
     }
     if (tower_boon_stacks(BOON_LAST_STAND) && character.health < character.maxHealth * 0.3f) m *= 1.0f + 0.4f * tower_boon_stacks(BOON_LAST_STAND);
     if (tower_boon_stacks(BOON_BLOOD_PACT)) m *= 1.35f;
@@ -1440,8 +2033,8 @@ float tower_mod_damage_vs(float bossHealthFrac, bool staggered, int kind)
 {
     if (!s.active) return 1.0f;
     float m = 1.0f;
-    if (bossHealthFrac < 0.5f) m *= 1.0f + 0.12f * s.bless[PB_WOUNDED];
-    if (staggered) m *= 1.0f + 0.15f * s.bless[PB_STAGGERED];
+    if (bossHealthFrac < 0.5f) m *= 1.0f + 0.12f * bl(PB_WOUNDED);
+    if (staggered) m *= 1.0f + 0.15f * bl(PB_STAGGERED);
     // the new boons that change a hit (logged as they do)
     extern double nowS;
     int rt = tower_boon_stacks(BOON_RED_THIRST);
@@ -1479,7 +2072,7 @@ float tower_mod_damage_taken(void)
     float m = powf_int(0.85f, is < 2 ? is : 2) * (is >= 3 ? 0.9f : 1.0f);
     if (s.active) {
         extern double nowS;
-        m *= powf_int(0.94f, circles_cleared()) * powf_int(0.94f, s.bless[PB_BULWARK]) * (1.0f + 0.05f * s.curse[PC_FRAILTY]);
+        m *= powf_int(0.94f, circles_cleared()) * powf(0.94f, bl(PB_BULWARK)) * (1.0f + 0.05f * s.curse[PC_FRAILTY]);
         if (s.curse[PC_EXPOSED] && nowS < s.exposedUntil) m *= 1.0f + 0.15f * s.curse[PC_EXPOSED];
         if (nowS < s.steelUntil) m *= 0.6f;     // Steel Hearth: a potion's ward
     }
@@ -1688,7 +2281,7 @@ float tower_mod_potion_heal(void)
     return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.25f * tower_boon_stacks(BOON_KINDLED_FLASK))
            * (tower_boon_stacks(BOON_BLOOD_PACT) ? 0.75f : 1.0f);
 }
-float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH) - 20.0f * has_relic(RELIC_FRAIL) + (s.active ? 12.0f * s.bless[PB_VITALITY] + s.steelHp : 0.0f); }
+float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH) - 20.0f * has_relic(RELIC_FRAIL) + (s.active ? 12.0f * bl(PB_VITALITY) + s.steelHp - s.altarHp : 0.0f); }
 float tower_mod_roll_cost(void) { return (tower_boon_stacks(BOON_FLEETFOOT) ? 0.6f : 1.0f) * (has_relic(RELIC_LEADEN) ? 1.25f : 1.0f); }
 float tower_mod_stamina_empty(void) { return 1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND); }   // the wait once the bar is empty: x1/1.4 a stack
 float tower_mod_stamina_regen(void) { return (1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND)) * (has_relic(RELIC_STAMINA) ? 1.2f : 1.0f); }
@@ -2008,12 +2601,12 @@ int tower_test_stage2(void)
 // Stage 3's self-check (HLE_TEST_TOWER): 1,000 seeded maps against section 2's rules (checked path by
 // path, apart from map_rules_ok), walks through whole circles by the screens' own presses, a Rest's
 // choices and Release, Elites; returns the failures
-static int s_mapFails;
+static int s_mapFails, s_walkShops, s_walkEvents, s_walkFightGold, s_walkEventGold;
 #define MCHECK(c, ...) do { if (!(c)) { s_mapFails++; debugf("[map] FAIL: " __VA_ARGS__); debugf("\n"); } } while (0)
 static bool test_press(int key)     // a press on the screens between fights, past their input delay
 {
     s.scrOpenMs = s.draftOpenMs = get_ticks_ms() - DRAFT_INPUT_DELAY_MS - 1;
-    return tower_between_update(key == 'L', key == 'R', key == 'U', key == 'D', key == 'A');
+    return tower_between_update(key == 'L', key == 'R', key == 'U', key == 'D', key == 'A', key == 'B');
 }
 // One circle through the map from its first screen: random moves, A or Up to enter; a Rest heals and
 // keeps the boons; a fight is won (with its draft's first card, or none); returns its fights
@@ -2026,11 +2619,15 @@ static int walk_circle(bool drafts)
     for (int step = 0; step < 12 && s.circle == c; step++) {
         for (int m = rng_next() % 3; m > 0; m--) test_press(rng_next() % 2 ? 'L' : 'R');
         onlyReach &= map_reachable(s.map.row + 1, s.map.sel);
-        if (!test_press(rng_next() % 2 ? 'A' : 'U')) {      // a Rest
-            MCHECK(tower_rest_is_open() && s.map.type[s.map.row][s.map.path[s.map.row]] == NODE_REST, "a node that isn't a fight opens a Rest");
-            test_press('A');
-            if (s.scr == SCR_RELEASE) test_press('A');
-            MCHECK(tower_map_is_open() && s.floor == floor0 + fights, "after a Rest, the map again, no floor counted (%d)", s.floor);
+        if (!test_press(rng_next() % 2 ? 'A' : 'U')) {      // a Rest, a Shop or an Event
+            int t = s.map.type[s.map.row][s.map.path[s.map.row]];
+            MCHECK((t == NODE_REST && s.scr == SCR_REST) || (t == NODE_SHOP && s.scr == SCR_SHOP) || (t == NODE_EVENT && s.scr == SCR_EVENT),
+                   "a node that isn't a fight opens its own screen (node %d, screen %d)", t, s.scr);
+            int g = s.gold;
+            if (t == NODE_SHOP) { test_press('B'); s_walkShops++; MCHECK(s.gold == g, "B leaves a Shop, nothing bought"); }
+            else if (t == NODE_EVENT) { test_press('A'); s_walkEventGold += s.gold - g; test_press('A'); s_walkEvents++; }   // its first choice, then Continue
+            else { test_press('A'); if (s.scr == SCR_RELEASE) test_press('A'); }
+            MCHECK(tower_map_is_open() && s.floor == floor0 + fights, "after a Rest, a Shop or an Event, the map again, no floor counted (%d)", s.floor);
             continue;
         }
         fights++;
@@ -2038,7 +2635,14 @@ static int walk_circle(bool drafts)
         if (fights == 1) MCHECK(s.boss == TOWER_GUARDIAN, "the Guardian first (%d)", s.boss);
         if (s.boss >= TOWER_FALLEN_KNIGHT) { if (nb < 3 && ((seen >> s.boss) & 1)) distinct = false; seen |= 1 << s.boss; nb++; }
         last = s.boss;
-        if (drafts) { tower_floor_cleared(); test_press('A'); }
+        if (drafts) {
+            bool el = s.elite;
+            tower_floor_cleared();
+            int want = (int)((GOLD_FIGHT + GOLD_PER_CIRCLE * c) * (el ? ELITE_GOLD : 1.0f) + 0.5f);
+            if (!s.stacks[BOON_PROSPECTOR]) MCHECK(s.lastFloorGold == want, "a fight's gold: 25 + 5 x circle %d%s = %d (%d)", c, el ? ", x1.5 an Elite" : "", want, s.lastFloorGold);
+            s_walkFightGold += s.lastFloorGold;
+            test_press('A');
+        }
         else { tower_next_floor(); tower_map_open(); }
     }
     MCHECK(onlyReach, "the cursor stays on reachable nodes");
@@ -2057,7 +2661,7 @@ int tower_test_map(void)
         s.rng = seed * 2654435761u | 1;
         map_generate();
         tries += s_mapTries; if (s_mapTries > most) most = s_mapTries;
-        int b = 0;
+        int b = 0, shop = 0;
         b += s.map.type[0][0] || s.map.type[0][2] || s.map.type[0][1] != NODE_BOSS || s.map.type[6][0] || s.map.type[6][2] || s.map.type[6][1] != NODE_BOSS;  // rows 1 and 7: one node, a boss
         for (int l = 0; l < MAP_LANES; l++) {
             int f = 0;
@@ -2065,11 +2669,13 @@ int tower_test_map(void)
             for (int r = 1; r <= 4; r++) {
                 int t = s.map.type[r][l];
                 count[t]++; f += t == NODE_FIGHT;
-                b += t != NODE_FIGHT && t != NODE_ELITE && t != NODE_REST;              // stage 3: no Events or Shops
+                b += t < NODE_FIGHT || t > NODE_REST;                                   // Fight, Elite, Event, Shop or Rest
                 b += r == 1 && t == NODE_ELITE;                                         // no Elite in row 2
+                shop += (r == 2 || r == 3) && t == NODE_SHOP;
             }
             b += f < 2;                                                                 // 2 Fights a lane at least
         }
+        b += !shop;                                                                     // a Shop in rows 3-4 on some lane
         for (int p = 0; p < 243; p++) {     // every path: a lane in row 2, then up or a diagonal each row to row 6
             int lane[MAP_ROWS] = { 1, p % 3 }, q = p / 3, fights = 0; bool ok = true;
             for (int r = 2; r <= 5; r++, q /= 3) { lane[r] = lane[r - 1] + q % 3 - 1; ok &= lane[r] >= 0 && lane[r] < MAP_LANES; }
@@ -2085,33 +2691,41 @@ int tower_test_map(void)
         }
         if (b && bad++ < 3) debugf("[map] seed %lu breaks %d rules\n", (unsigned long)seed, b);
     }
-    int cells = 12000;
-    debugf("[map] 1000 maps: %d break a rule; rows 2-5: Fight %d.%d%%, Elite %d.%d%%, Rest %d.%d%%, Event %d, Shop %d; %d.%d rolls a map (most %d); paths with 4/5/6 fights: %d %d %d\n",
-           bad, count[NODE_FIGHT] * 100 / cells, count[NODE_FIGHT] * 1000 / cells % 10, count[NODE_ELITE] * 100 / cells, count[NODE_ELITE] * 1000 / cells % 10,
-           count[NODE_REST] * 100 / cells, count[NODE_REST] * 1000 / cells % 10, count[NODE_EVENT], count[NODE_SHOP], tries / 1000, tries / 100 % 10, most, paths[4], paths[5], paths[6]);
+    int cells = 12000, np = paths[4] + paths[5] + paths[6];
+    #define PCT(v, of) (v) * 100 / (of), (v) * 1000 / (of) % 10
+    debugf("[map] 1000 maps: %d break a rule; rows 2-5: Fight %d.%d%%, Elite %d.%d%%, Event %d.%d%%, Shop %d.%d%%, Rest %d.%d%%; %d.%d rolls a map (most %d)\n",
+           bad, PCT(count[NODE_FIGHT], cells), PCT(count[NODE_ELITE], cells), PCT(count[NODE_EVENT], cells), PCT(count[NODE_SHOP], cells), PCT(count[NODE_REST], cells),
+           tries / 1000, tries / 100 % 10, most);
+    debugf("[map] paths (every one of every map, %d): 4 fights %d.%d%%, 5 %d.%d%%, 6 %d.%d%%\n", np, PCT(paths[4], np), PCT(paths[5], np), PCT(paths[6], np));
+    #undef PCT
     MCHECK(!bad, "every map keeps the rules (%d don't)", bad);
-    MCHECK(count[NODE_ELITE] && count[NODE_REST] && count[NODE_FIGHT], "all three kinds rolled");
+    MCHECK(count[NODE_ELITE] && count[NODE_REST] && count[NODE_FIGHT] && count[NODE_EVENT] && count[NODE_SHOP], "all five kinds rolled");
     // the generator's own check turns each rule down
     // the generator's own check turns each rule down, one at a time on a map of Fights
     { int no = 0;
-      #define FIGHTS() for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = NODE_FIGHT
+      #define FIGHTS() do { for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = NODE_FIGHT; s.map.type[3][2] = NODE_SHOP; } while (0)
       FIGHTS(); bool base = map_rules_ok();
       s.map.type[1][0] = s.map.type[3][0] = s.map.type[4][0] = NODE_ELITE; no += !map_rules_ok(); FIGHTS();   // a lane with 1 Fight
       s.map.type[1][2] = NODE_ELITE; no += !map_rules_ok(); FIGHTS();                                         // an Elite in row 2
       s.map.type[4][0] = NODE_REST; no += !map_rules_ok(); FIGHTS();                                          // a Rest under row 6's
-      s.map.type[2][1] = s.map.type[3][2] = NODE_REST; no += !map_rules_ok(); FIGHTS();                       // a Rest, then a diagonal Rest
+      s.map.type[2][1] = s.map.type[3][0] = NODE_REST; no += !map_rules_ok(); FIGHTS();                       // a Rest, then a diagonal Rest
+      s.map.type[3][2] = NODE_FIGHT; s.map.type[1][2] = NODE_SHOP; no += !map_rules_ok(); FIGHTS();           // no Shop in rows 3-4 (one in row 2)
+      s.map.type[2][1] = NODE_SHOP; no += !map_rules_ok(); FIGHTS();                                          // a Shop, then a diagonal Shop
+      s.map.type[1][0] = s.map.type[3][0] = s.map.type[2][1] = s.map.type[4][1] = NODE_EVENT; no += !map_rules_ok(); FIGHTS();   // a zigzag with no fight
       #undef FIGHTS
-      MCHECK(base && no == 4, "map_rules_ok turns down each broken rule (%d of 4)", no); }
+      MCHECK(base && no == 7, "map_rules_ok turns down each broken rule (%d of 7)", no); }
     // 2. walks: whole circles by the screens' presses, with drafts (their Embers and best floor put back after)
     TowerSave was; tower_load(&was);
     int hist[8] = { 0 };
+    s_walkShops = s_walkEvents = s_walkFightGold = s_walkEventGold = 0;
     for (uint32_t seed = 1; seed <= 40; seed++) {
         tower_begin_run(seed);
         character.maxHealth = tower_mod_max_health(); character.health = character.maxHealth; character.healthPotions = START_POTIONS;
         tower_map_open();
         for (int c = 0; c < 2; c++) hist[walk_circle(true)]++;
     }
-    debugf("[map] 80 circles walked: %d with 4 fights, %d with 5, %d with 6\n", hist[4], hist[5], hist[6]);
+    debugf("[map] 80 circles walked: %d with 4 fights, %d with 5, %d with 6; %d Shops and %d Events entered; fights' gold %d a circle (circles 1-2), events' %d in all\n",
+           hist[4], hist[5], hist[6], s_walkShops, s_walkEvents, s_walkFightGold / 80, s_walkEventGold);
     save_controller_set_tower(&was);
     // 3. the circle's scaling, by maps (no drafts: no skills offered, no nights)
     tower_begin_run(7); tower_map_open();
@@ -2177,6 +2791,231 @@ int tower_test_map(void)
     return s_mapFails;
 }
 #undef MCHECK
+
+// Stage 4's self-checks (HLE_TEST_TOWER): gold, the Shop (each item by the shelf's presses, prices,
+// gold never below 0, B leaves) and the Events (every choice's result, the unlocks); return the failures
+#define RUN4(seed) do { tower_begin_run(seed); s.packs = (1 << FAM_COUNT) - 1; s.relicFx[0] = s.relicFx[1] = 0; character.maxHealth = tower_mod_max_health(); \
+                        character.health = character.maxHealth; character.healthPotions = START_POTIONS; } while (0)
+static int stacks_sum(void) { int n = 0; for (int b = 0; b < BOON_COUNT; b++) n += s.stacks[b]; return n; }
+static int curses_sum(void) { int n = 0; for (int c = 0; c < PC_COUNT; c++) n += s.curse[c]; return n; }
+int tower_test_shop(void)
+{
+    int fails = 0;
+    #define CHECK(c, ...) do { if (!(c)) { fails++; debugf("[shop] FAIL: " __VA_ARGS__); debugf("\n"); } } while (0)
+    TowerSave was; tower_load(&was);
+    // gold from fights: 25 + 5 x circle, an Elite x1.5, Skip +15, the purse +40, Prospector +20% a level; lost with the run
+    RUN4(51);
+    s.map.row = 1; s.map.fights = 2;
+    tower_floor_cleared(); int g1 = s.lastFloorGold; s.draftOpen = false;
+    s.elite = true; tower_floor_cleared(); int ge = s.lastFloorGold; s.draftOpen = false; s.elite = false;
+    s.circle = 2; tower_floor_cleared(); int g2 = s.lastFloorGold; s.draftOpen = false;
+    s.elite = true; tower_floor_cleared(); int ge2 = s.lastFloorGold; s.draftOpen = false; s.elite = false; s.circle = 1;
+    int before = s.gold; s.nChoices = 3; tower_draft_pick(3); int skip = s.gold - before;
+    for (int i = 0; i < 3; i++) take_boon(BOON_PROSPECTOR);
+    tower_floor_cleared(); int gp = s.lastFloorGold; s.draftOpen = false;
+    before = s.gold; s.nChoices = 3; tower_draft_pick(3); int skipP = s.gold - before;
+    debugf("[shop] gold: a fight %d (circle 1), an Elite %d, circle 2 %d / %d, Skip +%d; Prospector Lv 3: a fight %d, Skip +%d; %d held\n", g1, ge, g2, ge2, skip, gp, skipP, s.gold);
+    CHECK(g1 == 30 && ge == 45 && g2 == 35 && ge2 == 53 && skip == 15 && gp == 48 && skipP == 24, "gold by the numbers");
+    // a complete build's draft: the purse card (+40) and pacts
+    for (int b = 0; b < BOON_COUNT; b++) s.locked[b] = true;
+    tower_draft_open();
+    { int purse = 0, k = -1; for (int i = 0; i < s.nChoices; i++) if (s.choices[i] == GOLD_CARD) { purse++; k = i; }
+      before = s.gold; if (k >= 0) tower_draft_pick(k);
+      CHECK(purse == 1 && s.gold - before == gold_with(GOLD_CARD_GOLD), "no boon left: one purse card (%d), +40 gold (x Prospector: +%d)", purse, s.gold - before); }
+    s.draftOpen = false;
+    RUN4(52);
+    CHECK(s.gold == 0, "a new run starts with no gold (%d)", s.gold);
+    // the Shop by its presses: a level (Vigor), a "+" (Storm Blade's), boons to release
+    RUN4(53);
+    take_boon(BOON_STORM_BLADE); take_boon(BOON_VIGOR); take_boon(BOON_EMBER_EDGE);
+    s.gold = 1000; character.health = 50.0f; character.healthPotions = 1;
+    shop_open();
+    CHECK(s.scr == SCR_SHOP && s.shop.sel == 0, "the Shop opens on its first card");
+    { bool ok = true; for (int i = 0; i < 3; i++) { int c = s.shop.card[i]; ok &= c >= 0 && shop_card_ok(c) && shop_price(i) == TIER_PRICE[BOONS[c].tier];
+                                                    for (int j = 0; j < i; j++) ok &= c != s.shop.card[j] && rival_of(c) != s.shop.card[j]; }
+      CHECK(ok, "three different new boons (no skill, no \"+\", no rivals together), each at its tier's price");
+      CHECK(shop_price(SHOP_LEVEL) == 70 && shop_price(SHOP_PLUS) == 150 && shop_price(SHOP_PACT) == 0 && shop_price(SHOP_POTION) == 45
+            && shop_price(SHOP_MEND) == 50 && shop_price(SHOP_RELEASE) == 20, "the services' prices"); }
+    // the shelf's moves: Right/Left along it (wrapping), Down/Up by rows, Leave under the last row
+    { int seq[12], k = 0;
+      test_press('L'); seq[k++] = s.shop.sel; test_press('R'); seq[k++] = s.shop.sel; test_press('R'); seq[k++] = s.shop.sel;
+      test_press('D'); seq[k++] = s.shop.sel; test_press('D'); seq[k++] = s.shop.sel; test_press('D'); seq[k++] = s.shop.sel; test_press('D'); seq[k++] = s.shop.sel;
+      test_press('U'); seq[k++] = s.shop.sel; test_press('U'); seq[k++] = s.shop.sel; test_press('U'); seq[k++] = s.shop.sel; test_press('U'); seq[k++] = s.shop.sel;
+      CHECK(seq[0] == SHOP_LEAVE && seq[1] == 0 && seq[2] == 1 && seq[3] == 4 && seq[4] == 7 && seq[5] == SHOP_LEAVE && seq[6] == SHOP_LEAVE
+            && seq[7] == SHOP_MEND && seq[8] == 4 && seq[9] == 1 && seq[10] == 1, "the shelf's moves (%d %d %d %d %d %d %d %d %d %d %d)",
+            seq[0], seq[1], seq[2], seq[3], seq[4], seq[5], seq[6], seq[7], seq[8], seq[9], seq[10]); }
+    // buy each item
+    int g = s.gold, card = s.shop.card[1], st = stacks_sum();
+    test_press('A');
+    CHECK(s.gold == g - TIER_PRICE[BOONS[card].tier] && s.stacks[card] == 1 && slots_used() == 4 && (s.shop.sold & 7) == 7, "a card: its price, the boon slotted, all three gone");
+    g = s.gold; test_press('L'); test_press('A');
+    CHECK(s.gold == g && stacks_sum() == st + 1, "another card after it: sold, nothing paid");
+    s.shop.sel = SHOP_LEVEL; test_press('A');
+    CHECK(s.scr == SCR_SHOP_LEVEL && s.listN >= 3 && s.list[0] == BOON_VIGOR && s.list[1] == BOON_EMBER_EDGE && s.list[s.listN - 1] == -1, "a level: the slotted boons below their max, then Back (%d rows)", s.listN);
+    test_press('B');
+    CHECK(s.scr == SCR_SHOP && s.gold == g, "B in its list: back to the shelf, nothing paid");
+    test_press('A'); test_press('A');
+    CHECK(s.scr == SCR_SHOP && s.gold == g - 70 && s.stacks[BOON_VIGOR] == 2 && ((s.shop.sold >> SHOP_LEVEL) & 1), "a level on Vigor: 70, Lv 2, sold");
+    g = s.gold; test_press('A');
+    CHECK(s.gold == g && s.scr == SCR_SHOP, "a second level this visit: sold, nothing paid");
+    test_press('R'); test_press('A');
+    CHECK(s.scr == SCR_SHOP_PLUS && s.list[0] == BOON_STORM_BLADE_PLUS, "a \"+\": Storm Blade+ on its list");
+    test_press('A');
+    CHECK(s.gold == g - 150 && s.stacks[BOON_STORM_BLADE_PLUS] == 1, "Storm Blade+ for 150");
+    g = s.gold; int cu = curses_sum(), bs = 0; for (int b = 0; b < PB_COUNT; b++) bs += s.bless[b];
+    test_press('R'); test_press('A');
+    { int bs2 = 0; for (int b = 0; b < PB_COUNT; b++) bs2 += s.bless[b];
+      CHECK(s.gold == g && bs2 == bs + 1 && curses_sum() == cu + 1, "the pact: free, a blessing and its curse"); }
+    int pmax = tower_mod_max_potions();
+    test_press('R'); g = s.gold; int p0 = character.healthPotions;
+    for (int i = 0; i < 6; i++) test_press('A');
+    CHECK(character.healthPotions == pmax && s.gold == g - 45 * (pmax - p0), "potions: 45 each up to the run's %d (%d, paid %d)", pmax, character.healthPotions, g - s.gold);
+    test_press('R'); g = s.gold; float h = character.health;
+    test_press('A'); test_press('A');
+    CHECK(s.gold == g - 50 && fabsf(character.health - fminf(character.maxHealth, h + 0.35f * character.maxHealth)) < 0.01f, "Mend: 50, +35%% max health once (%.0f -> %.0f)", (double)h, (double)character.health);
+    test_press('R'); g = s.gold; test_press('A');
+    CHECK(s.scr == SCR_SHOP_RELEASE && s.listN == slots_used() + 1 && s.list[s.listN - 1] == -1, "Release: the slots, then Back");
+    test_press('A');
+    CHECK(s.gold == g - 20 && !s.stacks[BOON_STORM_BLADE] && !s.stacks[BOON_STORM_BLADE_PLUS] && s.locked[BOON_EXECUTIONER] && slots_used() == 3,
+          "Release Storm Blade: 20, it and its \"+\" gone, Executioner still locked");
+    test_press('R');
+    CHECK(s.shop.sel == SHOP_LEAVE, "Leave last on the shelf");
+    // gold never below 0: every item pressed with little gold
+    RUN4(54); take_boon(BOON_VIGOR); character.health = 50.0f; character.healthPotions = 0;
+    { int least = 1 << 30, refused = 0;
+      for (int g0 = 0; g0 <= 75; g0 += 15) {
+          s.gold = g0; shop_open();
+          for (int i = 0; i < SHOP_LEAVE; i++) {
+              s.scr = SCR_SHOP; s.shop.sel = (int8_t)i; int gb = s.gold;
+              test_press('A');
+              if (s.scr != SCR_SHOP) test_press('A');     // a list: its first row
+              if (s.gold == gb) refused++;
+              if (s.gold < least) least = s.gold;
+              if (s.scr != SCR_SHOP) { s.scr = SCR_SHOP; }
+          }
+      }
+      debugf("[shop] 6 visits with 0-75 gold, every item pressed: lowest gold %d, %d presses refused\n", least, refused);
+      CHECK(least >= 0, "gold never below 0 (%d)", least); }
+    // B leaves (the map, nothing bought), from the shelf
+    s.gold = 300; shop_open(); g = s.gold; test_press('B');
+    CHECK(tower_map_is_open() && s.gold == g, "B leaves the Shop: the map, gold kept");
+    shop_open(); s.shop.sel = SHOP_LEAVE; test_press('A');
+    CHECK(tower_map_is_open(), "Leave (A): the map");
+    // a full bar: the cards hold no new boon (a duo only when one is ready)
+    RUN4(55);
+    take_boon(BOON_VIGOR); take_boon(BOON_EMBER_EDGE); take_boon(BOON_FLEETFOOT); take_boon(BOON_RIPOSTE); take_boon(BOON_RALLY);
+    shop_open();
+    CHECK(s.shop.card[0] < 0 && s.shop.card[1] < 0 && s.shop.card[2] < 0 && !strcmp(shop_block(0), "No new boon fits"), "a full bar: no card fits");
+    while (s.stacks[BOON_RALLY] < 2) take_boon(BOON_RALLY);
+    shop_open();
+    CHECK(s.shop.card[0] == BOON_SHADES_MERCY && s.shop.card[1] < 0 && shop_price(0) == 180, "a full bar with a duo ready: the duo, 180 (%d)", s.shop.card[0]);
+    // the cards' family weighting, as a draft's: two Storm boons slotted, a Storm Rare about twice as often
+    RUN4(56); take_boon(BOON_STORM_BLADE); take_boon(BOON_STATIC);
+    { int counts[BOON_COUNT] = { 0 }; float storm = 0, other = 0; int ns = 0, no = 0;
+      for (int k = 0; k < 3000; k++) { shop_open(); for (int i = 0; i < 3; i++) if (s.shop.card[i] >= 0) counts[s.shop.card[i]]++; }
+      for (int b = 0; b < BOON_COUNT; b++) if (BOONS[b].tier == TIER_RARE && shop_card_ok(b)) { if (BOONS[b].family == FAM_STORM) { storm += counts[b]; ns++; } else { other += counts[b]; no++; } }
+      float r = (ns && no && other > 0) ? (storm / ns) / (other / no) : 0.0f;
+      debugf("[shop] 3000 visits, Storm Blade + Static slotted: a Storm Rare card %.2fx as often as another Rare\n", (double)r);
+      CHECK(r > 1.6f && r < 2.4f, "the cards' family weighting (%.2f)", (double)r); }
+    s.scr = SCR_NONE;
+    tower_end_run();
+    save_controller_set_tower(&was);
+    character.maxHealth = tower_mod_max_health(); character.health = character.maxHealth;
+    #undef CHECK
+    debugf("[shop] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
+    return fails;
+}
+
+int tower_test_events(void)
+{
+    int fails = 0;
+    #define CHECK(c, ...) do { if (!(c)) { fails++; debugf("[event] FAIL: " __VA_ARGS__); debugf("\n"); } } while (0)
+    TowerSave was, t; tower_load(&was);
+    bool skillsWere = character_skills_enabled();
+    character_set_skills_enabled(true);
+    // the unlocks: best floor 0 rolls events 1-4, 10 adds the 5th ... 25 all 8; no repeat in a run until all are met
+    static const int BEST[5] = { 0, 10, 15, 20, 25 };
+    for (int k = 0; k < 5; k++) {
+        t = was; t.bestFloor = BEST[k]; save_controller_set_tower(&t);
+        RUN4(70 + k);
+        uint8_t seenAll = 0; bool repeat = false;
+        for (int n = 0; n < 4 + k; n++) { event_open(); repeat |= (seenAll >> s.event) & 1; seenAll |= 1 << s.event; }
+        uint8_t first = seenAll;
+        for (int n = 0; n < 200; n++) { event_open(); seenAll |= 1 << s.event; }
+        debugf("[event] best floor %d: the first %d events %02x (no repeat %d), 200 more %02x\n", BEST[k], 4 + k, first, !repeat, seenAll);
+        CHECK(!repeat && first == (1 << (4 + k)) - 1 && seenAll == first, "best floor %d: events 1-%d, no repeat in a run until all are met", BEST[k], 4 + k);
+    }
+    save_controller_set_tower(&was);
+    // every choice of every event, by its screen's presses
+    for (int e = 0; e < EV_COUNT; e++) for (int i = 0; i < EVENTS[e].choices; i++) {
+        RUN4(80 + 3 * e + i);
+        take_boon(BOON_STORM_BLADE); take_boon(BOON_EMBER_EDGE); take_boon(BOON_LEARN_HALFMOON);
+        s.gold = 200; character.health = 60.0f; character.healthPotions = 4;
+        s.event = (int8_t)e; s.eventPick = PB_MIGHT; s.eventDone = false; list_open(SCR_EVENT);
+        int g = s.gold, p = character.healthPotions, st = stacks_sum(), cu = curses_sum(), em = s.runEmbers, sk = s.skills;
+        float mh = character.maxHealth, hp = character.health, dd = tower_mod_damage_dealt();
+        for (int k = 0; k < 4 && s.listSel < i; k++) test_press('D');
+        test_press('A');
+        bool leave = i == EVENTS[e].choices - 1, ok = s.eventDone && s.listN == 1;
+        if (leave) ok &= s.gold == g && character.healthPotions == p && stacks_sum() == st && curses_sum() == cu && character.maxHealth == mh && character.health == hp && !s.prisoner;
+        else switch (e) {
+        case EV_ALTAR:    ok &= fabsf(character.maxHealth - 0.85f * mh) < 0.01f && stacks_sum() == st + 1; break;
+        case EV_GRAVE:    ok &= i == 0 ? s.gold == g + 60 : fabsf(character.health - hp - 0.4f * mh) < 0.01f; break;
+        case EV_MIRROR:   ok &= stacks_sum() == st + 1 && curses_sum() == cu + 1; break;
+        case EV_MERCHANT: ok &= i == 0 ? s.gold == g - 70 && character.healthPotions == p + 1 : character.healthPotions == p - 2 && stacks_sum() == st + 1; break;
+        case EV_POOL:     ok &= i == 0 ? s.skills != sk && stacks_sum() == st + 1 : s.stacks[BOON_HALFMOON_PLUS] == 1; break;
+        case EV_PRISONER: ok &= s.prisoner; break;
+        case EV_BONES:    ok &= s.gold == g - 50 || s.gold == g + 70; break;
+        case EV_BRAZIER:  ok &= i == 0 ? s.runEmbers == em + 30 : s.halfBless[PB_MIGHT] == 1 && fabsf(tower_mod_damage_dealt() / dd - 1.04f) < 0.001f; break;
+        }
+        debugf("[event] %s, choice %d: \"%s\" -> %s\n", EVENTS[e].name, i + 1, s.eventResult, ok ? "ok" : "FAIL");
+        CHECK(ok, "%s, choice %d", EVENTS[e].name, i + 1);
+        test_press('A');
+        CHECK(tower_map_is_open(), "Continue: the map");
+    }
+    save_controller_set_tower(&was);
+    // the jailer: the next Fight an Elite (x1.25, x1.5 gold), its draft all Legendary; an Elite node or a boss doesn't take it
+    RUN4(100);
+    s.prisoner = true;
+    s.map.type[1][1] = NODE_ELITE; s.map.row = 0; s.map.path[0] = 1; s.map.sel = 1; map_enter();
+    CHECK(s.prisoner && !s.legendDraft, "an Elite node isn't the jailer's");
+    s.map.type[2][1] = NODE_FIGHT; s.map.boss[2][1] = TOWER_SHACKLED_SUN + 1; s.map.sel = 1; map_enter();
+    { int counts[BOON_COUNT], other = 0, cards = 0;
+      bool el = s.elite && s.legendDraft && !s.prisoner;
+      draft_counts(300, counts);
+      for (int b = 0; b < BOON_COUNT; b++) { cards += counts[b]; if (BOONS[b].tier != TIER_LEGENDARY) other += counts[b]; }
+      s.map.fights = 2; s.map.row = 2;
+      tower_floor_cleared(); s.draftOpen = false;
+      debugf("[event] the jailer's fight: Elite %d, 300 drafts %d boon cards, %d not Legendary; gold %d\n", el, cards, other, s.lastFloorGold);
+      CHECK(el && cards > 0 && !other && s.lastFloorGold == 45, "the freed Prisoner: the next Fight an Elite, an all-Legendary draft, x1.5 gold"); }
+    s.map.type[3][1] = NODE_FIGHT; s.map.boss[3][1] = TOWER_FALLEN_KNIGHT + 1; s.map.sel = 1; map_enter();
+    CHECK(!s.elite && !s.legendDraft, "the Fight after it: plain again");
+    // Gambler's Bones: half the time (the run seed)
+    { int wins = 0;
+      for (int k = 0; k < 400; k++) { RUN4(200 + k); s.gold = 50; s.event = EV_BONES; s.eventDone = false; list_open(SCR_EVENT); test_press('A'); wins += s.gold == 120; }
+      debugf("[event] Gambler's Bones: %d wins in 400\n", wins);
+      CHECK(wins > 160 && wins < 240, "Gambler's Bones wins about half the time (%d of 400)", wins); }
+    // greyed choices: the cursor passes them; A on one does nothing
+    RUN4(101); s.gold = 30; s.event = EV_BONES; s.eventDone = false; list_open(SCR_EVENT);
+    CHECK(!row_ok(0) && s.listSel == 1, "Bones with 30 gold: the bet greyed, the cursor on Leave");
+    RUN4(102); character.healthPotions = 1; s.event = EV_MERCHANT; s.eventDone = false; list_open(SCR_EVENT);
+    CHECK(!row_ok(0) && !row_ok(1) && s.listSel == 2, "the Merchant with no gold and 1 potion: only Leave");
+    RUN4(103); s.event = EV_GRAVE; s.eventDone = false; list_open(SCR_EVENT);
+    CHECK(row_ok(0) && !row_ok(1), "the Grave at full health: Pray greyed");
+    RUN4(104); s.event = EV_MIRROR; s.eventDone = false; list_open(SCR_EVENT);
+    CHECK(!row_ok(0), "the Mirror with no boon: greyed");
+    RUN4(105); s.skills = 7; s.event = EV_POOL; s.eventDone = false; list_open(SCR_EVENT);
+    CHECK(!row_ok(0) && row_ok(1), "the Pool knowing every skill: Learn greyed");
+    s.scr = SCR_NONE;
+    tower_end_run();
+    character.maxHealth = tower_mod_max_health(); character.health = character.maxHealth;
+    character_set_skills_enabled(skillsWere);
+    #undef CHECK
+    debugf("[event] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
+    return fails;
+}
+#undef RUN4
+
 #endif
 
 bool tower_mod_try_unbroken(void)

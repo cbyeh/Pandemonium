@@ -6,7 +6,7 @@
 
 // The Tower: a boss-rush roguelite. A run climbs floors (one fight each). A circle is a
 // map of 7 rows (docs/design/TOWER_ROGUELIKE.md section 2): the Guardian, four rows of
-// Fights (Bonus bosses), Elites and Rests to choose a path through, a Rest on every lane,
+// Fights (Bonus bosses), Elites, Events, Shops and Rests to choose a path through, a Rest on every lane,
 // then Guardian Unbound: 4-6 floors by the path. The bosses start well below the story
 // fights' strength and grow every circle.
 // A run starts as the original game did: 3 potions and the sword only. Between
@@ -29,6 +29,7 @@ typedef enum {
     BOON_LUNAR_TIDE, BOON_ECLIPSE, BOON_WAXING_MOON,                                 // Moon
     BOON_HEAVY_HAND, BOON_STALWART,                                                  // Iron
     BOON_SHADOW_EDGE, BOON_EVASION, BOON_VANISH,                                     // Shadow
+    BOON_PROSPECTOR,                                                                 // Hearth (gold: stage 4)
     // Skill cards: learn a skill for the run, then upgrade it (no slot)
     BOON_LEARN_MOONBLADE, BOON_LEARN_HALFMOON, BOON_LEARN_CLEAVE, BOON_HALFMOON_PLUS, BOON_CLEAVE_PLUS,
     // "+": a boon's top level, offered once it is at its max (no slot of its own)
@@ -69,10 +70,12 @@ bool tower_draft_is_open(void);
 int  tower_draft_selected(void);        // the card under the cursor (nChoices: Skip)
 void tower_map_open(void);              // the circle's map (the scene opens it at a run's start)
 bool tower_map_is_open(void);
-bool tower_rest_is_open(void);          // a Rest's screens (its choice, Temper's list, Release)
+bool tower_rest_is_open(void);          // a Rest's, a Shop's or an Event's screens
 bool tower_between_open(void);          // any of them
-// Returns true once a fight's node is entered on the map (the scene starts tower_floor_boss's fight)
-bool tower_between_update(bool left, bool right, bool up, bool down, bool confirm);
+// Returns true once a fight's node is entered on the map (the scene starts tower_floor_boss's fight).
+// back (B) leaves a Shop; it does nothing on the other screens
+bool tower_between_update(bool left, bool right, bool up, bool down, bool confirm, bool back);
+int  tower_gold(void);                  // this run's gold (lost when it ends)
 void tower_between_draw(void);
 void tower_hud_draw(void);              // floor / circle during a run fight
 const char* tower_death_summary(void);   // a line for the death screen
