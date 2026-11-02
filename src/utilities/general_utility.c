@@ -1,4 +1,5 @@
 #include <libdragon.h>
+#include <string.h>
 #include <t3d/t3dmodel.h>
 
 #include "general_utility.h"
@@ -8,6 +9,40 @@ uint32_t seed = 12345;
 static uint32_t rng_s[2] = {123456789, 362436069};  // must not both be 0
 
 static float scrollOffset = 0.0f;
+
+static struct { const char *path; sprite_t *spr; int n; } s_shared[4];
+
+sprite_t *sprite_load_shared(const char *path)
+{
+    int fr = -1;
+    for (int i = 0; i < 4; i++) {
+        if (s_shared[i].n && !strcmp(s_shared[i].path, path)) { s_shared[i].n++; return s_shared[i].spr; }
+        if (!s_shared[i].n && fr < 0) fr = i;
+    }
+    assertf(fr >= 0, "sprite_load_shared: table full (%s)", path);
+    s_shared[fr].path = path; s_shared[fr].spr = sprite_load(path); s_shared[fr].n = 1;
+    return s_shared[fr].spr;
+}
+
+void sprite_free_shared(sprite_t *spr)
+{
+    for (int i = 0; i < 4; i++)
+        if (s_shared[i].n && s_shared[i].spr == spr) { if (--s_shared[i].n == 0) sprite_free(spr); return; }
+    assertf(false, "sprite_free_shared: not shared");
+}
+
+void model_share_texture(T3DModel *model, const char *path, sprite_t *spr)
+{
+    T3DModelIter it = t3d_model_iter_create(model, T3D_CHUNK_TYPE_MATERIAL);
+    while (t3d_model_iter_next(&it)) {
+        T3DMaterialTexture *tex[2] = { &it.material->textureA, &it.material->textureB };
+        for (int k = 0; k < 2; k++) {
+            if (!tex[k]->texPath || strcmp(tex[k]->texPath, path)) continue;
+            assertf(!spr || !tex[k]->texture, "model_share_texture: %s already loaded", path);
+            tex[k]->texture = spr;
+        }
+    }
+}
 
 // Pseudo-random unsigned integer
 void rng_seed(uint32_t a, uint32_t b) 

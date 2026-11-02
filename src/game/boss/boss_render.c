@@ -184,6 +184,12 @@ void boss_draw_init(void)
     }
 }
 
+sprite_t *boss_fog_sprite(void)
+{
+    boss_draw_init();
+    return bossScrollDyn.spr;
+}
+
 // The model is recorded into blocks once (re-emitting it cost the CPU 4.6 ms a frame, the
 // Guardian fight's largest stage): the main body at four flash tints, the temporary swords
 // apart (hidden once it is dead). Only the parts with a scrolling (dynamic) texture are drawn

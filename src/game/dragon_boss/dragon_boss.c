@@ -96,7 +96,7 @@ static struct {
     float wingG;                                        // the wings' size: they grow as they spread (WING_FOLDED folded)
     rspq_block_t *block, *blockUnlit;                   // the body's draw (lit), the membranes' and crystals' (unlit), recorded once: the bones' matrices set each frame
     float wingFold, tWingFold;                          // 1 folded along its back .. 0 spread
-    sprite_t *texScales;                // tools/boss_textures.py (the head, jaw, throat and feet; the skinned body loads its own)
+    sprite_t *texScales;                // tools/boss_textures.py (the head, jaw, throat and feet; the skinned body shares it)
     T3DMat4FP *mats;
     int matRing, mi;
     DgState state;
@@ -620,6 +620,8 @@ static bool sb_unlit(void *u, const T3DObject *o) { return !sb_lit(u, o); }
 static void sb_load(void)
 {
     s.model = t3d_model_load("rom:/dragon_boss/shadowborne.t3dm");
+    s.texScales = sprite_load("rom:/dragon_boss/scales.i8.sprite");
+    model_share_texture(s.model, "rom:/dragon_boss/scales.i8.sprite", s.texScales);     // the body draws the same copy
     T3DSkeleton sk = t3d_skeleton_create(s.model);
     assertf(sk.skeletonRef->boneCount == SB_BONES, "shadowborne: %d bones, the bind pose has %d", sk.skeletonRef->boneCount, SB_BONES);
     t3d_skeleton_update(&sk);
@@ -737,6 +739,7 @@ void dragon_boss_free(void)
     sprite_free(s.texFire);
     s.texFire = NULL;
     rspq_block_free(s.block); rspq_block_free(s.blockUnlit);
+    model_share_texture(s.model, "rom:/dragon_boss/scales.i8.sprite", NULL);
     t3d_model_free(s.model);
     free_uncached(s.mats);
     memset(&s, 0, sizeof(s));
@@ -765,7 +768,6 @@ void dragon_boss_begin(Boss* boss)
         build_glow(&s.mOrb, proc_rgb(150, 50, 255), proc_rgb(230, 170, 255));
         build_glow(&s.mIce, proc_rgb(110, 170, 255), proc_rgb(225, 240, 255));     // the crystal beam, before the dark
         build_cone();
-        s.texScales = sprite_load("rom:/dragon_boss/scales.i8.sprite");
         s.texFire = sprite_load("rom:/fx/fire_flat.sprite");
         s.mats = malloc_uncached(sizeof(T3DMat4FP) * MAT_RING * MAT_MAX);
         s.ready = true;

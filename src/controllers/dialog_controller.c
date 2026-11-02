@@ -1,5 +1,6 @@
 #include <libdragon.h>
 #include "gpu_frame.h"
+#include "general_utility.h"
 #include <stdbool.h>
 #include <string.h>
 
@@ -157,7 +158,7 @@ void dialog_controller_init(void)
     }
 
     if (!dialogVerticalBox) {
-        dialogVerticalBox = sprite_load("rom:/dialog_vertical.ia8.sprite");
+        dialogVerticalBox = sprite_load_shared("rom:/dialog_vertical.ia8.sprite");     // (the pause menu's too)
 
         if (dialogVerticalBox) {
             dialogVerticalBoxSurf = sprite_get_pixels(dialogVerticalBox);
@@ -294,7 +295,7 @@ void dialog_controller_free(void)
     }
 
     if (dialogVerticalBox) {
-        sprite_free(dialogVerticalBox);
+        sprite_free_shared(dialogVerticalBox);
         dialogVerticalBox = NULL;
         dialogVerticalBoxSurf = (surface_t){0};
     }

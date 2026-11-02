@@ -1,4 +1,5 @@
 #include "button_prompt_utility.h"
+#include "general_utility.h"
 
 #include <libdragon.h>
 #include <rdpq.h>
@@ -24,7 +25,7 @@ void button_prompt_init(void)
 {
     if (s_aButtonSprite) return;
 
-    s_aButtonSprite = sprite_load("rom:/buttons/A.sprite");
+    s_aButtonSprite = sprite_load_shared("rom:/buttons/A.sprite");    // (the pause menu's too)
     if (s_aButtonSprite) {
         s_aButtonSurf = sprite_get_pixels(s_aButtonSprite);
     }
@@ -34,7 +35,7 @@ void button_prompt_cleanup(void)
 {
     if (!s_aButtonSprite) return;
 
-    sprite_free(s_aButtonSprite);
+    sprite_free_shared(s_aButtonSprite);
     s_aButtonSprite = NULL;
 
     surface_free(&s_aButtonSurf);

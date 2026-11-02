@@ -576,6 +576,7 @@ void scene_load_environment(void)
 
     // ===== LOAD FOG DOOR =====
     fogDoorModel = t3d_model_load("rom:/boss_room/fog.t3dm");
+    model_share_texture(fogDoorModel, "rom:/boss_room/fog.i8.sprite", boss_fog_sprite());
     gpu_log_model("fogDoorModel", fogDoorModel);
     gpu_block_begin();
         t3d_model_draw(fogDoorModel);
@@ -2783,7 +2784,7 @@ void scene_delete_environment(void)
     if (windowsModel)   { t3d_model_free(windowsModel);   windowsModel = NULL; }
     if (chainsModel)    { t3d_model_free(chainsModel);    chainsModel = NULL; }
     if (sunshaftsModel) { t3d_model_free(sunshaftsModel); sunshaftsModel = NULL; }
-    if (fogDoorModel)   { t3d_model_free(fogDoorModel);   fogDoorModel = NULL; }
+    if (fogDoorModel)   { model_share_texture(fogDoorModel, "rom:/boss_room/fog.i8.sprite", NULL); t3d_model_free(fogDoorModel); fogDoorModel = NULL; }
     if (roomFloorModel) { t3d_model_free(roomFloorModel); roomFloorModel = NULL; }
     if (floorGlowModel) { t3d_model_free(floorGlowModel); floorGlowModel = NULL; }
     if (bossChainsGlowModel) { t3d_model_free(bossChainsGlowModel); bossChainsGlowModel = NULL; }

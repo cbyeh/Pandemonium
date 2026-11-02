@@ -1,5 +1,6 @@
 #include <libdragon.h>
 #include "gpu_frame.h"
+#include "general_utility.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -271,12 +272,12 @@ void menu_controller_init(void)
     lastStickLeft = false;
     lastStickRight = false;
 
-    pauseMenuBg = sprite_load("rom:/dialog_vertical.ia8.sprite");
+    pauseMenuBg = sprite_load_shared("rom:/dialog_vertical.ia8.sprite");     // (the dialog box's too)
     if (pauseMenuBg) {
         pauseMenuBgSurf = sprite_get_pixels(pauseMenuBg);
     }
 
-    iconA = sprite_load("rom:/buttons/A.sprite");
+    iconA = sprite_load_shared("rom:/buttons/A.sprite");
     iconB = sprite_load("rom:/buttons/B.sprite");
     iconZ = sprite_load("rom:/buttons/Z.sprite");
     iconStart = sprite_load("rom:/buttons/Start.sprite");
@@ -1651,13 +1652,13 @@ void menu_controller_free(void)
     gpu_wait();
 
     if (pauseMenuBg) {
-        sprite_free(pauseMenuBg);
+        sprite_free_shared(pauseMenuBg);
         pauseMenuBg = NULL;
         surface_free(&pauseMenuBgSurf);
     }
 
     if (iconA) {
-        sprite_free(iconA);
+        sprite_free_shared(iconA);
         iconA = NULL;
     }
 

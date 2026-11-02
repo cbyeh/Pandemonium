@@ -35,6 +35,13 @@ typedef struct {
     ScrollParams* active;
 } ScrollCtx;
 
+// One copy of a sprite for every user that loads `path` (counted: the last free frees it)
+sprite_t *sprite_load_shared(const char *path);
+void sprite_free_shared(sprite_t *spr);
+// Points a model's textures loaded from `path` at `spr` instead of their own copy (before the model
+// first draws); NULL hands them back (before t3d_model_free, which would otherwise count them off)
+void model_share_texture(T3DModel *model, const char *path, sprite_t *spr);
+
 float ease_in_out_expo(float t);
 void rotate_around_point_xz(float result[3], const float center[3], float radius, float angleRadians);
 
