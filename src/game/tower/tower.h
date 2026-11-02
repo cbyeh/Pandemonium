@@ -91,7 +91,7 @@ int  tower_best_floor(void);
 // ---- Modifiers (Shrine upgrades and Boons, during a run only) ----
 // In a run a skill can be used only once learned from a draft (the Skills setting is ignored)
 bool  tower_mod_skill_allowed(int skill);
-float tower_mod_skill_damage(int skill);    // the skill's upgrade card: 1.5
+float tower_mod_skill_damage(int skill);    // the skill's upgrade card: 1.2
 float tower_mod_damage_dealt(void);
 float tower_mod_damage_taken(void);
 float tower_mod_damage_vs(float bossHealthFrac, bool staggered);   // pacts against this boss

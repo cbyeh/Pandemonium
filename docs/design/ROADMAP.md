@@ -61,7 +61,7 @@ The first card is a skill card (learn a skill or upgrade one) while any are left
 | Storm Blade | Legendary | 1 | every 4th hit calls lightning (+12) |
 | Blood Pact | Legendary | 1 | +35% damage, potions -25% |
 | Learn Moon Blade Dance / Halfmoon Slash / Crescent Cleave | Skill | 1 | the skill, on its button in the layout |
-| Moon Blade Dance+ / Halfmoon Slash+ / Crescent Cleave+ | Skill (rare) | 1 | 2 more waves / +50% / +50% |
+| Moon Blade Dance+ / Halfmoon Slash+ / Crescent Cleave+ | Skill (rare) | 1 | 2 more waves / +20% / +20% |
 | Moon Mastery | Skill (rare) | 2 | skill cooldowns -20% |
 
 **Pacts** (a blessing and a curse, rolled for the card, stacking without end; a curse never undoes its blessing):

@@ -53,8 +53,8 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_LEARN_MOONBLADE] = { "Moon Blade Dance", "Learn it: D-up", 1, TIER_COMMON },
     [BOON_LEARN_HALFMOON]  = { "Halfmoon Slash",   "Learn it: D-right", 1, TIER_COMMON },
     [BOON_LEARN_CLEAVE]    = { "Crescent Cleave",  "Learn it: D-down", 1, TIER_COMMON },
-    [BOON_HALFMOON_PLUS]   = { "Halfmoon Slash+",  "+50% damage", 1, TIER_RARE },
-    [BOON_CLEAVE_PLUS]     = { "Crescent Cleave+", "+50% damage", 1, TIER_RARE },
+    [BOON_HALFMOON_PLUS]   = { "Halfmoon Slash+",  "+20% damage", 1, TIER_RARE },
+    [BOON_CLEAVE_PLUS]     = { "Crescent Cleave+", "+20% damage", 1, TIER_RARE },
 };
 
 // ---- Pacts: a blessing and a curse, rolled for a card; stacks without end, so every draft has
@@ -790,8 +790,8 @@ int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG
 bool  tower_mod_skill_allowed(int skill) { return character_skills_enabled() && (!s.active || knows(skill)); }
 float tower_mod_skill_damage(int skill)
 {
-    if (skill == SKILL_HALFMOON_SLASH && tower_boon_stacks(BOON_HALFMOON_PLUS)) return 1.5f;
-    if (skill == SKILL_CRESCENT_CLEAVE && tower_boon_stacks(BOON_CLEAVE_PLUS)) return 1.5f;
+    if (skill == SKILL_HALFMOON_SLASH && tower_boon_stacks(BOON_HALFMOON_PLUS)) return 1.2f;
+    if (skill == SKILL_CRESCENT_CLEAVE && tower_boon_stacks(BOON_CLEAVE_PLUS)) return 1.2f;
     return 1.0f;
 }
 float tower_mod_potion_heal(void)
