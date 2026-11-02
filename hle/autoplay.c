@@ -846,7 +846,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         } else if (phase == 1) {
             static const char seq[] = "DDAA";     // (Story is the first row)
             if (t >= 20 && step < 4) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; t0 = frame; }
-            if (step == 5 && boss && tower_active()) { phase = 2; t0 = frame; }
+            if (step == 4 && boss && tower_active()) { phase = 2; t0 = frame; }
         } else if (phase == 2) {
             if (!boss) return;
             if (tower_floor() != lastFloor && boss->mode == BOSS_MODE_COMBAT && !tower_draft_is_open()) {
@@ -911,28 +911,39 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                         for (int i = 2; i >= 0; i--) if (tower_draft_card(i) >= 0) want = i;
                         debugf("[climb] cards %d %d %d, taking %d\n", tower_draft_card(0), tower_draft_card(1), tower_draft_card(2), want);
                     }
-                    if (k >= 10 && k < 10 + 6 * want && (k - 10) % 6 == 0) { pressed->d_right = 1; in->btn.d_right = 1; }
+                    if (k >= 50 && k < 50 + 6 * want && (k - 50) % 6 == 0) { pressed->d_right = 1; in->btn.d_right = 1; }
 #elif defined(HLE_RUN_SKIP)
-                    if (k == 10) { pressed->d_down = 1; in->btn.d_down = 1; }     // Down to Skip
+                    if (k == 50) { pressed->d_down = 1; in->btn.d_down = 1; }     // Down to Skip (past the draft's input delay)
 #elif defined(HLE_RUN_UPDOWN)   // Right to the second card, Down to Skip, Up back: the second card is taken
 #ifdef HLE_RUN_STICK            // (the same with the control stick)
-                    if (k >= 10 && k < 13) in->stick_x = 70;
-                    if (k >= 20 && k < 23) in->stick_y = -70;
-                    if (k >= 30 && k < 33) in->stick_y = 70;
+                    if (k >= 50 && k < 53) in->stick_x = 70;
+                    if (k >= 60 && k < 63) in->stick_y = -70;
+                    if (k >= 70 && k < 73) in->stick_y = 70;
 #else
-                    if (k == 10) { pressed->d_right = 1; in->btn.d_right = 1; }
-                    if (k == 20) { pressed->d_down = 1; in->btn.d_down = 1; }
-                    if (k == 30) { pressed->d_up = 1; in->btn.d_up = 1; }
+                    if (k == 50) { pressed->d_right = 1; in->btn.d_right = 1; }
+                    if (k == 60) { pressed->d_down = 1; in->btn.d_down = 1; }
+                    if (k == 70) { pressed->d_up = 1; in->btn.d_up = 1; }
 #endif
-                    if (k == 40) debugf("[updown] the draft reads: card %d selected\n", tower_draft_selected());
+                    if (k == 80) debugf("[updown] the draft reads: card %d selected\n", tower_draft_selected());
 #else
-                    if (k >= 10 && k < 10 + 6 * HLE_RUN_PICK && (k - 10) % 6 == 0) { pressed->d_right = 1; in->btn.d_right = 1; }
+                    if (k >= 50 && k < 50 + 6 * HLE_RUN_PICK && (k - 50) % 6 == 0) { pressed->d_right = 1; in->btn.d_right = 1; }
 #endif
 #ifndef HLE_DRAFT_HOLD
-#define HLE_DRAFT_HOLD 60       // frames the draft stays up (longer: for a screenshot)
+#define HLE_DRAFT_HOLD 100      // frames the draft stays up (longer: for a screenshot; past its 0.75 s input delay)
 #endif
                     if (k == HLE_DRAFT_HOLD) { pressed->a = 1; in->btn.a = 1; }
                 }
+            }
+#elif defined(HLE_RUN_MASH)  // dodge (A) every 15 frames from the kill on, as a player rolling about after a fight: does a card get taken unseen?
+            {
+                extern int tower_draft_card(int i);
+                static bool wasOpen; static int openAt, took; static uint32_t openMs;
+                bool open = tower_draft_is_open();
+                if (open && !wasOpen) { openAt = frame; openMs = get_ticks_ms(); debugf("[mash] draft open at %d: cards %d %d %d\n", frame, tower_draft_card(0), tower_draft_card(1), tower_draft_card(2)); }
+                if (open) took = tower_draft_card(tower_draft_selected());
+                if (!open && wasOpen) debugf("[mash] draft closed after %d frames, %lu ms: took card %d (selected slot, -1 a pact)\n", frame - openAt, (unsigned long)(get_ticks_ms() - openMs), took);
+                wasOpen = open;
+                if (t >= 90 && t % 15 == 0) { pressed->a = 1; in->btn.a = 1; }
             }
 #else
             if (tower_draft_is_open() && t % 40 == 0) { pressed->a = 1; in->btn.a = 1; }

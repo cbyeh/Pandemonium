@@ -167,6 +167,7 @@ static struct {
     double exposedUntil;            // Exposed: after a roll
     // draft
     bool draftOpen;
+    uint32_t draftOpenMs;           // when it opened (input waits DRAFT_INPUT_DELAY_MS)
     int choices[DRAFT_CHOICES];     // a BoonId, or PACT_CARD
     int nChoices, sel;
 } s;
@@ -450,6 +451,7 @@ void tower_draft_open(void)
     }
     s.sel = 0;
     s.draftOpen = true;
+    s.draftOpenMs = get_ticks_ms();
 #ifdef HLE_AUTOPLAY
     debugf("[draft] floor %d:", s.floor);
     for (int i = 0; i < s.nChoices; i++) {
@@ -497,9 +499,14 @@ void tower_draft_pick(int index)
     s.draftOpen = false;
 }
 
+#define DRAFT_INPUT_DELAY_MS 750
+
 bool tower_draft_update(bool left, bool right, bool up, bool down, bool confirm)
 {
     if (!s.draftOpen) return false;
+    // A dodge (A) pressed as the cards come up took the first one unseen (always a skill card while
+    // any are left): no input until they've been on screen a moment
+    if (get_ticks_ms() - s.draftOpenMs < DRAFT_INPUT_DELAY_MS) return false;
     int n = s.nChoices + 1;             // the cards, then Skip (below them: Down, Up back)
     static int lastCard;
     if (s.sel < s.nChoices) lastCard = s.sel;
