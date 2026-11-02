@@ -173,7 +173,7 @@ static int get_menu_option_count(MenuState menu)
         case MENU_RELICS:    return tower_relic_total() + 2;    // None, the relics, Back
         case MENU_SKINS:     return SKIN_COUNT + 1;
         case MENU_CONTROLS:  return 3;    // Layout, Camera speed, Back
-        case MENU_RUN:       return 2;    // the title row's two corners: Back and Next (Prev on the Boons page)
+        case MENU_RUN:       return runPage ? 1 : 2;    // the title row's corners: Stats has Back and Next, Boons only Prev
         case MENU_CREDITS:   return 1;
         default:             return 1;
     }
@@ -712,12 +712,12 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             (void)save_controller_save_settings();
         }
     } else if (currentMenu == MENU_RUN) {
-        // two pages, each with Back and the way to the other in the title row's corners (Stats: Back | Next >,
-        // Boons: < Prev | Back): Left/Right pick a corner, A takes it, B closes
+        // two pages, their buttons in the title row's corners (Stats: Back | Next >, Boons: < Prev only):
+        // Left/Right pick a corner, A takes it, B closes from either page
         if (leftJustPressed) selectedOption = 0;
-        else if (rightJustPressed) selectedOption = 1;
-        else if (bJustPressed || (aJustPressed && selectedOption == (runPage ? 1 : 0))) { currentMenu = MENU_MAIN; selectedOption = MENU_MAIN_RUN; }
-        else if (aJustPressed) { runPage ^= 1; selectedOption = runPage ? 0 : 1; }     // onto the other page's arrow
+        else if (rightJustPressed) selectedOption = runPage ? 0 : 1;
+        else if (bJustPressed || (aJustPressed && !runPage && selectedOption == 0)) { currentMenu = MENU_MAIN; selectedOption = MENU_MAIN_RUN; }
+        else if (aJustPressed) { runPage ^= 1; selectedOption = runPage ? 0 : 1; }     // Prev, or back onto Next
     } else if (currentMenu == MENU_CREDITS) {
         if (aJustPressed || bJustPressed) {
             currentMenu = parentMenu;
@@ -1589,12 +1589,12 @@ void menu_controller_draw(void)
                                  x - 20 + (i / rows) * ((contentW + 40) / 2), y + titleYOffset + 22 + (i % rows) * rowH, "%s", boons[i]);
             if (!n) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH }, FONT_UNBALANCED, x, y + titleYOffset + 40, "None yet");
         }
-        // the title row's corners: Back and the way to the other page
+        // the title row's corners: Stats has Back and Next, Boons only Prev
         const int cornerW = 70, wideW = contentW + 40;
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < (runPage ? 1 : 2); i++) {
             int cx = i ? x - 20 + wideW - cornerW : x - 20;
             if (i == selectedOption) draw_menu_selection_highlight(cx - 4, y + titleYOffset, cornerW + 8, lineHeight);
-            const char *label = (i == (runPage ? 1 : 0)) ? "Back" : runPage ? "< Prev" : "Next >";
+            const char *label = runPage ? "< Prev" : i ? "Next >" : "Back";
             rdpq_text_printf(&(rdpq_textparms_t){ .align = i ? ALIGN_RIGHT : ALIGN_LEFT, .width = cornerW, .height = contentH }, FONT_UNBALANCED,
                              cx, y + titleYOffset, "%s", label);
         }

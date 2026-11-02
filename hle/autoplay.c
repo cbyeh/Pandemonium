@@ -743,7 +743,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (t < 120) return;
 #endif
             character.health = character.maxHealth;     // (alive for the shots)
-            static const char seq[] = "SDAARADDDADDA";   // pause, Stats, Next, Back (A only), down to Controls, its Back
+            static const char seq[] = "SDAARALADDDADDAB";   // pause, Stats, Next, Right (stays on Prev), Prev, Left, Back (A only), down to Controls, its Back; B closes the pause menu
             if (t >= (step ? 60 : 300) && seq[step]) {
                 char c = seq[step];
                 extern bool tower_active(void);
