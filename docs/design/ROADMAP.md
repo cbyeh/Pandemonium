@@ -35,9 +35,9 @@ A run climbs floors, one fight each:
 - **Gold** (stage 4; this run only, lost when it ends): 25 + 5 x circle a fight (any boss; x1.5 an Elite), +15 for a Skip, +40 from the purse card that fills a complete build's drafts; Prospector (Hearth pack) +20% a level on every gain. About 166 a circle from fights in circles 1-2.
 - **Shops:** three new-boon cards rolled as a draft (Common 60, Rare 110, Legendary 180; buy one), a level on a slotted boon 70, a maxed boon's "+" 150, the free pact card, a potion 45 (up to the run's max), Mend (heal 35%) 50, Release 20; each once a visit (potions until the max). Left/Right along the shelf, Up/Down by rows, A buys, B or Leave leaves.
 - **Events** (one screen, 2-3 choices, the last Leave; no repeat in a run until all unlocked are met): the Bleeding Altar, a Knight's Grave, Mirror of Shadows, Merchant of Ash from the start; Moonlit Pool, the Chained Prisoner, Gambler's Bones and the Ember Brazier at best floor 10, 15, 20, 25.
-- **Rests:** heal 40% of max health, Temper (+1 level on a slotted boon, a maxed boon's "+", or a known skill's "+" card), or +2 potions (up to the run's max); then Release one slotted boon free (it, its levels and its "+" gone; a duo with its two; a rival it locked stays locked).
+- **Rests:** heal 40% of max health, Temper (+1 level on a slotted boon, a maxed boon's "+", or a known skill below Lv 4), or +2 potions (up to the run's max); then Release one slotted boon free (it, its levels and its "+" gone; a duo with its two; a rival it locked stays locked).
 - **Scaling:** circle 1 bosses have 70% of their health and deal 60% of their damage; each circle adds 30% health (40% from circle 6, so even a full set of boons eventually stalls) and 20% damage. A Bonus boss has 55% of its story health, so every floor costs about what a Guardian phase does.
-- **Skills:** learned from Learn cards in the draft. Boss health rises 8% for each skill offered (taken or passed over), so skipping skills never keeps bosses weak.
+- **Skills:** learned from Learn cards in the draft, then levelled by the same card (Lv 2-4), then one of two Lv 5 forms (stage 5, below). Boss health rises 8% for each skill offered (taken or passed over), so skipping skills never keeps bosses weak.
 - **The baseline:** each circle cleared gives the player +10% damage and 6% less damage taken, through circle 5 (at most +40% and x0.78).
 - **Nights** (from circle 2, one at random a circle): Blood Moon (bosses hit 20% harder, x1.5 Embers), Iron Night (bosses +25% health, x1.3), Starfall (skills recharge 30% faster, bosses hit 10% harder, x1.2).
 - **After each boss:** one potion (no health; at most 15 held), then the draft: three cards and a Skip button (+5 Embers; Down to it, Up back), then the map (Left/Right on the D-pad or stick, A or Up enters; it also shows before each circle's Guardian).
@@ -47,7 +47,7 @@ A run climbs floors, one fight each:
 Cost per floor with the baseline, before boons (a potion returns about 19% of the resources): 13%, 21%, 29%, 37%, 45% in circles 1-5, so runs end around circles 4-6 unless boons and pacts carry them. A 45-floor scripted climb that took every boon and a pact on each floor after (`HLE_RUN_CLIMB`), costed with the logged numbers as a share of max health (a potion returns 45%): about 33% a floor in circle 1, 72-84% in circles 2-5, and 79-90% from circle 7, so even a full set runs out of floors (before the late scaling and the baseline's cap, circles 7-9 fell to 55-61%).
 
 ### Draft
-The first card is a skill card (learn a skill or upgrade one) while any are left. The other two roll a rarity (legendary 6% in circle 1, +4% a circle up to 25%; rare 30%; else common). Each card is a Pact 4% of the time, and always once the boons run out, so a draft is never empty.
+Until a skill is known the first card is a Learn card; after that a third of the drafts hold one skill card (a skill at Lv 2+ twice as likely as each other one), and the draft after a skill reaches Lv 4 leads with its forms. The other cards roll a rarity (legendary 6% in circle 1, +4% a circle up to 25%; rare 30%; else common). Each card is a Pact 4% of the time, and always once the boons run out, so a draft is never empty.
 
 **Slots and families** (tower-rogue stage 1, docs/design/TOWER_ROGUELIKE.md): a run holds **5 boon slots**. A new boon takes the next free slot at Lv 1; taking it again levels it in its slot (each level adds the old per-stack value unless the table says otherwise). With the bar full, drafts offer only levels of the slotted boons, skill cards and pacts. Skill cards take no slot. Every boon has a family (the card's tag over its name); a family with 2+ boons slotted comes up twice as often (`HLE_TEST_TOWER` measures 1.93x, one held 1.08x). The new boons (**pack**) join the pool once their family's pack is bought at the Shrine (Boon Packs: the nth pack bought costs 120, 160, 200, 240, 280; 9 save bits in the slot's `_pad[24..25]`, bits 6-8 kept for the skills' second forms).
 
@@ -86,8 +86,21 @@ The first card is a skill card (learn a skill or upgrade one) while any are left
 | Ember Edge | Hearth | Common | 5 | +15% damage a level (Lv 4-5: +10%) |
 | Deep Flask | Hearth | Common | 2 | +3 potions |
 | Kindled Flask | Hearth | Common | 2 | potions heal 25% more |
-| Learn Moon Blade Dance / Halfmoon Slash / Crescent Cleave | Skill | Skill | 1 | the skill, on its button in the layout (no slot) |
-| Moon Blade Dance+ / Halfmoon Slash+ / Crescent Cleave+ | Skill | Skill (rare) | 1 | 2 more waves / +20% / +20% (no slot) |
+| Learn Moon Blade Dance / Halfmoon Slash / Crescent Cleave | Skill | Common, then Rare | 4 | the skill on its button (no slot); the card again is its next level (below) |
+| The six Lv 5 forms | Skill | Legendary | 1 | at Lv 4; one locks the other out (below); the B forms bought at the Shrine |
+
+**Skill levels** (stage 5, TOWER_ROGUELIKE section 6; damage a cast measured with `HLE_TEST_SKILL_DMG` + `HLE_SDMG_TOWER`, the Guardian 30 away, circle 1):
+
+| Lv | Moon Blade Dance (15 s) | Halfmoon Slash (45 s) | Crescent Cleave (18 s) |
+|---|---|---|---|
+| 1 | 5 crosses of 0.8: 4 (a fifth of a sword hit's stagger each) | 28, charge 2 s, stagger 30% | 5 blades, 4 hits each 0.3 s apart: 10 (each hits only as far as it's drawn, 4: was 7, 12.5) |
+| 2 | crosses 1.5: 7.5 (no stagger from here) | charge 1.6 s: 28 | +20%: 12 |
+| 3 | 7 crosses: 10.5 | +20%: 33.6 | 5 hits 0.24 s apart: 15 |
+| 4 | cooldown 12 s | reach 85 to 106 | wind-up 0.6 s (was 0.85) |
+| 5 A | Full Moon Dance: 10 crosses of 2: 20 | Twin Moon: the slash again 0.35 s later at 40%: 47 | Crescent Storm: 3 more blades 0.3 s behind the middle three: 25.5 (24 at 60 away) |
+| 5 B | Shattering Dance: 7 crosses of 1.5 filling a fifth of a sword hit each: 10.5 | Full Moon: all round, charge and slash unbroken, stagger 60%: 33.6 | Long Cleave: blades 1.6x as far, 6 hits, fan 60% as wide: 19.5 (15 at 60 and 85, 10.5 at 110; Storm 9 and 6 at 85 and 110) |
+
+The B forms cost 200 Embers each at the Shrine (Unlocks, after the packs; bits 6-8 of the unlock bits).
 
 Not built yet: Hearth's pack (Quick Draught needs a drinking time, which potions don't have; Prospector needs gold, stage 4), so the Shrine sells five packs.
 
@@ -124,7 +137,7 @@ Vigor and Vitality now raise max health when taken mid-run (before, only the hea
 A best blessing (Might, Bulwark) with a curse comes out a little ahead; the others about even, so Skip is a real choice.
 
 ### Stagger
-The meter fills from the blow, not its damage (`boss_apply_hit`, `POISE_DAMAGE`), as stance does in Elden Ring: a sword hit is 1/11 of the Guardian's and Unbound's bar, 1/10 of the Fallen Warrior's and 1/14 of the Sun's and Shadowborne's (set so a player who strikes only between attacks breaks each about once or twice a fight), a combo's third hit 2.5 of those, Halfmoon Slash 30%, the Cleave its damage's worth. There is no half stagger. No boon adds stagger. It keeps 5 s untouched (a dodge or two), then drains 5% a second. A bot that swings without dodging breaks a stance every 35-40 s. A broken boss stays down 3.5 s (`BOSS_STAGGER_S`, every boss; 5.25 s with Crushing Blows) and takes no extra damage: the opening is the reward; Executioner (+60%) is the only bonus.
+The meter fills from the blow, not its damage (`boss_apply_hit`, `POISE_DAMAGE`), as stance does in Elden Ring: a sword hit is 1/11 of the Guardian's and Unbound's bar, 1/10 of the Fallen Warrior's and 1/14 of the Sun's and Shadowborne's (set so a player who strikes only between attacks breaks each about once or twice a fight), a combo's third hit 2.5 of those, Halfmoon Slash 30%, the Cleave its damage's worth. There is no half stagger. No boon adds stagger. It keeps 5 s untouched (a dodge or two), then drains 5% a second. A bot that swings without dodging breaks a stance every 35-40 s. A broken boss stays down 3.5 s (`BOSS_STAGGER_S`, every boss; 5.25 s with Crushing Blows) and takes no extra damage: the opening is the reward; Executioner (+60%) is the only bonus; in the Tower the stagger bonuses (Executioner +60/+90%, Breaker +15% a stack, Eclipse +50% on skills) add, up to +100%.
 
 ## The Shrine (shipped)
 Embers are spent on the title screen; everything applies only in the Tower. Everything costs 2400 Embers, about 6.5 hours of climbing (7.5 with the story and Bonus bosses).
