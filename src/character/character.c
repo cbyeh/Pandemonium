@@ -1216,7 +1216,15 @@ static const float MBD_WAVE_SPEED = 70.0f;
 static const float MBD_FIRST_WAVE = 0.6f;
 static const float MBD_WAVE_GAP = 0.25f;
 static const int   MBD_WAVES = 5;
-static inline int mbd_waves(void) { return MBD_WAVES + tower_mod_extra_mbd_waves(); }   // the Crescent Echo boon adds 2
+// The skills' levels and Lv 5 forms (docs/design/TOWER_ROGUELIKE.md section 6; outside the Tower Lv 1):
+// Moon Blade Dance Lv 2 crosses 1.5, Lv 3 7 of them, Lv 4 a 12 s cooldown; Full Moon Dance 10 crosses
+// of 2, Shattering Dance 7 that fill the stagger meter
+static inline int skill_lv(int k) { return tower_skill_level(k); }
+static inline int skill_form(int k) { return tower_skill_form(k); }
+static inline int mbd_waves(void)
+{
+    return skill_form(SKILL_MOON_BLADE_DANCE) == SKILL_FORM_A ? 10 : skill_lv(SKILL_MOON_BLADE_DANCE) >= 3 ? 7 : MBD_WAVES;
+}
 static const float MBD_AIM_DIST = 60.0f;           // ground distance of the aim point without lock-on
 static const float HALFMOON_CHARGE = 2.0f;         // rooted; a hit cancels it and hurts more
 static const float HALFMOON_END = 3.2f;
@@ -1232,6 +1240,28 @@ static const float CLEAVE_RELEASE = 0.85f;         // interruptible wind-up (the
 static const float CLEAVE_END = 1.7f;
 static const int   CLEAVE_BLADES = 5;
 static const float CLEAVE_BLADE_GAP = 0.1f;
+// Halfmoon Lv 2 charges 1.6 s, Lv 3 +20%, Lv 4 reach 106; Twin Moon a second slash 0.35 s after at 40%;
+// Full Moon all round, its charge unbroken, stagger 60%
+static const float TWIN_GAP = 0.35f;
+static const float TWIN_LEAD = 0.2f, TWIN_EASE = 0.12f;
+static bool twinSwing;      // Twin Moon's second swing started (the clip set back)
+static inline float halfmoon_charge(void) { return skill_lv(SKILL_HALFMOON_SLASH) >= 2 ? 1.6f : HALFMOON_CHARGE; }
+static inline bool halfmoon_twin(void) { return skill_form(SKILL_HALFMOON_SLASH) == SKILL_FORM_A; }
+static inline bool halfmoon_full(void) { return skill_form(SKILL_HALFMOON_SLASH) == SKILL_FORM_B; }
+static inline float halfmoon_end(void) { return HALFMOON_END - (HALFMOON_CHARGE - halfmoon_charge()) + (halfmoon_twin() ? TWIN_GAP : 0.0f); }
+// Cleave Lv 2 +20%, Lv 3 5 hits a blade, Lv 4 a 0.6 s wind-up; Crescent Storm 3 more blades 0.3 s
+// behind the middle three, Long Cleave blades 1.6x as far, 6 hits
+static const float STORM_GAP = 0.3f;
+static const float LONG_FAN = 0.6f;     // Long Cleave's fan (its blades stay on a target out at their range)
+static inline float cleave_release(void) { return skill_lv(SKILL_CRESCENT_CLEAVE) >= 4 ? 0.6f : CLEAVE_RELEASE; }
+static inline bool cleave_storm(void) { return skill_form(SKILL_CRESCENT_CLEAVE) == SKILL_FORM_A; }
+static inline bool cleave_long(void) { return skill_form(SKILL_CRESCENT_CLEAVE) == SKILL_FORM_B; }
+static inline float cleave_end(void) { return CLEAVE_END - (CLEAVE_RELEASE - cleave_release()) + (cleave_storm() ? STORM_GAP : 0.0f); }
+static float skill_cooldown(int k)
+{
+    float c = (k == SKILL_MOON_BLADE_DANCE && skill_lv(k) >= 4) ? 12.0f : SKILL_DEFS[k].cooldown;
+    return c * tower_mod_skill_cooldown();
+}
 
 float character_get_skill_cooldown(CharacterSkill skill)
 {
@@ -1256,7 +1286,7 @@ void character_call_lightning(float bolt)
 float character_get_skill_cooldown_ratio(CharacterSkill skill)
 {
     if (skill >= SKILL_COUNT) return 0.0f;
-    return skillCooldowns[skill] / (SKILL_DEFS[skill].cooldown * tower_mod_skill_cooldown());
+    return skillCooldowns[skill] / skill_cooldown(skill);
 }
 
 bool character_skills_enabled(void) { return skillsEnabled; }
@@ -1300,7 +1330,7 @@ static void try_start_skill(const joypad_buttons_t *buttons)
     if (skillCooldowns[s] > 0.0f || !character_can_afford_skill(s)) return;
 
     character_consume_stamina(SKILL_DEFS[s].stamina);
-    skillCooldowns[s] = SKILL_DEFS[s].cooldown * tower_mod_skill_cooldown();
+    skillCooldowns[s] = skill_cooldown(s);
     tower_on_skill_cast();      // (Waxing Moon)
     activeSkill = s;
     skillTime = 0.0f;
@@ -1347,7 +1377,8 @@ static void skill_fire_moon_blade(void)
         character.rot[1] = atan2f(-fx, fz);
         tgt[0] = character.pos[0] + fx * MBD_AIM_DIST; tgt[1] = groundY; tgt[2] = character.pos[2] + fz * MBD_AIM_DIST;
     }
-    float side = (float)(skillStep - mbd_waves() / 2) * 7.0f;
+    int n = mbd_waves();     // fanned out sideways (ten: the five's fan twice, so every cross flies at the target)
+    float side = (float)(n > 7 ? skillStep % 5 - 2 : skillStep - n / 2) * 7.0f;
     tgt[0] += fz * side;
     tgt[2] -= fx * side;
 
@@ -1356,8 +1387,13 @@ static void skill_fire_moon_blade(void)
     float len = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
     if (len < 1.0f) len = 1.0f;
     float vel[3] = { d[0] / len * MBD_WAVE_SPEED, d[1] / len * MBD_WAVE_SPEED, d[2] / len * MBD_WAVE_SPEED };
-    skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, 0.8f, 1, 0.0f, len / MBD_WAVE_SPEED,   // 5 waves: 4, for the dodge
-                        skillStep == mbd_waves() - 1);
+    // Lv 1: 5 crosses of 0.8 (4, for the dodge), each filling the stagger meter by its damage (a fifth of
+    // a sword hit); from Lv 2 they cut, not stagger, but for Shattering Dance's (a fifth of a hit each)
+    int lv = skill_lv(SKILL_MOON_BLADE_DANCE), form = skill_form(SKILL_MOON_BLADE_DANCE);
+    float dmg = form == SKILL_FORM_A ? 2.0f : lv >= 2 ? 1.5f : 0.8f;
+    if (form == SKILL_FORM_B) skill_fx_next_poise(0.8f / POISE_DAMAGE);
+    else if (lv >= 2) skill_fx_next_poise(0.0f);
+    skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, dmg, 1, 0.0f, len / MBD_WAVE_SPEED, skillStep == n - 1);
     character_play_swing();
     audio_play_scene_sfx_dist(SCENE1_SFX_MBD_X, 0.55f, 0.0f);
 
@@ -1380,52 +1416,85 @@ static void update_skill(float dt)
         if (!airborne && skillTime > 0.3f) end_skill();
         break;
 
-    case SKILL_HALFMOON_SLASH:
+    case SKILL_HALFMOON_SLASH: {
+        float charge = halfmoon_charge();
         // Charging: pulses of light at the feet, faster as the release nears
-        if (skillStep == 0 && skillTime < HALFMOON_CHARGE) {
+        if (skillStep == 0 && skillTime < charge) {
             static float pulse;
             pulse -= dt;
             if (pulse <= 0.0f) {
                 skill_fx_spawn_burst((float[3]){ character.pos[0], groundY, character.pos[2] },
                                      yaw + skillTime * 3.0f);
-                pulse = 0.45f - 0.3f * (skillTime / HALFMOON_CHARGE);
+                pulse = 0.45f - 0.3f * (skillTime / charge);
             }
         }
-        if (skillStep == 0 && skillTime >= HALFMOON_CHARGE) {
-            skill_fx_next_poise(HALFMOON_POISE);
-            skill_fx_spawn_arc((float[3]){ character.pos[0], character.pos[1] + 10.0f, character.pos[2] },
-                               yaw, HALFMOON_RADIUS, HALFMOON_DAMAGE * tower_mod_skill_damage(SKILL_HALFMOON_SLASH));
-            screen_shake_set_shake_mag(14.0f);
-            character_play_swing();
-            audio_play_scene_sfx_dist(SCENE1_SFX_BLADE_SLASH, 1.0f, 0.0f);
-            skillStep = 1;
+        // The slash, then (Twin Moon) the same slash again TWIN_GAP later at 40%: skillStep 1-3 the first's
+        // debris, 4 the second slash, 5-7 its debris. The second replays the clip's swing: from TWIN_LEAD
+        // before its arc, eased from the follow-through over TWIN_EASE (the clip runs on 0.35 s longer)
+        if (halfmoon_twin() && skillStep >= 1 && !twinSwing && skillTime >= charge + TWIN_GAP - TWIN_LEAD) {
+            T3DAnim *a = character.animations ? character.animations[ANIM_SKILL_HALFMOON] : NULL;
+            if (a && character.currentAnimation == ANIM_SKILL_HALFMOON && character.skeleton && character.skeletonBlend) {
+                skeleton_copy_pose_bones(character.skeletonBlend, character.skeleton);
+                anim_set_time(a, HALFMOON_CHARGE - TWIN_LEAD);
+                hasBlendSnapshot = true;
+                character.isBlending = true; character.blendDuration = TWIN_EASE; character.blendTimer = 0.0f; character.blendFactor = 0.0f;
+            }
+            twinSwing = true;
         }
-        // Debris thrown up behind the rolling wave front
-        if (skillStep >= 1 && skillStep <= 3 && skillTime >= HALFMOON_CHARGE + skillStep * 0.1f) {
-            float r = HALFMOON_RADIUS * (0.2f + 0.8f * fminf(1.0f, skillStep * 0.1f / 0.35f)) * 0.9f;
-            for (int k = -2; k <= 2; k++) {
-                float a = yaw + k * 0.5f + skillStep * 0.15f;
+        if (skillStep == 0) twinSwing = false;
+        float radius = HALFMOON_RADIUS * (skill_lv(SKILL_HALFMOON_SLASH) >= 4 ? 1.25f : 1.0f);
+        bool full = halfmoon_full();
+        if ((skillStep == 0 && skillTime >= charge) || (skillStep == 4 && skillTime >= charge + TWIN_GAP)) {
+            float share = skillStep ? 0.4f : 1.0f;
+            skill_fx_next_poise((full ? 2.0f : 1.0f) * HALFMOON_POISE * share);
+            if (full) skill_fx_next_arc_half(T3D_PI);       // all round
+            skill_fx_spawn_arc((float[3]){ character.pos[0], character.pos[1] + 10.0f, character.pos[2] },
+                               yaw, radius, HALFMOON_DAMAGE * (skill_lv(SKILL_HALFMOON_SLASH) >= 3 ? 1.2f : 1.0f) * share);
+            screen_shake_set_shake_mag(skillStep ? 8.0f : 14.0f);
+            character_play_swing();
+            audio_play_scene_sfx_dist(SCENE1_SFX_BLADE_SLASH, skillStep ? 0.7f : 1.0f, 0.0f);
+            skillStep++;
+        }
+        // Debris thrown up behind the rolling wave front (all round for Full Moon; fewer for the second slash)
+        int d = skillStep >= 5 ? skillStep - 4 : skillStep;
+        float t0 = skillStep >= 5 ? charge + TWIN_GAP : charge;
+        if (((skillStep >= 1 && skillStep <= 3) || (skillStep >= 5 && skillStep <= 7)) && skillTime >= t0 + d * 0.1f) {
+            float r = radius * (0.2f + 0.8f * fminf(1.0f, d * 0.1f / 0.35f)) * 0.9f;
+            int span = skillStep >= 5 ? 1 : 2;
+            for (int k = -span; k <= span; k++) {
+                float a = yaw + k * (full ? 1.2566f : 0.5f) + d * 0.15f;
                 skill_fx_spawn_burst((float[3]){ character.pos[0] - fm_sinf(a) * r, groundY,
                                                  character.pos[2] + fm_cosf(a) * r }, a);
             }
             skillStep++;
+            if (skillStep == 4 && !halfmoon_twin()) skillStep = 8;
         }
-        if (skillTime >= HALFMOON_END) end_skill();
+        if (skillTime >= halfmoon_end()) end_skill();
         break;
+    }
 
-    case SKILL_CRESCENT_CLEAVE:
+    case SKILL_CRESCENT_CLEAVE: {
         // After the swing, light blades shoot up one by one close around the player,
-        // then fan out to about the old width
-        if (skillStep < CLEAVE_BLADES && skillTime >= CLEAVE_RELEASE + skillStep * CLEAVE_BLADE_GAP) {
+        // then fan out to about the old width; Crescent Storm's three more follow the middle three
+        int blades = CLEAVE_BLADES + (cleave_storm() ? 3 : 0);
+        float release = cleave_release();
+        float at = skillStep < CLEAVE_BLADES ? release + skillStep * CLEAVE_BLADE_GAP
+                                             : release + STORM_GAP + (skillStep - CLEAVE_BLADES) * CLEAVE_BLADE_GAP;
+        if (skillStep < blades && skillTime >= at) {
             static const float spread[] = { 0.0f, -0.35f, 0.35f, -0.7f, 0.7f };   // CLEAVE_BLADES entries
-            float a = yaw + spread[skillStep];
+            float a = yaw + spread[skillStep % CLEAVE_BLADES] * (cleave_long() ? LONG_FAN : 1.0f);
             float dist = 12.0f;
             float dx = -fm_sinf(a), dz = fm_cosf(a);
             float origin[3] = { character.pos[0] + dx * dist, groundY, character.pos[2] + dz * dist };
-            // 56/s for 1.6 s: ~100 out, the outer blades ~65 to each side
-            skill_fx_next_poise(1.25f / POISE_DAMAGE);   // the base tick's (not Cleave+'s)
+            // 56/s for 1.6 s: ~100 out, the outer blades ~65 to each side (Long Cleave 2.56 s: ~145)
+            int lv = skill_lv(SKILL_CRESCENT_CLEAVE);
+            skill_fx_next_poise(1.25f / POISE_DAMAGE);   // the base tick's (not the levels')
+            // Lv 3: 5 hits in the time 4 took (a blade in reach of the boss about 0.7 s lands 3 at Lv 1, so
+            // more hits only count if they come sooner); Long Cleave 6 at that pace, through its longer flight
+            int hits = cleave_long() ? 6 : lv >= 3 ? 5 : 4;
             skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 56.0f, 0.0f, dz * 56.0f },
-                                1.25f * tower_mod_skill_damage(SKILL_CRESCENT_CLEAVE), 4, 0.3f, 1.6f, false);    // ~8 ticks a cast in reach: 10
+                                1.25f * (lv >= 2 ? 1.2f : 1.0f), hits, lv >= 3 ? 1.2f / 5 : 0.3f,
+                                cleave_long() ? 1.6f * 1.6f : 1.6f, false);    // ~8 ticks a cast in reach: 10
             skill_fx_spawn_burst(origin, a);
             audio_play_scene_sfx_dist(SCENE1_SFX_CLEAVE_BEAM, 0.45f, 0.0f);
             if (skillStep == 0) {
@@ -1434,8 +1503,9 @@ static void update_skill(float dt)
             }
             skillStep++;
         }
-        if (skillTime >= CLEAVE_END) end_skill();
+        if (skillTime >= cleave_end()) end_skill();
         break;
+    }
 
     default:
         end_skill();
@@ -1448,8 +1518,9 @@ static inline bool skill_trail_emitting(void)
     if (characterState != CHAR_STATE_SKILL) return false;
     switch (activeSkill) {
         case SKILL_MOON_BLADE_DANCE: return skillTime >= 0.35f && skillTime <= 1.0f;
-        case SKILL_HALFMOON_SLASH:   return skillTime >= HALFMOON_CHARGE - 0.1f && skillTime <= HALFMOON_CHARGE + 0.3f;
-        case SKILL_CRESCENT_CLEAVE:  return skillTime >= CLEAVE_RELEASE - 0.25f && skillTime <= CLEAVE_RELEASE + 0.1f;
+        case SKILL_HALFMOON_SLASH:   return (skillTime >= halfmoon_charge() - 0.1f && skillTime <= halfmoon_charge() + 0.3f) ||
+                                            (halfmoon_twin() && skillTime >= halfmoon_charge() + TWIN_GAP - 0.1f && skillTime <= halfmoon_charge() + TWIN_GAP + 0.3f);
+        case SKILL_CRESCENT_CLEAVE:  return skillTime >= cleave_release() - 0.25f && skillTime <= cleave_release() + 0.1f;
         default: return false;
     }
 }
@@ -2507,6 +2578,10 @@ static inline void update_animations(float speedRatio, CharacterState state, flo
             }
         } else if (state == CHAR_STATE_SKILL && activeSkill == SKILL_MOON_BLADE_DANCE && skillStep > 0) {
             animSpeed = 1.6f;      // swings fit the gap between waves
+        } else if (state == CHAR_STATE_SKILL && activeSkill == SKILL_HALFMOON_SLASH && skillStep == 0) {
+            animSpeed = HALFMOON_CHARGE / halfmoon_charge();     // a shorter charge (Lv 2): the clip's slash still lands on the release
+        } else if (state == CHAR_STATE_SKILL && activeSkill == SKILL_CRESCENT_CLEAVE && skillStep == 0) {
+            animSpeed = CLEAVE_RELEASE / cleave_release();       // a shorter wind-up (Lv 4), the same
         } else if (state == CHAR_STATE_ROLLING) {
             animSpeed = ROLL_ANIM_SPEED;
         }
@@ -3438,8 +3513,10 @@ void character_apply_damage(float amount)
 #endif
 #endif
 
-    // A hit during a wind-up cancels the skill (the cooldown is still spent)
-    if (characterState == CHAR_STATE_SKILL && skillStep == 0 && activeSkill != SKILL_MOON_BLADE_DANCE) {
+    // A hit during a wind-up cancels the skill (the cooldown is still spent); Full Moon's can't be broken
+    // (no knockdown either: it takes the blow and slashes)
+    bool unbroken = characterState == CHAR_STATE_SKILL && activeSkill == SKILL_HALFMOON_SLASH && halfmoon_full();
+    if (characterState == CHAR_STATE_SKILL && skillStep == 0 && activeSkill != SKILL_MOON_BLADE_DANCE && !unbroken) {
         end_skill();
     }
 
@@ -3468,8 +3545,8 @@ void character_apply_damage(float amount)
            amount > 20.0f ? "shove" : amount >= 20.0f ? "knockdown" : "flinch");
 #endif
     // Only knockdown if the hit is strong enough (>= 20 dmg)
-    if (amount < 20.0f) s_flinchT = FLINCH_S;      // knocked down below: that is its own reaction
-    if (amount >= 20.0f) {
+    if (amount < 20.0f && !unbroken) s_flinchT = FLINCH_S;      // knocked down below: that is its own reaction
+    if (amount >= 20.0f && !unbroken) {
         // Prevent re-triggering knockdown if we are already rolling (invuln) or similar
         if (characterState != CHAR_STATE_ROLLING) {
             characterState = CHAR_STATE_KNOCKDOWN;

@@ -18,7 +18,7 @@
 
 static void dir_basis(const float v[3], float d[3], float s[3], float u[3]);
 
-#define SKILL_FX_MAX 40     // the Shackled Sun's spiral has 20 embers in the air
+#define SKILL_FX_MAX 48     // the Shackled Sun's spiral has 20 embers in the air; with Crescent Storm's 8 blades and bursts 39 were alive at once (Ares)
 
 typedef enum { FX_NONE, FX_ARC, FX_WAVE, FX_PILLAR, FX_BURST, FX_CROWN } FxType;
 
@@ -80,10 +80,16 @@ static SkillFx* fx_alloc(FxType type)
             return &s_fx[i];
         }
     }
+#ifdef HLE_AUTOPLAY     // test aid: an effect dropped (the pool full), at most a few a second
+    { static uint32_t last; uint32_t now = get_ticks_ms(); if (now - last > 250) { last = now; debugf("[fxfull] the pool (%d) is full: a type %d dropped\n", SKILL_FX_MAX, (int)type); } }
+#endif
     return NULL;    // pool full: drop the effect
 }
 
 void skill_fx_init(void) { skill_fx_reset(); }
+#ifdef HLE_AUTOPLAY
+int skill_fx_live(void) { int n = 0; for (int i = 0; i < SKILL_FX_MAX; i++) n += s_fx[i].type != FX_NONE; return n; }     // test aid
+#endif
 void skill_fx_reset(void) { memset(s_fx, 0, sizeof(s_fx)); s_fireN = 0; }
 void skill_fx_clear_hostile(void) { for (int i = 0; i < SKILL_FX_MAX; i++) if (s_fx[i].hostile) s_fx[i].type = FX_NONE; s_fireN = 0; }
 
@@ -116,7 +122,7 @@ bool skill_fx_fire_trail_touches(const float p[3], float r)
 void skill_fx_spawn_arc(const float pos[3], float yaw, float radius, float damage)
 {
     SkillFx *f = fx_alloc(FX_ARC);
-    if (!f) return;
+    if (!f) { s_spawnHalf = T3D_PI * 0.5f; s_spawnPoise = -1.0f; return; }     // (the next arc's own, not these)
     memcpy(f->pos, pos, sizeof(f->pos));
     f->yaw = yaw;
     f->radius = radius;
@@ -284,6 +290,10 @@ static void damage_boss(Boss *b, float damage, float poise, const float contact[
 }
 
 #define ARC_GROW_TIME 0.35f
+#ifdef HLE_LOG_SKILLHIT
+#define X_DRAWN_HALF     (15.0f * 0.7071f)   // the player's X: its arms (X_LEN, at 45 degrees) reach this far across and up
+#define BLADE_DRAWN_HALF 2.0f                // a Cleave blade: 4 wide (draw_blade's W), bowed 2.5 forward, 70 tall
+#endif
 
 /** The crescent rolls outward from the player like a wave. */
 static inline float arc_radius(const SkillFx *f)
@@ -344,9 +354,13 @@ static void update_arc_hit(SkillFx *f, Boss *b)
     float dist = sqrtf(dx*dx + dz*dz);
     if (dist - b->capsuleCollider.radius > arc_radius(f)) return;
     float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
-    if (dist > 1e-3f && (dx*fx + dz*fz) / dist < -0.2f) return;    // behind the player
+    if (f->half < T3D_PI * 0.75f && dist > 1e-3f && (dx*fx + dz*fz) / dist < -0.2f) return;    // behind the player (Full Moon's goes all round)
     if (!skill_arc_reaches(b, f->pos[1])) return;      // over the wave: it may come down into it while it rolls
     f->hitsLeft = 0;
+#ifdef HLE_LOG_SKILLHIT     // test aid: the arc as drawn when it hit (its front at the boss's body)
+    debugf("[skillhit] arc age %.2f: boss body's edge %.1f out at %.0f deg from its facing, the arc drawn out to %.1f (round %.0f deg each side)\n", (double)f->age,
+           (double)(dist - b->capsuleCollider.radius), (double)(acosf(fmaxf(-1.0f, fminf(1.0f, (dx*fx + dz*fz) / (dist + 1e-3f)))) * 57.3f), (double)arc_radius(f), (double)(f->half * 57.3f));
+#endif
     float contact[3] = { b->pos[0] - dx / (dist + 1e-3f) * b->capsuleCollider.radius,
                          f->pos[1], b->pos[2] - dz / (dist + 1e-3f) * b->capsuleCollider.radius };
     damage_boss(b, f->damage, f->poise, contact, 2.5f);
@@ -374,7 +388,7 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
     if (f->shape == SKILL_WAVE_BLADE) {
         if (f->age < 0.2f) return;      // still rising out of the ground
         c[0] = f->pos[0]; c[1] = f->pos[1] + 14.0f; c[2] = f->pos[2];
-        r = f->hostile ? 4.0f : 7.0f;   // a hostile one is drawn 4 wide: no further (the player's own reaches wider)
+        r = 4.0f;   // drawn 4 wide (and bowed 2.5 forward): no further, the player's too (7 hit 5 past its edge)
     } else {
         memcpy(c, f->pos, sizeof(c));
         r = (f->shape == SKILL_WAVE_ORB ? 5.0f : f->shape == SKILL_WAVE_CRESCENT ? 14.0f : f->hostile ? 12.0f : 7.5f) * f->scale;     // the player's X is drawn 15 long (hit as drawn)
@@ -436,6 +450,14 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
         character_apply_damage(f->damage);
     } else {
         if (!sphere_hits_boss(b, c, r, contact)) return;
+#ifdef HLE_LOG_SKILLHIT     // test aid: where the cross or blade was drawn when it hit, against the boss's body
+        {
+            float a[3], q[3], e[3]; boss_capsule(b, a, e); closest_on_segment(a, e, c, q);
+            float gap = sqrtf((c[0]-q[0])*(c[0]-q[0]) + (c[1]-q[1])*(c[1]-q[1]) + (c[2]-q[2])*(c[2]-q[2])) - b->capsuleCollider.radius;
+            debugf("[skillhit] %s age %.2f at %.0f %.0f %.0f: its middle %.1f from the boss's body (drawn %.1f each way)\n", f->shape == SKILL_WAVE_BLADE ? "blade" : "cross",
+                   (double)f->age, (double)c[0], (double)c[1], (double)c[2], (double)gap, (double)(f->shape == SKILL_WAVE_BLADE ? BLADE_DRAWN_HALF : X_DRAWN_HALF));
+        }
+#endif
         damage_boss(b, f->damage, f->poise, contact, 1.0f);
     }
     f->hitsLeft--;
@@ -597,7 +619,7 @@ static void draw_arc(const SkillFx *f)
             float th = f->half * (-1.0f + 2.0f * i / (N - 1));
             float dx = fx * cosf(th) + rx * sinf(th), dz = fz * cosf(th) + rz * sinf(th);
             float taper = cosf(th * (T3D_PI * 0.5f) / f->half);     // crescent: thin at the tips
-            if (f->hostile) taper = 0.35f + 0.65f * taper;  // but a hostile one hurts right out to them: show it (a ring's two halves met in nothing at its sides)
+            if (f->hostile || f->half > T3D_PI * 0.75f) taper = 0.35f + 0.65f * taper;     // (a ring, Full Moon's too, hurts all round: drawn so)  // but a hostile one hurts right out to them: show it (a ring's two halves met in nothing at its sides)
             outer[i][0] = f->pos[0] + dx * R; outer[i][2] = f->pos[2] + dz * R;
             if (layer == 0) {
                 float w = 16.0f * taper;

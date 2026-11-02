@@ -19,7 +19,7 @@ typedef enum { TOWER_GUARDIAN, TOWER_UNBOUND, TOWER_FALLEN_KNIGHT, TOWER_SHACKLE
 typedef enum {
     BOON_EMBER_EDGE, BOON_IRON_SKIN, BOON_DEEP_FLASK, BOON_KINDLED_FLASK, BOON_FLEETFOOT,
     BOON_SECOND_WIND, BOON_MOON_MASTERY, BOON_BLOODTHIRST, BOON_VIGOR, BOON_LAST_STAND,
-    BOON_UNBROKEN, BOON_CRESCENT_ECHO,
+    BOON_UNBROKEN,
     // Rare and legendary: change how a run plays
     BOON_PHANTOM_STEP, BOON_RIPOSTE, BOON_CRUSHING_BLOWS, BOON_EXECUTIONER, BOON_STORM_BLADE, BOON_BLOOD_PACT,
     BOON_RALLY,
@@ -30,8 +30,10 @@ typedef enum {
     BOON_HEAVY_HAND, BOON_STALWART,                                                  // Iron
     BOON_SHADOW_EDGE, BOON_EVASION, BOON_VANISH,                                     // Shadow
     BOON_PROSPECTOR,                                                                 // Hearth (gold: stage 4)
-    // Skill cards: learn a skill for the run, then upgrade it (no slot)
-    BOON_LEARN_MOONBLADE, BOON_LEARN_HALFMOON, BOON_LEARN_CLEAVE, BOON_HALFMOON_PLUS, BOON_CLEAVE_PLUS,
+    // Skill cards (no slot): learn a skill for the run, its card again its next level (Lv 2-4), then
+    // one of its two Lv 5 forms (A, B: taking one locks the other out for the run)
+    BOON_LEARN_MOONBLADE, BOON_LEARN_HALFMOON, BOON_LEARN_CLEAVE,
+    BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE, BOON_TWIN_MOON, BOON_FULL_MOON, BOON_CRESCENT_STORM, BOON_LONG_CLEAVE,
     // "+": a boon's top level, offered once it is at its max (no slot of its own)
     BOON_EMBER_EDGE_PLUS, BOON_IRON_SKIN_PLUS, BOON_STORM_BLADE_PLUS, BOON_EXECUTIONER_PLUS, BOON_CRUSHING_BLOWS_PLUS,
     BOON_RIPOSTE_PLUS, BOON_UNBROKEN_PLUS, BOON_BLOODTHIRST_PLUS, BOON_RALLY_PLUS, BOON_PHANTOM_STEP_PLUS,
@@ -124,7 +126,10 @@ int  tower_best_floor(void);
 // ---- Modifiers (Shrine upgrades and Boons, during a run only) ----
 // In a run a skill can be used only once learned from a draft (the Skills setting is ignored)
 bool  tower_mod_skill_allowed(int skill);
-float tower_mod_skill_damage(int skill);    // the skill's upgrade card: 1.2
+// A skill's level (docs/design/TOWER_ROGUELIKE.md section 6): 1-4, 5 with a form; outside the Tower 1
+int   tower_skill_level(int skill);
+enum { SKILL_FORM_NONE, SKILL_FORM_A, SKILL_FORM_B };
+int   tower_skill_form(int skill);          // its Lv 5 form (SKILL_FORM_)
 float tower_mod_damage_dealt(void);
 float tower_mod_damage_taken(void);
 enum { TOWER_HIT_OTHER, TOWER_HIT_SWORD, TOWER_HIT_SKILL, TOWER_HIT_FINISHER };   // (a finisher is a sword hit too)
@@ -146,12 +151,11 @@ void  tower_on_player_hurt(float lost);
 void  tower_on_boss_hurt(float dealt);
 void  tower_tick(float dt);
 float tower_rally_pool(void);           // health still to be won back (0 without the boon)
-int   tower_mod_extra_mbd_waves(void);
 bool  tower_mod_try_unbroken(void);     // spends it: survive a lethal hit at 1 HP
 float tower_mod_unbroken_heal(void);    // health on top of that 1 (Unbroken+: 20% of max)
 float tower_mod_poise(void);            // how fast the bosses' stagger meters fill
 float tower_mod_stagger_time(void);     // how long a staggered boss stays down
-float tower_mod_stagger_damage(void);   // damage taken by a staggered boss
+float tower_mod_stagger_damage(int kind);   // damage taken by a staggered boss (TOWER_HIT_): its bonuses added, +100% at most
 float tower_mod_perfect_window(void);   // seconds of a roll that count as a perfect dodge
 void  tower_on_perfect_dodge(void);
 float tower_on_sword_hit(bool finisher); // a landed sword hit: its lightning's damage (Storm Blade, Static, Thunderclap, Overcharge), 0 mostly

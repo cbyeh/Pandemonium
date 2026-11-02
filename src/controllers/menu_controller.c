@@ -1375,7 +1375,7 @@ void menu_controller_draw(void)
             } else if (i == MENU_SHRINE_PACKS) {
                 int own = 0;
                 for (int k = 0; k < tower_pack_count(); k++) own += tower_pack_owned(k);
-                snprintf(name, sizeof name, "Boon Packs");
+                snprintf(name, sizeof name, "Unlocks");      // the Boon Packs, then the skills' B forms
                 snprintf(right, sizeof right, "%d/%d", own, tower_pack_count());
             } else {
                 snprintf(name, sizeof name, "Back");
@@ -1401,7 +1401,7 @@ void menu_controller_draw(void)
         const char *desc = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_desc((UpgradeId)selectedOption)
                          : selectedOption == MENU_SHRINE_RELIC ? "Choose the relic you climb with"
                          : selectedOption == MENU_SHRINE_NIGHTFARER ? "A tracker's winged helm and blue coat"
-                         : selectedOption == MENU_SHRINE_PACKS ? "New boons for a family"
+                         : selectedOption == MENU_SHRINE_PACKS ? "New boons for a family, a skill's second form"
                          : "Skills are learned in the climb";
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
                          FONT_UNBALANCED, x, y + 6, "%s", desc);
@@ -1410,11 +1410,11 @@ void menu_controller_draw(void)
         // A list to scroll: name on the left, its state on the right, what the hovered one does below
         bool relics = currentMenu == MENU_RELICS, packs = currentMenu == MENU_UNLOCKS;
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
-                         FONT_UNBALANCED, x, y + titleYOffset, relics ? "RELICS" : packs ? "BOON PACKS" : "SKINS");
+                         FONT_UNBALANCED, x, y + titleYOffset, relics ? "RELICS" : packs ? "UNLOCKS" : "SKINS");
         if (relics || packs)
             rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 8, .height = contentH, .style_id = FONT_STYLE_GOLD },
                              FONT_UNBALANCED, x, y + titleYOffset, "Embers %d", tower_embers());
-        y += lineHeight * 2 + titleYOffset;
+        y += (packs ? lineHeight : lineHeight * 2) + titleYOffset;     // (the Unlocks' ten rows: tighter, so what it holds fits under them)
         int rows = get_menu_option_count(currentMenu);
         for (int i = 0; i < rows; i++) {
             const char *name, *right = "";
@@ -1450,7 +1450,7 @@ void menu_controller_draw(void)
             if (right[0])
                 rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 16, .height = contentH, .style_id = style },
                                  FONT_UNBALANCED, x + 8, y, "%s", right);
-            y += lineHeight + 1;
+            y += lineHeight + (packs ? -1 : 1);
         }
         const char *desc = selectedOption == rows - 1 ? ""
                          : packs ? tower_pack_desc(selectedOption)

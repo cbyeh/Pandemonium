@@ -21,7 +21,7 @@ typedef enum {
     MENU_RUN,           // the Tower run's boons, pacts and totals (from the pause menu)
     MENU_RELICS,        // Shrine > Relics: every relic, bought and equipped here
     MENU_SKINS,         // Settings > Skin: every skin, worn from here
-    MENU_UNLOCKS,       // Shrine > Boon Packs: the families' new boons, bought here
+    MENU_UNLOCKS,       // Shrine > Unlocks: the families' new boons (Boon Packs) and the skills' B forms, bought here
 } MenuState;
 
 typedef enum {

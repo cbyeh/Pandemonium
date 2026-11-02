@@ -815,14 +815,14 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
         boss->hitSeq++;
     }
 
+    int kind = bossHitBySword ? (bossHitByFinisher ? TOWER_HIT_FINISHER : TOWER_HIT_SWORD) : bossHitBySkill ? TOWER_HIT_SKILL : TOWER_HIT_OTHER;
     if (tower_active()) {     // Tower run: damage boons and upgrades, and Bloodthirst's lifesteal (sword hits)
         if (tower_hit_impaired()) return;      // the Impaired curse: this one does nothing
         if (bossHitBySword) character.health = fminf(character.maxHealth, character.health + amount * tower_mod_lifesteal());   // sword hits only, before boons
         if (!bossHitByBleed) tower_on_boss_hurt(amount);     // Rally: also by the hit before boons (after them, a blow came back in two hits deep in a run); a bleed wins back nothing
-        amount *= tower_mod_damage_dealt() * tower_mod_damage_vs(boss->health / fmaxf(boss->maxHealth, 1.0f), boss->staggerT > 0.0f,
-                                                                 bossHitBySword ? (bossHitByFinisher ? TOWER_HIT_FINISHER : TOWER_HIT_SWORD) : bossHitBySkill ? TOWER_HIT_SKILL : TOWER_HIT_OTHER);
+        amount *= tower_mod_damage_dealt() * tower_mod_damage_vs(boss->health / fmaxf(boss->maxHealth, 1.0f), boss->staggerT > 0.0f, kind);
     }
-    if (boss->staggerT > 0.0f) amount *= tower_mod_stagger_damage();     // staggered: only boons make hits land harder
+    if (boss->staggerT > 0.0f) amount *= tower_mod_stagger_damage(kind);     // staggered: only boons make hits land harder (added, capped)
     boss->health -= amount;
     if (boss->health < 0.0f) boss->health = 0.0f;
     if (boss->staggerT <= 0.0f) {      // the stagger meter

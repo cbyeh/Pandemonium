@@ -55,7 +55,6 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_VIGOR]         = { "Vigor",         "+25 max health",               5, TIER_COMMON, FAM_IRON },
     [BOON_LAST_STAND]    = { "Last Stand",    "+40% damage below 30% health", 2, TIER_RARE, FAM_BLOOD },
     [BOON_UNBROKEN]      = { "Unbroken",      "Survive one killing blow a floor", 1, TIER_LEGENDARY, FAM_IRON },
-    [BOON_CRESCENT_ECHO] = { "Moon Blade Dance+", "2 more waves", 1, TIER_RARE, FAM_SKILL },
     [BOON_PHANTOM_STEP]  = { "Phantom Step",  "Easier dodges, each heals 2%", 1, TIER_RARE, FAM_SHADOW },
     [BOON_RIPOSTE]       = { "Riposte",       "Perfect dodge: +50% damage", 1, TIER_RARE, FAM_SHADOW },
     [BOON_CRUSHING_BLOWS]= { "Crushing Blows","Staggers last 50% longer",     1, TIER_RARE, FAM_IRON },
@@ -79,11 +78,17 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_EVASION]       = { "Evasion",       "Perfect dodges refund the roll", 1, TIER_RARE, FAM_SHADOW, 1 },
     [BOON_VANISH]        = { "Vanish",        "3 perfect dodges: a blow deals 0", 1, TIER_LEGENDARY, FAM_SHADOW, 1 },
     [BOON_PROSPECTOR]    = { "Prospector",    "+20% gold",                    3, TIER_COMMON, FAM_HEARTH, 1 },   // (Quick Draught is still held back)
-    [BOON_LEARN_MOONBLADE] = { "Moon Blade Dance", "Learn it: D-up", 1, TIER_COMMON, FAM_SKILL },
-    [BOON_LEARN_HALFMOON]  = { "Halfmoon Slash",   "Learn it: D-right", 1, TIER_COMMON, FAM_SKILL },
-    [BOON_LEARN_CLEAVE]    = { "Crescent Cleave",  "Learn it: D-down", 1, TIER_COMMON, FAM_SKILL },
-    [BOON_HALFMOON_PLUS]   = { "Halfmoon Slash+",  "+20% damage", 1, TIER_RARE, FAM_SKILL },
-    [BOON_CLEAVE_PLUS]     = { "Crescent Cleave+", "+20% damage", 1, TIER_RARE, FAM_SKILL },
+    // a skill's card: Learn it (Common), then its levels 2-4 (Rare: card_tier), each level's text in SKILL_LV_DESC
+    [BOON_LEARN_MOONBLADE] = { "Moon Blade Dance", "Learn it: D-up", 4, TIER_COMMON, FAM_SKILL },
+    [BOON_LEARN_HALFMOON]  = { "Halfmoon Slash",   "Learn it: D-right", 4, TIER_COMMON, FAM_SKILL },
+    [BOON_LEARN_CLEAVE]    = { "Crescent Cleave",  "Learn it: D-down", 4, TIER_COMMON, FAM_SKILL },
+    // the Lv 5 forms (section 6), offered at Lv 4; the B forms once bought at the Shrine
+    [BOON_FULL_MOON_DANCE] = { "Full Moon Dance",  "10 crosses, 2 each", 1, TIER_LEGENDARY, FAM_SKILL },
+    [BOON_SHATTERING_DANCE]= { "Shattering Dance", "Crosses that stagger", 1, TIER_LEGENDARY, FAM_SKILL },
+    [BOON_TWIN_MOON]       = { "Twin Moon",        "A second slash, 40% of the first", 1, TIER_LEGENDARY, FAM_SKILL },
+    [BOON_FULL_MOON]       = { "Full Moon",        "360 degrees, unbreakable, 2x stagger", 1, TIER_LEGENDARY, FAM_SKILL },
+    [BOON_CRESCENT_STORM]  = { "Crescent Storm",   "3 more blades behind", 1, TIER_LEGENDARY, FAM_SKILL },
+    [BOON_LONG_CLEAVE]     = { "Long Cleave",      "Blades fly 1.6x as far, 6 hits", 1, TIER_LEGENDARY, FAM_SKILL },
     // "+" (docs/design/TOWER_ROGUELIKE.md section 10; Second Wind+ is held back: a potion is drunk at once)
     [BOON_EMBER_EDGE_PLUS]    = { "Ember Edge+",    "Finishers +25%",              1, TIER_RARE, FAM_HEARTH, PLUS(BOON_EMBER_EDGE) },
     [BOON_IRON_SKIN_PLUS]     = { "Iron Skin+",     "The first blow a floor deals half", 1, TIER_RARE, FAM_IRON, PLUS(BOON_IRON_SKIN) },
@@ -115,7 +120,25 @@ static const BoonDef BOONS[BOON_COUNT] = {
 static const uint8_t RIVALS[][2] = {
     { BOON_RIPOSTE, BOON_IRON_SKIN }, { BOON_BLOOD_PACT, BOON_KINDLED_FLASK }, { BOON_STORM_BLADE, BOON_EXECUTIONER },
     { BOON_LAST_STAND, BOON_VIGOR }, { BOON_BLOODTHIRST, BOON_MOON_MASTERY }, { BOON_VANISH, BOON_UNBROKEN },
+    // a skill's two forms: one locks the other out (shown and greyed as rivals are)
+    { BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE }, { BOON_TWIN_MOON, BOON_FULL_MOON }, { BOON_CRESCENT_STORM, BOON_LONG_CLEAVE },
 };
+// A skill card's next level (Lv 2-4), what it adds
+static const char *const SKILL_LV_DESC[SKILL_COUNT][3] = {
+    { "Crosses deal 1.5", "+2 crosses", "Cooldown 12 s" },
+    { "Charges in 1.6 s", "+20% damage", "Reach +25%" },
+    { "+20% damage", "Blades hit 5 times", "Wind-up 0.6 s" },
+};
+#define SKILL_LV_MAX 4      // a skill card's levels; Lv 5 is a form
+#define FORM_COST    200    // a B form at the Shrine (section 14b)
+#define SKILL_CARD_CHANCE 33    // % of drafts with a skill card, once a skill is known
+static bool is_learn(int b) { return b >= BOON_LEARN_MOONBLADE && b <= BOON_LEARN_CLEAVE; }
+static bool knows(int skill);
+static bool is_form(int b) { return b >= BOON_FULL_MOON_DANCE && b <= BOON_LONG_CLEAVE; }
+void tower_test_skill_lv(int skill, int lv, int form);
+static int card_tier(int b);
+static int form_skill(int b) { return (b - BOON_FULL_MOON_DANCE) / 2; }
+static BoonId skill_form_card(int skill, int form) { return (BoonId)(BOON_FULL_MOON_DANCE + 2 * skill + (form == SKILL_FORM_B)); }
 static int rival_of(int b)
 {
     for (unsigned i = 0; i < sizeof RIVALS / sizeof RIVALS[0]; i++) {
@@ -291,7 +314,9 @@ static struct {
     uint8_t scr;                    // the screen after the draft: the map, a Rest's (SCR_)
     uint32_t scrOpenMs;
     int8_t list[LIST_MAX], listN, listSel;  // a Rest screen's rows: a choice, a BoonId to Temper (-1 Back), a slot to Release (-1 keep)
-    uint8_t skills;                 // learned this run (bit per CharacterSkill)
+    uint8_t skills;                 // learned this run (bit per CharacterSkill); its level is its Learn card's stacks
+    uint8_t forms;                  // the B forms bought at the Shrine (bit per skill), for this run
+    uint8_t formsDue;               // a skill just reached Lv 4: the next draft leads with its forms (bit per skill)
     uint8_t skillsOffered;          // whose Learn card has been on the table (taken or not)
     uint8_t stacks[BOON_COUNT];     // a boon's level (0: not held)
     uint8_t slot[TOWER_SLOTS];      // the boon slots in the order taken (BoonId + 1, 0 empty); skill cards take none
@@ -326,6 +351,7 @@ static struct {
     int nChoices, sel;
 } s;
 
+static bool knows(int skill) { return (s.skills >> skill) & 1; }
 static int slots_used(void)
 {
     int n = 0;
@@ -378,9 +404,12 @@ static void take_boon(BoonId b)
     if (rival_of(b) >= 0) s.locked[rival_of(b)] = true;
     if (s.stacks[b] < BOONS[b].maxStacks) s.stacks[b]++;
     if (b == BOON_DEEP_FLASK) character.healthPotions = character.healthPotions + 3 > POTION_CAP ? POTION_CAP : character.healthPotions + 3;
-    if (b == BOON_LEARN_MOONBLADE) s.skills |= 1 << SKILL_MOON_BLADE_DANCE;
-    if (b == BOON_LEARN_HALFMOON)  s.skills |= 1 << SKILL_HALFMOON_SLASH;
-    if (b == BOON_LEARN_CLEAVE)    s.skills |= 1 << SKILL_CRESCENT_CLEAVE;
+    if (is_learn(b)) {      // learned, or its next level: at Lv 4 the next draft leads with its forms
+        int k = b - BOON_LEARN_MOONBLADE;
+        s.skills |= 1 << k;
+        if (s.stacks[b] == SKILL_LV_MAX) s.formsDue |= 1 << k;
+    }
+    if (is_form(b)) s.formsDue &= ~(1 << form_skill(b));
     if (b == BOON_VIGOR) character.health += 25.0f;
     sync_max_health();
 }
@@ -591,7 +620,7 @@ void tower_begin_run(uint32_t seed)
     s.active = true;
     s.floor = 1;
     s.rng = seed ? seed : 1;
-    { TowerSave t; tower_load(&t); s.packs = t.unlocks & ((1 << FAM_COUNT) - 1); }
+    { TowerSave t; tower_load(&t); s.packs = t.unlocks & ((1 << FAM_COUNT) - 1); s.forms = (t.unlocks >> FAM_COUNT) & ((1 << SKILL_COUNT) - 1); }
 #ifdef HLE_TOWER_PACKS      // test aid: climb with these packs (bit per family) whatever the save holds
     s.packs = HLE_TOWER_PACKS;
 #endif
@@ -605,14 +634,17 @@ void tower_begin_run(uint32_t seed)
         for (int i = 0; i < TOWER_SLOTS; i++) while (s.stacks[FULL[i]] < BOONS[FULL[i]].maxStacks) take_boon(FULL[i]);
         s.stacks[BOON_RALLY] = 1;       // (one below its max: the page shows "Lv 1/2")
         s.skills = (1 << SKILL_COUNT) - 1;
-        s.stacks[BOON_HALFMOON_PLUS] = s.stacks[BOON_CRESCENT_ECHO] = 1;
+        s.stacks[BOON_LEARN_MOONBLADE] = 2; s.stacks[BOON_LEARN_CLEAVE] = 1;
+        s.stacks[BOON_LEARN_HALFMOON] = SKILL_LV_MAX; take_boon(BOON_TWIN_MOON);    // a form (its rival greyed)
     }
     for (int b = 0; b < PB_COUNT; b++) s.bless[b] = 2;
     for (int c = 0; c < PC_COUNT; c++) s.curse[c] = 2;
 #endif
-#ifdef HLE_SDMG_TOWER   // test aid (HLE_TEST_SKILL_DMG): every skill known, both damage cards held
+#ifdef HLE_SDMG_TOWER   // test aid (HLE_TEST_SKILL_DMG): every skill known (at Lv 1; HLE_SKILL_LV sets one's level and form)
     s.skills = (1 << SKILL_COUNT) - 1;
-    s.stacks[BOON_HALFMOON_PLUS] = s.stacks[BOON_CLEAVE_PLUS] = 1;
+#ifdef HLE_SKILL_LV
+    { static const int L[3] = { HLE_SKILL_LV }; tower_test_skill_lv(L[0] - 1, L[1] ? L[1] : 1, L[2]); }
+#endif
 #endif
 #ifdef HLE_TOWER_GIVE   // test aid: start the run holding this boon (a "+": its boon maxed first; a duo: a maxed boon of
                         // each family merged into it, and every skill, so its trigger can fire)
@@ -636,6 +668,8 @@ void tower_begin_run(uint32_t seed)
     for (int b = BOON_HEMORRHAGE; b <= BOON_PROSPECTOR; b++) s.stacks[b] = BOONS[b].maxStacks;
     s.skills = (1 << SKILL_COUNT) - 1;
 #endif
+    for (int k = 0; k < SKILL_COUNT; k++)       // a skill known without its card (the Sage, a test aid) is at Lv 1
+        if (knows(k) && !s.stacks[BOON_LEARN_MOONBLADE + k]) s.stacks[BOON_LEARN_MOONBLADE + k] = 1;
 #ifdef HLE_RUN_GOLD         // test aid: start the climb with this much gold
     s.gold = HLE_RUN_GOLD;
 #endif
@@ -743,7 +777,6 @@ void tower_next_floor(void)
 
 // ---- Draft ----
 
-static bool knows(int skill) { return (s.skills >> skill) & 1; }
 
 // Can it be offered now? (stacks left, and an upgrade needs its skill)
 // A new boon needs a free slot and, from a family's pack, the pack bought: with the bar full
@@ -765,16 +798,52 @@ static bool offerable(BoonId b)
         return s.skills != 0 && character_skills_enabled();
     case BOON_CONDUCTOR:     // something that calls lightning
         return s.stacks[BOON_STORM_BLADE] || s.stacks[BOON_STATIC] || s.stacks[BOON_THUNDERCLAP] || s.stacks[BOON_OVERCHARGE];
-    case BOON_CRESCENT_ECHO: return knows(SKILL_MOON_BLADE_DANCE);
-    case BOON_HALFMOON_PLUS: return knows(SKILL_HALFMOON_SLASH);
-    case BOON_CLEAVE_PLUS:   return knows(SKILL_CRESCENT_CLEAVE);
-    // never a skill already known (the Sage relic teaches one without its card)
-    case BOON_LEARN_MOONBLADE: return !knows(SKILL_MOON_BLADE_DANCE);
-    case BOON_LEARN_HALFMOON:  return !knows(SKILL_HALFMOON_SLASH);
-    case BOON_LEARN_CLEAVE:    return !knows(SKILL_CRESCENT_CLEAVE);
+    // a Learn card, then the skill's levels (its stacks) to Lv 4; a form at Lv 4, a B form once
+    // bought at the Shrine (its rival, the other form, is locked once one is taken)
+    case BOON_FULL_MOON_DANCE: case BOON_TWIN_MOON: case BOON_CRESCENT_STORM:
+        return s.stacks[BOON_LEARN_MOONBLADE + form_skill(b)] >= SKILL_LV_MAX;
+    case BOON_SHATTERING_DANCE: case BOON_FULL_MOON: case BOON_LONG_CLEAVE:
+        return s.stacks[BOON_LEARN_MOONBLADE + form_skill(b)] >= SKILL_LV_MAX && ((s.forms >> form_skill(b)) & 1);
     default: return true;
     }
 }
+
+// A card's rarity: a skill's level cards are Rare (as its "+" cards were), its Learn card Common
+static int card_tier(int b) { return is_learn(b) && s.stacks[b] ? TIER_RARE : BOONS[b].tier; }
+
+// A skill's level and form (section 6); outside a run Lv 1, no form
+int tower_skill_level(int skill)
+{
+    if (!s.active || skill < 0 || skill >= SKILL_COUNT) return 1;
+    if (tower_skill_form(skill)) return SKILL_LV_MAX + 1;
+    int lv = s.stacks[BOON_LEARN_MOONBLADE + skill];
+    return lv < 1 ? 1 : lv;
+}
+int tower_skill_form(int skill)
+{
+    if (!s.active || skill < 0 || skill >= SKILL_COUNT) return SKILL_FORM_NONE;
+    return s.stacks[skill_form_card(skill, SKILL_FORM_A)] ? SKILL_FORM_A : s.stacks[skill_form_card(skill, SKILL_FORM_B)] ? SKILL_FORM_B : SKILL_FORM_NONE;
+}
+#ifdef HLE_AUTOPLAY
+// test aid (HLE_SKILL_LV): a skill known at this level (1-5) and form (at 5: 1 A, 2 B), as if drafted
+void tower_test_skill_lv(int skill, int lv, int form)
+{
+    if (skill < 0 || skill >= SKILL_COUNT) return;
+    s.skills |= 1 << skill;
+    s.stacks[BOON_LEARN_MOONBLADE + skill] = lv < SKILL_LV_MAX ? (lv < 1 ? 1 : lv) : SKILL_LV_MAX;
+    BoonId a = skill_form_card(skill, SKILL_FORM_A), bf = skill_form_card(skill, SKILL_FORM_B);
+    s.stacks[a] = s.stacks[bf] = 0; s.locked[a] = s.locked[bf] = false;
+    if (lv >= SKILL_LV_MAX + 1) s.stacks[form == SKILL_FORM_B ? bf : a] = 1;
+    s.formsDue = 0;
+    debugf("[skilllv] skill %d: Lv %d, form %d\n", skill + 1, tower_skill_level(skill), tower_skill_form(skill));
+}
+// test aid (HLE_SDMG_STAGGERED): the stagger build's bonuses, past the cap (Executioner +60%, 3 Breakers +45%, Eclipse +50%)
+void tower_test_stagger_build(void)
+{
+    take_boon(BOON_EXECUTIONER); take_boon(BOON_ECLIPSE); s.bless[PB_STAGGERED] = 3;
+    debugf("[stagbuild] a staggered boss takes x%.2f from a skill, x%.2f from the sword\n", (double)tower_mod_stagger_damage(TOWER_HIT_SKILL), (double)tower_mod_stagger_damage(TOWER_HIT_SWORD));
+}
+#endif
 
 // Hades' focus: a family with 2+ boons slotted comes up twice as often
 static void fam_held(int famHeld[FAM_COUNT + 1])
@@ -796,7 +865,7 @@ static BoonId pick_card(BoonId pool[], int *n, const int famHeld[])
     int k = -1;
     for (int tries = 0; tries < 3 && k < 0; tries++) {     // that tier, or the next lower one (wrapping)
         int tier = (want + 3 - tries) % 3, cand[2 * BOON_COUNT], nc = 0;
-        for (int i = 0; i < *n; i++) if (BOONS[pool[i]].tier == tier) {
+        for (int i = 0; i < *n; i++) if (card_tier(pool[i]) == tier) {
             cand[nc++] = i;
             int f = BOONS[pool[i]].family;
             if (f < FAM_COUNT && famHeld[f] >= 2) cand[nc++] = i;
@@ -831,22 +900,33 @@ static int roll_pact(const int table[], int nTable)
 
 void tower_draft_open(void)
 {
-    // Three different boons; the first a skill card (learn or upgrade) while any are left
-    BoonId pool[BOON_COUNT], skills[BOON_COUNT]; int n = 0, ns = 0;
+    // Three different boons. Until a skill is known a Learn card leads (section 14); after that a draft
+    // holds one skill card a third of the time (about 11 by floor 35: one skill to Lv 5 and part of a
+    // second), a skill at Lv 2+ twice as likely as each other one; a skill just at Lv 4 leads the next
+    // draft with its forms (both, the B form once bought: two of the three cards)
+    BoonId pool[BOON_COUNT], lead[BOON_COUNT], sk[BOON_COUNT]; int n = 0, nl = 0, nsk = 0;
     int famHeld[FAM_COUNT + 1];
     fam_held(famHeld);
+    int due = -1;
+    for (int k = 0; k < SKILL_COUNT && due < 0; k++) if ((s.formsDue >> k) & 1) due = k;
+    s.formsDue = 0;
     for (int b = 0; b < BOON_COUNT; b++) {
-        if (!offerable(b) || (s.elite && BOONS[b].tier == TIER_COMMON)) continue;   // an Elite's draft: Rare or better
-        if (s.legendDraft && BOONS[b].tier != TIER_LEGENDARY) continue;             // the Prisoner's Elite: all Legendary
-        if (is_skill_card(b)) skills[ns++] = b; else pool[n++] = b;
+        if (!offerable(b) || (s.elite && card_tier(b) == TIER_COMMON)) continue;    // an Elite's draft: Rare or better
+        if (s.legendDraft && card_tier(b) != TIER_LEGENDARY) continue;              // the Prisoner's Elite: all Legendary
+        if (due >= 0 && is_form(b) && form_skill(b) == due) continue;              // (they lead, below)
+        if (!s.skills && is_learn(b)) lead[nl++] = b;
+        else if (is_skill_card(b)) { sk[nsk++] = b; if (is_learn(b) && s.stacks[b] >= 2) sk[nsk++] = b; }
+        else pool[n++] = b;
     }
     s.nChoices = 0;
-    if (ns > 0) {
-        int k = rng_next() % ns;
-        s.choices[s.nChoices++] = skills[k];
-        skills[k] = skills[--ns];
-        for (int i = 0; i < ns; i++) pool[n++] = skills[i];   // the rest may still turn up
+    if (due >= 0) {
+        for (int f = SKILL_FORM_A; f <= SKILL_FORM_B; f++) if (offerable(skill_form_card(due, f))) s.choices[s.nChoices++] = skill_form_card(due, f);
+    } else if (nl > 0) {
+        int k = rng_next() % nl;
+        s.choices[s.nChoices++] = lead[k];
+        lead[k] = lead[--nl];
     }
+    if (nsk && s.nChoices < DRAFT_CHOICES && (int)(rng_next() % 100) < SKILL_CARD_CHANCE) s.choices[s.nChoices++] = sk[rng_next() % nsk];
     // The rest by rarity, a pact now and then; once the boons run out, a +40 gold card and pacts
     bool purse = false;
     while (s.nChoices < DRAFT_CHOICES) {
@@ -1003,7 +1083,7 @@ static void tower_draft_draw(void)
     for (int i = 0; i < s.nChoices; i++) {
         int x = x0 + i * (cw + gap), card = s.choices[i];
         bool pact = card >= BOON_COUNT && card != GOLD_CARD;
-        int tier = pact ? 3 : card == GOLD_CARD ? TIER_LEGENDARY : BOONS[card].tier;
+        int tier = pact ? 3 : card == GOLD_CARD ? TIER_LEGENDARY : card_tier(card);
         flat_mode();
         bool on = i == s.sel;
         rdpq_set_prim_color(FRAME[tier][on]);
@@ -1035,10 +1115,12 @@ static void tower_draft_draw(void)
         if (bd->duo) {
             snprintf(line, sizeof line, "%s+%s", FAMILIES[bd->family].name, FAMILIES[bd->duo - 1].name);
             text_style(x + 2, y0 + 12, cw - 4, ALIGN_CENTER, FONT_STYLE_GOLD, line);
-        } else text_style(x + 4, y0 + 12, cw - 8, ALIGN_CENTER, FAMILIES[bd->family].style, FAMILIES[bd->family].name);
-        int nameLines = text_style(x + 4, y0 + 27, cw - 8, ALIGN_CENTER, NAME_STYLE[bd->tier], bd->name);
-        const char *desc = bd->desc;    // a Learn card names the skill's button in the layout
-        if (card == BOON_LEARN_MOONBLADE || card == BOON_LEARN_HALFMOON || card == BOON_LEARN_CLEAVE) {
+        } else if (is_form(card)) text_style(x + 4, y0 + 12, cw - 8, ALIGN_CENTER, FONT_STYLE_GOLD, "Lv 5 form");     // (in place of "Skill")
+        else text_style(x + 4, y0 + 12, cw - 8, ALIGN_CENTER, FAMILIES[bd->family].style, FAMILIES[bd->family].name);
+        int nameLines = text_style(x + 4, y0 + 27, cw - 8, ALIGN_CENTER, NAME_STYLE[tier], bd->name);
+        const char *desc = bd->desc;    // a Learn card names the skill's button in the layout; a level what it adds
+        if (is_learn(card) && s.stacks[card]) desc = SKILL_LV_DESC[card - BOON_LEARN_MOONBLADE][s.stacks[card] - 1];
+        else if (is_learn(card)) {
             snprintf(line, sizeof line, "Learn it: %s", joypad_skill_button(card - BOON_LEARN_MOONBLADE));
             desc = line;
         }
@@ -1061,12 +1143,19 @@ static void tower_draft_draw(void)
             bstyle[0] = FAMILIES[bd->duo - 1].style; bstyle[1] = FAMILIES[bd->family].style;
         } else {
             if (bd->up) snprintf(bottom[0], 40, "+ (top level)");
-            else if (bd->family == FAM_SKILL) snprintf(bottom[0], 40, "Skill: no slot");
+            else if (bd->family == FAM_SKILL && !s.stacks[card]) snprintf(bottom[0], 40, "Skill: no slot");
             else if (s.stacks[card]) snprintf(bottom[0], 40, "Lv %d -> %d", s.stacks[card], s.stacks[card] + 1);
             else snprintf(bottom[0], 40, "New: slot %d/%d", slots_used() < TOWER_SLOTS ? slots_used() + 1 : TOWER_SLOTS, TOWER_SLOTS);
             if (r >= 0) { snprintf(bottom[1], 40, "%s", BOONS[r].name); snprintf(bottom[2], 40, "Locks out"); bstyle[1] = bstyle[2] = FONT_STYLE_RED; nb = 3; }
+            if (is_form(card)) { snprintf(bottom[0], 40, "%s", BOONS[r].name); snprintf(bottom[1], 40, "Locks out"); bstyle[0] = FONT_STYLE_RED; nb = 2; }    // (its tag says the form)
         }
-        for (int k = 0; k < nb; k++) text_style(x - 1, y0 + ch - 3 - 12 * k, cw + 2, ALIGN_CENTER, bstyle[k], bottom[k]);
+        // up from the foot, 12 apart; a long name (a form's) wraps, its lines 17 apart
+        for (int k = 0, y = y0 + ch - 3; k < nb; k++, y -= 12) {
+            int n = (int)strlen(bottom[k]), lines = 1;
+            if (n > 12) { rdpq_paragraph_t *p = rdpq_paragraph_build(&(rdpq_textparms_t){ .width = cw + 2, .wrap = WRAP_WORD }, FONT_UNBALANCED, bottom[k], &n); lines = p->nlines; rdpq_paragraph_free(p); }
+            y -= 17 * (lines - 1);
+            text_style(x - 1, y, cw + 2, ALIGN_CENTER, bstyle[k], bottom[k]);
+        }
     }
     // Skip, under the cards
     // A button of its own under the cards, framed like them: Down to it, Up back to the card
@@ -1133,14 +1222,13 @@ static int map_enter(void)
     return t;
 }
 
-static bool is_learn(int b) { return b >= BOON_LEARN_MOONBLADE && b <= BOON_LEARN_CLEAVE; }
 // What a Rest can Temper: a level of a slotted boon below its max, a "+" unlocked by a maxed one, a
-// known skill's "+" card (stage 5 turns those into levels); never a new boon or a duo
+// known skill's next level below Lv 4; never a new boon, a duo or a skill's form (a draft's choice)
 static int temper_targets(int8_t out[], int max)
 {
     int n = 0;
     for (int b = 0; b < BOON_COUNT && n < max; b++)
-        if (offerable(b) && !BOONS[b].duo && !is_learn(b) && (s.stacks[b] || BOONS[b].up || is_skill_card(b))) out[n++] = (int8_t)b;
+        if (offerable(b) && !BOONS[b].duo && !is_form(b) && (is_learn(b) ? knows(b - BOON_LEARN_MOONBLADE) : s.stacks[b] || BOONS[b].up)) out[n++] = (int8_t)b;
     return n;
 }
 
@@ -1186,13 +1274,11 @@ static int mirror_targets(int out[])
     }
     return n;
 }
-// The Moonlit Pool: a skill to learn, or a known skill's "+" (its only level before stage 5)
+// The Moonlit Pool: a skill to learn, or a known skill's next level (below Lv 4: its card)
 static int pool_targets(bool learn, int out[])
 {
-    static const BoonId LEARN[SKILL_COUNT] = { BOON_LEARN_MOONBLADE, BOON_LEARN_HALFMOON, BOON_LEARN_CLEAVE };
-    static const BoonId PLUS[SKILL_COUNT] = { BOON_CRESCENT_ECHO, BOON_HALFMOON_PLUS, BOON_CLEAVE_PLUS };
     int n = 0;
-    for (int k = 0; k < SKILL_COUNT; k++) if (offerable(learn ? LEARN[k] : PLUS[k])) out[n++] = learn ? LEARN[k] : PLUS[k];
+    for (int k = 0; k < SKILL_COUNT; k++) if (knows(k) != learn && offerable(BOON_LEARN_MOONBLADE + k)) out[n++] = BOON_LEARN_MOONBLADE + k;
     return n;
 }
 
@@ -1465,7 +1551,8 @@ static void event_take(int i)
         { int b = t[rng_next() % k];
           take_boon((BoonId)b);
           if (is_learn(b)) s.skillsOffered |= 1 << (b - BOON_LEARN_MOONBLADE);
-          snprintf(r, rn, i == 0 ? "You learn %s." : "The water sharpens it: %s.", BOONS[b].name); }
+          if (i == 0) snprintf(r, rn, "You learn %s.", BOONS[b].name);
+          else snprintf(r, rn, "The water sharpens it: %s Lv %d.", BOONS[b].name, s.stacks[b]); }
         break;
     case EV_PRISONER:
         s.prisoner = true;
@@ -1669,7 +1756,6 @@ static void rest_draw(void)
         else if (boonRows) {
             const BoonDef *bd = &BOONS[v];
             if (bd->up) snprintf(line, sizeof line, "%s (top level)", bd->name);
-            else if (is_skill_card(v)) snprintf(line, sizeof line, "%s (skill)", bd->name);
             else snprintf(line, sizeof line, "%s   Lv %d -> %d", bd->name, s.stacks[v], s.stacks[v] + 1);
             style = FAMILIES[bd->family].style;
         } else {
@@ -1869,13 +1955,12 @@ const char* tower_run_summary(void)
 
 int tower_build_rows(char left[][40], char right[][12], int style[], int max)
 {
-    static const BoonId LEARN[SKILL_COUNT] = { BOON_LEARN_MOONBLADE, BOON_LEARN_HALFMOON, BOON_LEARN_CLEAVE };
-    static const BoonId PLUS[SKILL_COUNT] = { BOON_CRESCENT_ECHO, BOON_HALFMOON_PLUS, BOON_CLEAVE_PLUS };
     int n = 0;
-    for (int k = 0; k < SKILL_COUNT && n < max; k++, n++) {     // the skills: button, name, known or not (and its card)
-        snprintf(left[n], 40, "%s %s", joypad_skill_button(k), BOONS[LEARN[k]].name);
-        snprintf(right[n], 12, "%s", !knows(k) ? "-" : s.stacks[PLUS[k]] ? "known +" : "known");
-        style[n] = knows(k) ? FONT_STYLE_WHITE : FONT_STYLE_GREY;
+    for (int k = 0; k < SKILL_COUNT && n < max; k++, n++) {     // the skills: button, name (its form's), its level
+        int f = tower_skill_form(k);
+        snprintf(left[n], 40, "%s %s", joypad_skill_button(k), BOONS[f ? skill_form_card(k, f) : BOON_LEARN_MOONBLADE + k].name);
+        if (knows(k)) snprintf(right[n], 12, "Lv %d/%d", tower_skill_level(k), SKILL_LV_MAX + 1); else snprintf(right[n], 12, "-");
+        style[n] = !knows(k) ? FONT_STYLE_GREY : f ? FONT_STYLE_GOLD : FONT_STYLE_WHITE;
     }
     for (int i = 0; i < TOWER_SLOTS && n < max; i++, n++) {      // the slots: name in its family's colour, its level ("+" at the top)
         if (!s.slot[i]) { snprintf(left[n], 40, "Empty slot"); right[n][0] = 0; style[n] = FONT_STYLE_GREY; continue; }
@@ -1917,21 +2002,35 @@ static int pack_family(int i)
     }
     return -1;
 }
-int tower_pack_count(void) { int n = 0; while (pack_family(n) >= 0) n++; return n; }
-const char* tower_pack_name(int i) { int f = pack_family(i); return f >= 0 ? FAMILIES[f].name : ""; }
+// After the packs, the skills' B forms (section 14b: 200 Embers each, bits 6-8 of the unlocks)
+static int family_packs(void) { int n = 0; while (pack_family(n) >= 0) n++; return n; }
+static int pack_form(int i) { int k = i - family_packs(); return k >= 0 && k < SKILL_COUNT ? k : -1; }
+int tower_pack_count(void) { return family_packs() + SKILL_COUNT; }
+const char* tower_pack_name(int i)
+{
+    int f = pack_family(i), k = pack_form(i);
+    return f >= 0 ? FAMILIES[f].name : k >= 0 ? BOONS[skill_form_card(k, SKILL_FORM_B)].name : "";
+}
 const char* tower_pack_desc(int i)
 {
     static char d[96];
-    int f = pack_family(i), n = 0;
+    int f = pack_family(i), n = 0, k = pack_form(i);
     d[0] = 0;
+    if (k >= 0) {
+        int m = snprintf(d, sizeof d, "%s's second Lv 5 form: ", BOONS[BOON_LEARN_MOONBLADE + k].name);
+        snprintf(d + m, sizeof d - m, "%s", BOONS[skill_form_card(k, SKILL_FORM_B)].desc);
+        if (d[m] >= 'A' && d[m] <= 'Z') d[m] += 'a' - 'A';     // (mid-sentence)
+    }
     for (int b = 0; b < BOON_COUNT && f >= 0; b++)
         if (BOONS[b].pack && BOONS[b].family == f) n += snprintf(d + n, sizeof d - n, "%s%s", n ? ", " : "New boons: ", BOONS[b].name);
     return d;
 }
-bool tower_pack_owned(int i) { int f = pack_family(i); TowerSave t; tower_load(&t); return f >= 0 && ((t.unlocks >> f) & 1); }
+static int pack_bit(int i) { int f = pack_family(i), k = pack_form(i); return f >= 0 ? f : k >= 0 ? FAM_COUNT + k : -1; }
+bool tower_pack_owned(int i) { int bit = pack_bit(i); TowerSave t; tower_load(&t); return bit >= 0 && ((t.unlocks >> bit) & 1); }
 int  tower_pack_cost(int i)
 {
     if (tower_pack_owned(i)) return -1;
+    if (pack_form(i) >= 0) return FORM_COST;
     TowerSave t; tower_load(&t);
     int bought = 0;
     for (int f = 0; f < FAM_COUNT; f++) bought += (t.unlocks >> f) & 1;
@@ -1939,13 +2038,13 @@ int  tower_pack_cost(int i)
 }
 bool tower_pack_buy(int i)
 {
-    int f = pack_family(i), cost = tower_pack_cost(i);
+    int bit = pack_bit(i), cost = tower_pack_cost(i);
     TowerSave t; tower_load(&t);
-    if (f < 0 || cost < 0 || t.embers < cost) return false;
+    if (bit < 0 || cost < 0 || t.embers < cost) return false;
     t.embers -= cost;
-    t.unlocks |= 1 << f;
+    t.unlocks |= 1 << bit;
 #ifdef HLE_AUTOPLAY
-    debugf("[unlock] bought the %s pack for %d: unlocks %03x, Embers %d\n", FAMILIES[f].name, cost, t.unlocks, t.embers);
+    debugf("[unlock] bought %s for %d: unlocks %03x, Embers %d\n", tower_pack_name(i), cost, t.unlocks, t.embers);
 #endif
     return save_controller_set_tower(&t);
 }
@@ -2034,7 +2133,7 @@ float tower_mod_damage_vs(float bossHealthFrac, bool staggered, int kind)
     if (!s.active) return 1.0f;
     float m = 1.0f;
     if (bossHealthFrac < 0.5f) m *= 1.0f + 0.12f * bl(PB_WOUNDED);
-    if (staggered) m *= 1.0f + 0.15f * bl(PB_STAGGERED);
+    (void)staggered;    // (Breaker and Eclipse: tower_mod_stagger_damage, added and capped)
     // the new boons that change a hit (logged as they do)
     extern double nowS;
     int rt = tower_boon_stacks(BOON_RED_THIRST);
@@ -2049,7 +2148,6 @@ float tower_mod_damage_vs(float bossHealthFrac, bool staggered, int kind)
     if (sword && tower_boon_stacks(BOON_WAXING_MOON) && nowS < s.waxingUntil) { m *= 1.15f; BFX("Waxing Moon: sword hit x1.15\n"); }
     if (kind == TOWER_HIT_FINISHER && tower_boon_stacks(BOON_EMBER_EDGE_PLUS)) { m *= 1.25f; BFX("Ember Edge+: the finisher x1.25\n"); }
     if (kind == TOWER_HIT_SKILL && tower_boon_stacks(BOON_BLOOD_MOON_RITE)) { m *= 1.4f; BFX("Blood Moon Rite: a skill's hit x1.40\n"); }
-    if (kind == TOWER_HIT_SKILL && staggered && tower_boon_stacks(BOON_ECLIPSE)) { m *= 1.5f; BFX("Eclipse: skill hit on a staggered boss x1.50\n"); }
     return m;
 }
 
@@ -2092,7 +2190,16 @@ float tower_mod_stagger_time(void)
 #endif
     return tower_boon_stacks(BOON_CRUSHING_BLOWS) ? 1.5f : 1.0f;
 }
-float tower_mod_stagger_damage(void) { return tower_boon_stacks(BOON_EXECUTIONER) ? (tower_boon_stacks(BOON_EXECUTIONER_PLUS) ? 1.9f : 1.6f) : 1.0f; }
+// A staggered boss's bonuses add (Executioner +60%, +90% with its "+"; Breaker +15% a stack; Eclipse +50%
+// on a skill's hit), capped at +100% (section 6, the stagger build)
+#define STAGGER_BONUS_CAP 1.0f
+float tower_mod_stagger_damage(int kind)
+{
+    if (!s.active) return 1.0f;
+    float add = (tower_boon_stacks(BOON_EXECUTIONER) ? (tower_boon_stacks(BOON_EXECUTIONER_PLUS) ? 0.9f : 0.6f) : 0.0f) + 0.15f * bl(PB_STAGGERED);
+    if (kind == TOWER_HIT_SKILL && tower_boon_stacks(BOON_ECLIPSE)) { add += 0.5f; BFX("Eclipse: skill hit on a staggered boss +50%%\n"); }
+    return 1.0f + fminf(STAGGER_BONUS_CAP, add);
+}
 float tower_mod_perfect_window(void)
 {
     if (!tower_boon_stacks(BOON_PHANTOM_STEP)) return 0.2f;
@@ -2270,12 +2377,6 @@ float tower_mod_blow(float amount)
 
 int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + 3 * tower_boon_stacks(BOON_DEEP_FLASK) + 2 * has_relic(RELIC_FLASK) - has_relic(RELIC_PARCHED) : 3; }   // Story and Bonus: 3
 bool  tower_mod_skill_allowed(int skill) { return character_skills_enabled() && (!s.active || knows(skill)); }
-float tower_mod_skill_damage(int skill)
-{
-    if (skill == SKILL_HALFMOON_SLASH && tower_boon_stacks(BOON_HALFMOON_PLUS)) return 1.2f;
-    if (skill == SKILL_CRESCENT_CLEAVE && tower_boon_stacks(BOON_CLEAVE_PLUS)) return 1.2f;
-    return 1.0f;
-}
 float tower_mod_potion_heal(void)
 {
     return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.25f * tower_boon_stacks(BOON_KINDLED_FLASK))
@@ -2358,7 +2459,6 @@ void tower_tick(float dt)
     s.rally = fmaxf(0.0f, s.rally - s.rallyRate * dt);
 }
 float tower_rally_pool(void) { return s.active ? fminf(s.rally, character.maxHealth - character.health) : 0.0f; }
-int   tower_mod_extra_mbd_waves(void) { return tower_boon_stacks(BOON_CRESCENT_ECHO) ? 2 : 0; }
 
 #ifdef HLE_TEST_TOWER
 void tower_test_grant_unbroken(void) { s.stacks[BOON_UNBROKEN]++; }     // test aid: the boon without the draft
@@ -2409,7 +2509,7 @@ int tower_test_slots(void)
     draft_counts(500, counts);
     { int bad = 0; for (int b = 0; b < BOON_COUNT; b++) if (counts[b] && !card_ok_full(b)) { bad++; debugf("[slots] full bar offered %s\n", BOONS[b].name); }
       CHECK(!bad, "a full bar's drafts hold only slotted boons, skills and pacts (%d bad)", bad);
-      debugf("[slots] full bar, 500 drafts: Static %d, Shadow Edge %d, Iron Skin %d, Halfmoon+ %d\n", counts[BOON_STATIC], counts[BOON_SHADOW_EDGE], counts[BOON_IRON_SKIN], counts[BOON_HALFMOON_PLUS]); }
+      debugf("[slots] full bar, 500 drafts: Static %d, Shadow Edge %d, Iron Skin %d, Halfmoon Slash Lv 2 %d\n", counts[BOON_STATIC], counts[BOON_SHADOW_EDGE], counts[BOON_IRON_SKIN], counts[BOON_LEARN_HALFMOON]); }
     // the packs: none bought, none of their boons; the Storm pack, only its own
     tower_begin_run(12); s.packs = 0;
     draft_counts(500, counts);
@@ -2463,6 +2563,146 @@ int tower_test_slots(void)
 static int duos_offerable(void) { int n = 0; for (int b = 0; b < BOON_COUNT; b++) n += BOONS[b].duo && offerable(b); return n; }
 
 // Stage 2's self-check: rivals, "+" and duos (HLE_TEST_TOWER); returns the failures
+// Stage 5's self-check (HLE_TEST_TOWER): the skills' levels and forms, their cards and draft rules,
+// Temper, the Moonlit Pool, the B forms' unlocks at the Shrine, the stagger bonuses' cap, and the
+// pick math (how many skill cards a run sees); returns the failures
+int tower_test_skills(void)
+{
+    int fails = 0, counts[BOON_COUNT];
+    #define CHECK(c, ...) do { if (!(c)) { fails++; debugf("[skills] FAIL: " __VA_ARGS__); debugf("\n"); } } while (0)
+    #define RUN(seed) do { tower_begin_run(seed); s.packs = (1 << FAM_COUNT) - 1; s.relicFx[0] = s.relicFx[1] = 0; s.forms = 0; } while (0)
+    // levels: Learn is Lv 1, the card again Lv 2-4, then a form (Lv 5); outside a run Lv 1
+    RUN(301);
+    CHECK(tower_skill_level(SKILL_HALFMOON_SLASH) == 1 && !tower_skill_form(SKILL_HALFMOON_SLASH) && offerable(BOON_LEARN_HALFMOON) && card_tier(BOON_LEARN_HALFMOON) == TIER_COMMON,
+          "unknown: its Learn card, Common");
+    take_boon(BOON_LEARN_HALFMOON);
+    CHECK(knows(SKILL_HALFMOON_SLASH) && tower_skill_level(SKILL_HALFMOON_SLASH) == 1 && offerable(BOON_LEARN_HALFMOON) && card_tier(BOON_LEARN_HALFMOON) == TIER_RARE && slots_used() == 0,
+          "learned: Lv 1, its card now its Lv 2 (Rare, no slot)");
+    take_boon(BOON_LEARN_HALFMOON); take_boon(BOON_LEARN_HALFMOON);
+    CHECK(tower_skill_level(SKILL_HALFMOON_SLASH) == 3 && !s.formsDue && !offerable(BOON_TWIN_MOON), "Lv 3: no form yet (%d)", tower_skill_level(SKILL_HALFMOON_SLASH));
+    take_boon(BOON_LEARN_HALFMOON);
+    CHECK(tower_skill_level(SKILL_HALFMOON_SLASH) == 4 && !offerable(BOON_LEARN_HALFMOON) && offerable(BOON_TWIN_MOON) && !offerable(BOON_FULL_MOON) && s.formsDue == 1 << SKILL_HALFMOON_SLASH,
+          "Lv 4: the card stops, Twin Moon offerable, Full Moon not (not bought)");
+    // the next draft leads with its forms (A only: B not bought), then they're ordinary cards
+    tower_draft_open();
+    CHECK(s.choices[0] == BOON_TWIN_MOON && s.choices[1] != BOON_FULL_MOON && !s.formsDue, "the draft after Lv 4 leads with Twin Moon (B not bought) (%d %d)", s.choices[0], s.choices[1]);
+    s.draftOpen = false;
+    s.forms = 1 << SKILL_HALFMOON_SLASH; s.formsDue = 1 << SKILL_HALFMOON_SLASH;
+    tower_draft_open();
+    CHECK(s.choices[0] == BOON_TWIN_MOON && s.choices[1] == BOON_FULL_MOON && s.nChoices == 3, "B bought: both forms, two of the three cards (%d %d)", s.choices[0], s.choices[1]);
+    s.draftOpen = false;
+    draft_counts(200, counts);
+    CHECK(counts[BOON_TWIN_MOON] < 200 && counts[BOON_TWIN_MOON] + counts[BOON_FULL_MOON] > 0 && counts[BOON_TWIN_MOON] < 200, "after that draft the forms are ordinary cards (%d %d of 200)", counts[BOON_TWIN_MOON], counts[BOON_FULL_MOON]);
+    { int both = 0; for (int k = 0; k < 200; k++) { tower_draft_open(); bool a = false, b = false; for (int i = 0; i < s.nChoices; i++) { a |= s.choices[i] == BOON_TWIN_MOON; b |= s.choices[i] == BOON_FULL_MOON; } both += a && b; }
+      s.draftOpen = false; CHECK(!both, "an ordinary draft never holds both forms (%d)", both); }
+    take_boon(BOON_FULL_MOON);
+    CHECK(tower_skill_level(SKILL_HALFMOON_SLASH) == 5 && tower_skill_form(SKILL_HALFMOON_SLASH) == SKILL_FORM_B && s.locked[BOON_TWIN_MOON] && !offerable(BOON_TWIN_MOON) && !offerable(BOON_FULL_MOON),
+          "Full Moon taken: Lv 5, form B, Twin Moon locked out for the run");
+    { char l[TOWER_BUILD_ROWS][40], r[TOWER_BUILD_ROWS][12]; int st[TOWER_BUILD_ROWS];
+      int n = tower_build_rows(l, r, st, TOWER_BUILD_ROWS); bool locked = false;
+      for (int i = 0; i < n; i++) locked |= strstr(l[i], "Locked:") && strstr(l[i], "Twin Moon");
+      CHECK(strstr(l[1], "Full Moon") && !strcmp(r[1], "Lv 5/5") && st[1] == FONT_STYLE_GOLD && !strcmp(r[0], "-") && locked,
+            "Build: \"%s\" \"%s\", the other form greyed under Locked", l[1], r[1]); }
+    // a Learn card leads every draft until a skill is known; then skill cards are ordinary
+    RUN(302);
+    { int lead = 0; for (int k = 0; k < 200; k++) { tower_draft_open(); lead += is_learn(s.choices[0]); } s.draftOpen = false;
+      CHECK(lead == 200, "no skill known: a Learn card leads every draft (%d of 200)", lead); }
+    take_boon(BOON_LEARN_CLEAVE);
+    { int lead = 0, any = 0; for (int k = 0; k < 300; k++) { tower_draft_open(); lead += is_skill_card(s.choices[0]); for (int i = 0; i < s.nChoices; i++) any += s.choices[i] < BOON_COUNT && is_skill_card(s.choices[i]); }
+      s.draftOpen = false;
+      CHECK(lead < 150 && any > 0, "a skill known: skill cards are ordinary (first card %d, %d in all, of 300 drafts)", lead, any);
+      debugf("[skills] one skill known at Lv 1: %d skill cards in 300 drafts (%.2f a draft)\n", any, (double)(any / 300.0f)); }
+    // a third of the drafts hold a skill card; a skill at Lv 2+ twice as likely as each other one
+    draft_counts(3000, counts); int c2 = counts[BOON_LEARN_CLEAVE], h2 = counts[BOON_LEARN_HALFMOON];
+    take_boon(BOON_LEARN_CLEAVE); draft_counts(3000, counts); int c3 = counts[BOON_LEARN_CLEAVE], h3 = counts[BOON_LEARN_HALFMOON];
+    int all3 = 0; for (int b = 0; b < BOON_COUNT; b++) if (is_skill_card(b)) all3 += counts[b];
+    debugf("[skills] 3000 drafts: the Cleave at Lv 1 %d (Halfmoon's Learn %d), at Lv 2 %d (Halfmoon's %d): x%.2f each other one; skill cards in %.0f%% of drafts\n",
+           c2, h2, c3, h3, (double)(c3 / fmaxf(1.0f, (float)h3)), (double)(all3 / 30.0f));
+    CHECK(c3 > h3 * 8 / 5 && c2 < h2 * 5 / 4 && all3 > 900 && all3 < 1100, "a skill at Lv 2+: its card twice as likely as another's (%d vs %d); a skill card in a third of the drafts (%d of 3000)", c3, h3, all3);
+    // an Elite's draft (Rare or better) has the level cards, not the Learn ones
+    s.elite = true; draft_counts(300, counts); s.elite = false;
+    CHECK(counts[BOON_LEARN_CLEAVE] > 0 && !counts[BOON_LEARN_HALFMOON] && !counts[BOON_LEARN_MOONBLADE], "an Elite's draft: levels (Rare), no Learn cards (Common) (%d %d %d)",
+          counts[BOON_LEARN_CLEAVE], counts[BOON_LEARN_HALFMOON], counts[BOON_LEARN_MOONBLADE]);
+    // Temper raises a known skill below Lv 4, never gives a form; the Pool the same
+    { int8_t t[LIST_MAX]; int n = temper_targets(t, LIST_MAX); bool cl = false, other = false, form = false;
+      for (int i = 0; i < n; i++) { cl |= t[i] == BOON_LEARN_CLEAVE; other |= t[i] == BOON_LEARN_HALFMOON || t[i] == BOON_LEARN_MOONBLADE; form |= is_form(t[i]); }
+      CHECK(cl && !other && !form, "Temper: the known skill's next level, no unknown skill, no form"); }
+    take_boon(BOON_LEARN_CLEAVE); take_boon(BOON_LEARN_CLEAVE);
+    { int8_t t[LIST_MAX]; int n = temper_targets(t, LIST_MAX); bool cl = false, form = false;
+      for (int i = 0; i < n; i++) { cl |= t[i] == BOON_LEARN_CLEAVE; form |= is_form(t[i]); }
+      int p[BOON_COUNT];
+      CHECK(!cl && !form && !pool_targets(false, p), "Lv 4: nothing to Temper or sharpen at the Pool (its forms come in a draft)"); }
+    // the Moonlit Pool's +1 level: a real level
+    RUN(303); take_boon(BOON_LEARN_MOONBLADE);
+    { int p[BOON_COUNT]; int n = pool_targets(false, p);
+      CHECK(n == 1 && p[0] == BOON_LEARN_MOONBLADE, "the Pool: +1 level on the known skill (%d)", n);
+      take_boon((BoonId)p[0]);
+      CHECK(tower_skill_level(SKILL_MOON_BLADE_DANCE) == 2, "the Pool's level: Moon Blade Dance Lv 2 (%d)", tower_skill_level(SKILL_MOON_BLADE_DANCE)); }
+    // the B forms at the Shrine: 200 Embers each, bits 6-8 of the unlocks, read at a run's start; an old save has none
+    {
+        TowerSave was, t; tower_load(&was); t = was;
+        t.unlocks = 0x3F; t.embers = 450; save_controller_set_tower(&t);       // all packs, no form (a save before stage 5)
+        int fp = family_packs(), n = tower_pack_count();
+        bool none = true; for (int k = 0; k < SKILL_COUNT; k++) none &= !tower_pack_owned(fp + k) && tower_pack_cost(fp + k) == FORM_COST;
+        tower_begin_run(304);
+        CHECK(n == fp + SKILL_COUNT && none && !s.forms && !strcmp(tower_pack_name(fp), "Shattering Dance") && !strcmp(tower_pack_name(fp + 2), "Long Cleave"),
+              "the Shrine: %d packs then the 3 B forms at %d, none owned on an older save", fp, FORM_COST);
+        bool b1 = tower_pack_buy(fp + 1), b2 = tower_pack_buy(fp + 1), b0 = tower_pack_buy(fp), b3 = tower_pack_buy(fp + 2);
+        tower_load(&t);
+        CHECK(b1 && !b2 && b0 && !b3 && t.unlocks == (0x3F | 1 << 7 | 1 << 6) && t.embers == 50 && tower_pack_owned(fp + 1) && tower_pack_cost(fp + 1) < 0,
+              "Full Moon then Shattering Dance bought (200 each, once), Long Cleave refused at 50 (unlocks %03x, Embers %d)", t.unlocks, t.embers);
+        tower_begin_run(305);
+        CHECK(s.forms == 3 && (s.packs & 0x3F) == 0x3F, "a run reads them (forms %x)", s.forms);
+        save_controller_set_tower(&was);
+    }
+    // the stagger bonuses add, +100% at most
+    RUN(306);
+    float e0 = tower_mod_stagger_damage(TOWER_HIT_SWORD);
+    take_boon(BOON_EXECUTIONER); float e1 = tower_mod_stagger_damage(TOWER_HIT_SWORD);
+    s.bless[PB_STAGGERED] = 1; float e2 = tower_mod_stagger_damage(TOWER_HIT_SWORD);
+    s.bless[PB_STAGGERED] = 3; float e3 = tower_mod_stagger_damage(TOWER_HIT_SWORD);
+    s.bless[PB_STAGGERED] = 0; s.stacks[BOON_ECLIPSE] = 1; float e4 = tower_mod_stagger_damage(TOWER_HIT_SKILL), e5 = tower_mod_stagger_damage(TOWER_HIT_SWORD);
+    s.stacks[BOON_EXECUTIONER] = 0; float e6 = tower_mod_stagger_damage(TOWER_HIT_SKILL);
+    s.bless[PB_STAGGERED] = 2; float e7 = tower_mod_stagger_damage(TOWER_HIT_SKILL), e8 = tower_mod_damage_vs(1.0f, true, TOWER_HIT_SKILL);
+    debugf("[skills] stagger damage: none %.2f, Executioner %.2f, +Breaker %.2f, +3 Breakers %.2f (capped), Executioner+Eclipse a skill %.2f (capped) a sword hit %.2f, Eclipse alone %.2f, Eclipse+2 Breakers %.2f\n",
+           (double)e0, (double)e1, (double)e2, (double)e3, (double)e4, (double)e5, (double)e6, (double)e7);
+    CHECK(e0 == 1.0f && fabsf(e1 - 1.6f) < 1e-4f && fabsf(e2 - 1.75f) < 1e-4f && e3 == 2.0f && e4 == 2.0f && fabsf(e5 - 1.6f) < 1e-4f && fabsf(e6 - 1.5f) < 1e-4f && fabsf(e7 - 1.8f) < 1e-4f && e8 == 1.0f,
+          "the bonuses add: 1, 1.6, 1.75, 3 Breakers 2.0, a skill with Executioner and Eclipse 2.0, its sword hit 1.6, Eclipse 1.5, +2 Breakers 1.8; none multiply in damage_vs");
+    // the pick math (section 14): a skill build takes every skill card of one skill; a sword build learns
+    // one skill and takes nothing else of them: their skill cards by floor 35 (33 drafts), 40 runs each
+    for (int build = 0; build < 2; build++) {
+        int offered = 0, lv5at = 0, lv5n = 0, lv4 = 0;
+        for (int run = 0; run < 40; run++) {
+            RUN(400 + run); s.forms = 7;
+            int focus = -1, got5 = 0;
+            for (int d = 0; d < 33; d++) {
+                tower_draft_open();
+                int take = -1;
+                for (int i = 0; i < s.nChoices; i++) {
+                    int c = s.choices[i];
+                    if (c >= BOON_COUNT || !is_skill_card(c)) continue;
+                    offered++;
+                    int k = is_form(c) ? form_skill(c) : c - BOON_LEARN_MOONBLADE;
+                    if (take < 0 && (focus < 0 || (build == 0 && k == focus))) take = i;
+                }
+                if (take < 0) for (int i = 0; i < s.nChoices && take < 0; i++) if (s.choices[i] >= BOON_COUNT || !is_skill_card(s.choices[i])) take = i;
+                if (take >= 0 && focus < 0 && s.choices[take] < BOON_COUNT && is_learn(s.choices[take])) focus = s.choices[take] - BOON_LEARN_MOONBLADE;
+                tower_draft_pick(take >= 0 ? take : s.nChoices);
+                if (focus >= 0 && !got5 && tower_skill_level(focus) == 5) { got5 = d + 2; lv5at += got5; lv5n++; }
+            }
+            if (focus >= 0 && tower_skill_level(focus) >= 4) lv4++;
+        }
+        debugf("[skills] pick math, %s build, 40 runs of 33 drafts: %.1f skill cards offered a run (%.2f a draft), Lv 5 in %d runs (at floor %.1f), Lv 4+ in %d\n",
+               build ? "sword" : "skill", (double)(offered / 40.0f), (double)(offered / 1320.0f), lv5n, (double)(lv5n ? (float)lv5at / lv5n : 0.0f), lv4);
+    }
+    tower_end_run();
+    character.maxHealth = tower_mod_max_health(); character.health = character.maxHealth;
+    #undef CHECK
+    #undef RUN
+    debugf("[skills] stage 5 self-check: %d failed\n", fails);
+    return fails;
+}
+
 int tower_test_stage2(void)
 {
     int fails = 0, counts[BOON_COUNT];
@@ -2556,7 +2796,7 @@ int tower_test_stage2(void)
     { int n = 0; s.hitCount = 0; for (int i = 0; i < 9; i++) n += tower_on_sword_hit(false) > 0.0f;
       CHECK(n == 3, "Storm Blade+: every 3rd hit (%d bolts in 9)", n); }
     RUN(27); MAX(BOON_EXECUTIONER); take_boon(BOON_EXECUTIONER_PLUS);
-    CHECK(fabsf(tower_mod_stagger_damage() - 1.9f) < 0.001f, "Executioner+: +90%%");
+    CHECK(fabsf(tower_mod_stagger_damage(TOWER_HIT_SWORD) - 1.9f) < 0.001f, "Executioner+: +90%%");
     RUN(27); MAX(BOON_PHANTOM_STEP); take_boon(BOON_PHANTOM_STEP_PLUS);
     CHECK(fabsf(tower_mod_perfect_window() - 0.31f) < 0.001f, "Phantom Step+: 0.31 s");
     RUN(27); s.skills = 1; float cd0 = tower_mod_skill_cooldown(); MAX(BOON_MOON_MASTERY); float cd3 = tower_mod_skill_cooldown(); take_boon(BOON_MOON_MASTERY_PLUS);
@@ -2750,8 +2990,8 @@ int tower_test_map(void)
     MCHECK(!row_ok(REST_POTIONS_ROW) && !row_ok(REST_TEMPER_ROW) && row_ok(REST_HEAL_ROW), "potions full and nothing to Temper: only Heal");
     take_boon(BOON_EMBER_EDGE); take_boon(BOON_STORM_BLADE); take_boon(BOON_LEARN_HALFMOON);
     list_open(SCR_REST); test_press('D'); test_press('A');
-    MCHECK(s.scr == SCR_TEMPER && s.listN == 4 && s.list[0] == BOON_EMBER_EDGE && s.list[1] == BOON_HALFMOON_PLUS && s.list[2] == BOON_STORM_BLADE_PLUS && s.list[3] == -1,
-           "Temper's list: Ember Edge's level, Halfmoon Slash+, Storm Blade+ (a maxed boon's \"+\"), Back (%d rows)", s.listN);
+    MCHECK(s.scr == SCR_TEMPER && s.listN == 4 && s.list[0] == BOON_EMBER_EDGE && s.list[1] == BOON_LEARN_HALFMOON && s.list[2] == BOON_STORM_BLADE_PLUS && s.list[3] == -1,
+           "Temper's list: Ember Edge's level, Halfmoon Slash's Lv 2, Storm Blade+ (a maxed boon's \"+\"), Back (%d rows)", s.listN);
     test_press('D'); test_press('D'); test_press('D'); test_press('A');
     MCHECK(s.scr == SCR_REST, "Back: the Rest's choices again");
     test_press('D'); test_press('A'); test_press('A');
@@ -2963,7 +3203,7 @@ int tower_test_events(void)
         case EV_GRAVE:    ok &= i == 0 ? s.gold == g + 60 : fabsf(character.health - hp - 0.4f * mh) < 0.01f; break;
         case EV_MIRROR:   ok &= stacks_sum() == st + 1 && curses_sum() == cu + 1; break;
         case EV_MERCHANT: ok &= i == 0 ? s.gold == g - 70 && character.healthPotions == p + 1 : character.healthPotions == p - 2 && stacks_sum() == st + 1; break;
-        case EV_POOL:     ok &= i == 0 ? s.skills != sk && stacks_sum() == st + 1 : s.stacks[BOON_HALFMOON_PLUS] == 1; break;
+        case EV_POOL:     ok &= i == 0 ? s.skills != sk && stacks_sum() == st + 1 : s.stacks[BOON_LEARN_HALFMOON] == 2; break;
         case EV_PRISONER: ok &= s.prisoner; break;
         case EV_BONES:    ok &= s.gold == g - 50 || s.gold == g + 70; break;
         case EV_BRAZIER:  ok &= i == 0 ? s.runEmbers == em + 30 : s.halfBless[PB_MIGHT] == 1 && fabsf(tower_mod_damage_dealt() / dd - 1.04f) < 0.001f; break;
