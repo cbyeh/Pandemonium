@@ -3332,12 +3332,12 @@ void character_apply_damage(float amount)
     { Boss *b = boss_get_instance(); if (b && b->state == BOSS_STATE_DEAD) return; }
 #ifdef HLE_TEST_DUMMY
 #ifdef HLE_DUMMY_REAL      // the bot playtest: counted, and it hurts
-    { extern float hle_dummy_damage; extern int hle_dummy_hits; hle_dummy_damage += amount * tower_mod_damage_taken(); hle_dummy_hits++; }
+    { extern float hle_dummy_damage; extern int hle_dummy_hits; hle_dummy_damage += amount * boss_hp_loss_scale() * tower_mod_damage_taken(); hle_dummy_hits++; }
 #else
 #ifdef HLE_LOG_MOVES     // test aid: each hit, after the move that dealt it ([move])
     debugf("[hit] %.1f\n", (double)amount);
 #endif
-    { extern float hle_dummy_damage; extern int hle_dummy_hits; hle_dummy_damage += amount; hle_dummy_hits++; return; }   // test aid: count hits, never hurt
+    { extern float hle_dummy_damage; extern int hle_dummy_hits; hle_dummy_damage += amount * boss_hp_loss_scale(); hle_dummy_hits++; return; }   // test aid: count hits, never hurt
 #endif
 #endif
 
@@ -3348,7 +3348,7 @@ void character_apply_damage(float amount)
 
     amount *= tower_mod_damage_taken();     // 1 outside a Tower run
     float before = character.health;
-    character.health -= amount;
+    character.health -= amount * boss_hp_loss_scale();     // the reactions below still go by the full blow
     if (character.health <= 0.0f && tower_mod_try_unbroken()) character.health = 1.0f;   // the Unbroken boon
     if (character.health < 0.0f) character.health = 0.0f;
     if (character.health > 0.0f) tower_on_player_hurt(before - character.health);     // the Rally boon
@@ -3365,6 +3365,10 @@ void character_apply_damage(float amount)
         return;
     }
 
+#ifdef HLE_LOG_REACT     // test aid: each hit's reaction, from the blow, and the health it took
+    debugf("[react] blow %.1f lost %.1f %s\n", (double)amount, (double)(before - character.health),
+           amount > 20.0f ? "shove" : amount >= 20.0f ? "knockdown" : "flinch");
+#endif
     // Only knockdown if the hit is strong enough (>= 20 dmg)
     if (amount < 20.0f) s_flinchT = FLINCH_S;      // knocked down below: that is its own reaction
     if (amount >= 20.0f) {

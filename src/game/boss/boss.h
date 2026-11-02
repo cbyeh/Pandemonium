@@ -346,6 +346,7 @@ void boss_draw_as_unbound(Boss* boss);
 void boss_apply_damage(Boss* boss, float amount);
 /** What the current boss's blows are multiplied by (the Bonus bosses' tuning; 1 for the Guardian). */
 float boss_damage_scale(void);
+float boss_hp_loss_scale(void);    // the share of a blow taken off the player's health (reactions use the full blow)
 /** A hit with its own share of the stagger meter (boss_apply_damage: the damage's, 28 fills it). */
 // The stagger meter, as in Elden Ring: a blow's stance damage, not its damage. This much fills it:
 // 12 plain sword hits (combo finishers and skills count for more); each boss scales it (boss_poise_scale)

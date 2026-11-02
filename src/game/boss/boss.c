@@ -789,6 +789,14 @@ float boss_damage_scale(void)
     // the Fallen Warrior 1.25 -> 1.125 when its breathers after quick moves were cut 1.4 -> 1.2 s: ~53%)
 }
 
+float boss_hp_loss_scale(void)
+{
+    // The share of a blow the player's health loses; knockdowns, shoves, flinches and perfect dodges
+    // still go by the full blow, so a fight can cost less and play the same (the Sun: 78% -> ~62%)
+    Boss *b = boss_get_instance();
+    return b && b->phaseIndex == SUN_BOSS_PHASE ? 0.78f : 1.0f;
+}
+
 void boss_apply_damage(Boss* boss, float amount)
 {
     boss_apply_hit(boss, amount, amount / POISE_DAMAGE);

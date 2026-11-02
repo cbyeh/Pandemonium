@@ -14,17 +14,17 @@ What shipped in 1.0, the numbers it is tuned to, and the ideas still open. Sizes
 - the time to kill coming from the openings: a sword hit is 4 per 0.65 s, after a 0.4 s reaction,
 - as a share of the player's resources (150 health + 3 potions at 45%, about 352).
 
-Each half measured on its own (`HLE_DUMMY_HALF` for the second, 45% of the health), with `HLE_LOG_MOVES` (+ `HLE_LOG_HURTBOX` for Shadowborne) tagging each hit's source. A lingering hazard (the Sun's Spiral embers, Shadowborne's flames, the Fallen Warrior's Cleave blades and fire trail) counts once a cast: the passive dummy stands in it and takes every tick, a player steps out. Openings: a gap's sword damage is (gap - 0.4 s) / 0.65 s x 4.
+Each half measured on its own (`HLE_DUMMY_HALF` for the second, 45% of the health; the Sun's halves weigh 50/50, as it unshackles at half health), with `HLE_LOG_MOVES` (+ `HLE_LOG_HURTBOX` for Shadowborne) tagging each hit's source. A lingering hazard (the Sun's Spiral embers, Shadowborne's flames, the Fallen Warrior's Cleave blades and fire trail) counts once a cast: the passive dummy stands in it and takes every tick, a player steps out. Openings: a gap's sword damage is (gap - 0.4 s) / 0.65 s x 4.
 
 | Fight | Health | Damage per 120 s (1st / 2nd half) | Avg opening | Cost |
 |---|---|---|---|---|
 | Guardian | 100 | 890 / 840 | 1.42 / 1.43 s | 26% |
 | Unbound | 100 | 1095 / 1090 | 2.01 / 2.05 s | 27% |
 | Fallen Warrior | 180, blows x1.125 | 880 / 915 | 2.45 / 2.60 s | 47% |
-| Shackled Sun | 240, blows x1.55 | 893 / 1469 | 2.33 / 2.00 s | 77% |
+| Shackled Sun | 240, blows x1.55, health lost x0.78 | 612 / 1019 (785 / 1307 as blows) | 2.39 / 1.96 s | 62% (was 78%) |
 | Shadowborne | 275, blows x1.5 | 790 / 891 | 2.54 / 1.97 s | 68% |
 
-Measured 2026-11-01. The older estimate (Fallen Warrior ~48%, Sun ~52%, Shadowborne ~60%) counted every hazard tick and missed the Sun's second half; at these values the Sun costs more than Shadowborne.
+Measured 2026-11-01. The older estimate (Fallen Warrior ~48%, Sun ~52%, Shadowborne ~60%) counted every hazard tick and missed the Sun's second half; 2026-11-02: the Sun cost more than Shadowborne, so its blows now take 78% of their damage off the player's health (`boss_hp_loss_scale`) while knockdowns, shoves, flinches and perfect dodges still go by the full blow: the fight plays the same, its moves, timing and unshackled +20% untouched (also in the Tower). Measured over 12 minutes a half (two second-half runs, 1266 and 1348 as blows: 61-64%).
 
 The Bonus bosses climb past the story (`boss_target_max_health`, `boss_damage_scale`). It ignores how readable attacks are: a random-roll test showed the Bonus bosses' attacks are much easier to avoid than the Guardian's. `HLE_DUMMY_REAL` is a bot that fights back (strikes in openings, rolls out of attacks); it is too weak to win, so it only compares survival.
 
