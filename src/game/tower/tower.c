@@ -38,12 +38,12 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_FLEETFOOT]     = { "Fleetfoot",     "Rolls cost 40% less stamina",  1, TIER_RARE },
     [BOON_SECOND_WIND]   = { "Second Wind",   "+40% stamina regen, faster from empty",     2, TIER_COMMON },
     [BOON_MOON_MASTERY]  = { "Moon Mastery",  "Skill cooldowns -20%",         2, TIER_RARE },
-    [BOON_BLOODTHIRST]   = { "Bloodthirst",   "Heal 6% of damage dealt",      2, TIER_RARE },
+    [BOON_BLOODTHIRST]   = { "Bloodthirst",   "Sword hits heal 8% of base damage", 2, TIER_RARE },
     [BOON_VIGOR]         = { "Vigor",         "+25 max health",               3, TIER_COMMON },
     [BOON_LAST_STAND]    = { "Last Stand",    "+40% damage below 30% health", 1, TIER_RARE },
     [BOON_UNBROKEN]      = { "Unbroken",      "Survive one killing blow a floor", 1, TIER_LEGENDARY },
     [BOON_CRESCENT_ECHO] = { "Moon Blade Dance+", "2 more waves", 1, TIER_RARE },
-    [BOON_PHANTOM_STEP]  = { "Phantom Step",  "Easier perfect dodges, each heals 8%", 1, TIER_RARE },
+    [BOON_PHANTOM_STEP]  = { "Phantom Step",  "Easier perfect dodges, each heals 2%", 1, TIER_RARE },
     [BOON_RIPOSTE]       = { "Riposte",       "Perfect dodge: +50% damage", 1, TIER_RARE },
     [BOON_CRUSHING_BLOWS]= { "Crushing Blows","Staggers last 50% longer",     1, TIER_RARE },
     [BOON_EXECUTIONER]   = { "Executioner",   "Staggered bosses take +60%",   1, TIER_LEGENDARY },
@@ -766,12 +766,12 @@ float tower_mod_stagger_time(void)
     return tower_boon_stacks(BOON_CRUSHING_BLOWS) ? 1.5f : 1.0f;
 }
 float tower_mod_stagger_damage(void) { return tower_boon_stacks(BOON_EXECUTIONER) ? 1.6f : 1.0f; }
-float tower_mod_perfect_window(void) { return tower_boon_stacks(BOON_PHANTOM_STEP) ? 0.35f : 0.2f; }
+float tower_mod_perfect_window(void) { return tower_boon_stacks(BOON_PHANTOM_STEP) ? 0.28f : 0.2f; }   // (0.35 outlasted a roll's 0.32 s of invincibility: every dodge was perfect)
 
 void tower_on_perfect_dodge(void)
 {
     if (!s.active) return;
-    if (tower_boon_stacks(BOON_PHANTOM_STEP)) character.health = fminf(character.maxHealth, character.health + character.maxHealth * 0.08f);
+    if (tower_boon_stacks(BOON_PHANTOM_STEP)) character.health = fminf(character.maxHealth, character.health + character.maxHealth * 0.02f);
     extern double nowS;
     if (tower_boon_stacks(BOON_RIPOSTE)) s.riposteUntil = nowS + 2.5;
 }
@@ -808,10 +808,10 @@ float tower_mod_skill_cooldown(void)
     return (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * powf_int(0.8f, tower_boon_stacks(BOON_MOON_MASTERY))
            * ((s.active && s.night == NIGHT_STARFALL) ? 0.7f : 1.0f);
 }
-float tower_mod_lifesteal(void) { return 0.06f * tower_boon_stacks(BOON_BLOODTHIRST) + 0.03f * has_relic(RELIC_VAMPIRIC); }
+float tower_mod_lifesteal(void) { return 0.08f * tower_boon_stacks(BOON_BLOODTHIRST) + 0.03f * has_relic(RELIC_VAMPIRIC); }   // of a hit before boons: it no longer grows with the damage multiplier
 
 // Rally, at Bloodborne's pace in our numbers: lost health stays winnable 1 s, then drains away
-// over 4 s; each hit wins back what it dealt (a sword hit 4: about four hits for a typical blow,
+// over 4 s; each hit wins back what it dealt before damage boons (a sword hit 4: about four hits for a typical blow,
 // one Halfmoon Slash for most of a heavy one). A new blow adds to it and holds it again
 #define RALLY_HOLD  1.0f
 #define RALLY_DRAIN 4.0f

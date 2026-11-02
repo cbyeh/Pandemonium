@@ -50,12 +50,12 @@ The first card is a skill card (learn a skill or upgrade one) while any are left
 | Second Wind | Common | 2 | +40% stamina regen; the 2.5 s wait after the bar empties is cut the same way (1.8 s, then 1.4 s) |
 | Vigor | Common | 3 | +25 max health |
 | Fleetfoot | Rare | 1 | rolls cost 40% less stamina |
-| Bloodthirst | Rare | 2 | heal 6% of damage dealt |
+| Bloodthirst | Rare | 2 | sword hits (not skills or Storm Blade) heal 8% of their base damage (before damage boons) |
 | Last Stand | Rare | 1 | +40% damage below 30% health |
-| Phantom Step | Rare | 1 | easier perfect dodges, each heals 8% |
+| Phantom Step | Rare | 1 | easier perfect dodges (0.28 s window), each heals 2% |
 | Riposte | Rare | 1 | +50% damage for 2.5 s after a perfect dodge |
 | Crushing Blows | Rare | 1 | a staggered boss stays down 50% longer |
-| Rally | Rare | 1 | hitting back wins back the health just lost |
+| Rally | Rare | 1 | hitting back wins back the health just lost, each hit its damage before boons |
 | Unbroken | Legendary | 1 | survive one killing blow a floor |
 | Executioner | Legendary | 1 | staggered bosses take +60% |
 | Storm Blade | Legendary | 1 | every 4th hit calls lightning (+12) |

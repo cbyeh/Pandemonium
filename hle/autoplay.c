@@ -719,6 +719,29 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         } else if (phase == 2) {
             static bool fighting;
             if (!fighting) { if (!boss || boss->mode != BOSS_MODE_COMBAT) { t0 = frame; if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; } return; } fighting = true; t0 = frame; return; }
+#ifdef HLE_TOWER_HEALCHECK   // the healing boons, measured in the fight (every boon held: Bloodthirst 2, Rally, Phantom Step)
+            if (t == 100) {
+                extern void tower_on_perfect_dodge(void); extern float tower_mod_perfect_window(void), tower_mod_damage_dealt(void);
+                float mh = character.maxHealth;
+                character.health = 100.0f; boss_apply_hit(boss, 4.0f, 1.0f);
+                float skillSteal = character.health - 100.0f;     // as a skill lands: nothing
+                character.health = 100.0f; bossHitBySword = true; for (int i = 0; i < 20; i++) { boss->health = boss->maxHealth; boss_apply_hit(boss, 4.0f, 0.0f); } bossHitBySword = false;
+                float steal = (character.health - 100.0f) / 20.0f;     // (an average: the Impaired curse drops some)
+                debugf("[heal] a skill's hit of 4 heals %.2f (0)\n", (double)skillSteal);
+                character.health = 200.0f; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(40.0f);
+                float lost = 200.0f - character.health, h0 = character.health;
+                boss->health = boss->maxHealth; boss_apply_hit(boss, 4.0f, 0.0f);
+                float back1 = character.health - h0;
+                for (int i = 0; i < 40; i++) { boss->health = boss->maxHealth; boss_apply_hit(boss, 4.0f, 0.0f); }
+                float back = character.health - h0;
+                debugf("[heal] Rally: one hit of 4 (x%.2f after boons) wins back %.1f (4: its base)\n", (double)tower_mod_damage_dealt(), (double)back1);
+                character.health = 100.0f; tower_on_perfect_dodge();
+                debugf("[heal] damage x%.2f max %.0f | sword hit 4 heals %.2f (8%%x2 of base: 0.64) | lost %.1f, Rally won back %.1f (%.0f%%, all: 100) | perfect dodge +%.1f (2%%: %.1f), window %.2f s\n",
+                       (double)tower_mod_damage_dealt(), (double)mh, (double)steal, (double)lost, (double)back, (double)(lost > 0.0f ? 100.0f * back / lost : 0.0f),
+                       (double)(character.health - 100.0f), (double)(mh * 0.02f), (double)tower_mod_perfect_window());
+            }
+            if (t < 120) return;
+#endif
             character.health = character.maxHealth;     // (alive for the shots)
             static const char seq[] = "SDARLAB";
             if (t >= (step ? 60 : 300) && seq[step]) {

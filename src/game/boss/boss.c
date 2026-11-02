@@ -794,6 +794,8 @@ void boss_apply_damage(Boss* boss, float amount)
     boss_apply_hit(boss, amount, amount / POISE_DAMAGE);
 }
 
+bool bossHitBySword;
+
 void boss_apply_hit(Boss* boss, float amount, float poise)
 {
     if (!boss || amount <= 0.0f) return;
@@ -802,11 +804,11 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
     boss->hitWeight = fmaxf(amount, poise * POISE_DAMAGE) / 4.0f;
     boss->hitSeq++;
 
-    if (tower_active()) {     // Tower run: damage boons and upgrades, and Bloodthirst's lifesteal
+    if (tower_active()) {     // Tower run: damage boons and upgrades, and Bloodthirst's lifesteal (sword hits)
         if (tower_hit_impaired()) return;      // the Impaired curse: this one does nothing
+        if (bossHitBySword) character.health = fminf(character.maxHealth, character.health + amount * tower_mod_lifesteal());   // sword hits only, before boons
+        tower_on_boss_hurt(amount);     // Rally: also by the hit before boons (after them, a blow came back in two hits deep in a run)
         amount *= tower_mod_damage_dealt() * tower_mod_damage_vs(boss->health / fmaxf(boss->maxHealth, 1.0f), boss->staggerT > 0.0f);
-        character.health = fminf(character.maxHealth, character.health + amount * tower_mod_lifesteal());
-        tower_on_boss_hurt(amount);
     }
     if (boss->staggerT > 0.0f) amount *= tower_mod_stagger_damage();     // staggered: only boons make hits land harder
     boss->health -= amount;

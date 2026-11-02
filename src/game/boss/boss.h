@@ -352,6 +352,7 @@ float boss_damage_scale(void);
 #define POISE_DAMAGE 48.0f
 #define BOSS_STAGGER_S 3.5f     // every boss stays down this long (boss_stagger_s): the opening is the reward (no damage bonus)
 void boss_apply_hit(Boss* boss, float amount, float poise);
+extern bool bossHitBySword;     // set round a sword hit's boss_apply_hit: only those feed Bloodthirst
 // Full health for its current phase, as the Skills setting or a Tower run sizes it.
 void boss_set_full_health(Boss* boss);
 

@@ -2825,7 +2825,9 @@ void character_update(void)
                 Boss* boss = boss_get_instance();
                 if (boss) {
                     bool finisher = attackComboIndex == 3;     // the combo's last hit lands heaviest
+                    bossHitBySword = true;
                     boss_apply_hit(boss, damage, (finisher ? FINISHER_POISE : 1.0f) * damage / POISE_DAMAGE);
+                    bossHitBySword = false;
                     game_time_hitstop(finisher ? 0.08f : 0.045f);     // hit-stop: the blow lands with weight
                     if (finisher) screen_shake_set_shake_mag(3.0f);
 #ifdef HLE_AUTOPLAY
