@@ -499,6 +499,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         }
         if (tower_mod_max_potions() != 3 || !tower_mod_skill_allowed(0) || tower_boss_health_scale(3) != 1.0f) fails++;
         { extern int tower_test_slots(void); fails += tower_test_slots(); }     // slots, levels, a full bar, packs, weighting, save bits
+        { extern int tower_test_stage2(void); fails += tower_test_stage2(); }   // rivals, "+", duos
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }
     return;
@@ -969,11 +970,19 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 static int dodges, rollAt = -1, swingAt = -1;
                 extern float tower_mod_damage_taken(void);
                 if (character.health < character.maxHealth * 0.4f) character.health = character.maxHealth * 0.55f;   // alive, and hurt (Red Thirst)
-                static int potionsAt = -1;
+                static int potionsAt = -1, drankAt = -1;
                 if (t == 200) { potionsAt = character.healthPotions; character.health = character.maxHealth * 0.5f; }
                 if (potionsAt >= 0) {       // a potion (Sanguine Flask), pressed until it's drunk (not mid-swing)
-                    if (character.healthPotions < potionsAt) { debugf("[boonfx-run] potion drunk at t %d\n", t); potionsAt = -1; }
+                    if (character.healthPotions < potionsAt) { debugf("[boonfx-run] potion drunk at t %d\n", t); potionsAt = -1; drankAt = t; }
                     else if (t % 2) { pressed->d_left = 1; in->btn.d_left = 1; }
+                }
+                if (t >= 300 && t <= 320 && t % 4 == 0 && character_get_state() != CHAR_STATE_SKILL && character_get_skill_cooldown(SKILL_CRESCENT_CLEAVE) <= 0.0f) {
+                    character_set_state(CHAR_STATE_NORMAL); character.stamina = character.maxStamina;   // a Cleave before the rolls: a cooldown running (Waning Light)
+                    pressed->d_down = 1; in->btn.d_down = 1;
+                }
+                if (drankAt > 0 && t == drankAt + 30) {     // a blow 1 s after it (Steel Hearth's ward)
+                    float h = character.health; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(20.0f);
+                    debugf("[boonfx-run] a blow of 20 a second after the potion (x%.2f taken): health %.1f -> %.1f\n", (double)tower_mod_damage_taken(), (double)h, (double)character.health);
                 }
                 if (t >= 400 && t % 200 == 199 && dodges < 4) { character.stamina = character.maxStamina * 0.5f; character_set_state(CHAR_STATE_NORMAL); }
                 if (t >= 400 && t % 200 == 0 && dodges < 4) { pressed->a = 1; in->btn.a = 1; in->stick_y = 80; rollAt = t; }   // a roll...
@@ -997,14 +1006,21 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                                  debugf("[boonfx-run] a blow of 20 after 3 perfect dodges: health %.1f -> %.1f\n", (double)h, (double)character.health); }
                 if (t == 1400) { character.health = character.maxHealth; float h = character.health; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(70.0f);   // Stalwart: over 20%
                                  debugf("[boonfx-run] a blow of 70 (x%.2f taken): health %.1f -> %.1f\n", (double)tower_mod_damage_taken(), (double)h, (double)character.health); }
-                static int staggerCast = -1;
+                static int staggerCast = -1; static bool cast;
                 if (boss->staggerT > 0.0f && staggerCast < 0) {     // a stagger: Crescent Cleave on it (Eclipse, Waxing Moon), then swings
                     character_set_state(CHAR_STATE_NORMAL); character.stamina = character.maxStamina;
-                    pressed->d_down = 1; in->btn.d_down = 1; staggerCast = t;
-                    debugf("[boonfx-run] Crescent Cleave on the staggered boss (%.1f s left)\n", (double)boss->staggerT);
+                    pressed->d_down = 1; in->btn.d_down = 1; staggerCast = t; cast = false;
+                    debugf("[boonfx-run] Crescent Cleave on the staggered boss (%.1f s left, cooldown %.1f s)\n", (double)boss->staggerT, (double)character_get_skill_cooldown(SKILL_CRESCENT_CLEAVE));
+                }
+                if (staggerCast >= 0 && !cast) {      // pressed again until it casts (a press mid-swing or mid-roll does nothing)
+                    if (character_get_state() == CHAR_STATE_SKILL) cast = true;
+                    else if (t > staggerCast && t < staggerCast + 60 && t % 4 == 0) {
+                        character_set_state(CHAR_STATE_NORMAL); character.stamina = character.maxStamina;
+                        pressed->d_down = 1; in->btn.d_down = 1;
+                    }
                 }
                 if (boss->staggerT <= 0.0f) staggerCast = -1;
-                bool castOver = staggerCast >= 0 && t > staggerCast + 10 && character_get_state() != CHAR_STATE_SKILL;
+                bool castOver = staggerCast >= 0 && (cast || t > staggerCast + 60) && t > staggerCast + 10 && character_get_state() != CHAR_STATE_SKILL;
                 if (castOver || (t > 400 && t < 1100 && t % 200 > 10 && t % 200 < 130)) {     // close in after the cast and the rolls: sword hits in the windows (Waxing Moon, Shadow Edge)
                     float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
                     if (d > 34.0f) { character.pos[0] += dx / d * (d - 34.0f); character.pos[2] += dz / d * (d - 34.0f); }
