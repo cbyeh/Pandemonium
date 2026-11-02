@@ -140,6 +140,9 @@ versioned: pandemonium.z64
 	@echo "Creating versioned ROM: Pandemonium-$(VERSION).z64"
 	@cp pandemonium.z64 Pandemonium-$(VERSION).z64
 
+# The Tower's screens and the menus run outside the fight's hot loop: built for size (-Os after -O2: 23 KB less code, more heap at the Tower's low point)
+$(OBJDIR)/game/tower/tower.o $(OBJDIR)/controllers/menu_controller.o: N64_CFLAGS += -Os
+
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(N64_CFLAGS) -c $< -o $@
