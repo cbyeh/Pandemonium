@@ -390,8 +390,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     }
 #endif
 #ifdef HLE_TEST_PACKS
-    // The Shrine's Boon Packs on a save with none: 500 Embers; Tower > Shrine > Boon Packs (row 7), A buys Blood (120),
-    // Down, A buys Storm (160), then B, B. A second boot (the same ROM) logs them owned ([tsave]) and buys nothing
+    // The Shrine's Unlocks on a save with none: 500 Embers; Tower > Shrine > Unlocks (row 7), A buys Blood (120),
+    // Down, A buys Storm (160), Down x5, A buys Shattering Dance (200, the first B form), then B, B. A second boot
+    // (the same ROM) logs them owned ([tsave]) and buys nothing
     {
         static int phase = 0, t0 = 0, step = 0;
         int t = frame - t0;
@@ -402,7 +403,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 t0 = frame;
             } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
-            static const char seq[] = "DDADADDDDDDDAA.DA.B";
+            static const char seq[] = "DDADADDDDDDDAA.DA.DDDDDA.B";
             if (t >= 25 && seq[step]) {
                 char c = seq[step];
                 if (c == 'D') pressed->d_down = 1; else if (c == 'B') { pressed->b = 1; in->btn.b = 1; } else if (c == 'A') { pressed->a = 1; in->btn.a = 1; }
@@ -411,8 +412,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
             if (!seq[step] && t == 40) {
                 extern int tower_embers(void), tower_pack_count(void); extern bool tower_pack_owned(int);
-                debugf("[packs] owned:%s%s%s%s%s, Embers %d\n", tower_pack_owned(0) ? " Blood" : "", tower_pack_owned(1) ? " Storm" : "", tower_pack_owned(2) ? " Moon" : "",
-                       tower_pack_owned(3) ? " Iron" : "", tower_pack_owned(4) ? " Shadow" : "", tower_embers());
+                extern const char *tower_pack_name(int);
+                debugf("[packs] owned:"); for (int i = 0; i < tower_pack_count(); i++) if (tower_pack_owned(i)) debugf(" %s", tower_pack_name(i));
+                debugf(", Embers %d\n", tower_embers());
                 phase = 2;
             }
         }
@@ -610,6 +612,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         if (tower_mod_max_potions() != 3 || !tower_mod_skill_allowed(0) || tower_boss_health_scale(3) != 1.0f) fails++;
         { extern int tower_test_slots(void); fails += tower_test_slots(); }     // slots, levels, a full bar, packs, weighting, save bits
         { extern int tower_test_stage2(void); fails += tower_test_stage2(); }   // rivals, "+", duos
+        { extern int tower_test_skills(void); fails += tower_test_skills(); }   // the skills' levels and forms, the B forms' unlocks, the stagger cap
         { extern int tower_test_shop(void), tower_test_events(void); fails += tower_test_shop(); fails += tower_test_events(); }   // gold, the Shop, the Events
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }
@@ -1660,6 +1663,42 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
             else if (frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 4) {
+#ifdef HLE_DUMMY_CAST    // test aid: a skill (1-3) cast every HLE_DUMMY_CAST_EVERY frames, locked on, its cooldown zeroed, in a Tower
+                         // run begun here; with HLE_SKILL_LV=<skill>,<lv>,<form> the casts alternate Lv 1 and that level: [castft] the
+                         // frame time through each (mean, worst), the most effects alive, any dropped ([fxfull])
+            {
+#ifndef HLE_DUMMY_CAST_EVERY
+#define HLE_DUMMY_CAST_EVERY 300
+#endif
+                extern void tower_begin_run(uint32_t); extern bool tower_active(void); extern void tower_test_skill_lv(int, int, int);
+                extern int skill_fx_live(void); extern void character_cut_skill_cooldowns(float);
+                static int k, n; static uint32_t prev, sum, worst, cnt; static int live;
+                if (!tower_active()) tower_begin_run(1);
+                int c = k % HLE_DUMMY_CAST_EVERY;
+                if (c == 0) {
+#ifdef HLE_SKILL_LV
+                    static const int L[3] = { HLE_SKILL_LV };
+                    tower_test_skill_lv(HLE_DUMMY_CAST - 1, n % 2 ? L[1] : 1, n % 2 ? L[2] : 0);
+#else
+                    tower_test_skill_lv(HLE_DUMMY_CAST - 1, 1, 0);
+#endif
+                    character_cut_skill_cooldowns(1e6f); character.stamina = character.maxStamina;
+                }
+                if (k % 60 == 1) pressed->z = 1;
+                in->btn.z = 1;
+                if (c == 5) { if (HLE_DUMMY_CAST == 1) pressed->d_up = 1; else if (HLE_DUMMY_CAST == 2) pressed->d_right = 1; else pressed->d_down = 1; }
+                uint32_t now = get_ticks_us();
+                if (c > 5 && c <= HLE_DUMMY_CAST_EVERY - 10) { uint32_t d = now - prev; sum += d; cnt++; if (d > worst) worst = d; int l = skill_fx_live(); if (l > live) live = l; }
+                prev = now;
+                if (c == HLE_DUMMY_CAST_EVERY - 9 && cnt) {
+                    extern int tower_skill_level(int), tower_skill_form(int);
+                    debugf("[castft] cast %d (Lv %d form %d): mean %u us, worst %u us over %u frames, at most %d effects alive\n", n, tower_skill_level(HLE_DUMMY_CAST - 1),
+                           tower_skill_form(HLE_DUMMY_CAST - 1), (unsigned)(sum / cnt), (unsigned)worst, (unsigned)cnt, live);
+                    sum = worst = cnt = 0; live = 0; n++;
+                }
+                k++;
+            }
+#endif
 #ifdef HLE_DUMMY_REAL    // the bot playtest: it fights (HLE_DUMMY_STRIKE, HLE_DUMMY_ROLL), drinks below 40% and says how it went
             {
                 static int potions0 = -1, done;
@@ -2263,21 +2302,43 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
             return;
         }
-        int t = (frame - start) % 200, cyc = (frame - start) / 200;
+#ifndef HLE_SDMG_CYCLE
+#define HLE_SDMG_CYCLE 200      // frames a cast (Full Moon Dance needs about 300)
+#endif
+        int t = (frame - start) % HLE_SDMG_CYCLE, cyc = (frame - start) / HLE_SDMG_CYCLE;
         static float hp0; static int t0;
+        if (t == 0) debugf("[sdmgcyc] cast %d starts at %lu ms (VI frame ~%lu)\n", cyc, (unsigned long)get_ticks_ms(), (unsigned long)(get_ticks_ms() * 60 / 1000));
         if (t == 0) {
-#ifdef HLE_SDMG_TOWER     // in a Tower run holding every skill and the Halfmoon+/Cleave+ cards
+#ifdef HLE_SDMG_TOWER     // in a Tower run holding every skill (at Lv 1; HLE_SKILL_LV: one at a level and form)
             { extern void tower_begin_run(uint32_t); extern bool tower_active(void); if (!tower_active()) tower_begin_run(1); }
+#ifdef HLE_SKILL_LV       // <skill 1-3>,<lv 1-5>,<form 1 A, 2 B>; lv 0: each cast the next of Lv 1-4, then 5 A, 5 B
+            { extern void tower_test_skill_lv(int, int, int); static const int L[3] = { HLE_SKILL_LV };
+              if (!L[1]) { int c = cyc % 6; tower_test_skill_lv(L[0] - 1, c < 4 ? c + 1 : 5, c == 5 ? 2 : 1); } }
+#endif
+#ifdef HLE_SDMG_STAGGERED   // the boss held down, with Executioner, 3 Breaker pacts and Eclipse: its bonuses capped at +100%
+            { extern void tower_test_stagger_build(void); tower_test_stagger_build(); }
+#endif
 #endif
             boss->health = boss->maxHealth; hp0 = boss->health;
             float a = atan2f(character.pos[0] - boss->pos[0], character.pos[2] - boss->pos[2]);
-            character.pos[0] = boss->pos[0] + sinf(a) * 30.0f; character.pos[2] = boss->pos[2] + cosf(a) * 30.0f;
+#ifndef HLE_SDMG_DIST
+#define HLE_SDMG_DIST 30.0f     // from the boss
+#endif
+            character.pos[0] = boss->pos[0] + sinf(a) * HLE_SDMG_DIST; character.pos[2] = boss->pos[2] + cosf(a) * HLE_SDMG_DIST;
             character.stamina = character.maxStamina;
 #ifdef HLE_TEST_LOW_STAMINA     // a sliver of stamina: the first action still goes
             character.stamina = 1.0f;
 #endif
             boss->poise = 0.0f; boss->staggerT = 0.0f;
         }
+#ifdef HLE_SDMG_STAGGERED
+        boss->staggerT = 3.0f; boss->poise = 0.0f;
+#endif
+#ifdef HLE_SDMG_FT        // test aid: the frame time through each cast (10-190 frames into its cycle): mean and worst
+        static uint32_t ftPrev, ftSum, ftWorst, ftN;
+        { uint32_t now = get_ticks_us(); if (t > 10 && t <= HLE_SDMG_CYCLE - 10) { uint32_t d = now - ftPrev; ftSum += d; ftN++; if (d > ftWorst) ftWorst = d; } ftPrev = now;
+          if (t == HLE_SDMG_CYCLE - 9 && ftN) { debugf("[sdmgft] cast %d: mean %u us, worst %u us over %u frames\n", cyc, (unsigned)(ftSum / ftN), (unsigned)ftWorst, (unsigned)ftN); ftSum = ftWorst = ftN = 0; } }
+#endif
         if (t == 2 && cyc == 0) pressed->z = 1;
 #ifdef HLE_DUMMY_SKIN   // in this skin (the cloth through a skill)
         if (t == 2 && cyc == 0) character_skin_set(HLE_DUMMY_SKIN);
@@ -2335,10 +2396,13 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         { static float y0; if (cyc == 0 && t == 0) y0 = boss->pos[1]; boss->pos[1] = y0 + (float)HLE_SDMG_RAISE; }
 #endif
         static int busyEnd;
-        if (t == 11) busyEnd = 0;
+        static float poisePeak;
+        if (t == 11) { busyEnd = 0; poisePeak = 0.0f; }
+        if (boss->poise > poisePeak) poisePeak = boss->poise;
         if (t > 11 && !busyEnd && character_get_state() == CHAR_STATE_NORMAL) busyEnd = frame;
-        if (t == 195) debugf("[sdmg] skill %d: %.1f damage, busy %.2f s, stagger meter %.2f%s\n", HLE_TEST_SKILL_DMG, (double)(hp0 - boss->health),
-                             (double)((busyEnd - t0) * deltaTime), (double)boss->poise, boss->staggerT > 0.0f ? " (staggered)" : "");
+        if (t == HLE_SDMG_CYCLE - 5) { extern int tower_skill_level(int), tower_skill_form(int); int k = HLE_TEST_SKILL_DMG - 1;
+            debugf("[sdmg] skill %d Lv %d form %d: %.1f damage, busy %.2f s, stagger meter %.2f (its peak %.3f)%s\n", HLE_TEST_SKILL_DMG, k >= 0 ? tower_skill_level(k) : 0, k >= 0 ? tower_skill_form(k) : 0,
+                   (double)(hp0 - boss->health), (double)((busyEnd - t0) * deltaTime), (double)boss->poise, (double)poisePeak, boss->staggerT > 0.0f ? " (staggered)" : ""); }
         return;
     }
 #endif
