@@ -188,6 +188,9 @@ static void shuffle_circle(void)
     s.order[0] = TOWER_GUARDIAN;
     TowerBoss rest[3] = { TOWER_FALLEN_KNIGHT, TOWER_SHACKLED_SUN, TOWER_SHADOWBORN };
     for (int i = 2; i > 0; i--) { int j = rng_next() % (i + 1); TowerBoss t = rest[i]; rest[i] = rest[j]; rest[j] = t; }
+#ifdef HLE_TOWER_SB_LAST    // test aid: the Fallen Warrior, the Sun, then Shadowborne (the heap's lowest point, the same path each run)
+    rest[0] = TOWER_FALLEN_KNIGHT; rest[1] = TOWER_SHACKLED_SUN; rest[2] = TOWER_SHADOWBORN;
+#endif
     for (int i = 0; i < 3; i++) s.order[1 + i] = rest[i];
     s.order[4] = TOWER_UNBOUND;
     s.night = s.nextNight;

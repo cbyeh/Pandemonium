@@ -110,6 +110,7 @@ ifneq ($(TEST_CFLAGS),)
 # Test aid: a hardware ROM driven by the autoplay scripts (hle/autoplay.c), for accurate
 # emulators like Ares (e.g. TEST_CFLAGS="-DHLE_AUTOPLAY -DHLE_TEST_BONUS")
 N64_CFLAGS += $(TEST_CFLAGS) -Ihle
+N64_LDFLAGS += $(TEST_LDFLAGS)
 CODEOBJECTS += $(OBJDIR)/hle/autoplay.o
 endif
 endif

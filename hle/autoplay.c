@@ -80,20 +80,45 @@ static void lk_del(void *p)
             return;
         }
 }
-void *__wrap_malloc(size_t s) { disable_interrupts(); void *p = __real_malloc(s); lk_add(p, s, __builtin_return_address(0)); enable_interrupts(); return p; }
-void *__wrap_calloc(size_t a, size_t b) { disable_interrupts(); void *p = __real_calloc(a, b); lk_add(p, a * b, __builtin_return_address(0)); enable_interrupts(); return p; }
-void *__wrap_memalign(size_t a, size_t s) { disable_interrupts(); void *p = __real_memalign(a, s); lk_add(p, s, __builtin_return_address(0)); enable_interrupts(); return p; }
-void *__wrap_realloc(void *o, size_t s) { disable_interrupts(); lk_del(o); void *p = __real_realloc(o, s); lk_add(p, s, __builtin_return_address(0)); enable_interrupts(); return p; }
+// The lowest free heap ever, per tag (hle_leak_cyc), caught at the allocation that made it
+int hle_low_kb[64]; static uint32_t lowRa[64], lowSize[64];
+static void lk_low(size_t s, void *ra)
+{
+    int t = hle_leak_cyc & 63; heap_stats_t h; sys_get_heap_stats(&h); int f = (h.total - h.used) / 1024;
+    if (!hle_low_kb[t] || f < hle_low_kb[t]) { hle_low_kb[t] = f; lowRa[t] = (uint32_t)ra; lowSize[t] = s; }
+}
+void hle_low_report(int t) { debugf("[low] tag %d: least free %d KB, at a %lu-byte allocation from %08lx\n", t, hle_low_kb[t & 63], (unsigned long)lowSize[t & 63], (unsigned long)lowRa[t & 63]); }
+void *__wrap_malloc(size_t s) { disable_interrupts(); void *p = __real_malloc(s); lk_add(p, s, __builtin_return_address(0)); lk_low(s, __builtin_return_address(0)); enable_interrupts(); return p; }
+void *__wrap_calloc(size_t a, size_t b) { disable_interrupts(); void *p = __real_calloc(a, b); lk_add(p, a * b, __builtin_return_address(0)); lk_low(a * b, __builtin_return_address(0)); enable_interrupts(); return p; }
+void *__wrap_memalign(size_t a, size_t s) { disable_interrupts(); void *p = __real_memalign(a, s); lk_add(p, s, __builtin_return_address(0)); lk_low(s, __builtin_return_address(0)); enable_interrupts(); return p; }
+void *__wrap_realloc(void *o, size_t s) { disable_interrupts(); lk_del(o); void *p = __real_realloc(o, s); lk_add(p, s, __builtin_return_address(0)); lk_low(s, __builtin_return_address(0)); enable_interrupts(); return p; }
+// Every live allocation, totalled by caller (blocks of 4 KB and up listed on their own)
+void hle_leak_by_caller(const char *why)
+{
+    static uint32_t ra[512], tot[512]; static int cnt[512]; int n = 0; uint32_t all = 0;
+    for (int i = 0; i < LK_N; i++) if (lk[i].p) {
+        all += lk[i].size;
+        if (lk[i].size >= 4096) debugf("[bycaller] %s big %p %lu from %08lx (tag %d)\n", why, lk[i].p, (unsigned long)lk[i].size, (unsigned long)lk[i].ra, lk[i].cyc);
+        int k = 0; while (k < n && ra[k] != lk[i].ra) k++;
+        if (k == n) { if (n == 512) continue; ra[n] = lk[i].ra; tot[n] = 0; cnt[n] = 0; n++; }
+        tot[k] += lk[i].size; cnt[k]++;
+    }
+    for (int k = 0; k < n; k++) if (tot[k] >= 1024) debugf("[bycaller] %s %08lx %lu bytes in %d\n", why, (unsigned long)ra[k], (unsigned long)tot[k], cnt[k]);
+    heap_stats_t h; sys_get_heap_stats(&h);
+    debugf("[bycaller] %s total %lu bytes live, heap %d KB free\n", why, (unsigned long)all, (h.total - h.used) / 1024);
+}
 void *__real_malloc_uncached(size_t), *__real_asset_load(const char *, int *);
-void *__wrap_malloc_uncached(size_t s) { void *p = __real_malloc_uncached(s); disable_interrupts(); uint32_t ra = (uint32_t)__builtin_return_address(0);
+static uint32_t lkBlockRa;     // a block being recorded: its buffers are its caller's
+void *__wrap_malloc_uncached(size_t s) { void *p = __real_malloc_uncached(s); disable_interrupts(); uint32_t ra = lkBlockRa ? lkBlockRa : (uint32_t)__builtin_return_address(0);
     for (int i = 0; i < LK_N; i++) if (lk[i].p && (uint32_t)lk[i].p == ((uint32_t)p & 0xDFFFFFFF)) lk[i].ra = ra;  // uncached pointer: the cached block it came from
     enable_interrupts(); return p; }
 void *__real_malloc_uncached_aligned(int, size_t);
 void *__wrap_malloc_uncached_aligned(int a, size_t s) { void *p = __real_malloc_uncached_aligned(a, s); disable_interrupts(); uint32_t ra = (uint32_t)__builtin_return_address(0);
     for (int i = 0; i < LK_N; i++) if (lk[i].p && (uint32_t)lk[i].p == ((uint32_t)p & 0xDFFFFFFF)) lk[i].ra = ra;
     enable_interrupts(); return p; }
-void *__real_rspq_block_end(void);
-void *__wrap_rspq_block_end(void) { void *b = __real_rspq_block_end(); disable_interrupts(); uint32_t ra = (uint32_t)__builtin_return_address(0);
+void *__real_rspq_block_end(void), __real_rspq_block_begin_reuse(rspq_block_t *);
+void __wrap_rspq_block_begin_reuse(rspq_block_t *r) { lkBlockRa = (uint32_t)__builtin_return_address(0); __real_rspq_block_begin_reuse(r); }
+void *__wrap_rspq_block_end(void) { void *b = __real_rspq_block_end(); disable_interrupts(); uint32_t ra = (uint32_t)__builtin_return_address(0); lkBlockRa = 0;
     for (int i = 0; i < LK_N; i++) if ((uint32_t)lk[i].p == ((uint32_t)b & 0xDFFFFFFF)) lk[i].ra = ra;
     enable_interrupts(); return b; }
 void *__wrap_asset_load(const char *f, int *sz) { void *p = __real_asset_load(f, sz); debugf("[leak] asset_load %s -> %p (cyc %d, from %08lx)\n", f, p, hle_leak_cyc, (unsigned long)__builtin_return_address(0)); return p; }
@@ -848,6 +873,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (t >= 20 && step < 4) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; t0 = frame; }
             if (step == 4 && boss && tower_active()) { phase = 2; t0 = frame; }
         } else if (phase == 2) {
+#ifdef HLE_TEST_LEAK    // tag allocations and the low point by floor; each floor's live heap by caller a second in
+            { extern int hle_leak_cyc; extern void hle_low_report(int), hle_leak_by_caller(const char *);
+              hle_leak_cyc = tower_floor();
+              if (lastFloor && t == 60) { char w[16]; snprintf(w, sizeof w, "floor%d", lastFloor); hle_leak_by_caller(w); }
+              if (lastFloor && t == 59) for (int f = 1; f <= lastFloor; f++) hle_low_report(f); }
+#endif
             if (!boss) return;
             if (tower_floor() != lastFloor && boss->mode == BOSS_MODE_COMBAT && !tower_draft_is_open()) {
                 lastFloor = tower_floor(); t0 = frame;
@@ -876,6 +907,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (t == 41) { pressed->a = 1; in->btn.a = 1; in->stick_y = 80; }
 #endif
 #ifdef HLE_RUN_STRIKE      // fight with the sword for 20 s first (the boons that hook into hits)
+#ifdef HLE_RUN_TOPUP       // (and never die: a full climb, every floor's sounds and effects, for the heap's low point)
+            if (character.health < character.maxHealth * 0.6f) character.health = character.maxHealth;
+#endif
             if (t < 1200) {
                 if (t == 1) pressed->z = 1;
                 in->btn.z = 1;
@@ -1320,7 +1354,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (t > 200 && !boss) {
                 cyc++; phase = 0; t0 = frame;
 #ifdef HLE_TEST_LEAK
-                { extern int hle_leak_cyc; extern void hle_leak_dump(int, int); hle_leak_cyc = cyc; if (cyc == 7) hle_leak_dump(2, 6); }
+                { extern int hle_leak_cyc; extern void hle_leak_dump(int, int), hle_leak_by_caller(const char *); hle_leak_cyc = cyc; if (cyc == 7) hle_leak_dump(2, 6);
+                  if (cyc == 8 || cyc == 12) hle_leak_by_caller(cyc == 8 ? "title8" : "title12"); }
 #endif
             }
             else if (t > 3000) { debugf("[cyc] STUCK leaving cyc %d\n", cyc); }
@@ -1657,6 +1692,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         int t = frame - t0;
         static int heapMin = 1 << 30;     // the lowest free heap in the fight, sampled every 10 frames
         if (phase == 3 && frame % 10 == 0) { heap_stats_t h; sys_get_heap_stats(&h); if (h.total - h.used < heapMin) heapMin = h.total - h.used; }
+#ifdef HLE_TEST_LEAK
+        { extern int hle_leak_cyc; extern void hle_low_report(int), hle_leak_by_caller(const char *);
+          hle_leak_cyc = phase; if (phase == 3 && t == 60) { hle_low_report(2); hle_low_report(3); hle_leak_by_caller("bonus"); }
+          if (phase == 3 && t == 3000) { hle_low_report(3); hle_leak_by_caller("bonuslate"); } }
+#endif
         if (frame % 60 == 0) debugf("[bonus] f%d phase %d boss %d mode %d state %d hp %.0f heap min %d KB\n", frame, phase,
                                     boss ? boss->phaseIndex : -1, boss ? boss->mode : -1, boss ? boss->state : -1,
                                     boss ? (double)boss->health : 0.0, phase == 3 ? heapMin / 1024 : -1);
