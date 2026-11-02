@@ -250,12 +250,38 @@ static void collision_resolve_character_scene_bounds(void)
     update_character_capsule_world();
 }
 
+static float s_clearX, s_clearZ;     // where the walls last left the player
+static bool  s_clearOk;
+
+// The hall's walls are 20 thick, the player's radius 8: a move that took his middle past a wall's
+// middle in one frame (the knockdown's shove on a slow frame, a big body's shove) was pushed out the
+// far side, out of the hall. Such a move is walked in steps of his radius
+static void collision_sweep_character_scene_bounds(float fromX, float fromZ)
+{
+    update_character_capsule_world();
+    float dx = character.pos[0] - fromX, dz = character.pos[2] - fromZ;
+    float d = sqrtf(dx * dx + dz * dz);
+    int n = (int)ceilf(d / fmaxf(charRadius, 1.0f));
+    if (n > 1 && d < 100.0f) {          // further in a frame than anything shoves him: a teleport, not walked
+        dx /= n; dz /= n;
+        character.pos[0] = fromX; character.pos[2] = fromZ;
+        for (int k = 1; k < n; k++) {
+            character.pos[0] += dx; character.pos[2] += dz;
+            collision_resolve_character_scene_bounds();
+        }
+        character.pos[0] += dx; character.pos[2] += dz;
+    }
+    collision_resolve_character_scene_bounds();
+    s_clearX = character.pos[0]; s_clearZ = character.pos[2]; s_clearOk = true;
+}
+
 // ------------------------------------------------------------
 // Lifecycle
 // ------------------------------------------------------------
 
 void collision_init(void)
 {
+    s_clearOk = false;
     bodyHitboxCollision = false;
     bossWeaponCollision = false;
     charWeaponCollision = false;
@@ -279,7 +305,8 @@ void collision_update(void)
     update_character_capsule_world();
 
     // Static scene bounds should resolve before boss/body hitbox checks.
-    collision_resolve_character_scene_bounds();
+    if (s_clearOk) collision_sweep_character_scene_bounds(s_clearX, s_clearZ);
+    else           collision_sweep_character_scene_bounds(character.pos[0], character.pos[2]);
 
     Boss *boss = NULL;
     if (!update_boss_capsule_world(&boss)) {
@@ -319,6 +346,7 @@ void collision_update(void)
         );
 
         if (bodyHitboxCollision) {
+            float x0 = character.pos[0], z0 = character.pos[2];
             character.pos[0] += push[0];
             character.pos[2] += push[2];
 
@@ -337,7 +365,7 @@ void collision_update(void)
                 character_set_velocity_xz(vx, vz);
             }
             // a big body (a charging dragon) must not shove the player through the walls
-            collision_resolve_character_scene_bounds();
+            collision_sweep_character_scene_bounds(x0, z0);
         }
     }
 

@@ -15,7 +15,7 @@
 #ifdef HLE_TEST_TOWER     // the Unbroken check hits the player
 #include "character.h"
 #endif
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_OOB) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE)
 #include "camera_controller.h"
 #include "joypad_utility.h"
 #include "character_skin.h"
@@ -1130,6 +1130,74 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         customCamPos = (T3DVec3){{ character.pos[0] + 50.0f, character.pos[1] + 20.0f, character.pos[2] + 50.0f }};
         customCamTarget = (T3DVec3){{ character.pos[0], character.pos[1] + 8.0f, character.pos[2] }};
         camera_mode(CAMERA_CUSTOM);
+        return;
+    }
+#endif
+#ifdef HLE_TEST_OOB
+#ifndef HLE_OOB_DIST
+#define HLE_OOB_DIST 68.0f
+#endif
+    // The knight knocked down (a 30 hit: the full 100 unit shove) with his back to each wall of
+    // the hall, the stairs' slanted walls too, every 1.5 s (with HLE_TEST_FREEZE_BOSS), his
+    // middle HLE_OOB_DIST from the wall's (68: he meets it at the shove's fastest);
+    // HLE_OOB_SLOW_MS=<ms> stalls every frame that long (Delta's slow frames). Logs where he
+    // ends up and whether he is out of the hall (outside the walls' middle lines)
+    {
+        extern float deltaTime;
+        static const float W[][4] = {   // a point on a wall's middle line, its outward normal
+            {  600.0f,    0.0f,  1.0f,  0.0f },     // back wall, between the pillars
+            {  382.5f, -507.5f,  0.9191f, -0.3939f }, // stairs' slanted walls
+            {  382.5f,  507.5f,  0.9191f,  0.3939f },
+            {  360.0f, -560.0f,  0.9191f, -0.3939f },
+            {  510.0f, -415.0f,  0.0f, -1.0f },     // the narrow end's sides
+            {  510.0f,  415.0f,  0.0f,  1.0f },
+            {    0.0f,  595.0f,  0.0f,  1.0f },     // long sides, front
+            {    0.0f, -595.0f,  0.0f, -1.0f },
+            { -430.0f,    0.0f, -1.0f,  0.0f },
+        };
+        static const float P[][2] = { {-430,-595}, {345,-595}, {420,-417}, {600,-417}, {600,417}, {420,417}, {345,595}, {-430,595} };
+        static int start = -1, trial = -1, outs;
+        static float tm, maxStep, px, pz, maxDt;
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) { start = frame; tm = 1.5f; }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+#ifdef HLE_OOB_SLOW_MS
+        wait_ms(HLE_OOB_SLOW_MS);
+#endif
+        cameraLockOnActive = false;
+        int nw = (int)(sizeof W / sizeof W[0]);
+        float x = character.pos[0], z = character.pos[2];
+        bool in_hall = false;   // crossing test against the walls' middle lines
+        for (int i = 0, j = 7; i < 8; j = i++)
+            if ((P[i][1] > z) != (P[j][1] > z) && x < (P[j][0] - P[i][0]) * (z - P[i][1]) / (P[j][1] - P[i][1]) + P[i][0]) in_hall = !in_hall;
+        if (trial >= 0 && trial < nw) {
+            float st = sqrtf((x - px) * (x - px) + (z - pz) * (z - pz));
+            if (st > maxStep) maxStep = st;
+            if (deltaTime > maxDt) maxDt = deltaTime;
+        }
+        px = x; pz = z;
+        tm += deltaTime;
+        if (tm < 1.5f) return;
+        if (trial >= 0 && trial < nw) {
+            const float *w = W[trial];
+            float out = (x - w[0]) * w[2] + (z - w[1]) * w[3];   // past the wall's middle line (+ = through)
+            if (!in_hall) outs++;
+            debugf("[oob] wall %d end (%.1f, %.1f), %.1f from the wall's middle (+ = through), %s, biggest step %.1f, dt up to %.3f\n",
+                   trial, (double)x, (double)z, (double)out, in_hall ? "in the hall" : "OUT OF THE HALL", (double)maxStep, (double)maxDt);
+        }
+        trial++;
+        if (trial == nw) { debugf("[oob] done: %d of %d knockbacks ended out of the hall\n", outs, nw); }
+        if (trial >= nw) { trial = nw; return; }
+        const float *w = W[trial];
+        character_set_state(CHAR_STATE_NORMAL);
+        character.health = character.maxHealth;
+        character.pos[0] = w[0] - w[2] * HLE_OOB_DIST; character.pos[2] = w[1] - w[3] * HLE_OOB_DIST;
+        character.rot[1] = atan2f(w[2], -w[3]);         // facing in: the shove is straight back, through the wall
+        character_apply_damage(30.0f);
+        px = character.pos[0]; pz = character.pos[2]; maxStep = 0.0f; maxDt = 0.0f; tm = 0.0f;
         return;
     }
 #endif
