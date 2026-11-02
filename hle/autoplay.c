@@ -133,6 +133,69 @@ void hle_leak_dump(int from, int to)
     debugf("[leak] cycles %d-%d: %d blocks, %lu bytes still held\n", from, to - 1, n, (unsigned long)total);
 }
 #endif
+#ifdef HLE_MAP_WALK
+// Test aid (with HLE_TEST_TOWER_RUN): a path through the Tower's map that enters a Rest in rows 2-5 and
+// an Elite when it can (else a Fight), moving with the D-pad and the stick in turn and entering with A
+// and Up in turn; at each Rest, two of HLE_REST_SEQ's letters: H heal, T Temper (the first on its list),
+// P potions, then k (keep the boons) or n (release the n-th on the list: slot order)
+#ifndef HLE_REST_SEQ
+#define HLE_REST_SEQ "T1Hk"
+#endif
+#ifdef HLE_LOG_MOVE_MS     // (Mupen's shot numbers for each screen)
+extern uint32_t dragon_vi_frame(void);
+#define WALK_VI() ((int)dragon_vi_frame())
+#else
+#define WALK_VI() -1
+#endif
+void hle_map_walk(joypad_inputs_t *in, joypad_buttons_t *pressed, int frame)
+{
+    extern int tower_screen(void), tower_map_row(void), tower_map_sel(void), tower_map_next(int), tower_list_sel(void);
+    enum { NODE_FIGHT = 1, NODE_ELITE = 2, NODE_REST = 5, SCR_MAP = 1, SCR_REST, SCR_TEMPER, SCR_RELEASE };     // (tower.c's)
+    static const char seq[] = HLE_REST_SEQ;
+    static int scr = -99, row = -99, since, target, moves, enters, rp, want; static bool sawRest, sawElite;
+    int now = tower_screen(), r = tower_map_row();
+    if (now != scr || r != row) { scr = now; row = r; since = 0; want = -1; }
+    if (++since < 60) return;       // past the screen's input delay
+    bool tick = (since - 60) % 12 == 0;
+    if (now == SCR_MAP) {
+        if (since == 60) {
+            target = -1;
+            static const int PREF[3] = { NODE_REST, NODE_ELITE, NODE_FIGHT };
+            for (int p = 0; p < 3 && target < 0; p++) {
+                if ((PREF[p] == NODE_REST && (sawRest || r + 1 < 1 || r + 1 > 4)) || (PREF[p] == NODE_ELITE && sawElite)) continue;
+                for (int l = 0; l < 3; l++) if (tower_map_next(l) == PREF[p]) { target = l; break; }
+            }
+            debugf("[walk] map row %d next: %d %d %d, cursor %d, going to %d (frame %d, VI %d)\n", r + 2, tower_map_next(0), tower_map_next(1), tower_map_next(2), tower_map_sel(), target, frame, WALK_VI());
+        }
+        if (!tick) return;
+        int sel = tower_map_sel();
+        if (target >= 0 && sel != target) {     // a step along the row: the D-pad, then the stick
+            bool right = target > sel;
+            if (moves++ % 2) in->stick_x = right ? 70 : -70;
+            else if (right) { pressed->d_right = 1; in->btn.d_right = 1; } else { pressed->d_left = 1; in->btn.d_left = 1; }
+            debugf("[walk] %s %s (frame %d)\n", moves % 2 ? "D-pad" : "stick", right ? "right" : "left", frame);
+            return;
+        }
+        int t = target >= 0 ? tower_map_next(target) : tower_map_next(sel);
+        if (t == NODE_REST && r + 1 >= 1 && r + 1 <= 4) sawRest = true;
+        if (t == NODE_ELITE) sawElite = true;
+        if (enters++ % 2) { pressed->d_up = 1; in->btn.d_up = 1; } else { pressed->a = 1; in->btn.a = 1; }
+        debugf("[walk] enter with %s (frame %d)\n", enters % 2 ? "A" : "Up", frame);
+        return;
+    }
+    if (now == SCR_REST && since == 60) character.health = character.maxHealth * 0.5f;    // hurt (instant kills cost nothing): the heal shows
+    if (!tick || !seq[rp]) { if (tick) { pressed->a = 1; in->btn.a = 1; } return; }
+    if (want < 0) {
+        char c = seq[rp];
+        want = now == SCR_REST ? (c == 'H' ? 0 : c == 'T' ? 1 : 2) : now == SCR_RELEASE ? (c == 'k' ? 0 : c - '0') : 0;
+        debugf("[walk] rest screen %d: '%c', row %d (frame %d, VI %d)\n", now, now == SCR_TEMPER ? 'A' : c, want, frame, WALK_VI());
+    }
+    if (tower_list_sel() < want) { pressed->d_down = 1; in->btn.d_down = 1; return; }
+    pressed->a = 1; in->btn.a = 1;
+    if (now != SCR_TEMPER) rp++;
+}
+#endif
+
 void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
     static int frame;
@@ -446,21 +509,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         extern float tower_boss_health_scale(int);
         extern bool tower_mod_skill_allowed(int);
         int fails = 0;
-        for (uint32_t seed = 1; seed <= 20; seed++) {
-            tower_begin_run(seed);
-            int seen = 0;
-            for (int f = 0; f < 5; f++) {
-                int bss = tower_floor_boss();
-                if ((f == 0 && bss != 0) || (f == 4 && bss != 1)) fails++;    // Guardian first, Unbound last
-                seen |= 1 << bss;
-                tower_next_floor();
-            }
-            if (seen != 0x1F) fails++;              // all five, once each
-            if (fabsf(tower_boss_health_scale(1) - 1.0f) > 0.01f) fails++;                    // circle 2: 0.7 + 0.3
-        }
-        tower_begin_run(7);
-        for (int f = 0; f < 25; f++) tower_next_floor();
-        { float h = tower_boss_health_scale(1); if (fabsf(h - 2.3f) > 0.01f && fabsf(h - 2.875f) > 0.01f) fails++; }   // circle 6: 0.7 + 4 x 0.3 + 0.4 (x1.25 on an Iron Night)
+        (void)tower_floor_boss;     // (the circle's order, its scaling: tower_test_map walks the maps)
+        { extern int tower_test_map(void); fails += tower_test_map(); }     // the map: 1,000 maps against the rules, paths, Rests, Release, Elites
         tower_begin_run(7);
         if (tower_mod_max_potions() != 3) fails++;
         if (fabsf(tower_boss_health_scale(1) - 0.7f) > 0.01f || fabsf(tower_boss_health_scale(5) - 0.385f) > 0.01f) fails++;   // circle 1, no skills (a Bonus boss: 0.7 x 0.55)
@@ -808,7 +858,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (step == 4 && boss && tower_active()) { phase = 2; t0 = frame; step = 0; debugf("[stats] climbing at %d\n", frame); }
         } else if (phase == 2) {
             static bool fighting;
-            if (!fighting) { if (!boss || boss->mode != BOSS_MODE_COMBAT) { t0 = frame; if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; } return; } fighting = true; t0 = frame; return; }
+            extern bool tower_between_open(void);
+            if (!fighting) { if (!boss || boss->mode != BOSS_MODE_COMBAT || tower_between_open()) { t0 = frame; if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; } return; } fighting = true; t0 = frame; return; }   // (the map first: A enters the Guardian)
 #ifdef HLE_TOWER_HEALCHECK   // the healing boons, measured in the fight (every boon held: Bloodthirst 2, Rally, Phantom Step)
             if (t == 100) {
                 extern void tower_on_perfect_dodge(void); extern float tower_mod_perfect_window(void), tower_mod_damage_dealt(void);
@@ -885,12 +936,16 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
         } else if (phase == 2) {
             static bool fighting;
-            if (!fighting) { if (!boss || boss->mode != BOSS_MODE_COMBAT) { t0 = frame; return; } fighting = true; t0 = frame; return; }
+            extern bool tower_between_open(void), tower_map_is_open(void);
+            if (!fighting) { if (!boss || boss->mode != BOSS_MODE_COMBAT || tower_between_open()) { t0 = frame; if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; } return; } fighting = true; t0 = frame; return; }   // (the map first)
             if (t == 40) pressed->d_up = 1;
             if (t == 44) debugf("[ui] floor 1, D-up: state %d (%s)\n", character_get_state(), character_get_state() == CHAR_STATE_SKILL ? "CAST: not locked" : "locked");
             if (t == 120) { debugf("[ui] kill at %d\n", frame); boss_apply_damage(boss, boss->maxHealth * 2.0f); }
             if (t == 240) debugf("[ui] draft %s at %d\n", tower_draft_is_open() ? "open" : "CLOSED", frame);
             if (t == 300) { pressed->a = 1; in->btn.a = 1; }      // the first card
+            static bool mapSeen;
+            if (t == 340 && !mapSeen) { mapSeen = true; debugf("[ui] map %s at %d\n", tower_map_is_open() ? "open" : "CLOSED", frame); }
+            if (t >= 340 && t < 420 && tower_between_open()) { t0 = frame - 341; if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; } }   // the map: A on its node (a Rest: heal, keep the boons, then the map again)
             if (t == 420) debugf("[ui] floor %d: skills usable %d %d %d\n", tower_floor(), tower_mod_skill_allowed(0), tower_mod_skill_allowed(1), tower_mod_skill_allowed(2));
             if (t == 430) { int k = tower_mod_skill_allowed(0) ? 0 : tower_mod_skill_allowed(1) ? 1 : 2;
                             if (k == 0) pressed->d_up = 1; else if (k == 1) pressed->d_right = 1; else pressed->d_down = 1; }
@@ -915,7 +970,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     // die: the death screen's summary, then A back to the title.
     {
         extern int tower_floor(void), tower_floor_boss(void);
-        extern bool tower_draft_is_open(void), tower_active(void); extern int tower_draft_selected(void);
+        extern bool tower_draft_is_open(void), tower_active(void), tower_between_open(void), tower_map_is_open(void), tower_rest_is_open(void); extern int tower_draft_selected(void);
         extern const char *tower_death_summary(void);
         static int phase = 0, t0 = 0, step = 0, lastFloor = 0;
         Boss *boss = boss_get_instance();
@@ -939,7 +994,15 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             static int heapMin = 1 << 30;     // the lowest free heap in the climb, sampled every 10 frames
             if (frame % 10 == 0) { heap_stats_t h; sys_get_heap_stats(&h); if (h.total - h.used < heapMin) heapMin = h.total - h.used; }
 #endif
-            if (tower_floor() != lastFloor && boss->mode == BOSS_MODE_COMBAT && !tower_draft_is_open()) {
+            if (tower_map_is_open() || tower_rest_is_open()) {     // the map (and a Rest): A on the cursor's node (straight up), heal, keep the boons
+#ifdef HLE_MAP_WALK
+                extern void hle_map_walk(joypad_inputs_t *, joypad_buttons_t *, int); hle_map_walk(in, pressed, frame);
+#else
+                if (frame % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
+#endif
+                return;
+            }
+            if (tower_floor() != lastFloor && boss->mode == BOSS_MODE_COMBAT && !tower_between_open()) {
                 lastFloor = tower_floor(); t0 = frame;
 #ifdef HLE_LOG_FPS
                 { extern int hle_floor_mark; hle_floor_mark = 1; }   // test aid: count this floor's fight apart from its load
