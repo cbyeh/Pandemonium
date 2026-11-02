@@ -30,13 +30,15 @@ The Bonus bosses climb past the story (`boss_target_max_health`, `boss_damage_sc
 
 ## The Tower (shipped)
 A run climbs floors, one fight each:
-- **A circle is five floors:** the Guardian first, the three Bonus bosses in a random order, Guardian Unbound last (a floor of its own).
+- **A circle is a map** (branch tower-rogue, stage 3; [TOWER_ROGUELIKE.md](TOWER_ROGUELIKE.md) section 2): 7 rows of 3 lanes, the Guardian in row 1, Guardian Unbound in row 7 (a floor of its own), a Rest on every lane of row 6, rows 2-5 rolled (Fight 45, Elite 15, Rest 8; Events 20 and Shops 12 from stage 4), rerolled until every lane has 2+ Fights, no Elite in row 2 and no two Rests in a row on any path. A path has 4-6 fights; each Fight or Elite is a Bonus boss not met this circle while any are left (set when its node becomes reachable).
+- **Elites** (stage 3): the Bonus boss at x1.25 health, a Rare-or-better draft, x1.5 Embers (affixes and gold: stages 6 and 4).
+- **Rests:** heal 40% of max health, Temper (+1 level on a slotted boon, a maxed boon's "+", or a known skill's "+" card), or +2 potions (up to the run's max); then Release one slotted boon free (it, its levels and its "+" gone; a duo with its two; a rival it locked stays locked).
 - **Scaling:** circle 1 bosses have 70% of their health and deal 60% of their damage; each circle adds 30% health (40% from circle 6, so even a full set of boons eventually stalls) and 20% damage. A Bonus boss has 55% of its story health, so every floor costs about what a Guardian phase does.
 - **Skills:** learned from Learn cards in the draft. Boss health rises 8% for each skill offered (taken or passed over), so skipping skills never keeps bosses weak.
 - **The baseline:** each circle cleared gives the player +10% damage and 6% less damage taken, through circle 5 (at most +40% and x0.78).
 - **Nights** (from circle 2, one at random a circle): Blood Moon (bosses hit 20% harder, x1.5 Embers), Iron Night (bosses +25% health, x1.3), Starfall (skills recharge 30% faster, bosses hit 10% harder, x1.2).
-- **After each boss:** one potion (no health; at most 15 held), then the draft: three cards and a Skip button (+5 Embers; Down to it, Up back).
-- **Embers** per floor: (8 x circle + 3 x the floor's place in its circle) x the night's bonus; +25 for a cleared circle. Kept when the run ends.
+- **After each boss:** one potion (no health; at most 15 held), then the draft: three cards and a Skip button (+5 Embers; Down to it, Up back), then the map (Left/Right on the D-pad or stick, A or Up enters; it also shows before each circle's Guardian).
+- **Embers** per floor: (8 x circle + 3 x the fight's place in its circle, 0-5) x the night's bonus (x1.5 an Elite); +25 for a cleared circle. Kept when the run ends.
 - The pause menu's **Stats** pages: Stats (relic, damage and damage taken, health and potions, blessings and curses) and Build (the 3 skills, then the 5 boon slots with their levels).
 
 Cost per floor with the baseline, before boons (a potion returns about 19% of the resources): 13%, 21%, 29%, 37%, 45% in circles 1-5, so runs end around circles 4-6 unless boons and pacts carry them. A 45-floor scripted climb that took every boon and a pact on each floor after (`HLE_RUN_CLIMB`), costed with the logged numbers as a share of max health (a potion returns 45%): about 33% a floor in circle 1, 72-84% in circles 2-5, and 79-90% from circle 7, so even a full set runs out of floors (before the late scaling and the baseline's cap, circles 7-9 fell to 55-61%).

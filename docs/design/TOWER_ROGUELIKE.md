@@ -17,6 +17,17 @@ Stage 2 built (2026-11-02, pre-release v1.1-beta.2): rival lockout, 13 "+" cards
 - **Skyfall is built here** (stage 2 lists all 9 duos; stage 5 mentions it with the skill builds): a skill's first hit a cast calls the pillar for 6.
 - Vigor and Vitality raised only the health mid-run (max health was set once, at the run's start; main has this too): they now raise max health, as Steel Hearth needs.
 
+Stage 3 built (2026-11-02): the map, Fight/Elite/Rest nodes, Temper and Release, floors and circles by the map. Calls made while building it:
+- **No Events or Shops are rolled until stage 4** (the stage split doesn't say whether their nodes may sit on the map unused): rows 2-5 roll Fight 45, Elite 15, Rest 8 (their share of 68), and the Shop-in-rows-3-4 rule waits for Shops. With the rules' rerolls a map holds about 77% Fights, 16% Elites, 7% Rests in rows 2-5 (1,000 maps), and 1% of paths have 4 fights, 25% 5, 74% 6; stage 4's Events and Shops bring those down.
+- "Every lane has at least 2 Fights" counts Fight nodes (not Elites). "No two Rests in a row on one path" also keeps row 5 free of Rests (row 6 is all Rests).
+- A Fight's or Elite's boss is set when its node becomes reachable (so the bottom line can name it): a Bonus boss not met this circle while any are left, else any of the three.
+- **An Elite in stage 3:** x1.25 health (section 12; Bonus bosses only), a Rare-or-better draft (Commons and Learn cards are left out; a skill card leads only if a Rare one is offerable), x1.5 Embers. No affix (stage 6), no gold (stage 4); its name bar is the boss's own. The bottom line reads "Elite: Shackled Sun, rare draft, x1.5 Embers".
+- **Rest:** heal 40% of max health, **Temper** (a slotted boon's next level, the "+" of a maxed one, or a known skill's "+" card, the skills' only levels before stage 5; never a new boon, a Learn card or a duo), or **+2 potions up to the cap of 15** (section 12: fights already bank potions past the run's max, so capping at that max would grey the choice out most of the time). Then **Release** (Keep first, so A twice keeps everything): the boon, its levels and its "+" go, a duo with its two boons; a rival it locked stays locked; Vigor's max health goes with it.
+- Rest controls: Up/Down (D-pad or stick) along the rows, past one that can't be chosen (Temper with nothing to raise, potions at 15), A takes it; Temper's list ends with Back. Every screen after a fight waits 0.75 s for input, as the draft.
+- Embers per fight: 8 x circle + 3 x the fight's place in its circle (0 for the Guardian, up to 5 for Unbound on a 6-fight path), as before for a 5-fight path.
+- The map shows after every draft and before each circle's Guardian (the run's first floor too: the Guardian waits in the hall under it). The top line has no gold until stage 4.
+- Icons: one 96x16 I4 strip (768 B, `assets/ui/map/map_icons.i4.png`), loaded when the map opens and freed when a fight starts.
+
 Scope approved by the user (2026-11-01): a branching map each circle (4-6 fights a path), Vampire Survivors-style slots (5 boon slots, boons levelling inside their slot; the three skills level outside them, with two final forms each, and no new skills), boon families with duos as evolutions, rival pairs and "+" upgrades, and elite affixes. Not in scope: rerolls, removing boons, relics found mid-run. Nothing here is built yet. Numbers are starting points for the balance pass (stage 5).
 
 ## 1. Why every deep run ends the same
