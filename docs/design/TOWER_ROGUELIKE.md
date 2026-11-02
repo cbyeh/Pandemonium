@@ -2,6 +2,13 @@
 
 Status (2026-11-01): the user's answers are in (section 17); the remaining calls were made by the game-theory check (section 14). Ready for approval to build, stage by stage.
 
+Stage 1 built (2026-11-01, pre-release v1.1-beta.1): 5 slots with levels, families on the cards and their weighting, the slot line, Stats > Build, the Shrine's Boon Packs in `_pad[24..25]`. Calls made while building it:
+- Section 7's tables hold 18 existing and 17 new boons (35), not 40 / 19 new. Hearth's two are held back: **Quick Draught** speeds up a drink the game doesn't have (a potion heals at once) and **Prospector** needs gold (stage 4); so 15 new boons in five packs, and the ladder sells five (120-280).
+- The skills keep today's Learn and "+" cards (stage 5 turns them into levels): no slot, a "Skill" tag. Moon Mastery is a Moon boon now, in a slot, offered once a skill is known (as Lunar Tide, Eclipse and Waxing Moon); Conductor once something calls lightning.
+- Static without Storm Blade: a bolt of 6 every 8th hit, +3 a level above 1 (so its levels do something). Overcharge's bolts are Storm Blade's (6, +3 a Static level). Red Thirst counts full quarters of health missing. Vanish's blow does nothing at all (no flinch). Bleed ticks every 0.5 s and wins back no Rally.
+- The B forms' 3 bits are kept but not sold until stage 5.
+- Stats keeps its page; gold isn't there until stage 4.
+
 Scope approved by the user (2026-11-01): a branching map each circle (4-6 fights a path), Vampire Survivors-style slots (5 boon slots, boons levelling inside their slot; the three skills level outside them, with two final forms each, and no new skills), boon families with duos as evolutions, rival pairs and "+" upgrades, and elite affixes. Not in scope: rerolls, removing boons, relics found mid-run. Nothing here is built yet. Numbers are starting points for the balance pass (stage 5).
 
 ## 1. Why every deep run ends the same

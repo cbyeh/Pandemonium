@@ -37,35 +37,54 @@ A run climbs floors, one fight each:
 - **Nights** (from circle 2, one at random a circle): Blood Moon (bosses hit 20% harder, x1.5 Embers), Iron Night (bosses +25% health, x1.3), Starfall (skills recharge 30% faster, bosses hit 10% harder, x1.2).
 - **After each boss:** one potion (no health; at most 15 held), then the draft: three cards and a Skip button (+5 Embers; Down to it, Up back).
 - **Embers** per floor: (8 x circle + 3 x the floor's place in its circle) x the night's bonus; +25 for a cleared circle. Kept when the run ends.
-- The pause menu's **Run** page lists the run: relic, damage and damage taken, health and potions, boons, blessings and curses.
+- The pause menu's **Stats** pages: Stats (relic, damage and damage taken, health and potions, blessings and curses) and Build (the 3 skills, then the 5 boon slots with their levels).
 
 Cost per floor with the baseline, before boons (a potion returns about 19% of the resources): 13%, 21%, 29%, 37%, 45% in circles 1-5, so runs end around circles 4-6 unless boons and pacts carry them. A 45-floor scripted climb that took every boon and a pact on each floor after (`HLE_RUN_CLIMB`), costed with the logged numbers as a share of max health (a potion returns 45%): about 33% a floor in circle 1, 72-84% in circles 2-5, and 79-90% from circle 7, so even a full set runs out of floors (before the late scaling and the baseline's cap, circles 7-9 fell to 55-61%).
 
 ### Draft
 The first card is a skill card (learn a skill or upgrade one) while any are left. The other two roll a rarity (legendary 6% in circle 1, +4% a circle up to 25%; rare 30%; else common). Each card is a Pact 4% of the time, and always once the boons run out, so a draft is never empty.
 
-| Boon | Tier | Max | Effect |
-|---|---|---|---|
-| Ember Edge | Common | 3 | +15% damage |
-| Iron Skin | Common | 2 | -15% damage taken |
-| Deep Flask | Common | 2 | +3 potions |
-| Kindled Flask | Common | 2 | potions heal 25% more |
-| Second Wind | Common | 2 | +40% stamina regen; the 2.5 s wait after the bar empties is cut the same way (1.8 s, then 1.4 s) |
-| Vigor | Common | 3 | +25 max health |
-| Fleetfoot | Rare | 1 | rolls cost 40% less stamina |
-| Bloodthirst | Rare | 2 | sword hits (not skills or Storm Blade) heal 12% of their base damage (before damage boons) |
-| Last Stand | Rare | 1 | +40% damage below 30% health |
-| Phantom Step | Rare | 1 | easier perfect dodges (0.28 s window), each heals 2% |
-| Riposte | Rare | 1 | +50% damage for 2.5 s after a perfect dodge |
-| Crushing Blows | Rare | 1 | a staggered boss stays down 50% longer |
-| Rally | Rare | 1 | hitting back wins back the health just lost, each hit its damage before boons |
-| Unbroken | Legendary | 1 | survive one killing blow a floor |
-| Executioner | Legendary | 1 | staggered bosses take +60% |
-| Storm Blade | Legendary | 1 | every 4th hit calls lightning (+12) |
-| Blood Pact | Legendary | 1 | +35% damage, potions -25% |
-| Learn Moon Blade Dance / Halfmoon Slash / Crescent Cleave | Skill | 1 | the skill, on its button in the layout |
-| Moon Blade Dance+ / Halfmoon Slash+ / Crescent Cleave+ | Skill (rare) | 1 | 2 more waves / +20% / +20% |
-| Moon Mastery | Skill (rare) | 2 | skill cooldowns -20% |
+**Slots and families** (tower-rogue stage 1, docs/design/TOWER_ROGUELIKE.md): a run holds **5 boon slots**. A new boon takes the next free slot at Lv 1; taking it again levels it in its slot (each level adds the old per-stack value unless the table says otherwise). With the bar full, drafts offer only levels of the slotted boons, skill cards and pacts. Skill cards take no slot. Every boon has a family (the card's tag over its name); a family with 2+ boons slotted comes up twice as often (`HLE_TEST_TOWER` measures 1.93x, one held 1.08x). The new boons (**pack**) join the pool once their family's pack is bought at the Shrine (Boon Packs: the nth pack bought costs 120, 160, 200, 240, 280; 9 save bits in the slot's `_pad[24..25]`, bits 6-8 kept for the skills' second forms).
+
+| Boon | Family | Tier | Max Lv | Effect |
+|---|---|---|---|---|
+| Bloodthirst | Blood | Rare | 2 | sword hits (not skills or lightning) heal 12% a level of their base damage (before damage boons) |
+| Rally | Blood | Rare | 2 | hitting back wins back the health just lost, each hit its damage before boons; Lv 2 holds it 1.5 s (1 s) |
+| Blood Pact | Blood | Legendary | 1 | +35% damage, potions -25% |
+| Last Stand | Blood | Rare | 2 | +40% damage a level below 30% health |
+| Hemorrhage (pack) | Blood | Common | 3 | the combo's 3rd hit bleeds 4 a level over 3 s (ticks every 0.5 s, a quarter of a hit's flash, no flinch, no healing) |
+| Sanguine Flask (pack) | Blood | Rare | 1 | a potion: +25% damage for 6 s |
+| Red Thirst (pack) | Blood | Common | 3 | +10% damage a level per full 25% of health missing |
+| Storm Blade | Storm | Legendary | 1 | every 4th hit calls lightning (+6; was +12, best in every build) |
+| Static (pack) | Storm | Common | 4 | Storm Blade's bolt +3 a level; without it, every 8th hit a bolt of 6 (+3 a level above 1) |
+| Thunderclap (pack) | Storm | Rare | 1 | the combo's 3rd hit calls lightning (+8) |
+| Conductor (pack) | Storm | Rare | 1 | lightning fills the stagger meter like a sword hit (offered once something calls lightning) |
+| Overcharge (pack) | Storm | Legendary | 1 | a stagger: the next 5 hits each call Storm Blade's bolt (6, +3 a Static level) |
+| Moon Mastery | Moon | Rare | 3 | skill cooldowns -20% a level (x0.8 each) |
+| Lunar Tide (pack) | Moon | Common | 3 | sword hits cut skill cooldowns 0.3 s a level |
+| Eclipse (pack) | Moon | Rare | 1 | a skill's hit on a staggered boss +50% |
+| Waxing Moon (pack) | Moon | Rare | 1 | a skill cast: sword hits +15% for 4 s |
+| Iron Skin | Iron | Common | 3 | -15% damage taken a level (Lv 3: -10%) |
+| Vigor | Iron | Common | 5 | +25 max health |
+| Unbroken | Iron | Legendary | 1 | survive one killing blow a floor |
+| Crushing Blows | Iron | Rare | 1 | a staggered boss stays down 50% longer |
+| Executioner | Iron | Legendary | 1 | staggered bosses take +60% |
+| Heavy Hand (pack) | Iron | Common | 3 | the combo's 3rd hit fills the stagger meter 20% more a level |
+| Stalwart (pack) | Iron | Rare | 1 | blows over 20% of max health (after damage taken) deal 25% less |
+| Phantom Step | Shadow | Rare | 1 | easier perfect dodges (0.28 s window), each heals 2% |
+| Riposte | Shadow | Rare | 1 | +50% damage for 2.5 s after a perfect dodge |
+| Fleetfoot | Shadow | Rare | 1 | rolls cost 40% less stamina |
+| Second Wind | Shadow | Common | 3 | +40% stamina regen a level; the 2.5 s wait after the bar empties is cut the same way |
+| Shadow Edge (pack) | Shadow | Common | 4 | +8% damage a level for 2 s after any roll |
+| Evasion (pack) | Shadow | Rare | 1 | a perfect dodge also gives back the roll's stamina |
+| Vanish (pack) | Shadow | Legendary | 1 | 3 perfect dodges in a floor: the next blow that lands deals nothing (once a floor) |
+| Ember Edge | Hearth | Common | 5 | +15% damage a level (Lv 4-5: +10%) |
+| Deep Flask | Hearth | Common | 2 | +3 potions |
+| Kindled Flask | Hearth | Common | 2 | potions heal 25% more |
+| Learn Moon Blade Dance / Halfmoon Slash / Crescent Cleave | Skill | Skill | 1 | the skill, on its button in the layout (no slot) |
+| Moon Blade Dance+ / Halfmoon Slash+ / Crescent Cleave+ | Skill | Skill (rare) | 1 | 2 more waves / +20% / +20% (no slot) |
+
+Not built yet: Hearth's pack (Quick Draught needs a drinking time, which potions don't have; Prospector needs gold, stage 4), so the Shrine sells five packs.
 
 **Pacts** (a blessing and a curse, rolled for the card, stacking without end; a curse never undoes its blessing):
 
