@@ -1365,6 +1365,7 @@ static void scene_tower_start_floor(void)
 #endif
     // A clean hall: nothing from the last floor's fight may linger
     gpu_wait();
+    g_gpuTrimQueues = true;     // (nor the memory the screens between floors drew with)
     skill_fx_reset();
     msa_clear_all();
     boss_ground_crush_reset();

@@ -30,6 +30,7 @@ static surface_t *s_latFb;
 #include "gpu_frame.h"
 
 rspq_queue_t *g_drawQueue;
+bool g_gpuTrimQueues;
 #ifdef HLE_LOG_FPS
 int hle_floor_mark;     // test aid (autoplay): a Tower floor's fight began
 #endif
@@ -314,6 +315,12 @@ int main(void)
         // Recorded, then run as a whole: submitting straight to the RSP stalled the CPU on its
         // small command ring, and the RSP then idled through the next frame's update. Now the RSP
         // draws this frame while the CPU updates the next (what it reads is buffered: kGpuFrames)
+        if (g_gpuTrimQueues && drawQueue[0]) {     // (the RSP done with both first)
+            rspq_wait();
+            rspq_queue_destroy(drawQueue[0]); rspq_queue_destroy(drawQueue[1]);
+            drawQueue[0] = drawQueue[1] = NULL;
+        }
+        g_gpuTrimQueues = false;
         if (!drawQueue[0]) { drawQueue[0] = rspq_queue_create(); drawQueue[1] = rspq_queue_create(); }
         rspq_queue_clear(drawQueue[dq]);
 #if !defined(HLE_PROF_SERIAL) && !defined(HLE_PROF_BOSS) && !defined(HLE_PROF_DRAGON)    // test aids that time the RSP stage by stage
