@@ -1,5 +1,7 @@
 # The Tower as a roguelike: design for approval
 
+Status (2026-11-01): the user's answers are in (section 17); the remaining calls were made by the game-theory check (section 14). Ready for approval to build, stage by stage.
+
 Scope approved by the user (2026-11-01): a branching map each circle (4-6 fights a path), Vampire Survivors-style slots (5 boon slots, boons levelling inside their slot; the three skills level outside them, with two final forms each, and no new skills), boon families with duos as evolutions, rival pairs and "+" upgrades, and elite affixes. Not in scope: rerolls, removing boons, relics found mid-run. Nothing here is built yet. Numbers are starting points for the balance pass (stage 5).
 
 ## 1. Why every deep run ends the same
@@ -9,7 +11,7 @@ Scope approved by the user (2026-11-01): a branching map each circle (4-6 fights
 
 The fix has four parts:
 - **Slots:** a build holds 5 boons, no more, and draft picks are split between them and the 3 skills' levels: a run goes deep on one skill or on the sword, never on everything (section 6).
-- **A pool too big to see:** 41 boons in six families, 3 skills with 5 levels and 2 final forms each, 9 duos and 13 "+" upgrades. A run slots 5 of the 41 boons.
+- **A pool too big to see:** 40 boons in six families, 3 skills with 5 levels and 2 final forms each, 9 duos and 13 "+" upgrades. A run slots 5 of the 40 boons.
 - **Choices that close doors:** rival pairs, and a full slot bar.
 - **A route you choose:** the map.
 
@@ -124,22 +126,23 @@ Non-damage levels (charge time, wind-up, reach) make a skill safer to use; damag
 |---|---|---|---|
 | 1 | Learn: 5 crosses x 0.8 (4) | Learn: 28 | Learn: 5 blades (10) |
 | 2 | crosses 1.5 each (7.5) | charge 1.6 s (was 2.0) | +20% (12): today's Cleave+ |
-| 3 | +2 crosses: 7 (10.5): today's MBD+ | +20% (34): today's Halfmoon+ | +2 blades, the fan tightened: 7 blades, about 11 ticks in reach (16) |
+| 3 | +2 crosses: 7 (10.5): today's MBD+ | +20% (34): today's Halfmoon+ | blades hit 5 times (was 4): about 10 ticks in reach (15) |
 | 4 | cooldown 12 s (was 15) | reach +25% (85 to 106): easier to land | wind-up 0.6 s (was 0.85): safer to start |
-| 5 A | **Full Moon Dance:** 10 crosses (+3), 2.0 each: **20** | **Twin Moon:** a follow-up slash 0.35 s after, the same arc at 40%: **48** | **Crescent Storm:** a second volley of 7 blades 0.5 s after, at 50%: about **25** |
-| 5 B | **Shattering Dance:** 7 crosses, each fills the stagger meter like half a sword hit: a break about every 3 casts (with Iron's Executioner, a stagger build) | **Full Moon:** a 360-degree slash, its charge can't be broken, stagger 60% (was 30%): a break about every 2 casts | **Long Cleave:** blades go 1.6x as far and hit 6 times (was 4): about 24, from range |
+| 5 A | **Full Moon Dance:** 10 crosses (+3), 2.0 each: **20** | **Twin Moon:** a follow-up slash 0.35 s after, the same arc at 40%: **48** | **Crescent Storm:** the cast's 5 blades, then 3 more following 0.3 s behind the middle three (8 in all), at full damage: about **24** |
+| 5 B | **Shattering Dance:** 7 crosses, each fills the stagger meter like a fifth of a sword hit (1.4 hits a cast, landed in 1.75 s, so none drains away): the core of the stagger build below | **Full Moon:** a 360-degree slash, its charge can't be broken, stagger 60% (was 30%): a break about every 2 casts | **Long Cleave:** blades go 1.6x as far and hit 6 times (was 5): about 22, from range |
 
 ### A maxed skill build against a maxed sword build (base damage a minute, before the damage boons both share)
 Assumes a fight where you swing in openings about 24 s a minute (148 a minute with the plain sword), and the build's slots hold Moon Mastery Lv 2 (cooldowns x0.64). Starfall nights add x0.7 on top.
 
 | Build | Its engine | A minute | Total with the sword it still swings |
 |---|---|---|---|
-| Sword: Ember Edge, Storm Blade+Static, Thunderclap, Riposte | lightning on every 4th hit (+12, +4 a Static level) | about +110 on the sword's 148 | about **260** |
+| Sword: Ember Edge, Storm Blade+Static, Thunderclap, Riposte | lightning on every 4th hit (+6, +3 a Static level; Storm Blade was +12, section 14) | about +95 on the sword's 148 | about **245** |
 | Full Moon Dance | 20 a cast every 7.7 s, airborne 2.9 s a cast (it doubles as the dodge) | about 155 | about 155 + 80 = **235** |
 | Twin Moon | 48 a cast every 29 s (Starfall: 20 s) | about 100 (Starfall 145) | about 100 + 130 = **230** (275) |
-| Crescent Storm | 25 a cast every 11.5 s, 2.2 s a cast | about 130 | about 130 + 110 = **240** |
+| Crescent Storm | 24 a cast every 11.5 s, 2.2 s a cast | about 125 | about 125 + 110 = **235** |
+| Stagger (Shattering Dance) | about 1.7 breaks a minute (sword 1, Shattering 0.5, Heavy Hand 0.2), each 5.25 s with Executioner's +60% | breaks about +65 over a plain build's one, crosses 44 | about 148 + 65 + 44 = **255** |
 
-- Each maxed skill build lands within about 10% of the sword build, so a skill build is a real path, not a gimmick or the best pick.
+- Every maxed build lands in a band of **216-264** (the five builds' mean of 240, ±10%), so a skill build is a real path, not a gimmick or the best pick. Section 14 checks the contexts each one wins in.
 - The ceiling check: Twin Moon's 48 is about 26% of a circle-3 boss a cast (Halfmoon+ at +50% was 48% at circle 1). Full Moon Dance's 20 is about 11% a cast, spread over 10 crosses.
 - Numbers to measure in stage 5 with `HLE_TEST_SKILL_DMG` and `HLE_SDMG_TOWER`; tune the per-cross / follow-up / second-volley shares first.
 
@@ -150,12 +153,30 @@ Assumes a fight where you swing in openings about 24 s a minute (148 a minute wi
 | Cross damage, stagger | the wave's damage and `skill_fx_next_poise`, as the Cleave does | none |
 | Halfmoon follow-up (Twin Moon) | replay the arc's hit and FX once more 0.35 s later | low: one more arc for 0.3 s |
 | Halfmoon 360 degrees, unbreakable charge | the arc's angle, skip the break check | low |
-| More blades, second volley (Crescent Storm) | the blade loop runs twice, 7 entries in `spread[]` | **medium:** up to 14 blades and 14 bursts alive (1.6 s) in a pool of 40 shared with the bosses' FX (the Sun's spiral uses 20): raise `SKILL_FX_MAX` to 56 (static, about 1-2 KB) so no blade silently fails to spawn, and measure the cast's draw time in Ares at 4 MB and on Delta's core against today's 5 blades |
-| Long Cleave | the blade's speed, life and hit count | low-medium: 7 blades alive 2.5 s |
+| 3 trailing blades (Crescent Storm) | the blade loop runs 3 more steps 0.3 s later on the middle three of `spread[]` | **low-medium:** 8 blades and 8 bursts alive (was 5 and 5); with the Sun's 20 embers that's 36 of `SKILL_FX_MAX` 40, so the pool stays as it is (stage 5 logs any spawn that finds it full); measure the cast's draw time in Ares at 4 MB and on Delta's core against today's 5 blades |
+| Long Cleave | the blade's speed, life and hit count | low: 5 blades alive 2.5 s |
+
+### The stagger build (Shattering Dance at its core)
+The user's pick for a build: stagger the boss often, keep it down longer, hit it harder while it's down.
+
+| Piece | Where it comes from | What it adds |
+|---|---|---|
+| Shattering Dance | Moon Blade Dance Lv 5 B | a cast every 7.7 s (Moon Mastery Lv 2) puts 1.4 sword hits into the meter at once |
+| Heavy Hand Lv 3 | Iron (New) | the combo's 3rd hit fills 60% more |
+| Crushing Blows (+: the drain stays off 3 s after it rises) | Iron | 5.25 s down (3.5 s) |
+| Executioner (+: +90%) | Iron, Legendary | +60% on a staggered boss; locks out Storm Blade |
+| Moon Mastery Lv 2 | Moon | the casts that feed the meter |
+| Eclipse | Moon | the dance's crosses on a downed boss +50% |
+| Breaker pacts | pact cards | +15% a stack on staggers, paid with their curses |
+| Iron Tide (duo, Iron + Moon) | Iron + Moon maxed | a break resets the dance: a second cast on the downed boss |
+
+- How it plays: dance, land the combo's 3rd hits, the boss drops about every 35 s and stays down 5.25 s; you spend the down time swinging.
+- Its counters: **Relentless** elites (drain 2x, down 2.5 s) and **Ironclad** (+30% bar) cut it to about 205, the bottom of the band; Swift and Smouldering don't touch it.
+- Stagger bonuses **add** (Executioner +60% + Breaker +15% a stack + Eclipse on skills), not multiply, capped at +100%: with 3 Breaker pacts it stops at about 275.
 
 ### Families and skills
 - **Moon** holds the skill-build boons (Moon Mastery, Lunar Tide, Eclipse, Waxing Moon): a skill build fills its slots there.
-- **Storm + Moon duo, Skyfall** (new, below): a skill hit calls Storm Blade's pillar once a cast (+12, its existing hit and FX).
+- **Storm + Moon duo, Skyfall** (new, below): a skill hit calls Storm Blade's pillar once a cast (+6, its existing hit and FX).
 - **Iron's Executioner** pairs with the stagger forms (Shattering Dance, Full Moon).
 
 ### Boon slots (passive)
@@ -181,7 +202,7 @@ Outside the slots, as now: they stack without end and fill drafts once a build i
 | Drafts by floor 35 (7 circles, 4-6 fights each) | about 33 (plus Rests and Shops) |
 
 - A skill build (22 + 5, plus a second skill partly) or a sword build (22, skills low) is complete around floor 30-35, but everything (22 + 15 = 37) is more than a run gets.
-- A deep run holds 5 of 41 boons and one of six skill forms: two deep runs share a boon or two, not the whole list.
+- A deep run holds 5 of 40 boons and one of six skill forms: two deep runs share a boon or two, not the whole list.
 - Late drafts are levels, "+", duos, skill levels and pacts; when a build is complete, pacts and a **+40 gold** card fill the rest.
 - Slots fill by about floor 6-8, so what to slot is the first two circles' big decision.
 
@@ -209,15 +230,15 @@ Any visual reuses existing effects: the Storm pillar, the skill waves, the red w
 | Rally | Rare | 2 | hitting back wins back the whole blow, each hit by its base damage (4 a sword hit); Lv 2 holds it 1.5 s (1 s) |
 | Blood Pact | Legendary | 1 | +35% damage, potions -25% |
 | Last Stand | Rare | 2 | +40% damage below 30% health |
-| **Hemorrhage** (New) | Common | 3 | the combo's 3rd hit deals +4 bleed over 3 s (damage only, no heal) |
+| **Hemorrhage** (New) | Common | 3 | the combo's 3rd hit deals +4 bleed over 3 s (damage only, no heal); each bleed tick shows as the boss's existing hit flash, a quarter as bright |
 | **Sanguine Flask** (New) | Rare | 1 | drinking a potion gives +25% damage for 6 s |
 | **Red Thirst** (New) | Common | 3 | +10% damage per 25% of health missing |
 
 ### Storm: hit-count procs
 | Boon | Tier | Lv | Effect |
 |---|---|---|---|
-| Storm Blade | Legendary | 1 | every 4th hit calls lightning (+12) |
-| **Static** (New) | Common | 4 | Storm Blade's lightning +4 a level; without Storm Blade, every 8th hit calls a weak bolt (+6) |
+| Storm Blade | Legendary | 1 | every 4th hit calls lightning (+6; was +12, which made it best in every build: section 14) |
+| **Static** (New) | Common | 4 | Storm Blade's lightning +3 a level; without Storm Blade, every 8th hit calls a weak bolt (+6) |
 | **Thunderclap** (New) | Rare | 1 | the combo's 3rd hit calls lightning (+8) |
 | **Conductor** (New) | Rare | 1 | lightning fills the stagger meter like a sword hit |
 | **Overcharge** (New) | Legendary | 1 | each stagger: the next 5 hits all call lightning |
@@ -259,25 +280,24 @@ Any visual reuses existing effects: the Storm pillar, the skill waves, the red w
 | Deep Flask | Common | 2 | +3 potions |
 | Kindled Flask | Common | 2 | potions heal 25% more |
 | **Quick Draught** (New) | Rare | 1 | drinking a potion is 40% faster |
-| **Fortified Draught** (New) | Common | 1 | a potion gives -25% damage taken for 5 s |
 | **Prospector** (New) | Common | 3 | +20% gold |
 
-**Totals:** 41 boons for the boon slots (the Learn and skill-"+" cards became skill levels), about 100 levels, plus 3 skills (5 levels each, 2 forms at Lv 5). A run slots 5.
+**Totals:** 40 boons for the boon slots (the Learn and skill-"+" cards became skill levels), about 100 levels, plus 3 skills (5 levels each, 2 forms at Lv 5). A run slots 5.
 
 Healing check: no new boon heals; Hemorrhage and the rest deal damage. The existing healing sources keep the just-shipped values (Bloodthirst 12% of base a level, Rally from base damage, Phantom Step 2%), each about 15-25% of a floor. Rally Lv 2 is the one healing level added: check it in stage 6.
 
 ## 8. Duo boons (Legendary evolutions: two maxed boons from different families, merged into one slot)
 | Duo | Families | Effect |
 |---|---|---|
-| Crimson Storm | Blood + Storm | lightning feeds Bloodthirst like a sword hit (no Bloodthirst: lightning +25%) |
-| Thunderstep | Storm + Shadow | a perfect dodge calls lightning on the boss |
+| Crimson Storm | Blood + Storm | lightning feeds Bloodthirst at half a sword hit's rate (a full rate healed ~36% of a floor, over the 15-25% target); no Bloodthirst: lightning +25% |
+| Thunderstep | Storm + Shadow | a perfect dodge calls lightning on the boss, twice 0.3 s apart |
 | Blood Moon Rite | Blood + Moon | a skill cast costs 3% health and deals +40% |
 | Iron Tide | Iron + Moon | a staggered boss resets skill cooldowns once per stagger |
 | Shade's Mercy | Shadow + Blood | Riposte's window also gives Rally back at 60% |
 | Anvil of Storms | Iron + Storm | lightning on a staggered boss deals double |
 | Waning Light | Moon + Shadow | a perfect dodge cuts skill cooldowns by 2 s |
-| Steel Hearth | Hearth + Iron | each potion drunk adds +5 max health for the floor (up to +25) |
-| Skyfall | Storm + Moon | a skill that hits calls Storm Blade's pillar on the boss once a cast (+12) |
+| Steel Hearth | Hearth + Iron | each potion drunk adds +10 max health for the floor (up to +30) and -40% damage taken for 4 s (was +5/+25 alone: below the band) |
+| Skyfall | Storm + Moon | a skill that hits calls Storm Blade's pillar on the boss once a cast (+6) |
 
 ## 9. Rival pairs (taking one removes the other from the run)
 | Pair | The fork |
@@ -316,11 +336,11 @@ A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists loc
 | Affix | Effect | How the player can tell |
 |---|---|---|
 | **Swift** | Moves and recoveries 12% faster; strike timing unchanged | quicker footwork; its intro sound plays higher |
-| **Ironclad** | +40% health, stagger bar +30% | the name; the stagger bar is drawn longer (HUD) |
+| **Ironclad** | +30% health, stagger bar +30% | the name; the stagger bar is drawn longer (HUD) |
 | **Enraged** | Below 50%: blows +25%, breathers -30% | the half-health war cry or break it already has, held longer |
 | **Relentless** | Stagger meter drains 2x; stays down 2.5 s (not 3.5) | the name; the HUD stagger bar drains visibly faster |
-| **Vampiric** | Heals 3% of the damage it deals | its health bar refills (HUD) |
-| **Smouldering** | Its slams leave Shadowborne's floor fire (2 s, 6 dmg/s) | the fire is the hazard itself, drawn where it hurts (reuses Shadowborne's patches; perf check) |
+| **Vampiric** | Heals 8% of the damage it deals | its health bar refills (HUD) |
+| **Smouldering** | Its slams leave Shadowborne's floor fire (2 s, 6 dmg/s); not rolled on Shadowborne | the fire is the hazard itself, drawn where it hurts (the shared floor-fire pool; perf check in section 15) |
 
 **Rewards:**
 - the draft is all Rare or better;
@@ -328,10 +348,10 @@ A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists loc
 - in circle 4+ with two affixes, one of the cards is a duo when you're eligible.
 
 ## 12. How the rest fits
-- **Circles and scaling:** unchanged per fight: health +30% a circle (40% from circle 6), damage +20%, the baseline per circle cleared, and nights per circle. An Elite is about x1.4 health, so it costs about 1.6x a fight.
-- **Potions:** one per Fight, but only while below the run's max. The rest of the healing comes from Rests, the shop's Mend and events.
+- **Circles and scaling:** unchanged per fight: health +30% a circle (40% from circle 6), damage +20%, the baseline per circle cleared, and nights per circle. An Elite is x1.25 health plus its affix: 1.5-1.7x a fight (section 14).
+- **Potions:** as today (the user's call): one per fallen boss, even past the run's max, up to the cap of 15. Rests, the shop's Mend and events add to it.
 - **Embers:** per fight as now. Elites x1.5. +25 for a cleared circle. Shops and events don't give Embers, except the Ember Brazier.
-- **Shrine:** unchanged; the upgrades and relics keep working. A possible later Shrine item could unlock a seventh family or more events (open question 6).
+- **Shrine:** the upgrades and relics keep working, and it now also sells the new content (the unlock ladder, section 14b).
 - **Pacts:** outside the slots, unchanged. They fill drafts once a build is complete, one sits on every shop's shelf, and they're part of Mirror of Shadows.
 - **Skills:** a skill card stays first in each draft while any skill is below Lv 5 (a Learn card while one is unknown). The +8% boss health per skill offered stays.
 - **Shrine relic "Sage"** (teaches a skill): that skill starts at Lv 1.
@@ -345,7 +365,7 @@ A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists loc
   - 4 fights: 84%.
   - 6 fights, one of them Elite: about 140%.
 - **Healing a circle** (circle 2, 220 max health):
-  - potions from fights, up to max: 4-6 × about 100 HP, not banked past max;
+  - potions from fights: 4-6 × about 100 HP, banked up to 15 (as today);
   - Rest in row 6: 88 HP;
   - shop Mend: 77 HP for 50 gold;
   - the healing boons: about 15-25% of a floor each; with 5 slots a build carries one or two of them, not all.
@@ -355,16 +375,129 @@ A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists loc
   - `HLE_TEST_DUMMY` on each affixed Bonus boss for its cost.
 - **Target:** a normal path is about even through circle 4. Greedy paths win more Embers and better boons but end runs around circle 5 without a strong build.
 
-## 14. Save format
-- **No EEPROM change needed.** A run lives only in RAM (as now), and power-off ends it. Keep that: saving a run mid-map would need about 50 bytes per save slot (8 build slots, map, gold, rng), and a save slot has only 24-27 spare.
-- Only open question 6 (Shrine unlocks) would add saved bits, a few of the spare bytes, without breaking old saves.
-- The best floor, Embers, Shrine and relics are stored as now.
+## 14. Game theory check (no option strictly better)
+Method, as for the bosses: each option's value is its change in **fight cost** (boss damage a minute × 30% × time to kill, over the player's resources), estimated from the code's numbers at a reference build (circle 3, 2 slots filled). The test for each choice set: every option wins in some context, and the options' expected values sit within **±10% of the set's mean**. An option outside the band, or never best anywhere, is changed. All figures are estimates to measure in stages 5-6 (`HLE_TEST_DUMMY`, `HLE_RUN_CLIMB`, `HLE_SDMG_TOWER`).
+
+### Builds (base damage a minute, maxed; band 216-264)
+| Build | Value | Best when | Worst when |
+|---|---|---|---|
+| Sword (Storm) | 245 | long openings (Guardian, Unbound), Swift elites | bosses that fly or keep away (Shadowborne) |
+| Full Moon Dance | 235 | fast bosses (the dance is the dodge), Smouldering | Ironclad (long fights) |
+| Twin Moon | 230 (275 Starfall) | Starfall nights, burst at low boss health (Wounded Foe) | Swift and Enraged: the 2 s root gets hit |
+| Crescent Storm | 235 | mid range, the Sun's hover | close-in bosses that step through the fan |
+| Stagger (Shattering) | 255 | Guardian, Fallen Warrior (long downs) | Relentless, Ironclad (about 205) |
+
+Fixed: Shattering at half a hit a cross gave about 330 (dominant: the boss down 26% of the fight); now a fifth of a hit. Crescent Storm's second 7-blade volley became 3 trailing blades (the user's design): 25 to 24.
+
+### Skill forms (pairs)
+| Skill | A | B | A wins | B wins |
+|---|---|---|---|---|
+| Moon Blade Dance | Full Moon Dance 235 | Shattering 255 with its Iron pieces, 190 without | no Iron boons slotted, Relentless | Executioner and Crushing Blows slotted |
+| Halfmoon Slash | Twin Moon 230 | Full Moon 239 (a break every 2 casts) | Starfall, damage boons | fast bosses (its charge can't break), stagger builds |
+| Crescent Cleave | Crescent Storm 235 | Long Cleave 225 | close and mid range | Shadowborne's flight, safe play at low health |
+
+Every form is within band and best somewhere; none is taken in every build.
+
+### Rival pairs (the pick's value in fight cost)
+| Pair | Left | Right | Left wins | Right wins |
+|---|---|---|---|---|
+| Riposte vs Iron Skin Lv 1 | -11% | -15% | perfect-dodge builds (with Phantom Step, Shadow Edge: -18%) | everyone else |
+| Blood Pact vs Kindled Flask | -14% | -12% | short fights, sword builds | potion-heavy runs (Deep Flask) |
+| Storm Blade vs Executioner | -27% | -8% (stagger build: -24%) | sword builds | stagger builds |
+| Last Stand vs Vigor Lv 1 | -10% (risky) | -10% | Blood builds living low | safe play |
+| Bloodthirst vs Moon Mastery Lv 1 | -12% | -13% (skill builds; -4% sword) | sword builds | skill builds |
+| Vanish vs Unbroken | -9% | -11% | skilled dodgers (Shadow) | anyone, deep circles |
+
+Fixed: **Storm Blade** at +12 every 4th hit was +75% on the sword (-43%), best in every build and against its rival; now **+6** (Storm Blade+ every 3rd hit, Static +3 a level). It stays Legendary.
+
+### Duos (a freed slot, about -12%, plus the effect; band -17% to -27%)
+| Duo | Value | Best in |
+|---|---|---|
+| Crimson Storm | -20% | sword builds with Bloodthirst |
+| Thunderstep | -18% | dodge builds |
+| Blood Moon Rite | -24% | skill builds at high health |
+| Iron Tide | -25% | the stagger build |
+| Shade's Mercy | -19% | Blood + Shadow dodgers |
+| Anvil of Storms | -22% | Storm + Iron (Conductor) |
+| Waning Light | -20% | skill dodgers |
+| Steel Hearth | -19% | potion runs, deep circles |
+| Skyfall | -22% | skill builds with Storm |
+
+Fixed: Crimson Storm (its healing was over the 15-25% target), Steel Hearth (was -16%, below the band) and Thunderstep (-14%, now two bolts).
+
+### Families (a maxed 5-slot build from one family plus one other)
+| Family core | Value | Best when |
+|---|---|---|
+| Blood | -40% | Blood Moon nights, fast kills |
+| Storm | -42% | long openings |
+| Moon | -42% | Starfall, ranged bosses |
+| Iron | -41% | stagger, deep circles (big blows) |
+| Shadow | -38% | players who perfect-dodge |
+| Hearth | -36% | anyone: no condition, no counter |
+
+Mean -40%, band -36% to -44%: all in. Hearth sits at the bottom on purpose: the safe pick that never fails.
+
+### Map routes (a circle, an average build)
+| Route | Fights | Health out of the circle | Embers a circle | Best when |
+|---|---|---|---|---|
+| Safe (Event, Shop, Rest) | 4 | about even | about 85 | low health, circles 4+, a build still missing pieces |
+| Normal | 5 | -10% | about 105 | most circles |
+| Greedy (an Elite, 6 fights) | 6 | -35% | about 140 | full health, circles 1-3, a finished build |
+
+Expected Embers a run come out within ±10% across the three for an average player (greedy earns more a circle but ends about a circle earlier), so no route is always right.
+
+### Elites (enter one, or go round)
+An elite is the boss at x1.25 health plus its affix; target 1.5-1.7x a plain fight, for a Rare-or-better draft (about +1.3 picks) and x1.5 gold and Embers.
+
+| Affix | Cost | Hardest for | Easiest for |
+|---|---|---|---|
+| Swift | x1.55 | skill builds (casts get hit) | sword builds |
+| Ironclad (+30% health, bar +30%) | x1.65 | stagger builds | Storm |
+| Enraged | x1.55 | low-health players | burst (Twin Moon) |
+| Relentless | x1.5 (stagger build x1.7) | stagger builds | everyone else |
+| Vampiric (8%, was 3%) | x1.5 | slow builds | burst builds |
+| Smouldering | x1.6 | close-in sword builds | ranged skills |
+
+Fixed: Ironclad's +40% on an x1.4 elite cost about 2x (everyone would go round); now x1.25 with +30%. Vampiric at 3% cost almost nothing (always taken); now 8%.
+
+### Release: at a Rest, a Shop, or both (open question 9: both)
+| Where | Cost | Wins when |
+|---|---|---|
+| Rest (free, with the Rest's choice) | the boon's levels | the row-6 Rest before Unbound: respec for the circle's boss |
+| Shop (20 gold) | the levels + 20 gold (about a third of a level) | mid-circle, when a duo or a rival opens up |
+
+Neither is always better (one is free but late, the other early but paid), and the levels lost are the real price either way, so both stay.
+
+### The calls left to my judgement
+- **Map icons:** six 16x16 icons (about 1 KB), not letters: the map reads at a glance on a CRT.
+- **Skill cards in drafts:** a Learn card leads every draft until a skill is known, as today. After that, skill levels are ordinary cards, twice as likely for a skill at Lv 2+. About 11 skill cards come by floor 35: enough for one skill to Lv 5 and part of a second, and a sword build sees about one skill card in three drafts instead of one in every draft.
+- **The new boons:** Fortified Draught is cut (-3%: below Iron Skin and Kindled Flask everywhere). Hemorrhage's bleed shows as the boss's existing hit flash. Storm Blade, Crimson Storm, Steel Hearth, Thunderstep, Vampiric and Ironclad changed as above.
+
+## 14b. Unlocks (the Shrine)
+In from the start: today's 24 boons (now in their families), the map with every node type, the A forms of the three skills, 4 events and 3 affixes (Swift, Ironclad, Enraged).
+
+| Unlock | How | Price |
+|---|---|---|
+| A family's new boons (6 packs, 3-4 boons each, in the player's order) | Embers at the Shrine | 120, 160, 200, 240, 280, 320 (1,320) |
+| A skill's B form (Shattering Dance, Full Moon, Long Cleave) | Embers | 200 each (600) |
+| Duos | free: a duo joins the pool once both its families' packs are bought | - |
+| Events 5-8 | best floor 10, 15, 20, 25 | - |
+| Affixes Relentless, Vampiric, Smouldering | best floor 15, 20, 25 | - |
+
+- Ember income (the code's `floor_embers`): a circle earns about 95 at circle 1, 135 at circle 2 and 175 at circle 3, including the +25 for clearing it. An early run (floor 8) brings about 150, a mid run (floor 15) about 400, a deep one about 1,100.
+- The ladder (1,920) on top of today's Shrine (upgrades 950, relics, Nightfarer 450) takes about 20-30 runs at an average of 200 a run: something new about every 1-2 runs.
+
+## 14c. Save format
+- A run still lives only in RAM: power-off ends it, as now.
+- Correction: a slot has **5** spare bytes (`_pad[14]` and `_pad[24..27]`), not 24-27. `_pad[16..18]` (pre-1.0 relics) could be freed after their conversion on load, for 8.
+- The unlocks take **9 bits** in `_pad[24..25]`: 6 family packs and 3 B forms. Events and affixes come from the saved best floor and duos from the packs, so they need no bits. Old saves read zeros: nothing bought, Embers and best floor kept.
+- The run seed is shown at the end of a run (the death screen and Stats), not saved.
 
 ## 15. Memory and ROM
 - **Heap:**
   - map state: 21 nodes × 2 bytes;
   - run state: about 70 more bytes (gold, 5 slots with levels, 3 skill levels and forms, duo merges, rivals, "+" bits, affixes);
-  - `SKILL_FX_MAX` 40 to 56 for Crescent Storm's blades (static, about 1-2 KB);
+  - `SKILL_FX_MAX` stays 40 (Crescent Storm: 16 entries at most, 36 with the Sun's spiral);
   - all definitions are const in ROM;
   - the map, shop and event screens are drawn as text and rectangles over the paused hall, with no new 3D;
   - the 6 node icons are I4 16x16, about 1 KB, loaded with the draft UI and freed with it.
@@ -373,33 +506,37 @@ A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists loc
   - card and event text: about 6 KB;
   - code: about 15-20 KB;
   - icons: 1 KB.
-- **ROM size risk:** HLE slack was about 12.9 KB at a short path, so the release ROMs probably grow one 16 KiB step. The rule that sizes read exactly 20.6 / 12.6 MB may need dropping, or audio trimmed to pay for it: that's the user's call.
-- **Frame time:** none in fights, except where noted. Elite affixes are table lookups; Smouldering reuses Shadowborne's fire patches, and Crescent Storm draws up to 14 blades: measure both in Ares at 4 MB and on Delta's core.
+- **ROM size:** accepted (the user's call). About 25-30 KB more: one or two 16 KiB steps, so the release pages likely read about 20.6-20.7 / 12.6-12.7 MB.
+- **Frame time:** none in fights, except where noted. Elite affixes are table lookups.
+  - **Smouldering** uses the shared floor-fire pool in `skill_fx` (24 points, static) that the Fallen Warrior's fire lunge already draws. In the Fallen Warrior's scene it costs nothing new; in the Shackled Sun's it adds the fire texture if that scene doesn't hold it (up to 30 KB: check against its heap low point at 4 MB); Shadowborne doesn't roll it (it has its own fire). The patches are the attack itself, drawn where they burn: no warnings or glows.
+  - Crescent Storm draws 8 blades (5 today).
+  - Measure both in Ares at 4 MB and on Delta's core.
 
 ## 16. Build order (each stage on branch tower-rogue, with a pre-release for the user to play)
 | Stage | What | Test aids |
 |---|---|---|
-| 1. Slots and families | 5 boon slots with levels; stacks become levels; 41 boons in families (20 new); family weighting; the card's slot line; Stats > Build | `HLE_TEST_TOWER` gains slot, level, full-bar and weighting checks (self-check); `HLE_DRAFT_GALLERY` for card text fit; `HLE_TEST_TOWER_STATS` shows a full Build page; `HLE_LOG_BOONFX` logs each new effect firing in a fight |
+| 1. Slots and families | 5 boon slots with levels; stacks become levels; 40 boons in families (19 new); family weighting; the card's slot line; Stats > Build; the Shrine's unlock ladder and its 9 save bits | `HLE_TEST_TOWER` gains slot, level, full-bar and weighting checks (self-check); `HLE_DRAFT_GALLERY` for card text fit; `HLE_TEST_TOWER_STATS` shows a full Build page; `HLE_LOG_BOONFX` logs each new effect firing in a fight |
 | 2. Rivals, "+", duos | rival lockout in `offerable()`; "+" as top levels; 9 duos merging two slots | self-check: a duo offered only with two maxed boons of different families, merging them and opening a slot; `HLE_TOWER_GIVE` for each duo in a fight |
 | 3. The map | generation rules, the map screen, Fight/Elite/Rest nodes (Temper, Release), floor/circle bookkeeping | `HLE_TEST_TOWER_MAP`: 1,000 seeded maps checked against the rules (self-check); a scripted path through a circle with shots of the map |
 | 4. Gold, shop, events | economy, shop menu (levels, Release), 8 events | `HLE_TEST_TOWER_SHOP`, `HLE_EVENT_FORCE=n` with shots of each screen and logged results |
-| 5. Skill builds | the three level tracks and six Lv 5 forms (more crosses, Twin Moon's follow-up, more blades and a second volley, the stagger forms); Skyfall; `SKILL_FX_MAX` 56 | `HLE_SKILL_LV=<skill>,<lv>,<form>` with videos per level; `HLE_TEST_SKILL_DMG` + `HLE_SDMG_TOWER` for damage a cast against the tables; `[hit]` logs proving every cross, slash and blade lands where it's drawn; Ares and Delta frame time for Crescent Storm |
-| 6. Elite affixes + balance | 6 affixes on the Bonus bosses; the cost measurements in section 13 | `HLE_ELITE_FORCE=affix` + `HLE_TEST_DUMMY`; `HLE_RUN_CLIMB` with `HLE_RUN_PATH=safe/normal/greedy`; Ares at 4 MB for heap and frame time |
+| 5. Skill builds | the three level tracks and six Lv 5 forms (more crosses, Twin Moon's follow-up, Crescent Storm's 3 trailing blades, the stagger forms); Skyfall; the stagger-bonus cap | `HLE_SKILL_LV=<skill>,<lv>,<form>` with videos per level; `HLE_TEST_SKILL_DMG` + `HLE_SDMG_TOWER` for damage a cast against the tables; `[hit]` logs proving every cross, slash and blade lands where it's drawn; Ares and Delta frame time for Crescent Storm |
+| 6. Elite affixes + balance | 6 affixes on the Bonus bosses; the cost measurements in section 13 and the payoff tables in section 14 | `HLE_ELITE_FORCE=affix` + `HLE_TEST_DUMMY`; `HLE_RUN_CLIMB` with `HLE_RUN_PATH=safe/normal/greedy`; Ares at 4 MB for heap and frame time |
 
 Each stage closes with:
 - the existing `HLE_TEST_TOWER`, `HLE_TEST_TOWER_RUN`, `HLE_TEST_TOWER_UI`, `HLE_TEST_TOWER_STATS` and `HLE_TEST_CYCLE` runs;
 - a Delta-core run, which halts on NaN compares.
 
-## 17. Open questions for the user
-Answered: fights a path stay 4-6; families have no cap (weighting only); 5 boon slots; no new skills: the three skills get level tracks and two forms each.
+## 17. Decisions
+The user's answers (2026-11-01):
+1. Potions: as today.
+2. Gold: lost at death.
+3. Smouldering: reuses Shadowborne's floor fire.
+4. Map icons: icons (my call, section 14).
+5. New boons: changed where the game-theory check said so (section 14).
+6. Unlocks: yes, lots, through the Shrine (section 14b).
+7. Run seed: shown at the end of a run.
+8. Bigger ROMs: accepted.
+9. Release: at both a Rest and a Shop (section 14).
+10. Skill forms: Crescent Storm is the 5 blades plus 3 trailing (the user's design); Shattering Dance anchors a stagger build; skill cards per section 14.
 
-1. **Potions:** keep one per fight up to the max (as above), cut it to one per circle and let Rests carry the healing, or leave it as today?
-2. **Gold at death:** lost (as above), or a share turned into Embers?
-3. **Smouldering:** OK to reuse Shadowborne's floor fire on other bosses, or keep affixes to stats only?
-4. **Node icons:** six new 16x16 icons, or letters (F, E, ?, $, R) to save the art?
-5. **The new boons:** any of the 20 new boons to cut or change? Are the levels right (Commons 3-5, Rares 1-3)? Should Hemorrhage's bleed be shown, e.g. by the boss's hit flash?
-6. **The Shrine:** should Embers unlock part of the new content (families, duos, events), so it is earned over runs, or should everything be in from the start?
-7. **Run seed:** show a seed at the end of a run so it can be shared and replayed (it's in ROADMAP's ideas; the map makes it more interesting)?
-8. **ROM size:** if the release ROMs grow past 20.6 / 12.6 MB, accept it or trim elsewhere?
-9. **Swapping:** Release free at a Rest and 20 gold at a Shop (as above), or Shops only?
-10. **Skill forms:** are the six Lv 5 forms the right ones (Full Moon Dance / Shattering Dance, Twin Moon / Full Moon, Crescent Storm / Long Cleave)? Should skill levels be offered in every draft (as above) or only after a fight with a skill used?
+Open questions: none. The payoff tables are estimates; stages 5-6 measure them, and any number that moves out of its band comes back to the user.
