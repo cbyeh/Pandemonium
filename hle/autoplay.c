@@ -15,7 +15,7 @@
 #ifdef HLE_TEST_TOWER     // the Unbroken check hits the player
 #include "character.h"
 #endif
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_OOB) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE)
+#if defined(HLE_TEST_PACKS) || defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_OOB) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE)
 #include "camera_controller.h"
 #include "joypad_utility.h"
 #include "character_skin.h"
@@ -27,7 +27,7 @@
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #include "scenes/guardian/guardian_scene_bounds.h"
 #endif
-#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH)
+#if defined(HLE_TEST_PACKS) || defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH)
 #include "utilities/save_controller.h"
 #include "controllers/scene_controller.h"
 #include "controllers/menu_controller.h"
@@ -255,6 +255,47 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     if (frame == 600) { extern int tower_relic_equipped(void); extern bool tower_relic_owned(int); debugf("[relic] after boot: equipped %d, owned%s%s%s%s%s\n", tower_relic_equipped(),
         tower_relic_owned(0) ? " 0" : "", tower_relic_owned(1) ? " 1" : "", tower_relic_owned(2) ? " 2" : "", tower_relic_owned(3) ? " 3" : "", tower_relic_owned(4) ? " 4" : ""); }
 #endif
+#if defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_PACKS)   // test aid: the slot's Tower progress after boot (old saves, unlocks across a reboot)
+    if (frame == 150) {
+        TowerSave ts; save_controller_get_tower(&ts);
+        const SaveData *d = save_controller_get_slot_data(save_controller_get_active_slot());
+        debugf("[tsave] slot %d: Embers %d, best floor %d, upgrades %d %d %d %d %d, relics owned %02x equipped %d, flags %02x, unlocks %03x | pad[24..27] %02x %02x %02x %02x\n",
+               save_controller_get_active_slot(), ts.embers, ts.bestFloor, ts.levels[0], ts.levels[1], ts.levels[2], ts.levels[3], ts.levels[4],
+               ts.relicsOwned, ts.relicEquipped, ts.flags, ts.unlocks, d ? d->_pad[24] : 0, d ? d->_pad[25] : 0, d ? d->_pad[26] : 0, d ? d->_pad[27] : 0);
+        extern int tower_pack_count(void); extern bool tower_pack_owned(int); extern const char *tower_pack_name(int);
+        for (int i = 0; i < tower_pack_count(); i++) debugf("[tsave] pack %s: %s\n", tower_pack_name(i), tower_pack_owned(i) ? "owned" : "not bought");
+    }
+#endif
+#ifdef HLE_TEST_PACKS
+    // The Shrine's Boon Packs on a save with none: 500 Embers; Tower > Shrine > Boon Packs (row 7), A buys Blood (120),
+    // Down, A buys Storm (160), then B, B. A second boot (the same ROM) logs them owned ([tsave]) and buys nothing
+    {
+        static int phase = 0, t0 = 0, step = 0;
+        int t = frame - t0;
+        if (phase == 0) {
+            if (menu_controller_is_active()) {
+                TowerSave ts; save_controller_get_tower(&ts);
+                if (!ts.unlocks) { ts.embers = 500; save_controller_set_tower(&ts); phase = 1; } else phase = 3;
+                t0 = frame;
+            } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 1) {
+            static const char seq[] = "DDADADDDDDDDAA.DA.B";
+            if (t >= 25 && seq[step]) {
+                char c = seq[step];
+                if (c == 'D') pressed->d_down = 1; else if (c == 'B') { pressed->b = 1; in->btn.b = 1; } else if (c == 'A') { pressed->a = 1; in->btn.a = 1; }
+                if (c == '.') debugf("[packs] step %d at frame %d\n", step, frame);
+                step++; t0 = frame;
+            }
+            if (!seq[step] && t == 40) {
+                extern int tower_embers(void), tower_pack_count(void); extern bool tower_pack_owned(int);
+                debugf("[packs] owned:%s%s%s%s%s, Embers %d\n", tower_pack_owned(0) ? " Blood" : "", tower_pack_owned(1) ? " Storm" : "", tower_pack_owned(2) ? " Moon" : "",
+                       tower_pack_owned(3) ? " Iron" : "", tower_pack_owned(4) ? " Shadow" : "", tower_embers());
+                phase = 2;
+            }
+        }
+        return;
+    }
+#endif
 #ifdef HLE_LOG_FPS
     {   // game frames per second, every 2 s (for hardware-path runs in Ares)
         static uint32_t last; static int lastFrame;
@@ -457,6 +498,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             tower_end_run(); character.maxHealth = 150.0f; character.health = 150.0f;
         }
         if (tower_mod_max_potions() != 3 || !tower_mod_skill_allowed(0) || tower_boss_health_scale(3) != 1.0f) fails++;
+        { extern int tower_test_slots(void); fails += tower_test_slots(); }     // slots, levels, a full bar, packs, weighting, save bits
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }
     return;
@@ -775,8 +817,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 character.health = 100.0f; bossHitBySword = true; for (int i = 0; i < 20; i++) { boss->health = boss->maxHealth; boss_apply_hit(boss, 4.0f, 0.0f); } bossHitBySword = false;
                 float steal = (character.health - 100.0f) / 20.0f;     // (an average: the Impaired curse drops some)
                 debugf("[heal] a skill's hit of 4 heals %.2f (0)\n", (double)skillSteal);
-                character.health = 200.0f; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(40.0f);
-                float lost = 200.0f - character.health, h0 = character.health;
+                character.health = mh; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(40.0f);
+                float lost = mh - character.health, h0 = character.health;
                 boss->health = boss->maxHealth; boss_apply_hit(boss, 4.0f, 0.0f);
                 float back1 = character.health - h0;
                 for (int i = 0; i < 40; i++) { boss->health = boss->maxHealth; boss_apply_hit(boss, 4.0f, 0.0f); }
@@ -864,6 +906,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     }
 #endif
 #ifdef HLE_TEST_TOWER_RUN
+#ifndef HLE_STRIKE_FRAMES
+#define HLE_STRIKE_FRAMES 1200      // HLE_RUN_STRIKE's fight (frames)
+#endif
     // A Tower run from the title: Down x3 (Tower), A, A (Climb). Each floor: check the
     // boss, a locked skill (D-up does nothing), kill it, take a boon (A). After floor 6,
     // die: the death screen's summary, then A back to the title.
@@ -889,6 +934,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
               if (lastFloor && t == 59) for (int f = 1; f <= lastFloor; f++) hle_low_report(f); }
 #endif
             if (!boss) return;
+#ifdef HLE_RUN_CLIMB
+            static int heapMin = 1 << 30;     // the lowest free heap in the climb, sampled every 10 frames
+            if (frame % 10 == 0) { heap_stats_t h; sys_get_heap_stats(&h); if (h.total - h.used < heapMin) heapMin = h.total - h.used; }
+#endif
             if (tower_floor() != lastFloor && boss->mode == BOSS_MODE_COMBAT && !tower_draft_is_open()) {
                 lastFloor = tower_floor(); t0 = frame;
 #ifdef HLE_LOG_FPS
@@ -902,10 +951,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                     extern float tower_mod_damage_dealt(void), tower_mod_damage_taken(void), tower_mod_max_health(void);
                     extern int tower_run_embers(void), tower_circle(void);
                     heap_stats_t h; sys_get_heap_stats(&h);
-                    debugf("[climb] floor %d circle %d boss %d hp %.0f | dealt x%.2f taken x%.2f maxhp %.0f potions %d | embers %d | heap %d KB free\n",
+                    debugf("[climb] floor %d circle %d boss %d hp %.0f | dealt x%.2f taken x%.2f maxhp %.0f potions %d | embers %d | heap %d KB free (min so far %d)\n",
                            lastFloor, tower_circle(), tower_floor_boss(), (double)boss->maxHealth, (double)tower_mod_damage_dealt(),
                            (double)tower_mod_damage_taken(), (double)tower_mod_max_health(), character.healthPotions, tower_run_embers(),
-                           (h.total - h.used) / 1024);
+                           (h.total - h.used) / 1024, heapMin / 1024);
                 }
 #endif
             }
@@ -915,11 +964,62 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (t == 40) character.stamina = 1.0f;          // a sliver left: this roll empties the bar
             if (t == 41) { pressed->a = 1; in->btn.a = 1; in->stick_y = 80; }
 #endif
+#ifdef HLE_BOONFX_RUN      // (with HLE_TOWER_GIVE_NEW, HLE_LOG_BOONFX, HLE_RUN_STRIKE) the new boons' triggers in the fight
+            if (t > 0 && t < HLE_STRIKE_FRAMES) {
+                static int dodges, rollAt = -1, swingAt = -1;
+                extern float tower_mod_damage_taken(void);
+                if (character.health < character.maxHealth * 0.4f) character.health = character.maxHealth * 0.55f;   // alive, and hurt (Red Thirst)
+                static int potionsAt = -1;
+                if (t == 200) { potionsAt = character.healthPotions; character.health = character.maxHealth * 0.5f; }
+                if (potionsAt >= 0) {       // a potion (Sanguine Flask), pressed until it's drunk (not mid-swing)
+                    if (character.healthPotions < potionsAt) { debugf("[boonfx-run] potion drunk at t %d\n", t); potionsAt = -1; }
+                    else if (t % 2) { pressed->d_left = 1; in->btn.d_left = 1; }
+                }
+                if (t >= 400 && t % 200 == 199 && dodges < 4) { character.stamina = character.maxStamina * 0.5f; character_set_state(CHAR_STATE_NORMAL); }
+                if (t >= 400 && t % 200 == 0 && dodges < 4) { pressed->a = 1; in->btn.a = 1; in->stick_y = 80; rollAt = t; }   // a roll...
+                if (rollAt > 0 && t == rollAt + 4) {     // ... and a blow inside its first 0.2 s: a perfect dodge (Evasion, Vanish)
+                    float st0 = character.stamina;
+                    debugf("[boonfx-run] blow in a roll: state %d (rolling %d), stamina %.0f\n", character_get_state(), CHAR_STATE_ROLLING, (double)st0);
+                    character_apply_damage(10.0f);
+                    debugf("[boonfx-run] stamina after %.0f\n", (double)character.stamina);
+                    dodges++; swingAt = t + 16;
+                }
+                if (rollAt > 0 && t == swingAt) {     // out of the roll, at the boss, a swing: a hit inside the window
+                    float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
+                    if (d > 30.0f) { character.pos[0] += dx / d * (d - 30.0f); character.pos[2] += dz / d * (d - 30.0f); }
+                    character.rot[1] = atan2f(-dx, dz);
+                    character_set_state(CHAR_STATE_NORMAL);
+                    pressed->b = 1; in->btn.b = 1;
+                    debugf("[boonfx-run] a swing after the roll\n");
+                    rollAt = -1;
+                }
+                if (t == 1300) { float h = character.health; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(20.0f);    // Vanish armed: 0
+                                 debugf("[boonfx-run] a blow of 20 after 3 perfect dodges: health %.1f -> %.1f\n", (double)h, (double)character.health); }
+                if (t == 1400) { character.health = character.maxHealth; float h = character.health; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(70.0f);   // Stalwart: over 20%
+                                 debugf("[boonfx-run] a blow of 70 (x%.2f taken): health %.1f -> %.1f\n", (double)tower_mod_damage_taken(), (double)h, (double)character.health); }
+                static int staggerCast = -1;
+                if (boss->staggerT > 0.0f && staggerCast < 0) {     // a stagger: Crescent Cleave on it (Eclipse, Waxing Moon), then swings
+                    character_set_state(CHAR_STATE_NORMAL); character.stamina = character.maxStamina;
+                    pressed->d_down = 1; in->btn.d_down = 1; staggerCast = t;
+                    debugf("[boonfx-run] Crescent Cleave on the staggered boss (%.1f s left)\n", (double)boss->staggerT);
+                }
+                if (boss->staggerT <= 0.0f) staggerCast = -1;
+                bool castOver = staggerCast >= 0 && t > staggerCast + 10 && character_get_state() != CHAR_STATE_SKILL;
+                if (castOver || (t > 400 && t < 1100 && t % 200 > 10 && t % 200 < 130)) {     // close in after the cast and the rolls: sword hits in the windows (Waxing Moon, Shadow Edge)
+                    float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
+                    if (d > 34.0f) { character.pos[0] += dx / d * (d - 34.0f); character.pos[2] += dz / d * (d - 34.0f); }
+                    if (t % 8 == 0) { pressed->b = 1; in->btn.b = 1; }     // and swing
+                }
+                if (t == 2100 || t == 2600) { boss->poise = 0.99f; debugf("[boonfx-run] the stagger meter set to 0.99: the next hit breaks it\n"); }
+                if (t % 600 == 0) debugf("[boonfx-run] t %d boss hp %.0f/%.0f poise %.2f player %.0f\n", t, (double)boss->health, (double)boss->maxHealth, (double)boss->poise, (double)character.health);
+                if (boss->health < boss->maxHealth * 0.7f) boss->health = boss->maxHealth;     // the fight lasts the window
+            }
+#endif
 #ifdef HLE_RUN_STRIKE      // fight with the sword for 20 s first (the boons that hook into hits)
 #ifdef HLE_RUN_TOPUP       // (and never die: a full climb, every floor's sounds and effects, for the heap's low point)
             if (character.health < character.maxHealth * 0.6f) character.health = character.maxHealth;
 #endif
-            if (t < 1200) {
+            if (t < HLE_STRIKE_FRAMES) {
                 if (t == 1) pressed->z = 1;
                 in->btn.z = 1;
                 float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2];
@@ -927,7 +1027,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (t % 24 == 0) { pressed->b = 1; in->btn.b = 1; }
                 if (t % 300 == 299) debugf("[run] boss hp %.0f/%.0f\n", (double)boss->health, (double)boss->maxHealth);
             }
-            if (t == 1200) {
+            if (t == HLE_STRIKE_FRAMES) {
 #ifdef HLE_LOG_FPS
                 { extern int hle_floor_mark; hle_floor_mark = 2; }   // the fight's end (before the next load)
 #endif
