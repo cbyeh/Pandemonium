@@ -38,7 +38,7 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_FLEETFOOT]     = { "Fleetfoot",     "Rolls cost 40% less stamina",  1, TIER_RARE },
     [BOON_SECOND_WIND]   = { "Second Wind",   "+40% stamina regen, faster from empty",     2, TIER_COMMON },
     [BOON_MOON_MASTERY]  = { "Moon Mastery",  "Skill cooldowns -20%",         2, TIER_RARE },
-    [BOON_BLOODTHIRST]   = { "Bloodthirst",   "Sword hits heal 8% of base damage", 2, TIER_RARE },
+    [BOON_BLOODTHIRST]   = { "Bloodthirst",   "Sword hits heal 12% of base damage", 2, TIER_RARE },
     [BOON_VIGOR]         = { "Vigor",         "+25 max health",               3, TIER_COMMON },
     [BOON_LAST_STAND]    = { "Last Stand",    "+40% damage below 30% health", 1, TIER_RARE },
     [BOON_UNBROKEN]      = { "Unbroken",      "Survive one killing blow a floor", 1, TIER_LEGENDARY },
@@ -808,7 +808,7 @@ float tower_mod_skill_cooldown(void)
     return (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * powf_int(0.8f, tower_boon_stacks(BOON_MOON_MASTERY))
            * ((s.active && s.night == NIGHT_STARFALL) ? 0.7f : 1.0f);
 }
-float tower_mod_lifesteal(void) { return 0.08f * tower_boon_stacks(BOON_BLOODTHIRST) + 0.03f * has_relic(RELIC_VAMPIRIC); }   // of a hit before boons: it no longer grows with the damage multiplier
+float tower_mod_lifesteal(void) { return 0.12f * tower_boon_stacks(BOON_BLOODTHIRST) + 0.03f * has_relic(RELIC_VAMPIRIC); }   // of a hit before boons: it no longer grows with the damage multiplier
 
 // Rally, at Bloodborne's pace in our numbers: lost health stays winnable 1 s, then drains away
 // over 4 s; each hit wins back what it dealt before damage boons (a sword hit 4: about four hits for a typical blow,
