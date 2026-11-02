@@ -36,8 +36,11 @@ static const struct { const char *name; int style; } FAMILIES[FAM_COUNT + 1] = {
     [FAM_IRON]  = { "Iron", FONT_STYLE_WHITE },  [FAM_SHADOW] = { "Shadow", FONT_STYLE_VIOLET }, [FAM_HEARTH] = { "Hearth", FONT_STYLE_GOLD },
     [FAM_SKILL] = { "Skill", FONT_STYLE_GREY },
 };
-// pack: in its family's pack (bought at the Shrine), not in the pool from the start
-typedef struct { const char *name, *desc; uint8_t maxStacks, tier, family, pack; } BoonDef;
+// pack: in its family's pack (bought at the Shrine), not in the pool from the start. up: a "+"
+// card's boon (BoonId + 1); duo: a duo's second family (+ 1; family is its first)
+typedef struct { const char *name, *desc; uint8_t maxStacks, tier, family, pack, up, duo; } BoonDef;
+#define PLUS(b)   0, (b) + 1, 0
+#define DUO(f)    0, 0, (f) + 1
 
 // maxStacks is the boon's top level: each level adds the old per-stack value unless the desc says otherwise
 static const BoonDef BOONS[BOON_COUNT] = {
@@ -80,7 +83,46 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_LEARN_CLEAVE]    = { "Crescent Cleave",  "Learn it: D-down", 1, TIER_COMMON, FAM_SKILL },
     [BOON_HALFMOON_PLUS]   = { "Halfmoon Slash+",  "+20% damage", 1, TIER_RARE, FAM_SKILL },
     [BOON_CLEAVE_PLUS]     = { "Crescent Cleave+", "+20% damage", 1, TIER_RARE, FAM_SKILL },
+    // "+" (docs/design/TOWER_ROGUELIKE.md section 10; Second Wind+ is held back: a potion is drunk at once)
+    [BOON_EMBER_EDGE_PLUS]    = { "Ember Edge+",    "Finishers +25%",              1, TIER_RARE, FAM_HEARTH, PLUS(BOON_EMBER_EDGE) },
+    [BOON_IRON_SKIN_PLUS]     = { "Iron Skin+",     "The first blow a floor deals half", 1, TIER_RARE, FAM_IRON, PLUS(BOON_IRON_SKIN) },
+    [BOON_STORM_BLADE_PLUS]   = { "Storm Blade+",   "Lightning every 3rd hit",     1, TIER_RARE, FAM_STORM, PLUS(BOON_STORM_BLADE) },
+    [BOON_EXECUTIONER_PLUS]   = { "Executioner+",   "Staggered bosses take +90%",  1, TIER_RARE, FAM_IRON, PLUS(BOON_EXECUTIONER) },
+    [BOON_CRUSHING_BLOWS_PLUS]= { "Crushing Blows+","No stagger drain 3 s after it rises", 1, TIER_RARE, FAM_IRON, PLUS(BOON_CRUSHING_BLOWS) },
+    [BOON_RIPOSTE_PLUS]       = { "Riposte+",       "Riposte lasts 4 s",           1, TIER_RARE, FAM_SHADOW, PLUS(BOON_RIPOSTE) },
+    [BOON_UNBROKEN_PLUS]      = { "Unbroken+",      "When it saves you, heal 20%", 1, TIER_RARE, FAM_IRON, PLUS(BOON_UNBROKEN) },
+    [BOON_BLOODTHIRST_PLUS]   = { "Bloodthirst+",   "Heals 16% a level",           1, TIER_RARE, FAM_BLOOD, PLUS(BOON_BLOODTHIRST) },
+    [BOON_RALLY_PLUS]         = { "Rally+",         "Each hit wins back 6",        1, TIER_RARE, FAM_BLOOD, PLUS(BOON_RALLY) },
+    [BOON_PHANTOM_STEP_PLUS]  = { "Phantom Step+",  "Dodge window 0.31 s",         1, TIER_RARE, FAM_SHADOW, PLUS(BOON_PHANTOM_STEP) },
+    [BOON_STATIC_PLUS]        = { "Static+",        "Its lightning +50%",          1, TIER_RARE, FAM_STORM, PLUS(BOON_STATIC) },
+    [BOON_THUNDERCLAP_PLUS]   = { "Thunderclap+",   "Its lightning +50%",          1, TIER_RARE, FAM_STORM, PLUS(BOON_THUNDERCLAP) },
+    [BOON_MOON_MASTERY_PLUS]  = { "Moon Mastery+",  "Cooldowns -25% a level",      1, TIER_RARE, FAM_MOON, PLUS(BOON_MOON_MASTERY) },
+    // Duos (section 8): Legendary, offered with a maxed boon of each family slotted; merged into one slot
+    [BOON_CRIMSON_STORM]   = { "Crimson Storm",   "Bolts heal, or +25%", 1, TIER_LEGENDARY, FAM_BLOOD, DUO(FAM_STORM) },
+    [BOON_THUNDERSTEP]     = { "Thunderstep",     "2 bolts each perfect dodge", 1, TIER_LEGENDARY, FAM_STORM, DUO(FAM_SHADOW) },
+    [BOON_BLOOD_MOON_RITE] = { "Blood Moon Rite", "Casts: -3% health, +40%", 1, TIER_LEGENDARY, FAM_BLOOD, DUO(FAM_MOON) },
+    [BOON_IRON_TIDE]       = { "Iron Tide",       "Staggers: skills ready", 1, TIER_LEGENDARY, FAM_IRON, DUO(FAM_MOON) },
+    [BOON_SHADES_MERCY]    = { "Shade's Mercy",   "Perfects: Rally at 60%", 1, TIER_LEGENDARY, FAM_SHADOW, DUO(FAM_BLOOD) },
+    [BOON_ANVIL_OF_STORMS] = { "Anvil of Storms", "Lightning x2 on staggers", 1, TIER_LEGENDARY, FAM_IRON, DUO(FAM_STORM) },
+    [BOON_WANING_LIGHT]    = { "Waning Light",    "Perfects: skills -2 s", 1, TIER_LEGENDARY, FAM_MOON, DUO(FAM_SHADOW) },
+    [BOON_STEEL_HEARTH]    = { "Steel Hearth",    "Potions: +10 max health, -40% taken", 1, TIER_LEGENDARY, FAM_HEARTH, DUO(FAM_IRON) },
+    [BOON_SKYFALL]         = { "Skyfall",         "A skill's hit calls lightning", 1, TIER_LEGENDARY, FAM_STORM, DUO(FAM_MOON) },
 };
+#undef PLUS
+#undef DUO
+// Rival pairs (section 9): taking one locks the other out for the run
+static const uint8_t RIVALS[][2] = {
+    { BOON_RIPOSTE, BOON_IRON_SKIN }, { BOON_BLOOD_PACT, BOON_KINDLED_FLASK }, { BOON_STORM_BLADE, BOON_EXECUTIONER },
+    { BOON_LAST_STAND, BOON_VIGOR }, { BOON_BLOODTHIRST, BOON_MOON_MASTERY }, { BOON_VANISH, BOON_UNBROKEN },
+};
+static int rival_of(int b)
+{
+    for (unsigned i = 0; i < sizeof RIVALS / sizeof RIVALS[0]; i++) {
+        if (RIVALS[i][0] == b) return RIVALS[i][1];
+        if (RIVALS[i][1] == b) return RIVALS[i][0];
+    }
+    return -1;
+}
 // The unlock ladder: the nth pack bought costs the nth price, whichever family
 static const int PACK_COST[FAM_COUNT] = { 120, 160, 200, 240, 280, 320 };
 
@@ -113,6 +155,8 @@ static const struct { const char *name, *desc; } CURSES[PC_COUNT] = {
 #ifndef PACT_CHANCE             // (a test aid may set it)
 #define PACT_CHANCE 4           // % a card is a pact while boons are left (legendary: 6% and up)
 #endif
+#define STORM_BOLT  6.0f        // Storm Blade's lightning (+12 was best in every build: section 14 of the design)
+#define STATIC_BOLT 3.0f        // Static: a level
 #define PACT_CARD(b, c) (BOON_COUNT + (b) * PC_COUNT + (c))
 #define SKIP_EMBERS 5
 
@@ -193,6 +237,12 @@ static struct {
     double sanguineUntil, waxingUntil, shadowEdgeUntil;
     float bleedLeft, bleedRate, bleedTick;   // Hemorrhage: damage still to bleed, a second, the next tick
     int overcharge;                 // Overcharge: hits left that call lightning
+    bool locked[BOON_COUNT];        // rivals locked out for the run (their pair was taken)
+    uint8_t merged[TOWER_SLOTS][2]; // a duo's slot: the two boons merged into it (BoonId + 1)
+    double mercyUntil, steelUntil, drainHoldUntil;   // Shade's Mercy's window, Steel Hearth's ward, Crushing Blows+
+    float steelHp;                  // Steel Hearth: max health added this floor
+    bool ironFirstUsed, skyfallUsed;    // Iron Skin+ this floor, Skyfall this cast
+    double boltAt[4]; float boltDmg[4]; // bolts still to fall (Thunderstep, Skyfall)
     int perfectDodges;              // this floor (Vanish)
     bool vanishArmed, vanishUsed;
     int runEmbers, lastFloorEmbers;
@@ -220,18 +270,56 @@ static int slots_used(void)
     return n;
 }
 
+static bool is_skill_card(BoonId b) { return BOONS[b].family == FAM_SKILL; }
+static bool takes_slot(BoonId b) { return !is_skill_card(b) && !BOONS[b].up && !BOONS[b].duo; }   // ("+" none, a duo merges two)
+
+// A family's boons are all in the pool: its pack bought, or it has none (Hearth's is held back)
+static bool family_open(int f)
+{
+    if ((s.packs >> f) & 1) return true;
+    for (int b = 0; b < BOON_COUNT; b++) if (BOONS[b].pack && BOONS[b].family == f) return false;
+    return true;
+}
+
+// The two slots a duo would merge: the first maxed boon of each of its families, slotted
+// (not already in a duo); false if there's no such pair
+static bool duo_pair(BoonId d, int *sa, int *sb)
+{
+    *sa = *sb = -1;
+    for (int i = 0; i < TOWER_SLOTS; i++) {
+        if (!s.slot[i] || s.merged[i][0]) continue;
+        BoonId b = (BoonId)(s.slot[i] - 1);
+        if (s.stacks[b] < BOONS[b].maxStacks) continue;
+        if (*sa < 0 && BOONS[b].family == BOONS[d].family) *sa = i;
+        else if (*sb < 0 && BOONS[b].family == BOONS[d].duo - 1) *sb = i;
+    }
+    return *sa >= 0 && *sb >= 0;
+}
+
+static void sync_max_health(void)
+{
+    if (s.active) character.maxHealth = tower_mod_max_health();     // (before, Vigor and Vitality raised only the health)
+}
+
 // A boon taken (a draft, a relic's gift): a new one fills the next free slot at Lv 1, a held one
-// levels up; skill cards take no slot
+// levels up; skill cards and "+" take no slot; a duo merges its two boons into the first one's
+// slot (both stay at their max) and opens the other. Its rival is locked out for the run
 static void take_boon(BoonId b)
 {
-    if (BOONS[b].family != FAM_SKILL && !s.stacks[b])
+    int sa, sb;
+    if (BOONS[b].duo && !s.stacks[b] && duo_pair(b, &sa, &sb)) {
+        s.merged[sa][0] = s.slot[sa]; s.merged[sa][1] = s.slot[sb];
+        s.slot[sa] = (uint8_t)(b + 1); s.slot[sb] = 0;
+    } else if (takes_slot(b) && !s.stacks[b])
         for (int i = 0; i < TOWER_SLOTS; i++) if (!s.slot[i]) { s.slot[i] = (uint8_t)(b + 1); break; }
+    if (rival_of(b) >= 0) s.locked[rival_of(b)] = true;
     if (s.stacks[b] < BOONS[b].maxStacks) s.stacks[b]++;
     if (b == BOON_DEEP_FLASK) character.healthPotions = character.healthPotions + 3 > POTION_CAP ? POTION_CAP : character.healthPotions + 3;
     if (b == BOON_LEARN_MOONBLADE) s.skills |= 1 << SKILL_MOON_BLADE_DANCE;
     if (b == BOON_LEARN_HALFMOON)  s.skills |= 1 << SKILL_HALFMOON_SLASH;
     if (b == BOON_LEARN_CLEAVE)    s.skills |= 1 << SKILL_CRESCENT_CLEAVE;
     if (b == BOON_VIGOR) character.health += 25.0f;
+    sync_max_health();
 }
 
 static uint32_t rng_next(void)
@@ -358,8 +446,23 @@ void tower_begin_run(uint32_t seed)
     s.skills = (1 << SKILL_COUNT) - 1;
     s.stacks[BOON_HALFMOON_PLUS] = s.stacks[BOON_CLEAVE_PLUS] = 1;
 #endif
-#ifdef HLE_TOWER_GIVE   // test aid: start the run holding this boon
-    take_boon(HLE_TOWER_GIVE);
+#ifdef HLE_TOWER_GIVE   // test aid: start the run holding this boon (a "+": its boon maxed first; a duo: a maxed boon of
+                        // each family merged into it, and every skill, so its trigger can fire)
+    {
+        BoonId g = HLE_TOWER_GIVE;
+        if (BOONS[g].up) while (s.stacks[BOONS[g].up - 1] < BOONS[BOONS[g].up - 1].maxStacks) take_boon((BoonId)(BOONS[g].up - 1));
+        if (BOONS[g].duo) {
+            static const BoonId REP[FAM_COUNT] = { BOON_BLOODTHIRST, BOON_STORM_BLADE, BOON_MOON_MASTERY, BOON_CRUSHING_BLOWS, BOON_RIPOSTE, BOON_KINDLED_FLASK };
+            int fa = BOONS[g].family, fb = BOONS[g].duo - 1;
+            BoonId a = (fa == FAM_BLOOD && fb == FAM_MOON) ? BOON_RALLY : REP[fa];     // (Bloodthirst and Moon Mastery are rivals)
+            BoonId b = REP[fb];
+            while (s.stacks[a] < BOONS[a].maxStacks) take_boon(a);
+            while (s.stacks[b] < BOONS[b].maxStacks) take_boon(b);
+            s.skills = (1 << SKILL_COUNT) - 1;
+        }
+        take_boon(g);
+        debugf("[give] %s: slots %d %d %d %d %d, skills %x\n", BOONS[g].name, s.slot[0], s.slot[1], s.slot[2], s.slot[3], s.slot[4], s.skills);
+    }
 #endif
 #ifdef HLE_TOWER_GIVE_NEW   // test aid (HLE_LOG_BOONFX): every pack's boon at its top level (past the 5 slots) and every skill
     for (int b = BOON_HEMORRHAGE; b <= BOON_VANISH; b++) s.stacks[b] = BOONS[b].maxStacks;
@@ -435,22 +538,28 @@ void tower_next_floor(void)
     s.unbrokenUsed = false;
     s.bleedLeft = 0.0f; s.overcharge = 0;
     s.perfectDodges = 0; s.vanishArmed = s.vanishUsed = false;
+    s.ironFirstUsed = false; s.steelHp = 0.0f; s.steelUntil = s.mercyUntil = s.drainHoldUntil = 0.0;
+    for (int i = 0; i < 4; i++) s.boltAt[i] = 0.0;
+    sync_max_health();      // (Steel Hearth's is for the floor)
+    if (character.health > character.maxHealth) character.health = character.maxHealth;
     if ((s.floor - 1) % FLOORS_PER_CIRCLE == 0) shuffle_circle();
 }
 
 // ---- Draft ----
-
-static bool is_skill_card(BoonId b) { return BOONS[b].family == FAM_SKILL; }
 
 static bool knows(int skill) { return (s.skills >> skill) & 1; }
 
 // Can it be offered now? (stacks left, and an upgrade needs its skill)
 // A new boon needs a free slot and, from a family's pack, the pack bought: with the bar full
 // a draft offers only levels of the slotted boons (and skill cards and pacts)
+// A rival is never offered once its pair is taken; a "+" only with its boon at its max; a duo only
+// with a maxed boon of each of its families slotted (and both families' packs bought)
 static bool offerable(BoonId b)
 {
-    if (s.stacks[b] >= BOONS[b].maxStacks) return false;
+    if (s.stacks[b] >= BOONS[b].maxStacks || s.locked[b]) return false;
     if (is_skill_card(b) && !character_skills_enabled()) return false;     // Skills off (the title's setting): none offered
+    if (BOONS[b].up) { BoonId u = (BoonId)(BOONS[b].up - 1); return s.stacks[u] >= BOONS[u].maxStacks; }
+    if (BOONS[b].duo) { int sa, sb; return family_open(BOONS[b].family) && family_open(BOONS[b].duo - 1) && duo_pair(b, &sa, &sb); }
     if (!is_skill_card(b) && !s.stacks[b]) {
         if (slots_used() >= TOWER_SLOTS) return false;
         if (BOONS[b].pack && !((s.packs >> BOONS[b].family) & 1)) return false;
@@ -476,7 +585,10 @@ void tower_draft_open(void)
     // Three different boons; the first a skill card (learn or upgrade) while any are left
     BoonId pool[BOON_COUNT], skills[BOON_COUNT]; int n = 0, ns = 0;
     int famHeld[FAM_COUNT + 1] = { 0 };     // Hades' focus: a family with 2+ boons slotted comes up twice as often
-    for (int i = 0; i < TOWER_SLOTS; i++) if (s.slot[i]) famHeld[BOONS[s.slot[i] - 1].family]++;
+    for (int i = 0; i < TOWER_SLOTS; i++) {
+        if (s.merged[i][0]) { famHeld[BOONS[s.merged[i][0] - 1].family]++; famHeld[BOONS[s.merged[i][1] - 1].family]++; }
+        else if (s.slot[i]) famHeld[BOONS[s.slot[i] - 1].family]++;
+    }
     for (int b = 0; b < BOON_COUNT; b++) {
         if (!offerable(b)) continue;
         if (is_skill_card(b)) skills[ns++] = b; else pool[n++] = b;
@@ -522,7 +634,9 @@ void tower_draft_open(void)
             if (nc) k = cand[rng_next() % nc];
         }
         s.choices[s.nChoices++] = pool[k];
+        int rv = rival_of(pool[k]);
         pool[k] = pool[--n];
+        for (int i = 0; i < n; i++) if (pool[i] == rv) { pool[i] = pool[--n]; break; }     // never both rivals on the table
     }
 #ifdef HLE_DRAFT_GALLERY     // test aid: each floor shows set cards (every boon, the longest pacts) for a look
     {
@@ -530,7 +644,10 @@ void tower_draft_open(void)
             { PACT_CARD(PB_WOUNDED, PC_EXPOSED), PACT_CARD(PB_LAST_BREATH, PC_WEAKNESS), PACT_CARD(PB_STAGGERED, PC_IMPAIRED) },
             { PACT_CARD(PB_MIGHT, PC_THIRST), PACT_CARD(PB_BULWARK, PC_EXPOSED), PACT_CARD(PB_VITALITY, PC_FRAILTY) },
         };
-        int g = (s.floor - 1) % (2 + (BOON_COUNT + 2) / 3);     // the pacts, then every boon three at a time
+#ifndef HLE_GALLERY_FROM
+#define HLE_GALLERY_FROM 0      // the page the first floor shows (later pages: the "+" and duo cards)
+#endif
+        int g = (s.floor - 1 + HLE_GALLERY_FROM) % (2 + (BOON_COUNT + 2) / 3);     // the pacts, then every boon three at a time
         for (int i = 0; i < 3; i++) s.choices[i] = g < 2 ? G[g][i] : (3 * (g - 2) + i) % BOON_COUNT;
         s.nChoices = 3;
     }
@@ -568,7 +685,7 @@ void tower_draft_pick(int index)
     } else if (index >= 0 && index < s.nChoices && s.choices[index] >= BOON_COUNT) {
         int b = (s.choices[index] - BOON_COUNT) / PC_COUNT, c = (s.choices[index] - BOON_COUNT) % PC_COUNT;
         s.bless[b]++; s.curse[c]++;
-        if (b == PB_VITALITY) character.health += 12.0f;
+        if (b == PB_VITALITY) { character.health += 12.0f; sync_max_health(); }
 #ifdef HLE_PACT_CURSE
         character.healthPotions = 0;      // test aid: no potion to give up
 #endif
@@ -581,8 +698,6 @@ void tower_draft_pick(int index)
     } else if (index >= 0 && index < s.nChoices) {
         take_boon((BoonId)s.choices[index]);
     }
-    character.maxHealth = tower_mod_max_health();     // Vigor, Vitality (set only at the run's start, they added to health but not the bar's top)
-    if (character.health > character.maxHealth) character.health = character.maxHealth;
     s.draftOpen = false;
 }
 
@@ -634,9 +749,9 @@ void tower_draft_draw(void)
         snprintf(line, sizeof line, "Circle cleared: +%d Embers", CIRCLE_EMBERS);
         text_style(0, 40, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_BLUE, line);
     }
-    text(0, 56, SCREEN_WIDTH, ALIGN_CENTER, "Choose a Boon");
+    text(0, 53, SCREEN_WIDTH, ALIGN_CENTER, "Choose a Boon");
 
-    const int cw = 96, ch = 114, gap = 6, y0 = 64;
+    const int cw = 96, ch = 126, gap = 6, y0 = 60;     // (tall enough for a rival or a duo's two boons under the text)
     int x0 = (SCREEN_WIDTH - (cw * s.nChoices + gap * (s.nChoices - 1))) / 2;
     for (int i = 0; i < s.nChoices; i++) {
         int x = x0 + i * (cw + gap), card = s.choices[i];
@@ -670,8 +785,11 @@ void tower_draft_draw(void)
         }
         const BoonDef *bd = &BOONS[card];
         static const int NAME_STYLE[3] = { FONT_STYLE_WHITE, FONT_STYLE_BLUE, FONT_STYLE_GOLD };
-        // the family's tag over the name, in its colour
-        text_style(x + 4, y0 + 12, cw - 8, ALIGN_CENTER, FAMILIES[bd->family].style, FAMILIES[bd->family].name);
+        // the family's tag over the name, in its colour (a duo's two families, gold)
+        if (bd->duo) {
+            snprintf(line, sizeof line, "%s+%s", FAMILIES[bd->family].name, FAMILIES[bd->duo - 1].name);
+            text_style(x + 2, y0 + 12, cw - 4, ALIGN_CENTER, FONT_STYLE_GOLD, line);
+        } else text_style(x + 4, y0 + 12, cw - 8, ALIGN_CENTER, FAMILIES[bd->family].style, FAMILIES[bd->family].name);
         int nameLines = text_style(x + 4, y0 + 27, cw - 8, ALIGN_CENTER, NAME_STYLE[bd->tier], bd->name);
         const char *desc = bd->desc;    // a Learn card names the skill's button in the layout
         if (card == BOON_LEARN_MOONBLADE || card == BOON_LEARN_HALFMOON || card == BOON_LEARN_CLEAVE) {
@@ -679,17 +797,35 @@ void tower_draft_draw(void)
             desc = line;
         }
         text(x + 6, y0 + 31 + 17 * (nameLines > 1 ? nameLines : 1), cw - 12, ALIGN_CENTER, desc);     // under the name: 4 lines below one, 3 below two
-        // the slot line: what taking it does to the bar
-        char slotLine[40];
-        if (bd->family == FAM_SKILL) snprintf(slotLine, sizeof slotLine, "Skill: no slot");
-        else if (s.stacks[card]) snprintf(slotLine, sizeof slotLine, "Lv %d -> %d", s.stacks[card], s.stacks[card] + 1);
-        else snprintf(slotLine, sizeof slotLine, "New: slot %d/%d", slots_used() < TOWER_SLOTS ? slots_used() + 1 : TOWER_SLOTS, TOWER_SLOTS);
-        text_style(x, y0 + ch - 3, cw, ALIGN_CENTER, FONT_STYLE_GREY, slotLine);
+        // the bottom lines, up from the card's foot: the slot line (what taking it does to the bar; a
+        // duo's, the two boons it merges), and over it the rival it locks out
+        char bottom[3][40]; int bstyle[3] = { FONT_STYLE_GREY, FONT_STYLE_GREY, FONT_STYLE_GREY }, nb = 1;
+        int r = rival_of(card);
+        if (bd->duo) {
+            int sa, sb;
+            const char *na = "", *nbn = "";
+            if (duo_pair(card, &sa, &sb)) { na = BOONS[s.slot[sa] - 1].name; nbn = BOONS[s.slot[sb] - 1].name; }
+#ifdef HLE_DRAFT_GALLERY    // test aid: no pair held, so each family's longest name (the text that must fit)
+            else for (int b = 0; b < BOON_COUNT; b++) if (takes_slot(b)) {
+                if (BOONS[b].family == bd->family && strlen(BOONS[b].name) > strlen(na)) na = BOONS[b].name;
+                if (BOONS[b].family == bd->duo - 1 && strlen(BOONS[b].name) > strlen(nbn)) nbn = BOONS[b].name;
+            }
+#endif
+            snprintf(bottom[0], 40, "%s", nbn); snprintf(bottom[1], 40, "%s", na); snprintf(bottom[2], 40, "Merges:"); nb = 3;     // each in its family's colour
+            bstyle[0] = FAMILIES[bd->duo - 1].style; bstyle[1] = FAMILIES[bd->family].style;
+        } else {
+            if (bd->up) snprintf(bottom[0], 40, "+ (top level)");
+            else if (bd->family == FAM_SKILL) snprintf(bottom[0], 40, "Skill: no slot");
+            else if (s.stacks[card]) snprintf(bottom[0], 40, "Lv %d -> %d", s.stacks[card], s.stacks[card] + 1);
+            else snprintf(bottom[0], 40, "New: slot %d/%d", slots_used() < TOWER_SLOTS ? slots_used() + 1 : TOWER_SLOTS, TOWER_SLOTS);
+            if (r >= 0) { snprintf(bottom[1], 40, "%s", BOONS[r].name); snprintf(bottom[2], 40, "Locks out"); bstyle[1] = bstyle[2] = FONT_STYLE_RED; nb = 3; }
+        }
+        for (int k = 0; k < nb; k++) text_style(x - 1, y0 + ch - 3 - 12 * k, cw + 2, ALIGN_CENTER, bstyle[k], bottom[k]);
     }
     // Skip, under the cards
     // A button of its own under the cards, framed like them: Down to it, Up back to the card
     bool skip = s.sel == s.nChoices;
-    const int bw = 132, bh = 16, bx = (SCREEN_WIDTH - bw) / 2, by = y0 + ch + 5;
+    const int bw = 132, bh = 16, bx = (SCREEN_WIDTH - bw) / 2, by = y0 + ch + 4;
     flat_mode();
     rdpq_set_prim_color(skip ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
     rdpq_fill_rectangle(bx - 2, by - 2, bx + bw + 2, by + bh + 2);
@@ -700,10 +836,10 @@ void tower_draft_draw(void)
     if (s.floor % FLOORS_PER_CIRCLE == 0) {     // a new circle: stronger, and its night
         // the next circle: stronger bosses, and its night (two lines at most)
         snprintf(line, sizeof line, "Next: floor %d, %s. %s", s.floor + 1, NIGHTS[s.nextNight].name, NIGHTS[s.nextNight].desc);
-        text_style(12, y0 + ch + 36, SCREEN_WIDTH - 24, ALIGN_CENTER, FONT_STYLE_RED, line);
+        text_style(12, y0 + ch + 31, SCREEN_WIDTH - 24, ALIGN_CENTER, FONT_STYLE_RED, line);
     } else {
         snprintf(line, sizeof line, "Next: floor %d", s.floor + 1);
-        text_style(0, y0 + ch + 36, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+        text_style(0, y0 + ch + 31, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
     }
 }
 
@@ -744,23 +880,41 @@ const char* tower_run_summary(void)
     return b;
 }
 
-int tower_build_rows(char left[][28], char right[][12], int style[], int max)
+int tower_build_rows(char left[][40], char right[][12], int style[], int max)
 {
     static const BoonId LEARN[SKILL_COUNT] = { BOON_LEARN_MOONBLADE, BOON_LEARN_HALFMOON, BOON_LEARN_CLEAVE };
     static const BoonId PLUS[SKILL_COUNT] = { BOON_CRESCENT_ECHO, BOON_HALFMOON_PLUS, BOON_CLEAVE_PLUS };
     int n = 0;
     for (int k = 0; k < SKILL_COUNT && n < max; k++, n++) {     // the skills: button, name, known or not (and its card)
-        snprintf(left[n], 28, "%s %s", joypad_skill_button(k), BOONS[LEARN[k]].name);
+        snprintf(left[n], 40, "%s %s", joypad_skill_button(k), BOONS[LEARN[k]].name);
         snprintf(right[n], 12, "%s", !knows(k) ? "-" : s.stacks[PLUS[k]] ? "known +" : "known");
         style[n] = knows(k) ? FONT_STYLE_WHITE : FONT_STYLE_GREY;
     }
-    for (int i = 0; i < TOWER_SLOTS && n < max; i++, n++) {      // the slots: name in its family's colour, its level
-        if (!s.slot[i]) { snprintf(left[n], 28, "Empty slot"); right[n][0] = 0; style[n] = FONT_STYLE_GREY; continue; }
+    for (int i = 0; i < TOWER_SLOTS && n < max; i++, n++) {      // the slots: name in its family's colour, its level ("+" at the top)
+        if (!s.slot[i]) { snprintf(left[n], 40, "Empty slot"); right[n][0] = 0; style[n] = FONT_STYLE_GREY; continue; }
         BoonId b = (BoonId)(s.slot[i] - 1);
-        snprintf(left[n], 28, "%s", BOONS[b].name);
-        snprintf(right[n], 12, "Lv %d/%d", s.stacks[b], BOONS[b].maxStacks);
+        snprintf(left[n], 40, "%s", BOONS[b].name);
+        if (BOONS[b].duo && s.merged[i][0]) {       // a duo: "Duo", its two boons on a row under it
+            snprintf(right[n], 12, "Duo");
+            style[n] = FONT_STYLE_GOLD;
+            if (n + 1 < max) { n++; snprintf(left[n], 40, "  %s + %s", BOONS[s.merged[i][0] - 1].name, BOONS[s.merged[i][1] - 1].name); right[n][0] = 0; style[n] = FONT_STYLE_GREY; }
+            continue;
+        }
+        bool plus = false;
+        for (int p = 0; p < BOON_COUNT; p++) plus |= BOONS[p].up == b + 1 && s.stacks[p];
+        snprintf(right[n], 12, "Lv %d/%d%s", s.stacks[b], BOONS[b].maxStacks, plus ? "+" : "");
         style[n] = FAMILIES[BOONS[b].family].style;
     }
+    // the rivals locked out, greyed, a few to a row
+    int len = 0;
+    for (int b = 0; b < BOON_COUNT && n < max; b++) {
+        if (!s.locked[b]) continue;
+        int w = (int)strlen(BOONS[b].name);
+        if (len && len + 2 + w > 38) { n++; len = 0; if (n >= max) break; }
+        if (!len) { len = snprintf(left[n], 40, "Locked: %s", BOONS[b].name); right[n][0] = 0; style[n] = FONT_STYLE_GREY; }
+        else len += snprintf(left[n] + len, 40 - len, ", %s", BOONS[b].name);
+    }
+    if (len) n++;
     return n;
 }
 
@@ -902,7 +1056,10 @@ float tower_mod_damage_vs(float bossHealthFrac, bool staggered, int kind)
     if (tower_boon_stacks(BOON_SANGUINE_FLASK) && nowS < s.sanguineUntil) { m *= 1.25f; BFX("Sanguine Flask: x1.25 (%.1f s left)\n", s.sanguineUntil - nowS); }
     int se = tower_boon_stacks(BOON_SHADOW_EDGE);
     if (se && nowS < s.shadowEdgeUntil) { m *= 1.0f + 0.08f * se; BFX("Shadow Edge: x%.2f after a roll\n", (double)(1.0f + 0.08f * se)); }
-    if (kind == TOWER_HIT_SWORD && tower_boon_stacks(BOON_WAXING_MOON) && nowS < s.waxingUntil) { m *= 1.15f; BFX("Waxing Moon: sword hit x1.15\n"); }
+    bool sword = kind == TOWER_HIT_SWORD || kind == TOWER_HIT_FINISHER;
+    if (sword && tower_boon_stacks(BOON_WAXING_MOON) && nowS < s.waxingUntil) { m *= 1.15f; BFX("Waxing Moon: sword hit x1.15\n"); }
+    if (kind == TOWER_HIT_FINISHER && tower_boon_stacks(BOON_EMBER_EDGE_PLUS)) { m *= 1.25f; BFX("Ember Edge+: the finisher x1.25\n"); }
+    if (kind == TOWER_HIT_SKILL && tower_boon_stacks(BOON_BLOOD_MOON_RITE)) { m *= 1.4f; BFX("Blood Moon Rite: a skill's hit x1.40\n"); }
     if (kind == TOWER_HIT_SKILL && staggered && tower_boon_stacks(BOON_ECLIPSE)) { m *= 1.5f; BFX("Eclipse: skill hit on a staggered boss x1.50\n"); }
     return m;
 }
@@ -928,6 +1085,7 @@ float tower_mod_damage_taken(void)
         extern double nowS;
         m *= powf_int(0.94f, circles_cleared()) * powf_int(0.94f, s.bless[PB_BULWARK]) * (1.0f + 0.05f * s.curse[PC_FRAILTY]);
         if (s.curse[PC_EXPOSED] && nowS < s.exposedUntil) m *= 1.0f + 0.15f * s.curse[PC_EXPOSED];
+        if (nowS < s.steelUntil) m *= 0.6f;     // Steel Hearth: a potion's ward
     }
     if (s.active) m *= BOSS_DMG_START + BOSS_DMG_PER_CIRCLE * (tower_circle() - 1);
     if (s.active && s.night == NIGHT_BLOOD_MOON) m *= 1.2f;
@@ -945,30 +1103,50 @@ float tower_mod_stagger_time(void)
 #endif
     return tower_boon_stacks(BOON_CRUSHING_BLOWS) ? 1.5f : 1.0f;
 }
-float tower_mod_stagger_damage(void) { return tower_boon_stacks(BOON_EXECUTIONER) ? 1.6f : 1.0f; }
-float tower_mod_perfect_window(void) { return tower_boon_stacks(BOON_PHANTOM_STEP) ? 0.28f : 0.2f; }   // (0.35 outlasted a roll's 0.32 s of invincibility: every dodge was perfect)
+float tower_mod_stagger_damage(void) { return tower_boon_stacks(BOON_EXECUTIONER) ? (tower_boon_stacks(BOON_EXECUTIONER_PLUS) ? 1.9f : 1.6f) : 1.0f; }
+float tower_mod_perfect_window(void)
+{
+    if (!tower_boon_stacks(BOON_PHANTOM_STEP)) return 0.2f;
+    return tower_boon_stacks(BOON_PHANTOM_STEP_PLUS) ? 0.31f : 0.28f;   // (still inside a moving roll's 0.32 s of invincibility)
+}
+
+// A bolt to fall `delay` s from now on the boss (Thunderstep, Skyfall); tower_tick drops it
+static void queue_bolt(float dmg, double delay)
+{
+    extern double nowS;
+    for (int i = 0; i < 4; i++) if (s.boltAt[i] <= 0.0) { s.boltAt[i] = nowS + delay; s.boltDmg[i] = dmg; return; }
+}   // (0.35 outlasted a roll's 0.32 s of invincibility: every dodge was perfect)
 
 void tower_on_perfect_dodge(void)
 {
     if (!s.active) return;
     if (tower_boon_stacks(BOON_PHANTOM_STEP)) character.health = fminf(character.maxHealth, character.health + character.maxHealth * 0.02f);
     extern double nowS;
-    if (tower_boon_stacks(BOON_RIPOSTE)) s.riposteUntil = nowS + 2.5;
+    double window = tower_boon_stacks(BOON_RIPOSTE_PLUS) ? 4.0 : 2.5;
+    if (tower_boon_stacks(BOON_RIPOSTE)) s.riposteUntil = nowS + window;
+    if (tower_boon_stacks(BOON_SHADES_MERCY)) { s.mercyUntil = nowS + window; BFX("Shade's Mercy: %.1f s of Rally at 60%%\n", window); }
+    if (tower_boon_stacks(BOON_THUNDERSTEP)) {      // two of Storm Blade's bolts, 0.3 s apart
+        float bolt = (STORM_BOLT + STATIC_BOLT * tower_boon_stacks(BOON_STATIC)) * (tower_boon_stacks(BOON_STATIC_PLUS) ? 1.5f : 1.0f);
+        queue_bolt(bolt, 0.0); queue_bolt(bolt, 0.3);
+        BFX("Thunderstep: a perfect dodge calls 2 bolts of %.0f\n", (double)bolt);
+    }
+    if (tower_boon_stacks(BOON_WANING_LIGHT)) {
+        BFX("Waning Light: a perfect dodge, skill cooldowns -2 s (%.1f %.1f %.1f s left)\n", (double)character_get_skill_cooldown(0), (double)character_get_skill_cooldown(1), (double)character_get_skill_cooldown(2));
+        character_cut_skill_cooldowns(2.0f);
+    }
     if (tower_boon_stacks(BOON_VANISH) && !s.vanishUsed && !s.vanishArmed && ++s.perfectDodges >= 3) {
         s.vanishArmed = true;
         BFX("Vanish: 3 perfect dodges this floor, the next blow deals 0\n");
     }
 }
 
-#define STORM_BOLT  6.0f        // Storm Blade's lightning (+12 was best in every build: section 14 of the design)
-#define STATIC_BOLT 3.0f        // Static: a level
 float tower_on_sword_hit(bool finisher)
 {
     if (!s.active) return 0.0f;
     s.hitCount++;
     int st = tower_boon_stacks(BOON_STATIC);
-    float bolt = 0.0f, storm = STORM_BOLT + STATIC_BOLT * st;
-    bool sb = tower_boon_stacks(BOON_STORM_BLADE) && s.hitCount % 4 == 0;
+    float bolt = 0.0f, amp = tower_boon_stacks(BOON_STATIC_PLUS) ? 1.5f : 1.0f, storm = (STORM_BOLT + STATIC_BOLT * st) * amp;
+    bool sb = tower_boon_stacks(BOON_STORM_BLADE) && s.hitCount % (tower_boon_stacks(BOON_STORM_BLADE_PLUS) ? 3 : 4) == 0;   // Storm Blade+: every 3rd
     if (sb) {
         bolt += storm;
 #ifdef HLE_AUTOPLAY
@@ -976,7 +1154,7 @@ float tower_on_sword_hit(bool finisher)
 #endif
         if (st) BFX("Static: Storm Blade's bolt %.0f (+%.0f)\n", (double)storm, (double)(STATIC_BOLT * st));
     } else if (st && !tower_boon_stacks(BOON_STORM_BLADE) && s.hitCount % 8 == 0) {    // no Storm Blade: a weak bolt of its own
-        float w = STORM_BOLT + STATIC_BOLT * (st - 1);
+        float w = (STORM_BOLT + STATIC_BOLT * (st - 1)) * amp;
         bolt += w;
         BFX("Static: a bolt on hit %d (%.0f)\n", s.hitCount, (double)w);
     }
@@ -985,7 +1163,10 @@ float tower_on_sword_hit(bool finisher)
         if (!sb) bolt += storm;
         BFX("Overcharge: lightning on hit %d (%.0f), %d left\n", s.hitCount, (double)storm, s.overcharge);
     }
-    if (finisher && tower_boon_stacks(BOON_THUNDERCLAP)) { bolt += 8.0f; BFX("Thunderclap: the finisher calls lightning (8)\n"); }
+    if (finisher && tower_boon_stacks(BOON_THUNDERCLAP)) {
+        float tc = tower_boon_stacks(BOON_THUNDERCLAP_PLUS) ? 12.0f : 8.0f;
+        bolt += tc; BFX("Thunderclap: the finisher calls lightning (%.0f)\n", (double)tc);
+    }
     int hm = tower_boon_stacks(BOON_HEMORRHAGE);
     if (finisher && hm) {       // a bleed of 4 a level over 3 s; a new finisher adds to it and starts the 3 s again
         s.bleedLeft += 4.0f * hm;
@@ -1021,17 +1202,61 @@ void tower_on_potion(void)
 {
     extern double nowS;
     if (tower_boon_stacks(BOON_SANGUINE_FLASK)) { s.sanguineUntil = nowS + 6.0; BFX("Sanguine Flask: a potion, +25%% damage for 6 s\n"); }
+    if (tower_boon_stacks(BOON_STEEL_HEARTH)) {     // +10 max health for the floor (up to +30), -40% taken for 4 s
+        if (s.steelHp < 30.0f) { s.steelHp += 10.0f; sync_max_health(); }
+        s.steelUntil = nowS + 4.0;
+        BFX("Steel Hearth: a potion, max health %.0f (+%.0f this floor), -40%% taken for 4 s\n", (double)character.maxHealth, (double)s.steelHp);
+    }
 }
 
 void tower_on_skill_cast(void)
 {
     extern double nowS;
     if (tower_boon_stacks(BOON_WAXING_MOON)) { s.waxingUntil = nowS + 4.0; BFX("Waxing Moon: a cast, +15%% sword damage for 4 s\n"); }
+    s.skyfallUsed = false;
+    if (tower_boon_stacks(BOON_BLOOD_MOON_RITE)) {      // 3% of max health a cast, never the last of it
+        float h = character.health, cost = 0.03f * character.maxHealth;
+        character.health = fmaxf(fminf(h, 1.0f), h - cost);
+        BFX("Blood Moon Rite: a cast costs %.1f health (%.1f -> %.1f)\n", (double)cost, (double)h, (double)character.health);
+    }
+}
+
+void tower_on_skill_hit(void)
+{
+    if (!tower_boon_stacks(BOON_SKYFALL) || s.skyfallUsed) return;
+    s.skyfallUsed = true;       // once a cast
+    queue_bolt(STORM_BOLT, 0.0);
+    BFX("Skyfall: a skill's hit calls Storm Blade's pillar (%.0f)\n", (double)STORM_BOLT);
 }
 
 void tower_on_stagger(void)
 {
     if (tower_boon_stacks(BOON_OVERCHARGE)) { s.overcharge = 5; BFX("Overcharge: a stagger, the next 5 hits call lightning\n"); }
+    if (tower_boon_stacks(BOON_IRON_TIDE)) {
+        BFX("Iron Tide: a stagger resets the skill cooldowns (%.1f %.1f %.1f s left)\n", (double)character_get_skill_cooldown(0), (double)character_get_skill_cooldown(1), (double)character_get_skill_cooldown(2));
+        character_cut_skill_cooldowns(1e6f);
+    }
+}
+
+void tower_on_stagger_end(void)
+{
+    extern double nowS;
+    if (tower_boon_stacks(BOON_CRUSHING_BLOWS_PLUS)) { s.drainHoldUntil = nowS + 3.0; BFX("Crushing Blows+: the boss rose, no stagger drain for 3 s\n"); }
+}
+bool tower_poise_drain_held(void) { extern double nowS; return s.active && nowS < s.drainHoldUntil; }
+
+float tower_on_lightning(float bolt, bool staggered)
+{
+    if (!s.active) return bolt;
+    if (tower_boon_stacks(BOON_CRIMSON_STORM)) {
+        if (tower_boon_stacks(BOON_BLOODTHIRST)) {      // feeds Bloodthirst at half a sword hit's rate (of the bolt)
+            float h = character.health, heal = 0.5f * tower_mod_lifesteal() * bolt;
+            character.health = fminf(character.maxHealth, h + heal);
+            BFX("Crimson Storm: a bolt of %.0f heals %.2f (%.1f -> %.1f)\n", (double)bolt, (double)heal, (double)h, (double)character.health);
+        } else { bolt *= 1.25f; BFX("Crimson Storm: no Bloodthirst, the bolt x1.25 (%.1f)\n", (double)bolt); }
+    }
+    if (staggered && tower_boon_stacks(BOON_ANVIL_OF_STORMS)) { bolt *= 2.0f; BFX("Anvil of Storms: a bolt on a staggered boss x2 (%.1f)\n", (double)bolt); }
+    return bolt;
 }
 
 float tower_mod_blow(float amount)
@@ -1041,6 +1266,11 @@ float tower_mod_blow(float amount)
         s.vanishArmed = false; s.vanishUsed = true;     // once a floor
         BFX("Vanish: a blow of %.1f deals 0\n", (double)amount);
         return 0.0f;
+    }
+    if (tower_boon_stacks(BOON_IRON_SKIN_PLUS) && !s.ironFirstUsed && amount > 0.0f) {
+        s.ironFirstUsed = true;     // the first blow a floor
+        BFX("Iron Skin+: the floor's first blow of %.1f deals %.1f\n", (double)amount, (double)(amount * 0.5f));
+        amount *= 0.5f;
     }
     if (tower_boon_stacks(BOON_STALWART) && amount > 0.2f * character.maxHealth) {
         BFX("Stalwart: a blow of %.1f (over 20%% of %.0f) deals %.1f\n", (double)amount, (double)character.maxHealth, (double)(amount * 0.75f));
@@ -1062,16 +1292,16 @@ float tower_mod_potion_heal(void)
     return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.25f * tower_boon_stacks(BOON_KINDLED_FLASK))
            * (tower_boon_stacks(BOON_BLOOD_PACT) ? 0.75f : 1.0f);
 }
-float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH) - 20.0f * has_relic(RELIC_FRAIL) + 12.0f * (s.active ? s.bless[PB_VITALITY] : 0); }
+float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH) - 20.0f * has_relic(RELIC_FRAIL) + (s.active ? 12.0f * s.bless[PB_VITALITY] + s.steelHp : 0.0f); }
 float tower_mod_roll_cost(void) { return (tower_boon_stacks(BOON_FLEETFOOT) ? 0.6f : 1.0f) * (has_relic(RELIC_LEADEN) ? 1.25f : 1.0f); }
 float tower_mod_stamina_empty(void) { return 1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND); }   // the wait once the bar is empty: x1/1.4 a stack
 float tower_mod_stamina_regen(void) { return (1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND)) * (has_relic(RELIC_STAMINA) ? 1.2f : 1.0f); }
 float tower_mod_skill_cooldown(void)
 {
-    return (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * powf_int(0.8f, tower_boon_stacks(BOON_MOON_MASTERY))
+    return (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * powf_int(tower_boon_stacks(BOON_MOON_MASTERY_PLUS) ? 0.75f : 0.8f, tower_boon_stacks(BOON_MOON_MASTERY))
            * ((s.active && s.night == NIGHT_STARFALL) ? 0.7f : 1.0f);
 }
-float tower_mod_lifesteal(void) { return 0.12f * tower_boon_stacks(BOON_BLOODTHIRST) + 0.03f * has_relic(RELIC_VAMPIRIC); }   // of a hit before boons: it no longer grows with the damage multiplier
+float tower_mod_lifesteal(void) { return (tower_boon_stacks(BOON_BLOODTHIRST_PLUS) ? 0.16f : 0.12f) * tower_boon_stacks(BOON_BLOODTHIRST) + 0.03f * has_relic(RELIC_VAMPIRIC); }   // of a hit before boons: it no longer grows with the damage multiplier
 
 // Rally, at Bloodborne's pace in our numbers: lost health stays winnable 1 s, then drains away
 // over 4 s; each hit wins back what it dealt before damage boons (a sword hit 4: about four hits for a typical blow,
@@ -1081,7 +1311,7 @@ float tower_mod_lifesteal(void) { return 0.12f * tower_boon_stacks(BOON_BLOODTHI
 #define RALLY_RATIO 1.0f
 void tower_on_player_hurt(float lost)
 {
-    if (!tower_boon_stacks(BOON_RALLY) || lost <= 0.0f) return;
+    if ((!tower_boon_stacks(BOON_RALLY) && !tower_boon_stacks(BOON_SHADES_MERCY)) || lost <= 0.0f) return;   // (Shade's Mercy keeps the pool too)
     s.rally += lost;
     s.rallyHold = tower_boon_stacks(BOON_RALLY) >= 2 ? 1.5f : RALLY_HOLD;    // Lv 2 holds it longer
 #ifdef HLE_AUTOPLAY
@@ -1093,7 +1323,14 @@ void tower_on_boss_hurt(float dealt)
     float missing = character.maxHealth - character.health;
     if (s.rally > missing) s.rally = missing;           // a potion or the floor's restore took some
     if (s.rally <= 0.0f || dealt <= 0.0f) return;
-    float r = fminf(s.rally, dealt * RALLY_RATIO);
+    extern double nowS;
+    // Rally's rate (Rally+: each hit counts 1.5x its base), and Shade's Mercy's 60% in Riposte's window
+    float ratio = tower_boon_stacks(BOON_RALLY) ? (tower_boon_stacks(BOON_RALLY_PLUS) ? 1.5f : RALLY_RATIO) : 0.0f;
+    bool mercy = tower_boon_stacks(BOON_SHADES_MERCY) && nowS < s.mercyUntil;
+    if (mercy) ratio += 0.6f;
+    if (ratio <= 0.0f) return;
+    float r = fminf(s.rally, dealt * ratio);
+    if (mercy) BFX("Shade's Mercy: a hit of %.1f wins back %.1f (x%.1f)\n", (double)dealt, (double)r, (double)ratio);
     s.rally -= r;
     character.health += r;
 #ifdef HLE_AUTOPLAY
@@ -1102,6 +1339,15 @@ void tower_on_boss_hurt(float dealt)
 }
 void tower_tick(float dt)
 {
+    extern double nowS;
+    for (int i = 0; i < 4; i++) if (s.boltAt[i] > 0.0 && nowS >= s.boltAt[i]) {
+        s.boltAt[i] = 0.0;
+#ifdef HLE_LOG_BOONFX
+        Boss *b = boss_get_instance(); float h0 = b ? b->health : 0.0f;
+#endif
+        character_call_lightning(s.boltDmg[i]);
+        BFX("a queued bolt of %.0f lands: boss %.1f -> %.1f\n", (double)s.boltDmg[i], (double)h0, (double)(b ? b->health : 0.0f));
+    }
     if (s.bleedLeft > 0.0f && (s.bleedTick -= dt) <= 0.0f) {     // Hemorrhage: a tick every 0.5 s
         s.bleedTick += 0.5f;
         float d = fminf(s.bleedLeft, s.bleedRate * 0.5f);
@@ -1131,7 +1377,7 @@ void tower_test_pick_vigor(void) { s.choices[0] = BOON_VIGOR; s.nChoices = 1; s.
 
 // Self-check of the slots, levels, a full bar, the packs, family weighting and the unlock bits
 // (HLE_TEST_TOWER); returns the failures
-static bool card_ok_full(int c) { return c >= BOON_COUNT || is_skill_card(c) || s.stacks[c] > 0; }
+static bool card_ok_full(int c) { return c >= BOON_COUNT || is_skill_card(c) || BOONS[c].up || BOONS[c].duo || s.stacks[c] > 0; }   // ("+" and duos take no new slot)
 // how often each boon is drafted, over n drafts
 static void draft_counts(int n, int counts[BOON_COUNT])
 {
@@ -1224,6 +1470,144 @@ int tower_test_slots(void)
     debugf("[slots] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     return fails;
 }
+
+static int duos_offerable(void) { int n = 0; for (int b = 0; b < BOON_COUNT; b++) n += BOONS[b].duo && offerable(b); return n; }
+
+// Stage 2's self-check: rivals, "+" and duos (HLE_TEST_TOWER); returns the failures
+int tower_test_stage2(void)
+{
+    int fails = 0, counts[BOON_COUNT];
+    extern double nowS;
+    #define CHECK(c, ...) do { if (!(c)) { fails++; debugf("[stage2] FAIL: " __VA_ARGS__); debugf("\n"); } } while (0)
+    #define RUN(seed) do { tower_begin_run(seed); s.packs = (1 << FAM_COUNT) - 1; } while (0)
+    #define MAX(b) do { while (s.stacks[b] < BOONS[b].maxStacks) take_boon(b); } while (0)
+    // duos: only with a maxed boon of each of two different families slotted
+    RUN(21);
+    MAX(BOON_STORM_BLADE);
+    CHECK(!duos_offerable(), "one maxed boon: no duo (%d)", duos_offerable());
+    take_boon(BOON_THUNDERCLAP); take_boon(BOON_CONDUCTOR);
+    CHECK(!duos_offerable(), "three maxed Storm boons (one family): no duo (%d)", duos_offerable());
+    take_boon(BOON_BLOODTHIRST);
+    CHECK(!offerable(BOON_CRIMSON_STORM), "Bloodthirst Lv 1 of 2 (not maxed): no Crimson Storm");
+    take_boon(BOON_BLOODTHIRST);
+    CHECK(offerable(BOON_CRIMSON_STORM) && duos_offerable() == 1, "Bloodthirst maxed + Storm Blade: Crimson Storm, the only duo (%d)", duos_offerable());
+    s.packs = 1 << FAM_BLOOD;
+    CHECK(!offerable(BOON_CRIMSON_STORM), "the Storm pack not bought: no Crimson Storm");
+    s.packs = (1 << FAM_COUNT) - 1;
+    // the merge: a full bar, the duo takes Bloodthirst's slot, Storm Blade's opens; both keep working
+    take_boon(BOON_VIGOR);
+    CHECK(slots_used() == 5 && !offerable(BOON_HEMORRHAGE) && offerable(BOON_CRIMSON_STORM), "a full bar still offers the duo");
+    draft_counts(500, counts);
+    debugf("[stage2] full bar, 500 drafts: Crimson Storm %d, Static %d\n", counts[BOON_CRIMSON_STORM], counts[BOON_STATIC]);
+    CHECK(counts[BOON_CRIMSON_STORM] > 0, "the full bar's drafts hold the duo (%d)", counts[BOON_CRIMSON_STORM]);
+    int sBt = -1, sSb = -1;
+    for (int i = 0; i < TOWER_SLOTS; i++) { if (s.slot[i] == BOON_BLOODTHIRST + 1) sBt = i; if (s.slot[i] == BOON_STORM_BLADE + 1) sSb = i; }
+    take_boon(BOON_CRIMSON_STORM);
+    CHECK(slots_used() == 4 && s.slot[sBt] == BOON_CRIMSON_STORM + 1 && !s.slot[sSb] && s.merged[sBt][0] == BOON_BLOODTHIRST + 1 && s.merged[sBt][1] == BOON_STORM_BLADE + 1,
+          "the duo merges Bloodthirst and Storm Blade into one slot and opens the other (%d used)", slots_used());
+    CHECK(s.stacks[BOON_BLOODTHIRST] == 2 && s.stacks[BOON_STORM_BLADE] == 1 && !offerable(BOON_CRIMSON_STORM) && offerable(BOON_HEMORRHAGE),
+          "both stay at their max, the duo once, a new boon fits again");
+    { s.hitCount = 0; float b4 = 0; for (int i = 0; i < 4; i++) b4 = tower_on_sword_hit(false);
+      CHECK(b4 == 6.0f, "merged Storm Blade still calls lightning on hit 4 (%.0f)", (double)b4); }
+    { character.maxHealth = 200.0f; character.health = 100.0f; float d = tower_on_lightning(6.0f, false);
+      CHECK(d == 6.0f && fabsf(character.health - 100.0f - 0.5f * 0.24f * 6.0f) < 0.01f, "Crimson Storm: a bolt of 6 heals 0.72 with Bloodthirst Lv 2 (%.2f, bolt %.1f)", (double)(character.health - 100.0f), (double)d); }
+    { char l[TOWER_BUILD_ROWS][40], r[TOWER_BUILD_ROWS][12]; int st[TOWER_BUILD_ROWS];
+      int n = tower_build_rows(l, r, st, TOWER_BUILD_ROWS); bool duoRow = false, both = false; int lock = 0;
+      for (int i = 0; i < n; i++) { duoRow |= !strcmp(l[i], "Crimson Storm") && !strcmp(r[i], "Duo"); both |= strstr(l[i], "Bloodthirst + Storm Blade") != NULL;
+                                    lock += (strstr(l[i], "Executioner") != NULL) + (strstr(l[i], "Moon Mastery") != NULL) + (strstr(l[i], "Last Stand") != NULL);
+                                    debugf("[stage2] build row %d: %s | %s\n", i, l[i], r[i]); }
+      CHECK(duoRow && both && lock == 3, "the Build page: the duo, its two boons, the 3 rivals locked (%d rows)", n); }
+    // Crimson Storm without Bloodthirst: +25%
+    RUN(22); MAX(BOON_RALLY); MAX(BOON_STORM_BLADE); take_boon(BOON_CRIMSON_STORM);
+    CHECK(fabsf(tower_on_lightning(8.0f, false) - 10.0f) < 0.01f, "Crimson Storm, no Bloodthirst: a bolt x1.25");
+    // rivals: never both offered in a draft, never both held, locked for the run
+    RUN(23);
+    { int both = 0, seen[2] = { 0, 0 };
+      for (int k = 0; k < 3000; k++) {
+          tower_draft_open();
+          for (unsigned p = 0; p < sizeof RIVALS / sizeof RIVALS[0]; p++) {
+              bool a = false, b = false;
+              for (int i = 0; i < s.nChoices; i++) { a |= s.choices[i] == RIVALS[p][0]; b |= s.choices[i] == RIVALS[p][1]; }
+              both += a && b; seen[0] += a; seen[1] += b;
+          }
+      }
+      s.draftOpen = false;
+      debugf("[stage2] rivals, 3000 drafts: a rival pair together %d times (left offered %d, right %d)\n", both, seen[0], seen[1]);
+      CHECK(!both && seen[0] && seen[1], "never both rivals in one draft (%d)", both); }
+    { int held = 0;
+      for (unsigned p = 0; p < sizeof RIVALS / sizeof RIVALS[0]; p++) {
+          RUN(24);
+          MAX((BoonId)RIVALS[p][0]);
+          if (offerable(RIVALS[p][1]) || !s.locked[RIVALS[p][1]]) held++;
+          s.stacks[RIVALS[p][0]] = 0;     // as if released (stage 3): still locked
+          for (int i = 0; i < TOWER_SLOTS; i++) if (s.slot[i] == RIVALS[p][0] + 1) s.slot[i] = 0;
+          if (offerable(RIVALS[p][1])) held++;
+          draft_counts(300, counts);
+          if (counts[RIVALS[p][1]]) held++;
+      }
+      CHECK(!held, "a rival taken locks its pair out for the run (%d bad)", held); }
+    // "+": only at the max level, no slot, once
+    RUN(25);
+    for (int i = 0; i < 4; i++) take_boon(BOON_EMBER_EDGE);
+    CHECK(!offerable(BOON_EMBER_EDGE_PLUS), "Ember Edge Lv 4: no Ember Edge+");
+    take_boon(BOON_EMBER_EDGE);
+    CHECK(offerable(BOON_EMBER_EDGE_PLUS), "Ember Edge Lv 5 (its max): Ember Edge+ offered");
+    { int plusBelow = 0;
+      for (int b = 0; b < BOON_COUNT; b++) if (BOONS[b].up) {
+          RUN(26); BoonId u = (BoonId)(BOONS[b].up - 1);
+          for (int l = 0; l < BOONS[u].maxStacks; l++) { if (offerable(b)) plusBelow++; take_boon(u); }
+          if (!offerable(b)) plusBelow++;
+      }
+      CHECK(!plusBelow, "every \"+\" offered only at its boon's max (%d bad)", plusBelow); }
+    RUN(25); MAX(BOON_EMBER_EDGE);
+    take_boon(BOON_EMBER_EDGE_PLUS);
+    CHECK(slots_used() == 1 && !offerable(BOON_EMBER_EDGE_PLUS), "a \"+\" takes no slot, once");
+    // the "+" and duo effects, by the numbers
+    RUN(27); MAX(BOON_STORM_BLADE); take_boon(BOON_STORM_BLADE_PLUS);
+    { int n = 0; s.hitCount = 0; for (int i = 0; i < 9; i++) n += tower_on_sword_hit(false) > 0.0f;
+      CHECK(n == 3, "Storm Blade+: every 3rd hit (%d bolts in 9)", n); }
+    RUN(27); MAX(BOON_EXECUTIONER); take_boon(BOON_EXECUTIONER_PLUS);
+    CHECK(fabsf(tower_mod_stagger_damage() - 1.9f) < 0.001f, "Executioner+: +90%%");
+    RUN(27); MAX(BOON_PHANTOM_STEP); take_boon(BOON_PHANTOM_STEP_PLUS);
+    CHECK(fabsf(tower_mod_perfect_window() - 0.31f) < 0.001f, "Phantom Step+: 0.31 s");
+    RUN(27); s.skills = 1; float cd0 = tower_mod_skill_cooldown(); MAX(BOON_MOON_MASTERY); float cd3 = tower_mod_skill_cooldown(); take_boon(BOON_MOON_MASTERY_PLUS);
+    CHECK(fabsf(cd3 / cd0 - 0.512f) < 0.001f && fabsf(tower_mod_skill_cooldown() / cd0 - 0.421875f) < 0.001f, "Moon Mastery Lv 3 x0.512, + x0.422 (%.3f)", (double)(tower_mod_skill_cooldown() / cd0));
+    RUN(27); MAX(BOON_BLOODTHIRST); take_boon(BOON_BLOODTHIRST_PLUS);
+    CHECK(fabsf(tower_mod_lifesteal() - 0.32f) < 0.001f, "Bloodthirst+: 16%% a level (%.2f)", (double)tower_mod_lifesteal());
+    RUN(27); MAX(BOON_IRON_SKIN); take_boon(BOON_IRON_SKIN_PLUS);
+    { float a = tower_mod_blow(20.0f), b = tower_mod_blow(20.0f); tower_next_floor(); float c = tower_mod_blow(20.0f);
+      CHECK(a == 10.0f && b == 20.0f && c == 10.0f, "Iron Skin+: the floor's first blow half (%.0f %.0f, next floor %.0f)", (double)a, (double)b, (double)c); }
+    RUN(27); MAX(BOON_UNBROKEN); character.maxHealth = 150.0f; take_boon(BOON_UNBROKEN_PLUS);
+    CHECK(fabsf(tower_mod_unbroken_heal() - 0.2f * character.maxHealth) < 0.01f, "Unbroken+: heals 20%%");
+    RUN(27); MAX(BOON_STATIC); take_boon(BOON_STATIC_PLUS);
+    { float w = 0; s.hitCount = 0; for (int i = 0; i < 8; i++) w += tower_on_sword_hit(false);
+      CHECK(fabsf(w - 1.5f * (6.0f + 3.0f * 3)) < 0.01f, "Static+ (Lv 4, no Storm Blade): the 8th hit's bolt x1.5 (%.1f)", (double)w); }
+    RUN(27); MAX(BOON_THUNDERCLAP); take_boon(BOON_THUNDERCLAP_PLUS);
+    CHECK(tower_on_sword_hit(true) == 12.0f, "Thunderclap+: the finisher's bolt 12");
+    RUN(28); MAX(BOON_CRUSHING_BLOWS); MAX(BOON_STORM_BLADE); take_boon(BOON_ANVIL_OF_STORMS);
+    CHECK(tower_on_lightning(6.0f, true) == 12.0f && tower_on_lightning(6.0f, false) == 6.0f, "Anvil of Storms: x2 on a staggered boss only");
+    RUN(29); MAX(BOON_RALLY); s.skills = 1; MAX(BOON_MOON_MASTERY); take_boon(BOON_BLOOD_MOON_RITE);
+    { character.maxHealth = 200.0f; character.health = 100.0f; tower_on_skill_cast();
+      CHECK(fabsf(character.health - 94.0f) < 0.01f && fabsf(tower_mod_damage_vs(1.0f, false, TOWER_HIT_SKILL) - 1.4f) < 0.001f && tower_mod_damage_vs(1.0f, false, TOWER_HIT_SWORD) == 1.0f,
+            "Blood Moon Rite: a cast costs 3%% (%.1f left of 100), skills x1.4", (double)character.health);
+      character.health = 1.0f; tower_on_skill_cast(); CHECK(character.health == 1.0f, "Blood Moon Rite never takes the last health"); }
+    RUN(30); MAX(BOON_KINDLED_FLASK); MAX(BOON_CRUSHING_BLOWS); take_boon(BOON_STEEL_HEARTH);
+    { float m0 = character.maxHealth, t0 = tower_mod_damage_taken();
+      for (int i = 0; i < 4; i++) tower_on_potion();
+      float m4 = character.maxHealth, t4 = tower_mod_damage_taken();
+      nowS += 5.0; float t5 = tower_mod_damage_taken(); nowS -= 5.0;
+      tower_next_floor();
+      CHECK(m4 - m0 == 30.0f && fabsf(t4 / t0 - 0.6f) < 0.001f && fabsf(t5 / t0 - 1.0f) < 0.001f && character.maxHealth == m0,
+            "Steel Hearth: +10 max health a potion up to +30 (%.0f), x0.6 taken for 4 s (%.2f, after %.2f), gone the next floor (%.0f)", (double)(m4 - m0), (double)(t4 / t0), (double)(t5 / t0), (double)character.maxHealth); }
+    RUN(31); { float m0 = character.maxHealth; take_boon(BOON_VIGOR); CHECK(character.maxHealth - m0 == 25.0f, "Vigor raises max health in the run (%.0f)", (double)(character.maxHealth - m0)); }
+    tower_end_run();
+    character.maxHealth = tower_mod_max_health(); character.health = character.maxHealth;
+    #undef CHECK
+    #undef RUN
+    #undef MAX
+    debugf("[stage2] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
+    return fails;
+}
 #endif
 
 bool tower_mod_try_unbroken(void)
@@ -1231,6 +1615,12 @@ bool tower_mod_try_unbroken(void)
     if (!tower_boon_stacks(BOON_UNBROKEN) || s.unbrokenUsed) return false;
     s.unbrokenUsed = true;
     return true;
+}
+float tower_mod_unbroken_heal(void)
+{
+    if (!tower_boon_stacks(BOON_UNBROKEN_PLUS)) return 0.0f;
+    BFX("Unbroken+: saved, and healed %.0f\n", (double)(0.2f * character.maxHealth));
+    return 0.2f * character.maxHealth;
 }
 
 float tower_boss_health_scale(int phase)

@@ -1604,11 +1604,14 @@ void menu_controller_draw(void)
             rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW + 40, .height = contentH, .wrap = WRAP_WORD },
                              FONT_UNBALANCED, x - 20, y + titleYOffset + 22, "%s", tower_run_summary());
         } else {
-            // the 3 skills, then the 5 boon slots (each in its family's colour, its level on the right)
-            char left[3 + TOWER_SLOTS][28], right[3 + TOWER_SLOTS][12]; int style[3 + TOWER_SLOTS];
-            int n = tower_build_rows(left, right, style, 3 + TOWER_SLOTS);
+            // the 3 skills, then the 5 boon slots (each in its family's colour, its level on the right; a
+            // duo's two boons under it), then the rivals locked out; rows closer when there are more
+            char left[TOWER_BUILD_ROWS][40], right[TOWER_BUILD_ROWS][12]; int style[TOWER_BUILD_ROWS];
+            int n = tower_build_rows(left, right, style, TOWER_BUILD_ROWS);
+            int top = y + titleYOffset + 22, step = n > 1 ? (contentH - titleYOffset - 22 - 8 - 4) / (n - 1) : 16;
+            if (step > 16) step = 16;
             for (int i = 0; i < n; i++) {
-                int ry = y + titleYOffset + 22 + i * 16 + (i >= 3 ? 8 : 0);     // a gap between the skills and the slots
+                int ry = top + i * step + (i >= 3 ? 8 : 0);     // a gap between the skills and the slots
                 rdpq_text_printf(&(rdpq_textparms_t){ .width = contentW, .height = contentH, .style_id = style[i] }, FONT_UNBALANCED, x, ry, "%s", left[i]);
                 if (right[i][0])
                     rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW, .height = contentH, .style_id = style[i] }, FONT_UNBALANCED, x, ry, "%s", right[i]);

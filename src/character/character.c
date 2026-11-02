@@ -1238,6 +1238,21 @@ float character_get_skill_cooldown(CharacterSkill skill)
     return (skill < SKILL_COUNT) ? skillCooldowns[skill] : 0.0f;
 }
 
+void character_cut_skill_cooldowns(float seconds)
+{
+    for (int k = 0; k < SKILL_COUNT; k++) skillCooldowns[k] = fmaxf(0.0f, skillCooldowns[k] - seconds);
+}
+
+void character_call_lightning(float bolt)
+{
+    Boss *boss = boss_get_instance();
+    if (!boss || bolt <= 0.0f || boss->mode != BOSS_MODE_COMBAT || boss->health <= 0.0f) return;
+    bolt = tower_on_lightning(bolt, boss->staggerT > 0.0f);     // (Crimson Storm, Anvil of Storms)
+    boss_apply_hit(boss, bolt, tower_lightning_poise() * 4.0f / POISE_DAMAGE);     // a boon's damage: no stagger of its own (Conductor: a sword hit's)
+    skill_fx_spawn_pillar(boss->pos);
+    audio_play_scene_sfx_dist(character_random_hit_sfx(), 1.0f, 0.0f);   // a second sword hit
+}
+
 float character_get_skill_cooldown_ratio(CharacterSkill skill)
 {
     if (skill >= SKILL_COUNT) return 0.0f;
@@ -2901,9 +2916,9 @@ void character_update(void)
                 Boss* boss = boss_get_instance();
                 if (boss) {
                     bool finisher = attackComboIndex == 3;     // the combo's last hit lands heaviest
-                    bossHitBySword = true;
+                    bossHitBySword = true; bossHitByFinisher = finisher;
                     boss_apply_hit(boss, damage, (finisher ? FINISHER_POISE * tower_mod_finisher_poise() : 1.0f) * damage / POISE_DAMAGE);
-                    bossHitBySword = false;
+                    bossHitBySword = bossHitByFinisher = false;
                     game_time_hitstop(finisher ? 0.08f : 0.045f);     // hit-stop: the blow lands with weight
                     if (finisher) screen_shake_set_shake_mag(3.0f);
 #ifdef HLE_AUTOPLAY
@@ -2913,13 +2928,8 @@ void character_update(void)
 #endif
 #endif
                     float cut = tower_mod_hit_cooldown_cut();     // Lunar Tide
-                    for (int k = 0; k < SKILL_COUNT && cut > 0.0f; k++) skillCooldowns[k] = fmaxf(0.0f, skillCooldowns[k] - cut);
-                    float storm = tower_on_sword_hit(finisher);     // Storm Blade and the Storm boons: lightning
-                    if (storm > 0.0f) {
-                        boss_apply_hit(boss, storm, tower_lightning_poise() * damage / POISE_DAMAGE);     // a boon's damage: no stagger of its own (Conductor: a sword hit's)
-                        skill_fx_spawn_pillar(boss->pos);
-                        audio_play_scene_sfx_dist(character_random_hit_sfx(), 1.0f, 0.0f);   // a second sword hit
-                    }
+                    if (cut > 0.0f) character_cut_skill_cooldowns(cut);
+                    character_call_lightning(tower_on_sword_hit(finisher));     // Storm Blade and the Storm boons: lightning (0 mostly)
 
                     // Spawn blood at the actual sword/boss contact point. The sword tip alone
                     // extends past the boss capsule, so we converge on the closest points
@@ -3437,7 +3447,7 @@ void character_apply_damage(float amount)
     if (amount <= 0.0f) return;     // Vanish: the blow does nothing
     float before = character.health;
     character.health -= amount * boss_hp_loss_scale();     // the reactions below still go by the full blow
-    if (character.health <= 0.0f && tower_mod_try_unbroken()) character.health = 1.0f;   // the Unbroken boon
+    if (character.health <= 0.0f && tower_mod_try_unbroken()) character.health = 1.0f + tower_mod_unbroken_heal();   // the Unbroken boon (+: and 20%)
     if (character.health < 0.0f) character.health = 0.0f;
     if (character.health > 0.0f) tower_on_player_hurt(before - character.health);     // the Rally boon
 #if defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_STRIKE) || defined(HLE_TEST_CRUCIFIX)   // test aid: log every hit, never die

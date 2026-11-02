@@ -354,6 +354,7 @@ float boss_hp_loss_scale(void);    // the share of a blow taken off the player's
 void boss_apply_hit(Boss* boss, float amount, float poise);
 extern bool bossHitBySword;     // set round a sword hit's boss_apply_hit: only those feed Bloodthirst
 extern bool bossHitBySkill;     // round a skill's hit (Eclipse)
+extern bool bossHitByFinisher;  // round the combo's 3rd hit (with bossHitBySword: Ember Edge+)
 extern bool bossHitByBleed;     // round a bleed's tick (Hemorrhage): no flinch, no Rally, a faint flash
 // Full health for its current phase, as the Skills setting or a Tower run sizes it.
 void boss_set_full_health(Boss* boss);

@@ -561,7 +561,7 @@ static void boss_poise_update(Boss* boss, float dt)
 {
     if (boss->staggerT > 0.0f) {
         boss->staggerT -= dt;
-        if (boss->staggerT <= 0.0f) { boss->staggerT = 0.0f; boss->poise = 0.0f;
+        if (boss->staggerT <= 0.0f) { boss->staggerT = 0.0f; boss->poise = 0.0f; tower_on_stagger_end();
 #ifdef HLE_AUTOPLAY
             debugf("[stagger] over at %.1f s\n", (double)gameTime);
 #endif
@@ -589,7 +589,7 @@ static void boss_poise_update(Boss* boss, float dt)
         }
         return;
     }
-    if (boss->poiseIdleT > POISE_KEEP_S) boss->poise = fmaxf(0.0f, boss->poise - POISE_DRAIN * rec);
+    if (boss->poiseIdleT > POISE_KEEP_S && !tower_poise_drain_held()) boss->poise = fmaxf(0.0f, boss->poise - POISE_DRAIN * rec);
 }
 
 bool boss_try_stagger(Boss* boss)
@@ -803,7 +803,7 @@ void boss_apply_damage(Boss* boss, float amount)
     boss_apply_hit(boss, amount, amount / POISE_DAMAGE);
 }
 
-bool bossHitBySword, bossHitBySkill, bossHitByBleed;
+bool bossHitBySword, bossHitBySkill, bossHitByBleed, bossHitByFinisher;
 
 void boss_apply_hit(Boss* boss, float amount, float poise)
 {
@@ -820,7 +820,7 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
         if (bossHitBySword) character.health = fminf(character.maxHealth, character.health + amount * tower_mod_lifesteal());   // sword hits only, before boons
         if (!bossHitByBleed) tower_on_boss_hurt(amount);     // Rally: also by the hit before boons (after them, a blow came back in two hits deep in a run); a bleed wins back nothing
         amount *= tower_mod_damage_dealt() * tower_mod_damage_vs(boss->health / fmaxf(boss->maxHealth, 1.0f), boss->staggerT > 0.0f,
-                                                                 bossHitBySword ? TOWER_HIT_SWORD : bossHitBySkill ? TOWER_HIT_SKILL : TOWER_HIT_OTHER);
+                                                                 bossHitBySword ? (bossHitByFinisher ? TOWER_HIT_FINISHER : TOWER_HIT_SWORD) : bossHitBySkill ? TOWER_HIT_SKILL : TOWER_HIT_OTHER);
     }
     if (boss->staggerT > 0.0f) amount *= tower_mod_stagger_damage();     // staggered: only boons make hits land harder
     boss->health -= amount;

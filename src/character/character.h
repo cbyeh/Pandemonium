@@ -160,6 +160,8 @@ bool character_try_use_health_potion(void);
 // Skill API (cooldowns for the HUD).
 float character_get_skill_cooldown(CharacterSkill skill);         // seconds left
 float character_get_skill_cooldown_ratio(CharacterSkill skill);   // 1 = just used, 0 = ready
+void  character_cut_skill_cooldowns(float seconds);                // every skill's cooldown that much shorter now (the Tower's boons)
+void  character_call_lightning(float bolt);                        // a Tower boon's bolt on the boss: its hit, Storm Blade's pillar, a hit's sound
 bool character_can_afford_skill(CharacterSkill skill);            // enough stamina
 bool character_skills_enabled(void);                              // Settings toggle
 bool character_skill_usable(CharacterSkill skill);                // the toggle, or the Tower's unlocks in a run

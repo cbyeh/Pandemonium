@@ -30,6 +30,13 @@ typedef enum {
     BOON_SHADOW_EDGE, BOON_EVASION, BOON_VANISH,                                     // Shadow
     // Skill cards: learn a skill for the run, then upgrade it (no slot)
     BOON_LEARN_MOONBLADE, BOON_LEARN_HALFMOON, BOON_LEARN_CLEAVE, BOON_HALFMOON_PLUS, BOON_CLEAVE_PLUS,
+    // "+": a boon's top level, offered once it is at its max (no slot of its own)
+    BOON_EMBER_EDGE_PLUS, BOON_IRON_SKIN_PLUS, BOON_STORM_BLADE_PLUS, BOON_EXECUTIONER_PLUS, BOON_CRUSHING_BLOWS_PLUS,
+    BOON_RIPOSTE_PLUS, BOON_UNBROKEN_PLUS, BOON_BLOODTHIRST_PLUS, BOON_RALLY_PLUS, BOON_PHANTOM_STEP_PLUS,
+    BOON_STATIC_PLUS, BOON_THUNDERCLAP_PLUS, BOON_MOON_MASTERY_PLUS,
+    // Duos: two maxed boons of these families merged into one slot (both keep working)
+    BOON_CRIMSON_STORM, BOON_THUNDERSTEP, BOON_BLOOD_MOON_RITE, BOON_IRON_TIDE, BOON_SHADES_MERCY,
+    BOON_ANVIL_OF_STORMS, BOON_WANING_LIGHT, BOON_STEEL_HEARTH, BOON_SKYFALL,
     BOON_COUNT
 } BoonId;
 
@@ -67,7 +74,9 @@ const char* tower_death_summary(void);   // a line for the death screen
 const char* tower_run_summary(void);     // the run so far, for the pause menu's Stats page (several lines)
 // The Build page: the 3 skills, then the 5 boon slots (name, its level on the right, a font style); returns the rows
 #define TOWER_SLOTS 5
-int tower_build_rows(char left[][28], char right[][12], int style[], int max);
+// (a duo's two boons on a row under it, then the rivals locked out this run, greyed)
+#define TOWER_BUILD_ROWS (3 + 2 * TOWER_SLOTS + 3)
+int tower_build_rows(char left[][40], char right[][12], int style[], int max);
 
 // ---- Nights: from the second circle each circle has one (a trade-off, more Embers) ----
 const char* tower_night_name(void);     // "" for none
@@ -110,7 +119,7 @@ bool  tower_mod_skill_allowed(int skill);
 float tower_mod_skill_damage(int skill);    // the skill's upgrade card: 1.2
 float tower_mod_damage_dealt(void);
 float tower_mod_damage_taken(void);
-enum { TOWER_HIT_OTHER, TOWER_HIT_SWORD, TOWER_HIT_SKILL };
+enum { TOWER_HIT_OTHER, TOWER_HIT_SWORD, TOWER_HIT_SKILL, TOWER_HIT_FINISHER };   // (a finisher is a sword hit too)
 float tower_mod_damage_vs(float bossHealthFrac, bool staggered, int kind);   // pacts and timed boons against this boss, for this hit
 bool  tower_hit_impaired(void);         // the Impaired curse: this hit does nothing
 void  tower_on_roll(void);              // a roll started (the Exposed curse)
@@ -131,6 +140,7 @@ void  tower_tick(float dt);
 float tower_rally_pool(void);           // health still to be won back (0 without the boon)
 int   tower_mod_extra_mbd_waves(void);
 bool  tower_mod_try_unbroken(void);     // spends it: survive a lethal hit at 1 HP
+float tower_mod_unbroken_heal(void);    // health on top of that 1 (Unbroken+: 20% of max)
 float tower_mod_poise(void);            // how fast the bosses' stagger meters fill
 float tower_mod_stagger_time(void);     // how long a staggered boss stays down
 float tower_mod_stagger_damage(void);   // damage taken by a staggered boss
@@ -142,7 +152,11 @@ float tower_mod_finisher_poise(void);   // the combo's 3rd hit's stagger (Heavy 
 float tower_mod_hit_cooldown_cut(void); // seconds off every skill cooldown a sword hit (Lunar Tide)
 void  tower_on_potion(void);            // a potion drunk (Sanguine Flask)
 void  tower_on_skill_cast(void);        // a skill cast (Waxing Moon)
-void  tower_on_stagger(void);           // a boss staggered (Overcharge)
+void  tower_on_stagger(void);           // a boss staggered (Overcharge, Iron Tide)
+void  tower_on_stagger_end(void);       // a staggered boss rose (Crushing Blows+)
+bool  tower_poise_drain_held(void);     // the stagger meter doesn't drain now (Crushing Blows+)
+float tower_on_lightning(float bolt, bool staggered);   // a bolt about to land: its damage (Crimson Storm, Anvil of Storms)
+void  tower_on_skill_hit(void);         // a skill's hit landed (Skyfall)
 float tower_mod_blow(float amount);     // a blow about to land, after damage taken: what it deals (Stalwart, Vanish)
 // Boss health in a run, from its usual (skills off) health for that phase
 float tower_boss_health_scale(int phase);

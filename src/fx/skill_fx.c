@@ -9,6 +9,7 @@
 #include "blood_particles_fx.h"
 #include "screen_shake.h"
 #include "game/boss/boss.h"
+#include "game/tower/tower.h"
 #include "controllers/audio_controller.h"
 #include "../scenes/guardian/guardian_scene_sfx.h"
 #include "utilities/general_utility.h"
@@ -274,6 +275,7 @@ static void damage_boss(Boss *b, float damage, float poise, const float contact[
     if (poise >= 0.0f) boss_apply_hit(b, damage, poise);
     else boss_apply_damage(b, damage);
     bossHitBySkill = false;
+    tower_on_skill_hit();       // (Skyfall)
 #ifdef HLE_LOG_BOONFX
     debugf("[boonfx-run] a skill's hit of %.2f, boss %s\n", (double)damage, b->staggerT > 0.0f ? "staggered" : "standing");
 #endif
