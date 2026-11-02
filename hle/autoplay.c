@@ -111,13 +111,17 @@ void *__real_malloc_uncached(size_t), *__real_asset_load(const char *, int *);
 static uint32_t lkBlockRa;     // a block being recorded: its buffers are its caller's
 void *__wrap_malloc_uncached(size_t s) { void *p = __real_malloc_uncached(s); disable_interrupts(); uint32_t ra = lkBlockRa ? lkBlockRa : (uint32_t)__builtin_return_address(0);
     for (int i = 0; i < LK_N; i++) if (lk[i].p && (uint32_t)lk[i].p == ((uint32_t)p & 0xDFFFFFFF)) lk[i].ra = ra;  // uncached pointer: the cached block it came from
-    enable_interrupts(); return p; }
+    enable_interrupts();
+    if (!lkBlockRa && s >= 8192) { extern bool tower_between_open(void), tower_draft_is_open(void), tower_map_is_open(void); debugf("[qgrow] a draw queue grew %u bytes (tag %d, %s)\n", (unsigned)s, hle_leak_cyc, tower_draft_is_open() ? "the draft" : tower_map_is_open() ? "the map" : tower_between_open() ? "a Rest, Shop or Event" : "in a fight"); }   // (no block recording: the frame's draw queue)
+    return p; }
 void *__real_malloc_uncached_aligned(int, size_t);
 void *__wrap_malloc_uncached_aligned(int a, size_t s) { void *p = __real_malloc_uncached_aligned(a, s); disable_interrupts(); uint32_t ra = (uint32_t)__builtin_return_address(0);
     for (int i = 0; i < LK_N; i++) if (lk[i].p && (uint32_t)lk[i].p == ((uint32_t)p & 0xDFFFFFFF)) lk[i].ra = ra;
     enable_interrupts(); return p; }
 void *__real_rspq_block_end(void), __real_rspq_block_begin_reuse(rspq_block_t *);
 void __wrap_rspq_block_begin_reuse(rspq_block_t *r) { lkBlockRa = (uint32_t)__builtin_return_address(0); __real_rspq_block_begin_reuse(r); }
+void __real_rspq_block_begin(void);
+void __wrap_rspq_block_begin(void) { lkBlockRa = (uint32_t)__builtin_return_address(0); __real_rspq_block_begin(); }   // (link with --wrap rspq_block_begin: a block's later buffers are its recorder's too)
 void *__wrap_rspq_block_end(void) { void *b = __real_rspq_block_end(); disable_interrupts(); uint32_t ra = (uint32_t)__builtin_return_address(0); lkBlockRa = 0;
     for (int i = 0; i < LK_N; i++) if ((uint32_t)lk[i].p == ((uint32_t)b & 0xDFFFFFFF)) lk[i].ra = ra;
     enable_interrupts(); return b; }
