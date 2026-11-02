@@ -1399,6 +1399,7 @@ static void scene_tower_start_floor(void)
         }
     } else {
         s_bonusFight = tb == TOWER_FALLEN_KNIGHT ? BONUS_FALLEN_KNIGHT : tb == TOWER_SHACKLED_SUN ? BONUS_SHACKLED_SUN : BONUS_SHADOWBORN;
+        boss_render_forget_model();   // the Guardian's recorded draws (~74 KB): re-recorded when it next draws
         const BonusDef *d = &BONUS_DEFS[s_bonusFight];
         d->begin(g_boss);
         d->skip(g_boss);

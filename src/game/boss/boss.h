@@ -92,7 +92,7 @@ typedef enum {
 // Boss structure - modules access fields directly but respect ownership:
 // - Animation fields (skeleton, animations, blend state): owned by boss_anim.c
 // - AI fields (state, timers, cooldowns): owned by boss_ai.c
-// - Render fields (modelMat, dpl): owned by boss_render.c
+// - Render fields (modelMat, dpl_shadow): owned by boss_render.c
 typedef struct Boss {
     // Transform
     float pos[3];
@@ -102,7 +102,6 @@ typedef struct Boss {
     // Model and rendering (owned by boss_render.c)
     void *model;       // T3DModel*
     void *modelMat;    // T3DMat4FP*
-    void *dpl;         // rspq_block_t*
     void *shadowMat;   // T3DMat4FP*
     void *dpl_shadow;  // rspq_block_t*
     bool visible;

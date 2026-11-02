@@ -22,6 +22,17 @@
 #include "game_time.h"
 
 
+// Only the clip on the skeleton holds keyframe targets (~3.3 KB a clip, 25 clips): t3d_anim_attach
+// already re-makes them at every switch, so the clip switched from frees its own. A clip without
+// them must not be updated or rewound (t3d_anim_set_time back): attach it first
+static void anim_detach(T3DAnim *a)
+{
+    if (!a || !a->targetsQuat) return;
+    free(a->targetsQuat);       // (targetsScalar is in the same block)
+    a->targetsQuat = NULL;
+    a->targetsScalar = NULL;
+}
+
 void boss_anim_init(Boss* boss) {
     if (!boss) return;
     
@@ -31,7 +42,8 @@ void boss_anim_init(Boss* boss) {
         for (int i = 0; i < boss->animationCount; i++) {
             if (anims[i]) {
                 t3d_anim_set_playing(anims[i], false);
-                t3d_anim_set_time(anims[i], 0.0f);
+                anim_detach(anims[i]);
+                anims[i]->time = 0.0f;      // (t3d_anim_attach rewinds it)
             }
         }
     }
@@ -146,6 +158,8 @@ void boss_anim_request(Boss* boss, BossAnimState target, float start_time, bool 
         
         // Reset main skeleton and attach new animation
         t3d_skeleton_reset(skeleton);
+        if (boss->previousAnimation != boss->currentAnimation && boss->previousAnimation >= 0 && boss->previousAnimation < boss->animationCount)
+            anim_detach(anims[boss->previousAnimation]);
         t3d_anim_attach(anims[boss->currentAnimation], skeleton);
         t3d_anim_set_playing(anims[boss->currentAnimation], true);
         t3d_anim_set_speed(anims[boss->currentAnimation], 1.0f);    // boss_anim_breathe holds its clip
@@ -159,6 +173,17 @@ void boss_anim_request(Boss* boss, BossAnimState target, float start_time, bool 
     } else {
         boss->lockFrames = 3;   // Normal lock
     }
+}
+
+void boss_anim_set_clip(Boss* boss, int anim)
+{
+    T3DAnim** anims = (T3DAnim**)boss->animations;
+    if (boss->currentAnimation != anim && boss->currentAnimation >= 0 && boss->currentAnimation < boss->animationCount)
+        anim_detach(anims[boss->currentAnimation]);
+    if (!anims[anim]->targetsQuat) t3d_anim_attach(anims[anim], (T3DSkeleton*)boss->skeleton);
+    t3d_anim_set_playing(anims[anim], true);
+    boss->currentAnimation = anim;
+    boss->currentAnimState = anim;
 }
 
 // The aerial barrage's levitation pose breathes between two poses of one clip, the far one

@@ -232,12 +232,7 @@ void cutscene_manager_set_boss_anim(SceneContext *ctx, int animIndex)
 {
     if (!ctx || !ctx->boss || !ctx->boss->animations) return;
 
-    T3DAnim **anims = (T3DAnim**)ctx->boss->animations;
-
-    t3d_anim_set_playing(anims[animIndex], true);
-
-    ctx->boss->currentAnimation = animIndex;
-    ctx->boss->currentAnimState = animIndex;
+    boss_anim_set_clip(ctx->boss, animIndex);
 }
 
 // ----------------------------------------------------------------------------

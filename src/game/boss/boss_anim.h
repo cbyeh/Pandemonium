@@ -9,6 +9,8 @@
 void boss_anim_init(Boss* boss);
 void boss_anim_request(Boss* boss, BossAnimState target, float start_time, bool force_restart, BossAnimPriority priority);
 void boss_anim_update(Boss* boss);
+// A cutscene's clip, played from where it stands (no crossfade, no restart)
+void boss_anim_set_clip(Boss* boss, int anim);
 // Hold `anim` at t0, blended toward its pose at t1 by k (0..1), while the aerial barrage lasts
 void boss_anim_breathe(Boss* boss, int anim, float t0, float t1, float k);
 

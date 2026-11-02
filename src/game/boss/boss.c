@@ -931,8 +931,8 @@ void boss_init(Boss* boss)
         *animations[i] = t3d_anim_create(bossModel, animationNames[i]);
         t3d_anim_set_looping(animations[i], animationsLooping[i]);
         t3d_anim_set_playing(animations[i], false);
-        t3d_anim_attach(animations[i], skeleton);
     }
+    t3d_anim_attach(animations[BOSS_ANIM_KNEEL], skeleton);     // only the clip playing holds targets (boss_anim.c)
 
     boss->animations = (void**)animations;
     boss->animationCount = animationCount;
@@ -940,11 +940,6 @@ void boss_init(Boss* boss)
     boss->currentAnimation = BOSS_ANIM_KNEEL;
     boss->currentAnimState = BOSS_ANIM_KNEEL;
     t3d_anim_set_playing(animations[BOSS_ANIM_KNEEL], true);
-
-    gpu_block_begin();
-    t3d_model_draw_skinned(bossModel, skeleton);
-    rspq_block_t* dpl = gpu_block_end();
-    boss->dpl = dpl;
 
     if (!s_bossShadowModel) {
         s_bossShadowModel = t3d_model_load("rom:/blob_shadow/shadow.t3dm");
@@ -1277,11 +1272,6 @@ void boss_free(Boss* boss)
     if (boss->modelMat) {
         gpu_wait();
         free_uncached(boss->modelMat);
-    }
-
-    if (boss->dpl) {
-        gpu_wait();
-        rspq_block_free((rspq_block_t*)boss->dpl);
     }
 
     if (boss->dpl_shadow) {
