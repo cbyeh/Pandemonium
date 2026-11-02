@@ -447,6 +447,39 @@ static inline void skeleton_prime_from_pose(T3DSkeleton* skel, const T3DSkeleton
     skeleton_copy_pose_bones(skel, poseSrc);
 }
 
+// Only the clips on a skeleton hold keyframe targets (~3 KB a clip, 25 clips): attaching one frees
+// the others' on that skeleton (attach already re-made them at every switch). A clip without them
+// is re-attached where it was before it plays (anim_update); set_time just moves its clock (attach rewinds)
+static const T3DSkeleton *s_animSkel[32];
+static int anim_index(const T3DAnim *a)
+{
+    for (int i = 0; i < character.animationCount; i++) if (character.animations[i] == a) return i;
+    return -1;
+}
+static void anim_attach(T3DAnim *a, T3DSkeleton *sk)
+{
+    t3d_anim_attach(a, sk);
+    int k = anim_index(a);
+    for (int i = 0; i < character.animationCount; i++) {
+        T3DAnim *o = character.animations[i];
+        if (i == k || s_animSkel[i] != sk || !o->targetsQuat) continue;
+        free(o->targetsQuat);      // (targetsScalar is in the same block)
+        o->targetsQuat = NULL;
+        o->targetsScalar = NULL;
+    }
+    if (k >= 0) s_animSkel[k] = sk;
+}
+static void anim_update(T3DAnim *a, float dt)
+{
+    if (a->isPlaying && !a->targetsQuat) t3d_anim_attach(a, s_animSkel[anim_index(a)]);
+    t3d_anim_update(a, dt);
+}
+static void anim_set_time(T3DAnim *a, float t)
+{
+    if (a->targetsQuat) t3d_anim_set_time(a, t);
+    else a->time = fminf(t, a->animRef->duration);
+}
+
 static inline void anim_stop_all_except(T3DAnim** set, int count, int keepIdx)
 {
     if (!set) return;
@@ -637,15 +670,15 @@ static inline void anim_bind_and_play(T3DAnim** set, int idx, T3DSkeleton* skel,
     T3DAnim* a = set[idx];
     if (!a) return;
 
-    t3d_anim_attach(a, skel);
+    anim_attach(a, skel);
     t3d_anim_set_looping(a, loop);
 
     if (restart) {
-        t3d_anim_set_time(a, 0.0f);
+        anim_set_time(a, 0.0f);
     } else if (loop) {
         float len = t3d_anim_get_length(a);
         float t   = t3d_anim_get_time(a);
-        if (len > 0.0f && t >= len) t3d_anim_set_time(a, 0.0f);
+        if (len > 0.0f && t >= len) anim_set_time(a, 0.0f);
     }
 
     t3d_anim_set_playing(a, true);
@@ -982,7 +1015,7 @@ static inline void try_start_roll(const joypad_buttons_t* buttons, const StickIn
     clear_lockon_strafe_flags_on_action();
 
     if (ANIM_ROLL >= 0 && ANIM_ROLL < character.animationCount && character.animations[ANIM_ROLL]) {
-        t3d_anim_set_time(character.animations[ANIM_ROLL], 0.0f);
+        anim_set_time(character.animations[ANIM_ROLL], 0.0f);
         t3d_anim_set_playing(character.animations[ANIM_ROLL], true);
     }
 
@@ -1066,11 +1099,11 @@ static inline bool try_free_locomotion_speed_blend(float speedRatio, CharacterSt
     // to the main skeleton, leaving runA writing into the wrong skeleton.
     // ---------------------------------------------------------------------
     if (lastAttachedMain != walkAnim) {
-        t3d_anim_attach(walkA, character.skeleton);
+        anim_attach(walkA, character.skeleton);
         lastAttachedMain = walkAnim;
     }
     if (lastAttachedBlend != runAnim) {
-        t3d_anim_attach(runA, character.skeletonBlend);
+        anim_attach(runA, character.skeletonBlend);
         lastAttachedBlend = runAnim;
     }
 
@@ -1090,7 +1123,7 @@ static inline bool try_free_locomotion_speed_blend(float speedRatio, CharacterSt
     // Phase-locked update:
     // Walk advances normally. Run is slaved to walk's phase.
     // ---------------------------------------------------------------------
-    t3d_anim_update(walkA, dt);
+    anim_update(walkA, dt);
 
     float walkLen = t3d_anim_get_length(walkA);
     float walkT   = t3d_anim_get_time(walkA);
@@ -1110,11 +1143,11 @@ static inline bool try_free_locomotion_speed_blend(float speedRatio, CharacterSt
         float runT = phase * runLen;
         while (runT >= runLen) runT -= runLen;
         while (runT <  0.0f)   runT += runLen;
-        t3d_anim_set_time(runA, runT);
+        anim_set_time(runA, runT);
     }
 
     // Sample run pose at that time without advancing
-    t3d_anim_update(runA, 0.0f);
+    anim_update(runA, 0.0f);
 
     // Blend run into walk on main skeleton
     t3d_skeleton_blend(character.skeleton, character.skeleton, character.skeletonBlend, wRun);
@@ -1613,7 +1646,7 @@ void character_set_state(CharacterState state)
         character.currentAnimation >= 0 &&
         character.currentAnimation < character.animationCount &&
         character.animations[character.currentAnimation]) {
-        t3d_anim_set_time(character.animations[character.currentAnimation], 0.0f);
+        anim_set_time(character.animations[character.currentAnimation], 0.0f);
         t3d_anim_set_playing(character.animations[character.currentAnimation], true);
     }
 }
@@ -1862,12 +1895,12 @@ static inline bool try_lockon_locomotion_blend(float speedRatio, CharacterState 
     // ------------------------------------------------------------
     // Update order
     // ------------------------------------------------------------
-    t3d_anim_update(character.animations[baseAnim], dt);
+    anim_update(character.animations[baseAnim], dt);
 
     // Prime blend skeleton from base pose first (prevents bind-pose on unkeyed bones)
     skeleton_copy_pose_bones(character.skeletonBlend, character.skeleton);
 
-    t3d_anim_update(character.animations[strafeAnim], dt);
+    anim_update(character.animations[strafeAnim], dt);
 
     // Crossfade across left/right switches
     if (strafePoseBlending) {
@@ -1929,7 +1962,7 @@ static void switch_to_action_animation(int targetAnim)
 
     // Attach + play target on main skeleton
     if (character.animations[targetAnim]) {
-        t3d_anim_attach(character.animations[targetAnim], character.skeleton);
+        anim_attach(character.animations[targetAnim], character.skeleton);
         lastAttachedMain = targetAnim;
 
         // PRIME from snapshot so first update isn't bind pose
@@ -1938,7 +1971,7 @@ static void switch_to_action_animation(int targetAnim)
         }
 
         t3d_anim_set_looping(character.animations[targetAnim], false);
-        t3d_anim_set_time(character.animations[targetAnim], 0.0f);
+        anim_set_time(character.animations[targetAnim], 0.0f);
         t3d_anim_set_playing(character.animations[targetAnim], true);
     }
 
@@ -2002,7 +2035,7 @@ static inline void start_knockdown_breakaway_attack(void)
     // Play the attack anim NOW
     if (ANIM_ATTACK1 >= 0 && ANIM_ATTACK1 < character.animationCount && character.animations[ANIM_ATTACK1]) {
         t3d_anim_set_looping(character.animations[ANIM_ATTACK1], false);
-        t3d_anim_set_time(character.animations[ANIM_ATTACK1], 0.0f);
+        anim_set_time(character.animations[ANIM_ATTACK1], 0.0f);
         t3d_anim_set_playing(character.animations[ANIM_ATTACK1], true);
     }
 
@@ -2036,7 +2069,7 @@ static inline void start_knockdown_breakaway_roll(void)
     // Play roll anim immediately
     if (ANIM_ROLL >= 0 && ANIM_ROLL < character.animationCount && character.animations[ANIM_ROLL]) {
         t3d_anim_set_looping(character.animations[ANIM_ROLL], false);
-        t3d_anim_set_time(character.animations[ANIM_ROLL], 0.0f);
+        anim_set_time(character.animations[ANIM_ROLL], 0.0f);
         t3d_anim_set_playing(character.animations[ANIM_ROLL], true);
     }
 
@@ -2148,7 +2181,7 @@ static inline void progress_action_timers(float dt, KnockdownBreakawayReq breaka
             t3d_anim_set_looping(kd, true);
 
             if (!kd->isPlaying) {
-                t3d_anim_set_time(kd, 0.0f);
+                anim_set_time(kd, 0.0f);
                 t3d_anim_set_playing(kd, true);
             } else {
                 float len = t3d_anim_get_length(kd);
@@ -2156,7 +2189,7 @@ static inline void progress_action_timers(float dt, KnockdownBreakawayReq breaka
                     float t = t3d_anim_get_time(kd);
                     if (t >= len) {
                         while (t >= len) t -= len;
-                        t3d_anim_set_time(kd, t);
+                        anim_set_time(kd, t);
                     }
                 }
             }
@@ -2273,7 +2306,7 @@ static void switch_to_locomotion_animation(int targetAnim)
 
     // Attach + play target on main skeleton
     if (character.animations[targetAnim]) {
-        t3d_anim_attach(character.animations[targetAnim], character.skeleton);
+        anim_attach(character.animations[targetAnim], character.skeleton);
         lastAttachedMain = targetAnim;
 
         // CRITICAL: attach() can reset bones -> prime skeleton with FROM pose snapshot
@@ -2289,7 +2322,7 @@ static void switch_to_locomotion_animation(int targetAnim)
                            targetAnim == ANIM_STRAFE_RUN_RIGHT);
 
         t3d_anim_set_looping(character.animations[targetAnim], shouldLoop);
-        t3d_anim_set_time(character.animations[targetAnim], 0.0f);
+        anim_set_time(character.animations[targetAnim], 0.0f);
         t3d_anim_set_playing(character.animations[targetAnim], true);
     }
 
@@ -2440,7 +2473,7 @@ static inline void update_animations(float speedRatio, CharacterState state, flo
         T3DAnim* currentAnim = character.animations[cur];
 
         if (lastAttachedMain != cur) {
-            t3d_anim_attach(currentAnim, character.skeleton);
+            anim_attach(currentAnim, character.skeleton);
             lastAttachedMain = cur;
         }
 
@@ -2466,7 +2499,7 @@ static inline void update_animations(float speedRatio, CharacterState state, flo
             lastAnimSpeed = animSpeed;
         }
 
-        t3d_anim_update(currentAnim, dt);
+        anim_update(currentAnim, dt);
     }
 
     if (character.isBlending && hasBlendSnapshot) {
@@ -2596,6 +2629,7 @@ void character_init(void)
         false,  // SkillBackflip
     };
 
+    assertf(animationCount <= (int)(sizeof(s_animSkel) / sizeof(s_animSkel[0])), "anim count %d", animationCount);
     T3DAnim** animations = malloc_uncached(animationCount * sizeof(T3DAnim*));
     for (int i = 0; i < animationCount; i++) {
         animations[i] = malloc(sizeof(T3DAnim));
@@ -2604,7 +2638,7 @@ void character_init(void)
         *animations[i] = t3d_anim_create(characterModel, animationNames[i]);
         t3d_anim_set_looping(animations[i], animationsLooping[i]);
         t3d_anim_set_playing(animations[i], false);
-        t3d_anim_attach(animations[i], skeleton);
+        s_animSkel[i] = skeleton;      // attached when it first plays
     }
 
     ATTACK1_DURATION = get_attack_duration(1);

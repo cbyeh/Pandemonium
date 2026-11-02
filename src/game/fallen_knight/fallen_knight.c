@@ -278,6 +278,15 @@ static void fade_blend(float k)
     }
 }
 
+// Only the clip playing holds keyframe targets (~3 KB a clip): the one switched from frees its own
+// (t3d_anim_attach re-makes them at every switch; nothing updates or rewinds a clip it isn't playing)
+static void anim_detach(T3DAnim *a)
+{
+    free(a->targetsQuat);       // (targetsScalar is in the same block)
+    a->targetsQuat = NULL;
+    a->targetsScalar = NULL;
+}
+
 static void play(int a, bool restart)
 {
     if (a == s.anim && !restart) return;
@@ -303,6 +312,7 @@ static void play(int a, bool restart)
     float phase = -1.0f;
     if ((a == FKA_WALK || a == FKA_RUN) && (s.anim == FKA_WALK || s.anim == FKA_RUN) && a != s.anim)
         phase = fmodf(t3d_anim_get_time(&s.anims[s.anim]) / t3d_anim_get_length(&s.anims[s.anim]), 1.0f);
+    if (s.anim >= 0 && s.anim != a) anim_detach(&s.anims[s.anim]);
     s.anim = a;
     t3d_anim_attach(&s.anims[a], &s.skel);
     t3d_anim_set_time(&s.anims[a], phase >= 0.0f ? phase * t3d_anim_get_length(&s.anims[a]) : 0.0f);
@@ -1242,6 +1252,7 @@ void fallen_knight_begin(Boss* boss)
         }
 #endif
     }
+    if (s.anim >= 0) anim_detach(&s.anims[s.anim]);
     s.anim = -1; poseN = 0;
     play(FKA_HERODROP, true);     // the entrance: the fall, the superhero landing, the rise
     s.blendT = 0.0f;
@@ -2089,7 +2100,7 @@ void fallen_knight_update(Boss* b, float dt)
         // Down from the stagger: it gets up when the clip ends and the stagger is over (the kneel
         // keeps the stance's sword arm: the blade rides on the shoulder all the way down and up)
         // The clip is 3.5 s (BOSS_STAGGER_S): a longer stagger holds the kneel until the 0.8 s rise is due
-        if (b->staggerT > KNEEL_RISE_S && clip_time() > t3d_anim_get_length(&s.anims[FKA_KNEEL]) - KNEEL_RISE_S - 0.1f)
+        if (s.anim == FKA_KNEEL && b->staggerT > KNEEL_RISE_S && clip_time() > t3d_anim_get_length(&s.anims[FKA_KNEEL]) - KNEEL_RISE_S - 0.1f)
             t3d_anim_set_time(&s.anims[FKA_KNEEL], t3d_anim_get_length(&s.anims[FKA_KNEEL]) - KNEEL_RISE_S - 0.1f);
         if (b->staggerT <= 0.0f && clip_done()) {
 #ifdef HLE_AUTOPLAY
