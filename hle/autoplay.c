@@ -713,6 +713,19 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
             extern bool tower_active(void);
+#ifdef HLE_TITLE_SEQ    // instead: these presses on the title's menus (D/U/L/R, A, B), 1 s apart, and no climb
+            {
+                static const char tseq[] = HLE_TITLE_SEQ;
+                if (t >= 60 && tseq[step]) {
+                    char c = tseq[step];
+                    if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1; else if (c == 'L') pressed->d_left = 1;
+                    else if (c == 'R') pressed->d_right = 1; else if (c == 'A') { pressed->a = 1; in->btn.a = 1; } else if (c == 'B') { pressed->b = 1; in->btn.b = 1; }
+                    debugf("[stats] title step %c at frame %d\n", c, frame);
+                    step++; t0 = frame;
+                }
+                return;
+            }
+#endif
             static const char seq[] = "DDAA";     // (Story is the first row)
             if (t >= 20 && step < 4) { if (seq[step] == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } step++; t0 = frame; }
             if (step == 4 && boss && tower_active()) { phase = 2; t0 = frame; step = 0; debugf("[stats] climbing at %d\n", frame); }
@@ -743,7 +756,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (t < 120) return;
 #endif
             character.health = character.maxHealth;     // (alive for the shots)
-            static const char seq[] = "SDAARALADDDADDAB";   // pause, Stats, Next, Right (stays on Prev), Prev, Left, Back (A only), down to Controls, its Back; B closes the pause menu
+#ifdef HLE_STATS_SEQ     // another walk through the pause menu (S, D/L/R, A, B)
+            static const char seq[] = HLE_STATS_SEQ;
+#else
+            static const char seq[] = "SDAARALADDDADDAB";
+#endif   // pause, Stats, Next, Right (stays on Prev), Prev, Left, Back (A only), down to Controls, its Back; B closes the pause menu
             if (t >= (step ? 60 : 300) && seq[step]) {
                 char c = seq[step];
                 extern bool tower_active(void);
