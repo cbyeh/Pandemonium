@@ -133,9 +133,61 @@ void hle_leak_dump(int from, int to)
     debugf("[leak] cycles %d-%d: %d blocks, %lu bytes still held\n", from, to - 1, n, (unsigned long)total);
 }
 #endif
+#if defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS)
+// Test aid: the Tower's Shop and Event screens in a scripted climb, a press every 15 frames once each is up.
+// An Event: HLE_EVENT_CHOICE (1-based; default the first it can take), then Continue. A Shop: B leaves at
+// once; with HLE_TEST_TOWER_SHOP it buys every item by the shelf's presses (the D-pad and the stick in
+// turn): a card with too little gold (refused), then with enough, a level, a "+", the pact, potions past
+// the run's max (refused), Mend twice (once sold), Release, Up/Down along the rows, then B ([shopwalk] lines;
+// tower.c logs each [shop] buy). In a Shop's or Temper's list, A takes the first row
+#ifdef HLE_LOG_MOVE_MS
+extern uint32_t dragon_vi_frame(void);
+#define SCR_VI() ((int)dragon_vi_frame())
+#else
+#define SCR_VI() -1
+#endif
+void hle_tower_screen(joypad_inputs_t *in, joypad_buttons_t *pressed, int frame)
+{
+    extern int tower_screen(void), tower_shop_sel(void), tower_list_sel(void), tower_gold(void);
+    extern bool tower_event_done(void);
+    extern void tower_test_set_gold(int);
+    enum { SCR_SHOP = 5, SCR_SHOP_LEVEL, SCR_SHOP_PLUS, SCR_SHOP_RELEASE, SCR_EVENT };     // (tower.c's)
+    static int scr = -99, since, dirs;
+    int now = tower_screen();
+    if (now != scr) { scr = now; since = 0; debugf("[shopwalk] screen %d up (frame %d, VI %d)\n", now, frame, SCR_VI()); }
+    if (++since < 60 || (since - 60) % 15) return;      // past the screen's input delay
+    #define PRESS(f) do { pressed->f = 1; in->btn.f = 1; } while (0)
+    if (now == SCR_EVENT) {
+#if defined(HLE_EVENT_CHOICE) && HLE_EVENT_CHOICE > 0
+        if (!tower_event_done() && tower_list_sel() < HLE_EVENT_CHOICE - 1) { PRESS(d_down); return; }
+#endif
+        debugf("[shopwalk] event: A on row %d (%s, frame %d, VI %d)\n", tower_list_sel() + 1, tower_event_done() ? "Continue" : "its choice", frame, SCR_VI());
+        PRESS(a);
+        return;
+    }
+    if (now != SCR_SHOP) { PRESS(a); return; }      // a list: its first row
+#ifdef HLE_TEST_TOWER_SHOP
+    static const char seq[] = "gAGADARARADLLAAAARAARAUDDB";
+    static int k;
+    if (!seq[k]) return;
+    char c = seq[k++];
+    if (c == 'g') { tower_test_set_gold(40); character.health = character.maxHealth * 0.5f; character.healthPotions = 1; }     // too little for a card; hurt and low, for Mend and potions
+    else if (c == 'G') tower_test_set_gold(600);
+    else if (c == 'A') PRESS(a);
+    else if (c == 'B') PRESS(b);
+    else if (dirs++ % 2) { if (c == 'L') in->stick_x = -70; else if (c == 'R') in->stick_x = 70; else if (c == 'U') in->stick_y = 70; else in->stick_y = -70; }
+    else { if (c == 'L') PRESS(d_left); else if (c == 'R') PRESS(d_right); else if (c == 'U') PRESS(d_up); else PRESS(d_down); }
+    debugf("[shopwalk] '%c'%s on item %d, gold %d (frame %d, VI %d)\n", c, (c == 'L' || c == 'R' || c == 'U' || c == 'D') ? (dirs % 2 ? " D-pad" : " stick") : "",
+           tower_shop_sel(), tower_gold(), frame, SCR_VI());
+#else
+    PRESS(b);
+#endif
+    #undef PRESS
+}
+#endif
 #ifdef HLE_MAP_WALK
-// Test aid (with HLE_TEST_TOWER_RUN): a path through the Tower's map that enters a Rest in rows 2-5 and
-// an Elite when it can (else a Fight), moving with the D-pad and the stick in turn and entering with A
+// Test aid (with HLE_TEST_TOWER_RUN): a path through the Tower's map that enters a Shop, an Event, a Rest in
+// rows 2-5 and an Elite when it can, once each (else a Fight), moving with the D-pad and the stick in turn and entering with A
 // and Up in turn; at each Rest, two of HLE_REST_SEQ's letters: H heal, T Temper (the first on its list),
 // P potions, then k (keep the boons) or n (release the n-th on the list: slot order)
 #ifndef HLE_REST_SEQ
@@ -150,19 +202,21 @@ extern uint32_t dragon_vi_frame(void);
 void hle_map_walk(joypad_inputs_t *in, joypad_buttons_t *pressed, int frame)
 {
     extern int tower_screen(void), tower_map_row(void), tower_map_sel(void), tower_map_next(int), tower_list_sel(void);
-    enum { NODE_FIGHT = 1, NODE_ELITE = 2, NODE_REST = 5, SCR_MAP = 1, SCR_REST, SCR_TEMPER, SCR_RELEASE };     // (tower.c's)
+    enum { NODE_FIGHT = 1, NODE_ELITE = 2, NODE_EVENT = 3, NODE_SHOP = 4, NODE_REST = 5, SCR_MAP = 1, SCR_REST, SCR_TEMPER, SCR_RELEASE, SCR_SHOP };     // (tower.c's)
     static const char seq[] = HLE_REST_SEQ;
-    static int scr = -99, row = -99, since, target, moves, enters, rp, want; static bool sawRest, sawElite;
+    static int scr = -99, row = -99, since, target, moves, enters, rp, want; static bool sawRest, sawElite, sawShop, sawEvent;
     int now = tower_screen(), r = tower_map_row();
+    if (now >= SCR_SHOP) { hle_tower_screen(in, pressed, frame); return; }      // a Shop's screens, an Event's
     if (now != scr || r != row) { scr = now; row = r; since = 0; want = -1; }
     if (++since < 60) return;       // past the screen's input delay
     bool tick = (since - 60) % 12 == 0;
     if (now == SCR_MAP) {
         if (since == 60) {
             target = -1;
-            static const int PREF[3] = { NODE_REST, NODE_ELITE, NODE_FIGHT };
-            for (int p = 0; p < 3 && target < 0; p++) {
-                if ((PREF[p] == NODE_REST && (sawRest || r + 1 < 1 || r + 1 > 4)) || (PREF[p] == NODE_ELITE && sawElite)) continue;
+            static const int PREF[5] = { NODE_SHOP, NODE_EVENT, NODE_REST, NODE_ELITE, NODE_FIGHT };
+            for (int p = 0; p < 5 && target < 0; p++) {
+                if ((PREF[p] == NODE_REST && (sawRest || r + 1 < 1 || r + 1 > 4)) || (PREF[p] == NODE_ELITE && sawElite)
+                    || (PREF[p] == NODE_SHOP && sawShop) || (PREF[p] == NODE_EVENT && sawEvent)) continue;
                 for (int l = 0; l < 3; l++) if (tower_map_next(l) == PREF[p]) { target = l; break; }
             }
             debugf("[walk] map row %d next: %d %d %d, cursor %d, going to %d (frame %d, VI %d)\n", r + 2, tower_map_next(0), tower_map_next(1), tower_map_next(2), tower_map_sel(), target, frame, WALK_VI());
@@ -179,6 +233,8 @@ void hle_map_walk(joypad_inputs_t *in, joypad_buttons_t *pressed, int frame)
         int t = target >= 0 ? tower_map_next(target) : tower_map_next(sel);
         if (t == NODE_REST && r + 1 >= 1 && r + 1 <= 4) sawRest = true;
         if (t == NODE_ELITE) sawElite = true;
+        if (t == NODE_SHOP) sawShop = true;
+        if (t == NODE_EVENT) sawEvent = true;
         if (enters++ % 2) { pressed->d_up = 1; in->btn.d_up = 1; } else { pressed->a = 1; in->btn.a = 1; }
         debugf("[walk] enter with %s (frame %d)\n", enters % 2 ? "A" : "Up", frame);
         return;
@@ -550,6 +606,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         if (tower_mod_max_potions() != 3 || !tower_mod_skill_allowed(0) || tower_boss_health_scale(3) != 1.0f) fails++;
         { extern int tower_test_slots(void); fails += tower_test_slots(); }     // slots, levels, a full bar, packs, weighting, save bits
         { extern int tower_test_stage2(void); fails += tower_test_stage2(); }   // rivals, "+", duos
+        { extern int tower_test_shop(void), tower_test_events(void); fails += tower_test_shop(); fails += tower_test_events(); }   // gold, the Shop, the Events
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }
     return;
@@ -860,6 +917,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             static bool fighting;
             extern bool tower_between_open(void);
             if (!fighting) { if (!boss || boss->mode != BOSS_MODE_COMBAT || tower_between_open()) { t0 = frame; if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; } return; } fighting = true; t0 = frame; return; }   // (the map first: A enters the Guardian)
+            { extern int tower_screen(void); if (tower_screen() >= 5) { hle_tower_screen(in, pressed, frame); t0 = frame; return; } }     // a Shop or an Event on the way
 #ifdef HLE_TOWER_HEALCHECK   // the healing boons, measured in the fight (every boon held: Bloodthirst 2, Rally, Phantom Step)
             if (t == 100) {
                 extern void tower_on_perfect_dodge(void); extern float tower_mod_perfect_window(void), tower_mod_damage_dealt(void);
@@ -945,7 +1003,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (t == 300) { pressed->a = 1; in->btn.a = 1; }      // the first card
             static bool mapSeen;
             if (t == 340 && !mapSeen) { mapSeen = true; debugf("[ui] map %s at %d\n", tower_map_is_open() ? "open" : "CLOSED", frame); }
-            if (t >= 340 && t < 420 && tower_between_open()) { t0 = frame - 341; if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; } }   // the map: A on its node (a Rest: heal, keep the boons, then the map again)
+            if (t >= 340 && t < 420 && tower_between_open()) {     // the map: A on its node (a Rest: heal, keep the boons; a Shop: B; an Event: A), then the map again
+                extern int tower_screen(void);
+                t0 = frame - 341;
+                if (tower_screen() >= 5) hle_tower_screen(in, pressed, frame);
+                else if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            }
             if (t == 420) debugf("[ui] floor %d: skills usable %d %d %d\n", tower_floor(), tower_mod_skill_allowed(0), tower_mod_skill_allowed(1), tower_mod_skill_allowed(2));
             if (t == 430) { int k = tower_mod_skill_allowed(0) ? 0 : tower_mod_skill_allowed(1) ? 1 : 2;
                             if (k == 0) pressed->d_up = 1; else if (k == 1) pressed->d_right = 1; else pressed->d_down = 1; }
@@ -998,7 +1061,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_MAP_WALK
                 extern void hle_map_walk(joypad_inputs_t *, joypad_buttons_t *, int); hle_map_walk(in, pressed, frame);
 #else
-                if (frame % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
+                extern int tower_screen(void);
+                if (tower_screen() >= 5) hle_tower_screen(in, pressed, frame);     // a Shop (B leaves; HLE_TEST_TOWER_SHOP buys), an Event (A)
+                else if (frame % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
 #endif
                 return;
             }
