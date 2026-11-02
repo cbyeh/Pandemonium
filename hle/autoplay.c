@@ -1941,6 +1941,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         int t = (frame - start) % 200, cyc = (frame - start) / 200;
         static float hp0; static int t0;
         if (t == 0) {
+#ifdef HLE_SDMG_TOWER     // in a Tower run holding every skill and the Halfmoon+/Cleave+ cards
+            { extern void tower_begin_run(uint32_t); extern bool tower_active(void); if (!tower_active()) tower_begin_run(1); }
+#endif
             boss->health = boss->maxHealth; hp0 = boss->health;
             float a = atan2f(character.pos[0] - boss->pos[0], character.pos[2] - boss->pos[2]);
             character.pos[0] = boss->pos[0] + sinf(a) * 30.0f; character.pos[2] = boss->pos[2] + cosf(a) * 30.0f;

@@ -278,6 +278,10 @@ void tower_begin_run(uint32_t seed)
     for (int b = 0; b < PB_COUNT; b++) s.bless[b] = 2;
     for (int c = 0; c < PC_COUNT; c++) s.curse[c] = 2;
 #endif
+#ifdef HLE_SDMG_TOWER   // test aid (HLE_TEST_SKILL_DMG): every skill known, both damage cards held
+    s.skills = (1 << SKILL_COUNT) - 1;
+    s.stacks[BOON_HALFMOON_PLUS] = s.stacks[BOON_CLEAVE_PLUS] = 1;
+#endif
 #ifdef HLE_TOWER_GIVE   // test aid: start the run holding this boon
     s.stacks[HLE_TOWER_GIVE] = 1;
 #endif
