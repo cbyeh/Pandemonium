@@ -63,6 +63,17 @@ Stage 6 built (2026-11-02): the six elite affixes, Berserker, and the balance pa
 - **The builds, measured** (section 14d: a bot on four bosses, the core five's band +-10%), retuned: Static +1.5 a level (was +3) and Thunderclap 6 (was 8; Thunderclap+ 9): the Storm build 192 -> 160 a minute (+21% -> +4%); Shattering Dance's crosses two thirds of a sword hit's stagger each (was a fifth) and 1.75 damage (was 1.5): the stagger build 124 -> 147 (-22% -> -5%; more stagger alone stopped paying past two thirds); Full Moon's slash x1.15 (38.6): 140 -> 145 (-12% -> -6%); Crescent Storm's trailing blades 70% (27.5-29 a cast): 174 -> 157 (+12% -> +2%, with the blades hitting 7 round again). Rally heals far over its target (section 14d): the user's rule, left for the user.
 - **The skills at Lv 1 are today's, in the Tower too** (the user's call): a Cleave blade hits 7 round again (stage 5's 4 is reverted: the Story's Cleave 12.5 a cast, as on main), and Moon Blade Dance's Lv 2-4 and Full Moon Dance keep Lv 1's stagger on their first five crosses (stage 5 gave them none: never less than Lv 1); the extra crosses fill none. Everything outside a Tower run plays as on main e0a7988 (section 14d: the same [sdmg] a cast, skill by skill).
 
+UI pass (2026-11-03, after the user's play-test of v1.1-beta): calls made while building it:
+- **No map before the run's first fight** (always the Guardian): the run starts in its fight, its music with it; the map first shows after its draft. A new circle's map still shows before its Guardian (it's the circle's layout and night).
+- **Music:** only fights play music; the draft, the map, a node's page, the Shop, the Events and the Rests are silent (a boss's death fades its music out over the 2 s before the draft). Measured with `HLE_TEST_TOWER_NAV` ([nav] music lines).
+- **Pick, then confirm** (section 2's controls). The page's title is the node ("Elite Relentless Smouldering Shackled Sun"; the button says Enter), so the longest Elite fits one line; every node's page fits one page (self-check); a longer one would page with Up/Down.
+- **B goes back a level and never enters anything:** the map's B opens the pause menu on Stats; a node's page, back to the map; a Shop's B leaves it (its Leave); an Event's B is its Leave (Continue after a choice); a Rest's first screen goes back to the map with the Rest still to choose (nothing was rolled); Temper back to the Rest's choices; Release keeps every boon; a Shop's lists back to its shelf. **The draft ignores B:** it comes up under a fight's mashed attack (B is the sword in the Classic layout), so B there must never take or skip a card; the draft has no screen behind it.
+- **R: Details** on draft cards, Shop items, map nodes, Rest and Event rows, Temper's and Release's lists, the Build page's rows and the Shrine's entries: what it does in full (every card has a full text, `BOON_FULL`), its family and tier, its level now and its most, its rival (what it locks out, and "locked out this run" when its rival was taken), its "+", the duos it feeds, a skill's level track (the current level marked) and both forms (taken, locked, or bought at the Shrine first). R or B closes it. A small "R Details" shows where it's offered.
+- **One pagination** (`src/utilities/ui_pages.[ch]`, the Stats pages' style: the corners Back | Next >, < Prev | Next >, < Prev, Left/Right pick one, A takes it, B is Back from any page; "2/3" between them): the pause menu's Stats and Build (now one paged list, Stats then Build; Up/Down walk the Build rows, A or R a row's Details), and the Details panel. Built to be reused by the Codex.
+- **Text that clipped:** the draft's night line (two lines under the cards, past the screen's foot) is one line in the header now ("Next: floor 8, a new circle: Starfall"; the night's effect is on the map's top line, the Guardian's page and Stats); the map's two bottom lines and the Shop's and Event's last lines were below the title-safe area (227-230 for 222); the Shrine's Unlocks list ran its description off the dialog (now a one-line summary, the whole pack in its Details). Cards' text is checked against the card (the forms' rival under the text overlapped it: the cards are 10 px taller, the next floor moved to the header), and every one-line text against its room with 5-digit gold, floor 123 and Ascension 19 (self-checks in `HLE_TEST_TOWER`).
+- The screens between fights keep inside the title-safe area at any overscan setting (never wider than the fixed 7.5%: the default and smallest settings show a little more, a larger one moves the edge lines in).
+- **Heap** (Ares, 4 MB, stage 6's path `HLE_RUN_CLIMB HLE_RUN_STRIKE HLE_RUN_TOPUP HLE_RUN_FLOORS=7 HLE_TOWER_SB_LAST`, seeds 11/22/33): low point 481/481/466 KB (153bb66 on the same seeds: 478/465/462). The pass adds about 23 KB of code and text; it's paid for by the Controls page's icons (26 KB of CI8 sprites held from boot, now loaded with the page: a shared change, the Story's fights gain it too) and by the cards' full texts living in ROM (`assets/ui/tower_text.bin`, read while a Details page is built: 5.5 KB). The Details page and the Stats pages are on the heap only while open.
+
 Scope approved by the user (2026-11-01): a branching map each circle (4-6 fights a path), Vampire Survivors-style slots (5 boon slots, boons levelling inside their slot; the three skills level outside them, with two final forms each, and no new skills), boon families with duos as evolutions, rival pairs and "+" upgrades, and elite affixes. Not in scope: rerolls, removing boons, relics found mid-run. Nothing here is built yet. Numbers are starting points for the balance pass (stage 5).
 
 ## 1. Why every deep run ends the same
@@ -91,7 +102,7 @@ A circle becomes a **7-row map** with 3 lanes, climbed bottom to top. Each node 
 - **"Floor" counts fights,** as now. The HUD's Floor N, the best-floor record and Embers per floor keep their meaning. The circle counter (and its Ascension label) goes up per map.
 - **Drafts:** after every Fight and Elite, as now. Events, Shops and Rests give no draft.
 - **Fights a path:** 4-6 a circle, set by the route (the user's call): a greedy route earns more drafts and gold for more damage taken.
-- **When the map shows:** after the draft, and before the circle's first fight. It's a full-screen menu drawn over the darkened hall, like the draft. It holds no 3D scene and loads nothing.
+- **When the map shows:** after the draft, and before a new circle's first fight (not before the run's first: it's always the Guardian, so the run starts in its fight). It's a full-screen menu drawn over the darkened hall, like the draft. It holds no 3D scene and loads nothing.
 
 ### Drawing it (320x240)
 - **Nodes:** 7 rows, 26 px apart, bottom to top, in 3 lanes at x = 100 / 160 / 220. Each node is a 16x16 icon:
@@ -104,13 +115,11 @@ A circle becomes a **7-row map** with 3 lanes, climbed bottom to top. Each node 
   - a Fight names its boss once you're beside it.
 - **The top line** shows Floor, Ascension, Night and gold.
 
-### Controls (the same in every layout)
-- **Left/Right**, on the D-pad or the stick, moves between the reachable nodes in the next row.
-- **A** enters the node.
-- **Up** does the same as A, as Up/Down already do in the draft.
-- **Start** opens the pause menu, whose Stats pages also show gold.
-- **B** does nothing, so no one skips a node by accident.
-- The C buttons and Z aren't used, so the Skills-on-C layout changes nothing.
+### Controls (the same in every layout; the UI pass of 2026-11-03, the user's choice: pick, then confirm)
+- **Left/Right**, on the D-pad or the stick, moves between the reachable nodes in the next row. **Up/Down never enter.**
+- **A** opens the node's page (what waits there: the boss and its affixes, the reward, the night on a boss node) with **Enter** and **Back**: A there enters, B (or Back) returns to the map.
+- **B** opens the pause menu on Stats (the screen behind the map); **R** the node's Details.
+- **Start** opens the pause menu too. The C buttons, Z and R aren't moved by any layout, so the Skills-on-C layout changes nothing.
 
 ## 3. Gold and the shop
 Gold is for this run only and is lost when the run ends. Embers work as now.
