@@ -188,7 +188,9 @@ static BonusFight s_bonusFight = BONUS_NONE;   // set by the title Bonus menu
 static bool  s_tower;             // set by the title Tower menu: the next scene_init climbs
 static bool  s_towerDraft;        // between floors: the draft, the map, a Rest
 static float s_towerDeadT;        // the floor's boss has lain dead this long
-static bool  s_towerLastL, s_towerLastR, s_towerLastA;
+static bool  s_towerLastL, s_towerLastR, s_towerLastA, s_towerLastU, s_towerLastD, s_towerLastB, s_towerLastRB;
+// no carried-over press on the screens between floors (a fight's mashing, the pause menu's A or B)
+static void scene_tower_hold_presses(void) { s_towerLastL = s_towerLastR = s_towerLastA = s_towerLastU = s_towerLastD = s_towerLastB = s_towerLastRB = true; }
 static void scene_tower_begin_run(void);
 static int   s_bonusBeat;                     // bonus intro/outro script step
 static float s_bonusEndTimer;
@@ -1434,10 +1436,10 @@ static void scene_tower_begin_run(void)
     gameState = GAME_STATE_PLAYING;
     bossUiIntro = playerUiIntro = 0.0f;
     character_ui_set_intro(0.0f);
-    scene_tower_start_floor();        // the Guardian waits in the hall while the circle's map is up
-    tower_map_open();
-    s_towerDraft = true;
-    s_towerLastL = s_towerLastR = s_towerLastA = true;   // no carried-over press
+    // The run's first fight is always the Guardian: straight into it, no map before it (the map shows
+    // after its draft). Its music starts with the fight, as every floor's
+    tower_enter_guardian();
+    scene_tower_start_floor();
 }
 
 // Between floors: the draft, then the map (and a Rest's, a Shop's or an Event's screens); once a fight's node is entered, its floor
@@ -1445,10 +1447,10 @@ static void scene_tower_draft_update(void)
 {
     bool l = btn.d_left || joypad.stick_x < -40, r = btn.d_right || joypad.stick_x > 40, a = btn.a;
     bool u = btn.d_up || joypad.stick_y > 40, d = btn.d_down || joypad.stick_y < -40;
-    static bool lastU, lastD, lastB;
-    bool b = btn.b;     // (B leaves a Shop)
-    bool fight = tower_between_update(l && !s_towerLastL, r && !s_towerLastR, u && !lastU, d && !lastD, a && !s_towerLastA, b && !lastB);
-    s_towerLastL = l; s_towerLastR = r; s_towerLastA = a; lastU = u; lastD = d; lastB = b;
+    bool b = btn.b, rr = btn.r;     // (B back a level, R Details; the menus' buttons are the same in every layout)
+    bool fight = tower_between_update(l && !s_towerLastL, r && !s_towerLastR, u && !s_towerLastU, d && !s_towerLastD, a && !s_towerLastA, b && !s_towerLastB, rr && !s_towerLastRB);
+    s_towerLastL = l; s_towerLastR = r; s_towerLastA = a; s_towerLastU = u; s_towerLastD = d; s_towerLastB = b; s_towerLastRB = rr;
+    if (tower_take_pause_request()) { menu_controller_open_pause(MENU_MAIN_RUN); return; }     // the map's B: the pause menu, on Stats
     if (!fight) return;
     s_towerDraft = false;
     scene_tower_start_floor();
@@ -1776,6 +1778,7 @@ void scene_update(void) {
     if (lastMenuActive && !pauseMenuBlocking) {
         // Menu was just closed - reset character button state to prevent false "just pressed"
         character_reset_button_state();
+        scene_tower_hold_presses();     // (the A of Resume, the B that closed it: not a press on the map)
     }
     lastMenuActive = pauseMenuBlocking;
 
@@ -1870,7 +1873,7 @@ void scene_update(void) {
                 if (s_towerDeadT >= 2.0f) {     // let the death play out, then the draft
                     tower_floor_cleared();
                     s_towerDraft = true;
-                    s_towerLastL = s_towerLastR = s_towerLastA = true;   // no carried-over press
+                    scene_tower_hold_presses();
                     return;
                 }
             }
@@ -2601,6 +2604,10 @@ void scene_draw(T3DViewport *viewport)
             // Full-screen overlay with prompt to restart
             rdpq_set_prim_color(RGBA32(0, 0, 0, 140));
             rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+            if (s_tower) {      // a band under the Tower's summary: it stays legible over the Sun or a fire
+                rdpq_set_prim_color(RGBA32(0, 0, 0, 150));
+                rdpq_fill_rectangle(0, SCREEN_HEIGHT / 2 - 28, SCREEN_WIDTH, SCREEN_HEIGHT / 2 + 48);
+            }
             rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
 
             rdpq_text_printf(&(rdpq_textparms_t){
@@ -2616,7 +2623,7 @@ void scene_draw(T3DViewport *viewport)
             if (deathRestartLockoutTimer >= DEATH_RESTART_LOCKOUT_S) {
                 const char *label = "Restart";
                 const int gap = 6;
-                const int y = (SCREEN_HEIGHT / 2) + (s_tower ? 34 : 20);    // below the Tower's two summary lines
+                const int y = (SCREEN_HEIGHT / 2) + (s_tower ? 40 : 20);    // below the Tower's two summary lines
 
                 // Source sprite is 64×64; scale down to match other UI button sizes.
                 const float kTargetPx = 20.0f;

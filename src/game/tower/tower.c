@@ -11,6 +11,7 @@
 #include "video_controller.h"
 #include "video_layout.h"
 #include "joypad_utility.h"
+#include "ui_pages.h"
 #include "game/boss/boss.h"
 
 // ---- Tuning ----
@@ -63,7 +64,7 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_BLOOD_PACT]    = { "Blood Pact",    "+35% damage, potions -25%", 1, TIER_LEGENDARY, FAM_BLOOD },
     [BOON_RALLY]         = { "Rally",         "Hit back to win lost health", 2, TIER_RARE, FAM_BLOOD },
     [BOON_HEMORRHAGE]    = { "Hemorrhage",    "Finishers bleed 4 over 3 s", 3, TIER_COMMON, FAM_BLOOD, 1 },
-    [BOON_SANGUINE_FLASK]= { "Sanguine Flask","A potion: +25% damage for 6 s", 1, TIER_RARE, FAM_BLOOD, 1 },
+    [BOON_SANGUINE_FLASK]= { "Sanguine Flask","Potion: +25% damage 6 s", 1, TIER_RARE, FAM_BLOOD, 1 },
     [BOON_RED_THIRST]    = { "Red Thirst",    "+10% damage per 25% health lost", 3, TIER_COMMON, FAM_BLOOD, 1 },
     [BOON_STATIC]        = { "Static",        "Storm Blade +1.5, or a bolt each 8th hit", 4, TIER_COMMON, FAM_STORM, 1 },
     [BOON_THUNDERCLAP]   = { "Thunderclap",   "Combo finishers call lightning", 1, TIER_RARE, FAM_STORM, 1 },
@@ -75,7 +76,7 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_HEAVY_HAND]    = { "Heavy Hand",    "Finishers: +20% stagger", 3, TIER_COMMON, FAM_IRON, 1 },
     [BOON_STALWART]      = { "Stalwart",      "Blows over 20% of max health -25%", 1, TIER_RARE, FAM_IRON, 1 },
     [BOON_SHADOW_EDGE]   = { "Shadow Edge",   "+8% damage for 2 s after a roll", 4, TIER_COMMON, FAM_SHADOW, 1 },
-    [BOON_EVASION]       = { "Evasion",       "Perfect dodges refund the roll", 1, TIER_RARE, FAM_SHADOW, 1 },
+    [BOON_EVASION]       = { "Evasion",       "A perfect dodge's roll is free", 1, TIER_RARE, FAM_SHADOW, 1 },
     [BOON_VANISH]        = { "Vanish",        "3 perfect dodges: a blow deals 0", 1, TIER_LEGENDARY, FAM_SHADOW, 1 },
     [BOON_PROSPECTOR]    = { "Prospector",    "+20% gold",                    3, TIER_COMMON, FAM_HEARTH, 1 },   // (Quick Draught is still held back)
     [BOON_BERSERKER]     = { "Berserker",     "Below half: +8% a hit, no potions", 1, TIER_LEGENDARY, FAM_BLOOD, 1 },
@@ -88,8 +89,8 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_SHATTERING_DANCE]= { "Shattering Dance", "Crosses that stagger", 1, TIER_LEGENDARY, FAM_SKILL },
     [BOON_TWIN_MOON]       = { "Twin Moon",        "A second slash, 40% of the first", 1, TIER_LEGENDARY, FAM_SKILL },
     [BOON_FULL_MOON]       = { "Full Moon",        "360 degrees, unbreakable, 2x stagger", 1, TIER_LEGENDARY, FAM_SKILL },
-    [BOON_CRESCENT_STORM]  = { "Crescent Storm",   "3 more blades behind", 1, TIER_LEGENDARY, FAM_SKILL },
-    [BOON_LONG_CLEAVE]     = { "Long Cleave",      "Blades fly 1.6x as far, 6 hits", 1, TIER_LEGENDARY, FAM_SKILL },
+    [BOON_CRESCENT_STORM]  = { "Crescent Storm",   "3 trailing blades", 1, TIER_LEGENDARY, FAM_SKILL },
+    [BOON_LONG_CLEAVE]     = { "Long Cleave",      "1.6x the range, 6 hits", 1, TIER_LEGENDARY, FAM_SKILL },
     // "+" (docs/design/TOWER_ROGUELIKE.md section 10; Second Wind+ is held back: a potion is drunk at once)
     [BOON_EMBER_EDGE_PLUS]    = { "Ember Edge+",    "Finishers +25%",              1, TIER_RARE, FAM_HEARTH, PLUS(BOON_EMBER_EDGE) },
     [BOON_IRON_SKIN_PLUS]     = { "Iron Skin+",     "The first blow a floor deals half", 1, TIER_RARE, FAM_IRON, PLUS(BOON_IRON_SKIN) },
@@ -127,10 +128,34 @@ static const uint8_t RIVALS[][2] = {
 };
 // A skill card's next level (Lv 2-4), what it adds
 static const char *const SKILL_LV_DESC[SKILL_COUNT][3] = {
-    { "Crosses deal 1.5", "+2 crosses", "Cooldown 12 s" },
+    { "Crosses deal 1.5", "+2 crosses", "12 s cooldown" },
     { "Charges in 1.6 s", "+20% damage", "Reach +25%" },
     { "+20% damage", "Blades hit 5 times", "Wind-up 0.6 s" },
 };
+// What each card does in full, for its Details panel (R): the numbers are the code's
+// What each card does in full, for its Details panel (R), and the affixes' (the numbers are the code's): in ROM,
+// rom:/ui/tower_text.bin, a text a line after its header line (every BoonId in order, then the six affixes), read when
+// a Details page is built and freed after it (the page keeps its own copy): about 7 KB less RAM in a fight
+enum { TXT_BOON = 0, TXT_AFFIX = BOON_COUNT, TXT_COUNT = BOON_COUNT + AFX_COUNT };
+static char *s_text;
+static const char *s_line[TXT_COUNT];
+static void text_load(void)
+{
+    if (s_text) return;
+    int n = 0;
+    s_text = asset_load("rom:/ui/tower_text.bin", &n);     // (libdragon's loader: stdio's would add 4 KB of code)
+    if (!s_text) return;
+    char *c = s_text, *end = s_text + n;
+    for (int k = -1; k < TXT_COUNT && c < end; k++) {       // (line -1: the header)
+        char *nl = memchr(c, '\n', end - c);
+        if (!nl) break;     // (the file ends with a newline: a text without one is left out)
+        *nl = 0;
+        if (k >= 0) s_line[k] = c;
+        c = nl + 1;
+    }
+}
+static void text_free(void) { free(s_text); s_text = NULL; memset(s_line, 0, sizeof s_line); }
+static const char *full_text(int k) { return k >= 0 && k < TXT_COUNT && s_line[k] ? s_line[k] : ""; }
 #define SKILL_LV_MAX 4      // a skill card's levels; Lv 5 is a form
 #define FORM_COST    200    // a B form at the Shrine (section 14b)
 #define SKILL_CARD_CHANCE 33    // % of drafts with a skill card, once a skill is known
@@ -218,11 +243,11 @@ static const int TIER_PRICE[3] = { 60, 110, 180 };
 
 // ---- Nights (from the second circle) ----
 typedef enum { NIGHT_NONE, NIGHT_BLOOD_MOON, NIGHT_IRON, NIGHT_STARFALL, NIGHT_COUNT } Night;
-static const struct { const char *name, *desc; float embers; } NIGHTS[NIGHT_COUNT] = {
-    [NIGHT_NONE]       = { "", "", 1.0f },
-    [NIGHT_BLOOD_MOON] = { "Blood Moon", "Bosses hit 20% harder", 1.5f },
-    [NIGHT_IRON]       = { "Iron Night", "Bosses +25% health", 1.3f },
-    [NIGHT_STARFALL]   = { "Starfall",   "Skills recharge 30% faster; bosses hit 10% harder", 1.2f },
+static const struct { const char *name, *desc; float embers; const char *brief; } NIGHTS[NIGHT_COUNT] = {     // (brief: one line on the map)
+    [NIGHT_NONE]       = { "", "", 1.0f, "" },
+    [NIGHT_BLOOD_MOON] = { "Blood Moon", "Bosses hit 20% harder", 1.5f, "blows +20%" },
+    [NIGHT_IRON]       = { "Iron Night", "Bosses +25% health", 1.3f, "bosses +25% health" },
+    [NIGHT_STARFALL]   = { "Starfall",   "Skills recharge 30% faster; bosses hit 10% harder", 1.2f, "skills 30% faster, blows +10%" },
 };
 
 // ---- Relics: two of these effects each ----
@@ -277,9 +302,13 @@ static const char *const NODE_NAMES[NODE_TYPES] = { "", "Fight", "Elite", "Event
 static const char *const BOSS_NAMES[] = { "Guardian", "Guardian Unbound", "Fallen Warrior", "Shackled Sun", "Shadowborne" };
 #define ELITE_HP      1.25f     // an Elite: the boss at x1.25 health, and its affixes (section 11)
 // The affixes: one an Elite in circles 1-3, two from circle 4; the last three unlocked by the best floor (section 14b)
-static const struct { const char *name; uint8_t floor; } AFFIXES[AFX_COUNT] = {
-    [AFX_SWIFT] = { "Swift", 0 }, [AFX_IRONCLAD] = { "Ironclad", 0 }, [AFX_ENRAGED] = { "Enraged", 0 },
-    [AFX_RELENTLESS] = { "Relentless", 15 }, [AFX_VAMPIRIC] = { "Vampiric", 20 }, [AFX_SMOULDERING] = { "Smouldering", 25 },
+static const struct { const char *name; uint8_t floor; } AFFIXES[AFX_COUNT] = {     // (their Details: full_text(TXT_AFFIX + a))
+    [AFX_SWIFT]       = { "Swift", 0 },
+    [AFX_IRONCLAD]    = { "Ironclad", 0 },
+    [AFX_ENRAGED]     = { "Enraged", 0 },
+    [AFX_RELENTLESS]  = { "Relentless", 15 },
+    [AFX_VAMPIRIC]    = { "Vampiric", 20 },
+    [AFX_SMOULDERING] = { "Smouldering", 25 },
 };
 #define AFX_TWO_CIRCLE   4      // two affixes from this circle
 #define SWIFT_PACE       1.20f  // footwork, breathers and its moves' cooldowns (strike timing unchanged; 1.12 cost x1.42, under the 1.5-1.7 band)
@@ -303,7 +332,7 @@ static const struct { const char *name; uint8_t floor; } AFFIXES[AFX_COUNT] = {
 #define ELITE_EMBERS  1.5f
 #define REST_HEAL     0.40f     // a Rest: heal 40%, Temper +1 level, or +2 potions (and Release a boon, free)
 #define REST_POTIONS  2         // up to POTION_CAP: fights already bank potions past the run's max (section 12)
-enum { SCR_NONE, SCR_MAP, SCR_REST, SCR_TEMPER, SCR_RELEASE, SCR_SHOP, SCR_SHOP_LEVEL, SCR_SHOP_PLUS, SCR_SHOP_RELEASE, SCR_EVENT };
+enum { SCR_NONE, SCR_MAP, SCR_REST, SCR_TEMPER, SCR_RELEASE, SCR_SHOP, SCR_SHOP_LEVEL, SCR_SHOP_PLUS, SCR_SHOP_RELEASE, SCR_EVENT, SCR_CONFIRM };   // (the confirm: the map's node page)
 // The Shop's shelf: three rows of three, then Leave (Left/Right along it, Up/Down a row)
 enum { SHOP_CARD0, SHOP_CARD1, SHOP_CARD2, SHOP_LEVEL, SHOP_PLUS, SHOP_PACT, SHOP_POTION, SHOP_MEND, SHOP_RELEASE, SHOP_LEAVE, SHOP_ITEMS };
 // The Events (section 4): 1-4 from the start, 5-8 by best floor 10, 15, 20, 25 (section 14b)
@@ -692,6 +721,7 @@ bool tower_nightfarer_buy(void)
 void tower_begin_run(uint32_t seed)
 {
     memset(&s, 0, sizeof(s));
+    if (ui_details()->owner == UI_OWNER_TOWER) ui_panel_close(ui_details());     // (one left open by a run quit from the pause menu)
     s.active = true;
     s.floor = 1;
     s.rng = seed ? seed : 1;
@@ -781,7 +811,8 @@ void tower_begin_run(uint32_t seed)
 }
 
 static void icons_free(void);
-void tower_end_run(void) { s.active = false; s.draftOpen = false; s.scr = SCR_NONE; icons_free(); }
+static int map_enter(void);
+void tower_end_run(void) { s.active = false; s.draftOpen = false; s.scr = SCR_NONE; icons_free(); if (ui_details()->owner == UI_OWNER_TOWER) ui_panel_close(ui_details()); }   // (a run quit from its Details)
 bool tower_active(void) { return s.active; }
 int  tower_floor(void) { return s.floor; }
 int  tower_circle(void) { return s.circle; }
@@ -1153,6 +1184,14 @@ static int text_style(int x, int y, int w, rdpq_align_t align, int style, const 
 }
 
 static void text(int x, int y, int w, rdpq_align_t align, const char *str) { text_style(x, y, w, align, FONT_STYLE_WHITE, str); }
+// The title-safe area for the screens between fights: never wider than the fixed 7.5% one (the default
+// overscan setting shows a little more of the screen, a larger one less: the edges' lines move in with it)
+static int safe_mx(void) { int m = ui_safe_margin_x(); return m < TITLE_SAFE_MARGIN_X ? TITLE_SAFE_MARGIN_X : m; }
+static int safe_my(void) { int m = ui_safe_margin_y(); return m < TITLE_SAFE_MARGIN_Y ? TITLE_SAFE_MARGIN_Y : m; }
+#define SAFE_X0 safe_mx()
+#define SAFE_X1 (SCREEN_WIDTH - safe_mx())
+#define SAFE_Y0 safe_my()
+#define SAFE_Y1 (SCREEN_HEIGHT - safe_my())
 
 static void flat_mode(void)
 {
@@ -1171,6 +1210,7 @@ static const color_t FRAME[4][2] = {
 };
 static const int NAME_STYLE[3] = { FONT_STYLE_WHITE, FONT_STYLE_BLUE, FONT_STYLE_GOLD };
 
+#define DRAFT_CARD_H 136
 static void tower_draft_draw(void)
 {
     if (!s.draftOpen) return;
@@ -1180,14 +1220,17 @@ static void tower_draft_draw(void)
 
     char line[80];
     snprintf(line, sizeof line, "Floor %d cleared   +%d Embers   +%d gold", s.floor, s.lastFloorEmbers, s.lastFloorGold);
-    text_style(0, 26, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
+    text_style(0, SAFE_Y0 + 9, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
     if (s.circleCleared) {
         snprintf(line, sizeof line, "Circle cleared: +%d Embers", CIRCLE_EMBERS);
         text_style(0, 40, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_BLUE, line);
     }
-    text(0, 53, SCREEN_WIDTH, ALIGN_CENTER, "Choose a Boon");
+    // the next floor on the third line (a new circle's night in red: its effect is on the map, its Guardian's page and Stats)
+    if (s.circleCleared) snprintf(line, sizeof line, "Next: floor %d, a new circle: %s", s.floor + 1, NIGHTS[s.nextNight].name);
+    else snprintf(line, sizeof line, "Choose a Boon   Next: floor %d", s.floor + 1);
+    text_style(0, 53, SCREEN_WIDTH, ALIGN_CENTER, s.circleCleared ? FONT_STYLE_RED : FONT_STYLE_WHITE, line);
 
-    const int cw = 96, ch = 126, gap = 6, y0 = 60;     // (tall enough for a rival or a duo's two boons under the text)
+    const int cw = 96, ch = DRAFT_CARD_H, gap = 6, y0 = 60;     // (tall enough for a rival or a duo's two boons, or a form's rival, under the text)
     int x0 = (SCREEN_WIDTH - (cw * s.nChoices + gap * (s.nChoices - 1))) / 2;
     for (int i = 0; i < s.nChoices; i++) {
         int x = x0 + i * (cw + gap), card = s.choices[i];
@@ -1269,7 +1312,8 @@ static void tower_draft_draw(void)
     // Skip, under the cards
     // A button of its own under the cards, framed like them: Down to it, Up back to the card
     bool skip = s.sel == s.nChoices;
-    const int bw = 180, bh = 16, bx = (SCREEN_WIDTH - bw) / 2, by = y0 + ch + 4;
+    const int bw = 160, bh = 16, bx = (SCREEN_WIDTH - bw) / 2 - 16, by = y0 + ch + 4;     // (left of centre: the R hint beside it)
+    if (s.sel < s.nChoices) ui_hint(SAFE_X1, by + 12, "R Details");     // (beside Skip)
     flat_mode();
     rdpq_set_prim_color(skip ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
     rdpq_fill_rectangle(bx - 2, by - 2, bx + bw + 2, by + bh + 2);
@@ -1277,14 +1321,6 @@ static void tower_draft_draw(void)
     rdpq_fill_rectangle(bx, by, bx + bw, by + bh);
     snprintf(line, sizeof line, "Skip: +%d Embers, +%d gold", SKIP_EMBERS, gold_with(SKIP_GOLD));
     text_style(bx, by + 12, bw, ALIGN_CENTER, skip ? FONT_STYLE_GOLD : FONT_STYLE_GREY, line);
-    if (s.circleCleared) {     // a new circle: stronger, and its night
-        // the next circle: stronger bosses, and its night (two lines at most)
-        snprintf(line, sizeof line, "Next: floor %d, %s. %s", s.floor + 1, NIGHTS[s.nextNight].name, NIGHTS[s.nextNight].desc);
-        text_style(12, y0 + ch + 31, SCREEN_WIDTH - 24, ALIGN_CENTER, FONT_STYLE_RED, line);
-    } else {
-        snprintf(line, sizeof line, "Next: floor %d", s.floor + 1);
-        text_style(0, y0 + ch + 31, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
-    }
 }
 
 // ---- The map screen, and a Rest's ----
@@ -1292,8 +1328,10 @@ static void tower_draft_draw(void)
 static sprite_t *s_icons;       // the six node icons (16x16 I4 one above the next: Fight, Elite, Event, Shop, Rest, Boss), loaded with the map
 static void icons_free(void) { if (s_icons) { rspq_wait(); sprite_free(s_icons); s_icons = NULL; } }
 
-bool tower_map_is_open(void) { return s.scr == SCR_MAP; }
-bool tower_rest_is_open(void) { return s.scr >= SCR_REST; }
+bool tower_map_is_open(void) { return s.scr == SCR_MAP || s.scr == SCR_CONFIRM; }    // (its confirm screen too)
+bool tower_rest_is_open(void) { return s.scr >= SCR_REST && s.scr != SCR_CONFIRM; }
+// The run's first fight is always the circle's Guardian: no map before it (the scene starts it at once)
+void tower_enter_guardian(void) { if (s.map.row < 0) { s.map.sel = 1; map_enter(); } }
 bool tower_between_open(void) { return s.draftOpen || s.scr != SCR_NONE; }
 
 #ifdef HLE_RUN_PATH     // test aid: the climb's route (section 13): 1 safe (the fewest fights, a Shop or Event over a Fight, no
@@ -1721,28 +1759,358 @@ static void event_take(int i)
     s.scrOpenMs = get_ticks_ms();       // (the result is read before Continue takes a press)
 }
 
-bool tower_between_update(bool left, bool right, bool up, bool down, bool confirm, bool back)
+// ---- Details (R): what a card, a node, a choice or a Shrine entry does in full, in the shared paged panel
+// (utilities/ui_pages.h). Each builder fills a UiDoc; the panel pages it ----
+
+static const char *const TIER_NAME[3] = { "Common", "Rare", "Legendary" };
+static void event_label(int i, char *out, int n);
+
+// a skill's level track and its two forms (current level and the form taken gold, a locked one grey)
+static void doc_skill(UiDoc *d, int k)
 {
+    int lv = knows(k) ? s.stacks[BOON_LEARN_MOONBLADE + k] : 0, f = tower_skill_form(k);
+    ui_doc_text(d, FONT_STYLE_GREY, "Button: %s. Its levels take no boon slot.", joypad_skill_button(k));
+    ui_doc_gap(d);
+    ui_doc_row(d, lv >= 1 ? FONT_STYLE_GOLD : FONT_STYLE_WHITE, lv == 1 && !f ? "now" : NULL, "Lv 1: %s", full_text(BOON_LEARN_MOONBLADE + k));
+    for (int l = 2; l <= SKILL_LV_MAX; l++)
+        ui_doc_row(d, lv >= l ? FONT_STYLE_GOLD : FONT_STYLE_WHITE, lv == l && !f ? "now" : NULL, "Lv %d: %s", l, SKILL_LV_DESC[k][l - 2]);
+    ui_doc_gap(d);
+    ui_doc_text(d, FONT_STYLE_GREY, "Lv 5: one of two forms (taking one locks the other out for the run)");
+    for (int fm = SKILL_FORM_A; fm <= SKILL_FORM_B; fm++) {
+        BoonId c = skill_form_card(k, fm);
+        bool taken = s.stacks[c], locked = s.locked[c], bought = fm == SKILL_FORM_A || ((s.forms >> k) & 1);
+        ui_doc_row(d, taken ? FONT_STYLE_GOLD : locked || !bought ? FONT_STYLE_GREY : FONT_STYLE_WHITE,
+                   taken ? "taken" : locked ? "locked" : !bought ? "Shrine" : NULL, "%s: %s", BOONS[c].name, full_text(c));
+    }
+    if (!((s.forms >> k) & 1)) ui_doc_text(d, FONT_STYLE_GREY, "%s is bought at the Shrine (Unlocks).", BOONS[skill_form_card(k, SKILL_FORM_B)].name);
+}
+
+// a boon's, a skill card's, a "+" or a duo's page; its title and colour out
+static void doc_boon(UiDoc *d, int b, char *title, int tn, int *tstyle)
+{
+    const BoonDef *bd = &BOONS[b];
+    int tier = card_tier(b);
+    char line[96];
+    snprintf(title, tn, "%s", bd->name);
+    *tstyle = NAME_STYLE[tier];
+    if (bd->duo) snprintf(line, sizeof line, "Duo of %s + %s", FAMILIES[bd->family].name, FAMILIES[bd->duo - 1].name);
+    else if (is_form(b)) snprintf(line, sizeof line, "Lv 5 form of %s", BOONS[BOON_LEARN_MOONBLADE + form_skill(b)].name);
+    else if (is_skill_card(b)) snprintf(line, sizeof line, "Skill");
+    else if (bd->up) snprintf(line, sizeof line, "%s: the \"+\" of %s", FAMILIES[bd->family].name, BOONS[bd->up - 1].name);
+    else snprintf(line, sizeof line, "%s family", FAMILIES[bd->family].name);
+    ui_doc_row(d, bd->duo ? FONT_STYLE_GOLD : FAMILIES[bd->family].style, TIER_NAME[tier], "%s", line);
+    if (is_learn(b) || is_form(b)) {      // the whole track
+        int k = is_learn(b) ? b - BOON_LEARN_MOONBLADE : form_skill(b);
+        if (is_form(b)) { ui_doc_text(d, FONT_STYLE_WHITE, "%s", full_text(b)); ui_doc_text(d, FONT_STYLE_RED, "Locks out: %s", BOONS[rival_of(b)].name); ui_doc_gap(d); }
+        else ui_doc_text(d, FONT_STYLE_WHITE, knows(k) ? "Known: Lv %d of 5 now." : "Not learned yet: this card teaches it at Lv 1.", tower_skill_level(k));
+        doc_skill(d, k);
+        return;
+    }
+    // its level now and its most
+    if (bd->up) {
+        BoonId u = (BoonId)(bd->up - 1);
+        ui_doc_text(d, FONT_STYLE_GREY, s.stacks[b] ? "Held: %s's top level." : "Offered once %s is at Lv %d (it's at %d). No slot of its own.",
+                    BOONS[u].name, BOONS[u].maxStacks, s.stacks[u]);
+    } else if (bd->duo) {
+        int sa, sb;
+        if (s.stacks[b]) ui_doc_text(d, FONT_STYLE_GREY, "Held: merged into one slot with its two boons.");
+        else if (duo_pair((BoonId)b, &sa, &sb)) ui_doc_text(d, FONT_STYLE_WHITE, "Merges %s and %s into one slot (both keep working at their max), and opens the other slot.",
+                                                           BOONS[s.slot[sa] - 1].name, BOONS[s.slot[sb] - 1].name);
+        else ui_doc_text(d, FONT_STYLE_GREY, "Offered with a maxed %s boon and a maxed %s boon slotted: it merges them into one slot (both keep working) and opens the other.",
+                         FAMILIES[bd->family].name, FAMILIES[bd->duo - 1].name);
+        for (int f = 0; f < 2; f++) { int fam = f ? bd->duo - 1 : bd->family;
+            if (!family_open(fam)) ui_doc_text(d, FONT_STYLE_RED, "Needs the %s pack (the Shrine's Unlocks).", FAMILIES[fam].name); }
+    } else if (s.stacks[b]) ui_doc_row(d, FONT_STYLE_WHITE, NULL, "Lv %d of %d now%s", s.stacks[b], bd->maxStacks, s.stacks[b] >= bd->maxStacks ? " (its max)" : "");
+    else ui_doc_text(d, FONT_STYLE_WHITE, "Not held. Lv 1 of %d; a new boon takes a slot (%d of %d used).", bd->maxStacks, slots_used(), TOWER_SLOTS);
+    ui_doc_gap(d);
+    ui_doc_text(d, FONT_STYLE_WHITE, "%s", full_text(b));
+    // rivals: what it locks out, what locks it
+    if (rival_of(b) >= 0) {
+        char rn[48]; rival_names(b, rn, sizeof rn);
+        ui_doc_gap(d);
+        ui_doc_text(d, FONT_STYLE_RED, "Rival: %s. Taking one locks the other out for the run.", rn);
+        if (s.locked[b]) ui_doc_text(d, FONT_STYLE_RED, "Locked out this run: its rival was taken.");
+    }
+    if (takes_slot(b)) {
+        // the "+" at its top level
+        for (int p = 0; p < BOON_COUNT; p++) if (BOONS[p].up == b + 1) {
+            ui_doc_gap(d);
+            ui_doc_text(d, s.stacks[p] ? FONT_STYLE_GOLD : FONT_STYLE_BLUE, "At Lv %d, its \"+\"%s: %s. %s", bd->maxStacks, s.stacks[p] ? " (held)" : "", BOONS[p].name, full_text(p));
+        }
+        // the duos it feeds once maxed
+        int m = 0; line[0] = 0;
+        for (int du = 0; du < BOON_COUNT; du++) {
+            if (!BOONS[du].duo) continue;
+            int other = BOONS[du].family == bd->family ? BOONS[du].duo - 1 : BOONS[du].duo - 1 == bd->family ? BOONS[du].family : -1;
+            if (other >= 0) m += snprintf(line + m, m < (int)sizeof line ? sizeof line - m : 0, "%s%s (%s)", m ? ", " : "", BOONS[du].name, FAMILIES[other].name);
+        }
+        if (m) { ui_doc_gap(d); ui_doc_text(d, FONT_STYLE_GOLD, "Duos, maxed beside a maxed boon of the family named: %s", line); }
+    }
+}
+
+static void doc_pact(UiDoc *d, int card, char *title, int tn, int *tstyle)
+{
+    int b = (card - BOON_COUNT) / PC_COUNT, c = (card - BOON_COUNT) % PC_COUNT;
+    snprintf(title, tn, "Pact: %s / %s", BLESSINGS[b].name, CURSES[c].name);
+    *tstyle = FONT_STYLE_RED;
+    ui_doc_text(d, FONT_STYLE_GREY, "A blessing and its curse, both for the run. Pacts take no slot and stack without end.");
+    ui_doc_gap(d);
+    ui_doc_row(d, FONT_STYLE_GOLD, NULL, "Blessing, %s: %s (held: %d)", BLESSINGS[b].name, BLESSINGS[b].desc, s.bless[b]);
+    ui_doc_row(d, FONT_STYLE_RED, NULL, "Curse, %s: %s (held: %d)", CURSES[c].name, CURSES[c].desc, s.curse[c]);
+}
+
+// a draft's or a Shop's card (a BoonId, a pact, the purse)
+static void doc_card(UiDoc *d, int card, char *title, int tn, int *tstyle)
+{
+    if (card == GOLD_CARD) {
+        snprintf(title, tn, "Purse"); *tstyle = FONT_STYLE_GOLD;
+        ui_doc_text(d, FONT_STYLE_WHITE, "+%d gold now (Prospector raises it). It comes once no boon is left for your build.", gold_with(GOLD_CARD_GOLD));
+    } else if (card >= BOON_COUNT) doc_pact(d, card, title, tn, tstyle);
+    else doc_boon(d, card, title, tn, tstyle);
+}
+
+static void details_open_doc(const char *title, int style) { ui_panel_open(ui_details(), title, style, false); ui_details()->owner = UI_OWNER_TOWER; }
+static void details_card(int card)
+{
+    char t[64]; int st;
+    UiDoc *d = ui_panel_doc(ui_details());
+    ui_doc_clear(d);
+    text_load();
+    doc_card(d, card, t, sizeof t, &st);
+    text_free();
+    details_open_doc(t, st);
+}
+
+// the pause menu's Build page and the Shrine (menu_controller.c): the same panel, drawn by the menu
+void tower_details_card(int card) { details_card(card); ui_details()->owner = UI_OWNER_MENU; }
+
+static const char *night_line(Night n, char *out, int nn) { snprintf(out, nn, "%s: %s (Embers x%.1f)", NIGHTS[n].name, NIGHTS[n].desc, (double)NIGHTS[n].embers); return out; }
+
+// a map node's page: its title ("Enter: ..." on the confirm screen), what waits there, what it gives
+static void doc_node(UiDoc *d, int r, int l, bool enter, char *title, int tn, int *tstyle)
+{
+    int t = s.map.type[r][l];
+    const char *boss = t == NODE_BOSS ? BOSS_NAMES[r ? TOWER_UNBOUND : TOWER_GUARDIAN] : s.map.boss[r][l] ? BOSS_NAMES[s.map.boss[r][l] - 1] : "";
+    bool jailer = t == NODE_FIGHT && s.prisoner;
+    const char *pre = "";       // (the confirm's own button says Enter: the longest Elite's name then fits one line)
+    (void)enter;
+    char tag[40], nl[96];
+    affix_names(s.map.afx[r][l], tag, sizeof tag);
+    int gold = gold_with((int)((GOLD_FIGHT + GOLD_PER_CIRCLE * s.circle) * (t == NODE_ELITE || jailer ? ELITE_GOLD : 1.0f) + 0.5f));
+    *tstyle = t == NODE_ELITE || jailer ? FONT_STYLE_RED : FONT_STYLE_GOLD;
+    switch (t) {
+    case NODE_BOSS:
+        snprintf(title, tn, "%s%s", pre, boss);
+        ui_doc_text(d, FONT_STYLE_WHITE, r ? "The circle's last fight: beat it to clear the circle (+%d Embers) and climb on." : "The circle's first fight.", CIRCLE_EMBERS);
+        ui_doc_text(d, FONT_STYLE_WHITE, "Floor %d. Reward: a draft, %d gold and Embers.", s.floor, gold);
+        if (s.night) { ui_doc_gap(d); ui_doc_text(d, FONT_STYLE_RED, "This circle's night, %s", night_line(s.night, nl, sizeof nl)); }
+        break;
+    case NODE_FIGHT: case NODE_ELITE:
+        if (t == NODE_ELITE || jailer) snprintf(title, tn, "%sElite %s%s%s", pre, tag, tag[0] ? " " : "", boss);
+        else snprintf(title, tn, "%sFight: %s", pre, boss);
+        if (jailer) ui_doc_text(d, FONT_STYLE_RED, "Floor %d. The Prisoner's jailer, x1.25 health.", s.floor);
+        else if (t == NODE_ELITE) ui_doc_text(d, FONT_STYLE_RED, "Floor %d. An Elite, x1.25 health.", s.floor);
+        else ui_doc_text(d, FONT_STYLE_WHITE, "Floor %d. A Bonus boss of this circle.", s.floor);
+        if (jailer) ui_doc_text(d, FONT_STYLE_GOLD, "Reward: a Legendary draft, x1.5 gold (%d) and Embers.", gold);
+        else if (t == NODE_ELITE) ui_doc_text(d, FONT_STYLE_GOLD, "Reward: a Rare+ draft%s, x1.5 gold (%d) and Embers.", __builtin_popcount(s.map.afx[r][l]) >= 2 ? " (a duo if ready)" : "", gold);
+        else ui_doc_text(d, FONT_STYLE_GOLD, "Reward: a draft, %d gold and Embers.", gold);
+        for (int a = 0; a < AFX_COUNT; a++) if ((s.map.afx[r][l] >> a) & 1) ui_doc_text(d, FONT_STYLE_WHITE, "%s: %s", AFFIXES[a].name, full_text(TXT_AFFIX + a));
+        break;
+    case NODE_REST:
+        snprintf(title, tn, "%sRest", pre);
+        ui_doc_text(d, FONT_STYLE_WHITE, "Heal 40%% of max health, Temper a level (a boon, its \"+\" or a skill), or +2 potions; then Release a boon if you wish, free.");
+        ui_doc_text(d, FONT_STYLE_GREY, "No fight. Health %.0f/%.0f, potions %d.", (double)character.health, (double)character.maxHealth, character.healthPotions);
+        break;
+    case NODE_SHOP:
+        snprintf(title, tn, "%sShop", pre);
+        ui_doc_text(d, FONT_STYLE_WHITE, "Three new boons or duos, a level, a \"+\", a pact, potions, Mend (heal 35%%) and Release, for gold.");
+        ui_doc_text(d, FONT_STYLE_GOLD, "Gold %d. No fight.", s.gold);
+        break;
+    case NODE_EVENT:
+        snprintf(title, tn, "%sEvent", pre);
+        ui_doc_text(d, FONT_STYLE_WHITE, "Something waits on the way: a choice, for good or ill. You may always walk on. No fight, no draft.");
+        break;
+    }
+}
+
+// an Event's choice in full
+static void doc_event_choice(UiDoc *d, int i)
+{
+    int e = s.event;
+    if (i == EVENTS[e].choices - 1) { ui_doc_text(d, FONT_STYLE_WHITE, "Walk on: nothing gained, nothing lost."); return; }
+    const char *rare = "a random Rare boon: a new one, or a level of one held (never a skill card, a \"+\" or a duo)";
+    switch (e) {
+    case EV_ALTAR:    ui_doc_text(d, FONT_STYLE_WHITE, "Give 15%% of your max health (%.0f) for the rest of the climb, for %s.", (double)(0.15f * character.maxHealth), rare); break;
+    case EV_GRAVE:    { if (i == 0) ui_doc_text(d, FONT_STYLE_WHITE, "Take %d gold from the stone.", gold_with(GRAVE_GOLD));
+                      else ui_doc_text(d, FONT_STYLE_WHITE, "Pray: heal 40%% of max health (+%.0f now).", (double)fminf(REST_HEAL * character.maxHealth, character.maxHealth - character.health)); } break;
+    case EV_MIRROR:   ui_doc_text(d, FONT_STYLE_WHITE, "A random slotted boon gains a level (its \"+\" at its max; never a duo), and a random curse is laid on you:");
+                      { for (int c = 0; c < PC_COUNT; c++) ui_doc_text(d, FONT_STYLE_RED, "%s: %s", CURSES[c].name, CURSES[c].desc); } break;
+    case EV_MERCHANT: { if (i == 0) ui_doc_text(d, FONT_STYLE_WHITE, "One potion for %d gold, past the run's most potions, up to %d.", MERCHANT_POTION, POTION_CAP);
+                      else ui_doc_text(d, FONT_STYLE_WHITE, "Give 2 potions for %s.", rare); } break;
+    case EV_POOL:     ui_doc_text(d, FONT_STYLE_WHITE, i == 0 ? "Learn a skill you don't know (at random), at Lv 1." : "A skill you know (at random) gains a level, up to Lv 4."); break;
+    case EV_PRISONER: ui_doc_text(d, FONT_STYLE_WHITE, "Your next Fight node becomes an Elite: x1.25 health, x1.5 gold and Embers, and an all-Legendary draft."); break;
+    case EV_BONES:    ui_doc_text(d, FONT_STYLE_WHITE, "Pay %d gold. Half the time %d come back.", BONES_STAKE, gold_with(BONES_WIN)); break;
+    case EV_BRAZIER:  { if (i == 0) ui_doc_text(d, FONT_STYLE_WHITE, "Bank %d Embers now, for the Shrine.", BRAZIER_EMBERS * s.circle);
+                      else ui_doc_text(d, FONT_STYLE_WHITE, "Half a pact's blessing, with no curse: %s (%s at a full stack).", BLESSINGS[s.eventPick].name, BLESSINGS[s.eventPick].desc); } break;
+    }
+}
+
+// a boon list's rows (Temper, the Shop's level and "+"): each with its level now
+static void doc_targets(UiDoc *d, const int8_t *t, int n)
+{
+    if (!n) { ui_doc_text(d, FONT_STYLE_GREY, "Nothing to raise now."); return; }
+    for (int i = 0; i < n; i++) ui_doc_row(d, is_skill_card(t[i]) ? FONT_STYLE_WHITE : FAMILIES[BOONS[t[i]].family].style, BOONS[t[i]].up ? "top" : NULL, "%s%s", BOONS[t[i]].name,
+                                           BOONS[t[i]].up ? "" : (s.stacks[t[i]] ? "  (a level)" : ""));
+}
+
+// R on the screen under it: the card, item, node or row under the cursor; false if it has none
+static bool details_cursor_impl(bool open);
+static bool details_for_cursor(bool open)       // (the texts read from ROM while its page is built)
+{
+    if (!open) return details_cursor_impl(false);
+    text_load();
+    bool any = details_cursor_impl(true);
+    text_free();
+    return any;
+}
+static bool details_cursor_impl(bool open)
+{
+    UiDoc *d = open ? ui_panel_doc(ui_details()) : NULL;     // (a look at whether there are any: nothing allocated)
+    char t[64] = ""; int st = FONT_STYLE_GOLD;
+    int8_t tg[LIST_MAX];
+    if (open) ui_doc_clear(d);
     if (s.draftOpen) {
+        if (s.sel >= s.nChoices) return false;
+        if (open) doc_card(d, s.choices[s.sel], t, sizeof t, &st);
+    } else if (s.scr == SCR_MAP) {
+        if (s.map.row + 1 >= MAP_ROWS) return false;
+        if (open) doc_node(d, s.map.row + 1, s.map.sel, false, t, sizeof t, &st);
+    } else if (s.scr == SCR_SHOP) {
+        int i = s.shop.sel;
+        if (i == SHOP_LEAVE || (i <= SHOP_CARD2 && s.shop.card[i] < 0)) return false;
+        if (!open) return true;
+        if (i <= SHOP_CARD2) doc_card(d, s.shop.card[i], t, sizeof t, &st);
+        else if (i == SHOP_PACT) doc_pact(d, s.shop.pact, t, sizeof t, &st);
+        else {
+            static const char *const NM[SHOP_ITEMS] = { [SHOP_LEVEL] = "A level", [SHOP_PLUS] = "A \"+\"", [SHOP_POTION] = "Potion", [SHOP_MEND] = "Mend", [SHOP_RELEASE] = "Release" };
+            snprintf(t, sizeof t, "%s: %d gold", NM[i], shop_price(i));
+            if (i == SHOP_LEVEL) { ui_doc_text(d, FONT_STYLE_WHITE, "+1 level on a slotted boon below its max (a duo has none). You choose it from:"); doc_targets(d, tg, level_targets(tg, LIST_MAX)); }
+            else if (i == SHOP_PLUS) { ui_doc_text(d, FONT_STYLE_WHITE, "A maxed boon's \"+\", its top level. You choose it from:"); doc_targets(d, tg, plus_targets(tg, LIST_MAX)); }
+            else if (i == SHOP_POTION) ui_doc_text(d, FONT_STYLE_WHITE, "+1 potion, up to the run's most (%d). Each fight won still gives one, past it, up to %d.", tower_mod_max_potions(), POTION_CAP);
+            else if (i == SHOP_MEND) ui_doc_text(d, FONT_STYLE_WHITE, "Heal 35%% of max health: +%.0f now. Once a visit.", (double)fminf(MEND_HEAL * character.maxHealth, character.maxHealth - character.health));
+            else ui_doc_text(d, FONT_STYLE_WHITE, "Free a slot: you choose a boon; it goes with its levels and its \"+\" (a duo with its two boons). A rival it locked out stays locked.");
+            const char *why = shop_block(i);
+            if (why[0]) ui_doc_text(d, FONT_STYLE_RED, "%s.", why);
+        }
+    } else if (s.scr == SCR_EVENT) {
+        if (s.eventDone) return false;
+        if (open) { event_label(s.list[s.listSel], t, sizeof t); doc_event_choice(d, s.list[s.listSel]); }
+    } else if (s.scr == SCR_REST) {
+        if (!open) return true;
+        int v = s.list[s.listSel];
+        if (v == REST_HEAL_ROW) { snprintf(t, sizeof t, "Heal 40%%"); ui_doc_text(d, FONT_STYLE_WHITE, "Heal 40%% of max health: +%.0f now (%.0f/%.0f).", (double)fminf(REST_HEAL * character.maxHealth, character.maxHealth - character.health), (double)character.health, (double)character.maxHealth); }
+        else if (v == REST_TEMPER_ROW) { snprintf(t, sizeof t, "Temper"); ui_doc_text(d, FONT_STYLE_WHITE, "+1 level on a slotted boon below its max, a maxed boon's \"+\", or a known skill's next level below Lv 4. Never a new boon, a duo or a skill's form. You choose from:"); doc_targets(d, tg, temper_targets(tg, LIST_MAX)); }
+        else { snprintf(t, sizeof t, "+2 potions"); ui_doc_text(d, FONT_STYLE_WHITE, "+2 potions (%d now), up to %d: past the run's most, as a fight's.", character.healthPotions, POTION_CAP); }
+        ui_doc_gap(d); ui_doc_text(d, FONT_STYLE_GREY, "After it, Release a boon if you wish (free).");
+    } else if (s.scr == SCR_TEMPER || s.scr == SCR_SHOP_LEVEL || s.scr == SCR_SHOP_PLUS || s.scr == SCR_RELEASE || s.scr == SCR_SHOP_RELEASE) {
+        int v = s.list[s.listSel];
+        if (v < 0) return false;
+        int b = s.scr == SCR_RELEASE || s.scr == SCR_SHOP_RELEASE ? s.slot[v] - 1 : v;
+        if (b < 0) return false;
+        if (open) doc_boon(d, b, t, sizeof t, &st);
+    } else return false;
+    if (open) details_open_doc(t, st);
+    return true;
+}
+
+// After a map node is entered (confirmed): a Rest's, a Shop's or an Event's screen, or true for a fight
+static bool map_take(void)
+{
+    int t = map_enter();
+    if (t == NODE_REST) { list_open(SCR_REST); s.scrOpenMs = get_ticks_ms() - DRAFT_INPUT_DELAY_MS; return false; }    // (a press, not a fight's: no wait)
+    if (t == NODE_SHOP) { shop_open(); s.scrOpenMs -= DRAFT_INPUT_DELAY_MS; return false; }
+    if (t == NODE_EVENT) { event_open(); s.scrOpenMs -= DRAFT_INPUT_DELAY_MS; return false; }
+    s.scr = SCR_NONE;
+    icons_free();
+    return true;
+}
+// A Rest left with B before a choice: back on the map, its node still to choose (nothing was rolled)
+static void map_unenter(void)
+{
+    int r = s.map.row;
+    s.map.sel = s.map.path[r];
+    s.map.path[r] = -1;
+    s.map.row--;
+    s.scr = SCR_MAP;
+#ifdef HLE_AUTOPLAY
+    debugf("[map] back from the Rest: row %d lane %d to choose again\n", r + 1, s.map.sel);
+#endif
+}
+
+static bool s_pauseReq;
+bool tower_take_pause_request(void) { bool r = s_pauseReq; s_pauseReq = false; return r; }
+
+// B goes back a level everywhere and never enters anything: the map's B opens the pause menu (the screen
+// behind it), the confirm screen's B returns to the map, a Shop's B leaves it (its Leave), an Event's is
+// its Leave (or Continue), a Rest's first screen returns to the map with the Rest still to choose, Temper
+// back to the Rest, Release keeps every boon, a Shop's list back to its shelf. The draft ignores B (its
+// cards come up under a fight's mashed attack: B is the sword in the Classic layout). R: Details
+bool tower_between_update(bool left, bool right, bool up, bool down, bool confirm, bool back, bool details)
+{
+    UiPanel *dp = ui_details();
+    if (dp->open && !dp->confirm) { ui_panel_input(dp, up, down, left, right, confirm, back, details); return false; }    // Details over the screen
+    if (s.draftOpen) {
+        if (details && get_ticks_ms() - s.draftOpenMs >= DRAFT_INPUT_DELAY_MS) { details_for_cursor(true); return false; }
         if (tower_draft_update(left, right, up, down, confirm)) { tower_floor_restore(); tower_next_floor(); tower_map_open(); }
         return false;
     }
     if (!s.scr || get_ticks_ms() - s.scrOpenMs < DRAFT_INPUT_DELAY_MS) return false;    // (as the draft: no press taken unseen)
-    if (s.scr == SCR_MAP) {     // Left/Right along the next row's reachable nodes; A or Up enters
+    if (s.scr == SCR_CONFIRM) {     // the node's page: A (Enter) enters, B (or Back) returns to the map
+        int r = ui_panel_input(dp, up, down, left, right, confirm, back, false);
+        if (r == UI_PANEL_CLOSED) { s.scr = SCR_MAP; return false; }
+        if (r != UI_PANEL_ENTER) return false;
+        s.scr = SCR_MAP;
+        return map_take();
+    }
+    if (s.scr == SCR_MAP) {     // pick, then confirm: Left/Right along the next row's reachable nodes, A opens its page; Up/Down nothing
         int d = right - left, r = s.map.row + 1;
         for (int l = s.map.sel + d; d && l >= 0 && l < MAP_LANES; l += d) if (map_reachable(r, l)) { s.map.sel = (int8_t)l; break; }
-        if (!confirm && !up) return false;
-        int t = map_enter();
-        if (t == NODE_REST) { list_open(SCR_REST); s.scrOpenMs = get_ticks_ms(); return false; }
-        if (t == NODE_SHOP) { shop_open(); return false; }
-        if (t == NODE_EVENT) { event_open(); return false; }
-        s.scr = SCR_NONE;
-        icons_free();
-        return true;
+        if (details) { details_for_cursor(true); return false; }
+        if (back) { s_pauseReq = true; return false; }
+        if (!confirm || r >= MAP_ROWS) return false;
+        char t[64]; int st;
+        ui_doc_clear(ui_panel_doc(dp));
+        text_load();
+        doc_node(dp->doc, r, s.map.sel, true, t, sizeof t, &st);
+        text_free();
+        ui_panel_open(dp, t, st, true);
+        dp->owner = UI_OWNER_TOWER;
+        s.scr = SCR_CONFIRM;
+#ifdef HLE_AUTOPLAY
+        debugf("[map] confirm: %s (%d page%s)\n", t, dp->pg.pages, dp->pg.pages > 1 ? "s: LONG" : "");
+#endif
+        return false;
     }
+    if (details) { details_for_cursor(true); return false; }
     if (s.scr == SCR_SHOP) { shop_update(left, right, up, down, confirm, back); return false; }
     bool shopList = s.scr >= SCR_SHOP_LEVEL && s.scr <= SCR_SHOP_RELEASE;
-    if (shopList && back) { s.scr = SCR_SHOP; return false; }      // B: back to the shelf
+    if (back) {     // a level back
+        if (shopList) s.scr = SCR_SHOP;                                     // to the shelf
+        else if (s.scr == SCR_REST) map_unenter();                          // to the map, the Rest still to choose
+        else if (s.scr == SCR_TEMPER) list_open(SCR_REST);                  // to the Rest's choices
+        else if (s.scr == SCR_RELEASE) {                                    // keep them all
+#ifdef HLE_AUTOPLAY
+            debugf("[rest] release: none (B)\n");
+#endif
+            tower_map_open();
+        } else if (s.scr == SCR_EVENT) {                                    // Leave, or Continue
+#ifdef HLE_AUTOPLAY
+            debugf("[event] B: %s\n", s.eventDone ? "Continue" : "Leave");
+#endif
+            tower_map_open();
+        }
+        return false;
+    }
     // a list (a Rest's screens, the Shop's, an Event's): Up/Down along the rows (past any that can't be chosen), A takes one
     int d = down - up;
     for (int i = s.listSel + d; d && i >= 0 && i < s.listN; i += d) if (row_ok(i)) { s.listSel = (int8_t)i; break; }
@@ -1786,8 +2154,11 @@ bool tower_between_update(bool left, bool right, bool up, bool down, bool confir
 }
 
 #define MAP_X(l) (100 + 60 * (l))
-#define MAP_Y(r) (198 - 26 * (r))
-// a 1 px line up the screen (y1 < y0) in fill-rectangle steps, as the menus draw their frames
+// the rows fit between the two top lines and the two bottom ones, inside the safe area (22 px apart at the default)
+static int map_top(void) { return SAFE_Y0 + 10; }       // the first top line's baseline
+static int map_bot(void) { return SAFE_Y1 - 2; }        // the last bottom line's
+static int map_pitch(void) { int p = (map_bot() - 32 - (map_top() + 25)) / 6; return p > 26 ? 26 : p; }     // (row 7's icon under the night's line)
+#define MAP_Y(r) (map_bot() - 12 - 20 - map_pitch() * (r))
 static void line_up(int x0, int y0, int x1, int y1)
 {
     int dy = y0 - y1;
@@ -1847,45 +2218,44 @@ static void map_draw(void)
             rdpq_sprite_blit(s_icons, MAP_X(l) - 8, MAP_Y(r) - 8, &(rdpq_blitparms_t){ .t0 = 16 * (t - 1), .width = 16, .height = 16 });
         }
     }
-    // the top line: floor, Ascension, night, gold; the bottom: the node under the cursor
-    char line[80];
+    // the top lines: floor, Ascension, gold; the night and its effect. The bottom: the node under the cursor, the buttons
+    char line[96];
     int n = snprintf(line, sizeof line, "Floor %d", s.floor);
     if (s.circle > 1) n += snprintf(line + n, sizeof line - n, "   Ascension %d", s.circle - 1);
-    if (s.night) n += snprintf(line + n, sizeof line - n, "   %s", NIGHTS[s.night].name);
     snprintf(line + n, sizeof line - n, "   Gold %d", s.gold);
-    text_style(0, 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
+    text_style(0, map_top(), SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
+    if (s.night) { snprintf(line, sizeof line, "%s: %s", NIGHTS[s.night].name, NIGHTS[s.night].brief); text_style(0, map_top() + 13, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_RED, line); }
     if (cr < MAP_ROWS) {
         int t = s.map.type[cr][cl];
         const char *boss = t == NODE_BOSS ? BOSS_NAMES[cr ? TOWER_UNBOUND : TOWER_GUARDIAN] : s.map.boss[cr][cl] ? BOSS_NAMES[s.map.boss[cr][cl] - 1] : "";
         bool jailer = t == NODE_FIGHT && s.prisoner;      // the Chained Prisoner's: the next Fight is an Elite
-        if (t == NODE_ELITE || jailer) {    // its affixes and boss over its reward (section 11)
-            char tag[40];
-            affix_names(s.map.afx[cr][cl], tag, sizeof tag);
-            snprintf(line, sizeof line, "Elite: %s%s%s", tag, tag[0] ? " " : "", boss);
-            text_style(0, 215, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_RED, line);
-            if (jailer) snprintf(line, sizeof line, "The jailer: legendary draft, x1.5 gold and Embers");
-            else snprintf(line, sizeof line, "Rare draft%s, x1.5 gold and Embers", __builtin_popcount(s.map.afx[cr][cl]) >= 2 ? " (a duo if ready)" : "");
-        }
+        char tag[40];
+        affix_names(s.map.afx[cr][cl], tag, sizeof tag);
+        if (t == NODE_ELITE || jailer) snprintf(line, sizeof line, "Elite: %s%s%s", tag, tag[0] ? " " : "", boss);
         else if (t == NODE_FIGHT) snprintf(line, sizeof line, "Fight: %s", boss);
         else if (t == NODE_REST) snprintf(line, sizeof line, "Rest: heal, Temper or potions");
         else if (t == NODE_SHOP) snprintf(line, sizeof line, "Shop: boons, levels, potions, Mend");
-        else if (t == NODE_EVENT) snprintf(line, sizeof line, "Event: ?");
+        else if (t == NODE_EVENT) snprintf(line, sizeof line, "Event: a choice on the way");
         else snprintf(line, sizeof line, "%s", boss);
-        text_style(0, 227, SCREEN_WIDTH, ALIGN_CENTER, t == NODE_ELITE || jailer ? FONT_STYLE_RED : FONT_STYLE_WHITE, line);
+        text_style(0, map_bot() - 12, SCREEN_WIDTH, ALIGN_CENTER, t == NODE_ELITE || jailer ? FONT_STYLE_RED : FONT_STYLE_WHITE, line);
+        text_style(0, map_bot(), SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, "A Choose    R Details    B Menu");
     }
 }
 
 static void rest_draw(void)
 {
     flat_mode();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 170));
+    rdpq_set_prim_color(RGBA32(0, 0, 0, 205));     // (dark enough to read over the hall's light)
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     static const char *const HEAD[] = { [SCR_REST] = "Rest: choose one", [SCR_TEMPER] = "Temper: +1 level", [SCR_RELEASE] = "Release a boon? Free, with its levels",
                                         [SCR_SHOP_LEVEL] = "A level: 70 gold", [SCR_SHOP_PLUS] = "A \"+\": 150 gold", [SCR_SHOP_RELEASE] = "Release a boon: 20 gold, with its levels" };
     text_style(0, 40, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, HEAD[s.scr]);
+    static const char *const BACK[] = { [SCR_REST] = "B Map", [SCR_TEMPER] = "B Back", [SCR_RELEASE] = "B Keep all", [SCR_SHOP_LEVEL] = "B Back", [SCR_SHOP_PLUS] = "B Back", [SCR_SHOP_RELEASE] = "B Back" };
+    text_style(SAFE_X0, SAFE_Y0 + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, BACK[s.scr]);
+    if (details_for_cursor(false)) ui_hint(SAFE_X1, SAFE_Y0 + 10, "R Details");
     char line[80];
     bool shopList = s.scr >= SCR_SHOP_LEVEL, boonRows = s.scr == SCR_TEMPER || s.scr == SCR_SHOP_LEVEL || s.scr == SCR_SHOP_PLUS;
-    if (shopList) snprintf(line, sizeof line, "Gold %d   (B: back)", s.gold);
+    if (shopList) snprintf(line, sizeof line, "Gold %d", s.gold);
     else snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d", (double)character.health, (double)character.maxHealth, character.healthPotions);
     text_style(0, 56, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
     const int x = 50, w = SCREEN_WIDTH - 100, y0 = 84, pitch = 15;
@@ -1903,10 +2273,10 @@ static void rest_draw(void)
             const BoonDef *bd = &BOONS[v];
             if (bd->up) snprintf(line, sizeof line, "%s (top level)", bd->name);
             else snprintf(line, sizeof line, "%s   Lv %d -> %d", bd->name, s.stacks[v], s.stacks[v] + 1);
-            style = FAMILIES[bd->family].style;
+            style = is_skill_card((BoonId)v) ? FONT_STYLE_WHITE : FAMILIES[bd->family].style;     // (a skill's grey would read as unavailable)
         } else {
             BoonId b = (BoonId)(s.slot[v] - 1);
-            if (s.merged[v][0]) snprintf(line, sizeof line, "%s (duo: %s + %s)", BOONS[b].name, BOONS[s.merged[v][0] - 1].name, BOONS[s.merged[v][1] - 1].name);
+            if (s.merged[v][0]) snprintf(line, sizeof line, "%s   Duo, with its two", BOONS[b].name);     // (their names: R)
             else snprintf(line, sizeof line, "%s   Lv %d", BOONS[b].name, s.stacks[b]);
             style = BOONS[b].duo ? FONT_STYLE_GOLD : FAMILIES[BOONS[b].family].style;
         }
@@ -1941,15 +2311,17 @@ static void button(int x, int y, int w, int h, bool on, bool ok, const char *lab
 static void shop_draw(void)
 {
     flat_mode();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 170));
+    rdpq_set_prim_color(RGBA32(0, 0, 0, 205));     // (dark enough to read over the hall's light)
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     char line[96];
     snprintf(line, sizeof line, "Shop   Gold %d", s.gold);
-    text_style(0, 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
+    text_style(0, SAFE_Y0 + 10, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
+    text_style(SAFE_X0, SAFE_Y0 + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, "B Leave");
+    if (details_for_cursor(false)) ui_hint(SAFE_X1, SAFE_Y0 + 10, "R Details");
     snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d/%d", (double)character.health, (double)character.maxHealth, character.healthPotions, tower_mod_max_potions());
-    text_style(0, 35, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+    text_style(0, SAFE_Y0 + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
     // the three boon cards, as the draft's (shorter: the price at the foot)
-    const int cw = 96, ch = 100, gap = 6, y0 = 43, x0 = (SCREEN_WIDTH - (3 * cw + 2 * gap)) / 2;     // (room for 3 lines of text over the price)
+    const int cw = 96, ch = 100, gap = 6, y0 = SAFE_Y0 + 28, x0 = (SCREEN_WIDTH - (3 * cw + 2 * gap)) / 2;     // (room for 3 lines of text over the price)
     for (int i = 0; i < 3; i++) {
         int x = x0 + i * (cw + gap), card = s.shop.card[i];
         bool on = i == s.shop.sel, sold = (s.shop.sold >> i) & 1;
@@ -1987,19 +2359,18 @@ static void shop_draw(void)
         int card = s.shop.card[i], sa, sb, r = rival_of(card);
         if (BOONS[card].duo && duo_pair(card, &sa, &sb)) snprintf(line, sizeof line, "Duo: merges %s + %s", BOONS[s.slot[sa] - 1].name, BOONS[s.slot[sb] - 1].name);
         else if (r >= 0) { char rn[40]; rival_names(card, rn, sizeof rn); snprintf(line, sizeof line, "New: slot %d/%d. Locks out %s", slots_used() + 1, TOWER_SLOTS, rn); }
-        else snprintf(line, sizeof line, "New: slot %d/%d", slots_used() + 1, TOWER_SLOTS);
+        else snprintf(line, sizeof line, "New: slot %d/%d", slots_used() < TOWER_SLOTS ? slots_used() + 1 : TOWER_SLOTS, TOWER_SLOTS);
     } else if (i == SHOP_LEVEL) snprintf(line, sizeof line, "+1 level on a slotted boon (choose it)");
     else if (i == SHOP_PLUS) snprintf(line, sizeof line, "A maxed boon's \"+\", its top level (choose it)");
-    else if (i == SHOP_PACT) snprintf(line, sizeof line, "%s: %s", BLESSINGS[b].name, BLESSINGS[b].desc);
+    else if (i == SHOP_PACT) line[0] = 0;     // (below, with its curse)
     else if (i == SHOP_POTION) snprintf(line, sizeof line, "+1 potion, up to the run's %d", tower_mod_max_potions());
     else if (i == SHOP_MEND) snprintf(line, sizeof line, "Heal 35%%: +%.0f health", (double)fminf(MEND_HEAL * character.maxHealth, character.maxHealth - character.health));
     else if (i == SHOP_RELEASE) snprintf(line, sizeof line, "Free a slot: a boon and its levels are gone");
     else snprintf(line, sizeof line, "Back to the map");
-    text_style(0, by + 30, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_WHITE, line);
-    // the second line: why it can't be bought, a pact's curse (its price), else the buttons
+    // one line under the shelf: why it can't be bought (red), else what it does (R: all of it)
     const char *why = shop_block(i);
-    if (!why[0] && i == SHOP_PACT) { snprintf(line, sizeof line, "The price, %s: %s", CURSES[c].name, CURSES[c].desc); why = line; }
-    text_style(0, by + 42, SCREEN_WIDTH, ALIGN_CENTER, why[0] ? FONT_STYLE_RED : FONT_STYLE_GREY, why[0] ? why : "A: buy   B: leave");
+    if (!why[0] && i == SHOP_PACT) snprintf(line, sizeof line, "Blessing %s, its curse %s", BLESSINGS[b].name, CURSES[c].name);
+    text_style(SAFE_X0, by + 15 + 12, SAFE_X1 - SAFE_X0, ALIGN_CENTER, why[0] ? FONT_STYLE_RED : FONT_STYLE_WHITE, why[0] ? why : line);     // (under Leave, whatever the overscan)
 }
 
 static void event_label(int i, char *out, int n)
@@ -2015,7 +2386,7 @@ static void event_label(int i, char *out, int n)
         break;
     case EV_MIRROR:   snprintf(out, n, "A boon +1 level, and a curse"); break;
     case EV_MERCHANT: if (i == 0) snprintf(out, n, "1 potion for %d gold", MERCHANT_POTION); else snprintf(out, n, "2 potions for a Rare boon"); break;
-    case EV_POOL:     snprintf(out, n, i == 0 ? "Learn a skill you don't know" : "A skill you know: its \"+\""); break;
+    case EV_POOL:     snprintf(out, n, i == 0 ? "Learn a skill you don't know" : "A skill you know: +1 level"); break;
     case EV_PRISONER: snprintf(out, n, "Free it: your next Fight is an Elite"); break;
     case EV_BONES:    snprintf(out, n, "Pay %d gold: %d back, half the time", BONES_STAKE, gold_with(BONES_WIN)); break;
     case EV_BRAZIER:
@@ -2028,11 +2399,13 @@ static void event_label(int i, char *out, int n)
 static void event_draw(void)
 {
     flat_mode();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 170));
+    rdpq_set_prim_color(RGBA32(0, 0, 0, 205));     // (dark enough to read over the hall's light)
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    text_style(0, 36, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, EVENTS[s.event].name);
+    text_style(0, SAFE_Y0 + 24, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, EVENTS[s.event].name);
+    text_style(SAFE_X0, SAFE_Y0 + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, s.eventDone ? "B Continue" : "B Leave");
+    if (details_for_cursor(false)) ui_hint(SAFE_X1, SAFE_Y0 + 10, "R Details");
     const int lh = 16;      // the font's line pitch
-    int y = 56 + lh * text_style(36, 56, SCREEN_WIDTH - 72, ALIGN_CENTER, FONT_STYLE_WHITE, EVENTS[s.event].text);
+    int y = SAFE_Y0 + 42 + lh * text_style(36, SAFE_Y0 + 42, SCREEN_WIDTH - 72, ALIGN_CENTER, FONT_STYLE_WHITE, EVENTS[s.event].text);
     char line[96];
     if (s.event == EV_BRAZIER && !s.eventDone) {     // the blessing's own words (a full pact's stack)
         snprintf(line, sizeof line, "%s: %s at a full stack", BLESSINGS[s.eventPick].name, BLESSINGS[s.eventPick].desc);
@@ -2047,16 +2420,17 @@ static void event_draw(void)
         text_style(x, y, w, ALIGN_CENTER, row_ok(i) ? FONT_STYLE_WHITE : FONT_STYLE_GREY, line);
     }
     snprintf(line, sizeof line, "Gold %d   Health %.0f/%.0f   Potions %d", s.gold, (double)character.health, (double)character.maxHealth, character.healthPotions);
-    text_style(0, 222, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+    text_style(0, y + 6 > SAFE_Y1 - 4 ? y + 6 : SAFE_Y1 - 4, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);     // (never over the rows)
 }
 
 void tower_between_draw(void)
 {
     if (s.draftOpen) tower_draft_draw();
-    else if (s.scr == SCR_MAP) map_draw();
+    else if (s.scr == SCR_MAP || s.scr == SCR_CONFIRM) map_draw();
     else if (s.scr == SCR_SHOP) shop_draw();
     else if (s.scr == SCR_EVENT) event_draw();
     else if (s.scr) rest_draw();
+    if (ui_details()->open && ui_details()->owner == UI_OWNER_TOWER) ui_panel_draw(ui_details());     // Details (R) or the map's confirm, over it
 }
 
 void tower_hud_draw(void)
@@ -2074,32 +2448,7 @@ void tower_hud_draw(void)
     }
 }
 
-const char* tower_run_summary(void)
-{
-    static char b[640];
-    int n = 0;
-    #define ADD(...) n += snprintf(b + n, n < (int)sizeof b ? sizeof b - n : 0, __VA_ARGS__)
-    ADD("Floor %d", s.floor);
-    if (tower_circle() > 1) ADD(", Ascension %d", tower_circle() - 1);
-    if (s.night) ADD(", %s", NIGHTS[s.night].name);
-    ADD("\nGold %d   Relic: %s\n", s.gold, tower_relic_name(tower_relic_equipped()));
-    ADD("Damage x%.2f, damage taken x%.2f\n", (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken());
-    ADD("Max health %.0f, potions %d", (double)tower_mod_max_health(), character.healthPotions);
-    if (s.potionDebt) ADD(" (%d owed)", s.potionDebt);
-    ADD("\nBlessings:"); int k = 0;
-    for (int i = 0; i < PB_COUNT; i++) if (s.bless[i] || s.halfBless[i]) {     // (a Brazier's half: "1.5")
-        int h = 2 * s.bless[i] + s.halfBless[i];
-        ADD("%s %s %d%s", k++ ? "," : "", BLESSINGS[i].name, h / 2, h % 2 ? ".5" : "");
-    }
-    if (!k) ADD(" none");
-    ADD("\nCurses:"); k = 0;
-    for (int i = 0; i < PC_COUNT; i++) if (s.curse[i]) ADD("%s %s %d", k++ ? "," : "", CURSES[i].name, s.curse[i]);
-    if (!k) ADD(" none");
-    #undef ADD
-    return b;
-}
-
-int tower_build_rows(char left[][40], char right[][12], int style[], int max)
+int tower_build_rows(char left[][40], char right[][12], int style[], int card[], int max)
 {
     int n = 0;
     for (int k = 0; k < SKILL_COUNT && n < max; k++, n++) {     // the skills: button, name (its form's), its level
@@ -2107,15 +2456,17 @@ int tower_build_rows(char left[][40], char right[][12], int style[], int max)
         snprintf(left[n], 40, "%s %s", joypad_skill_button(k), BOONS[f ? skill_form_card(k, f) : BOON_LEARN_MOONBLADE + k].name);
         if (knows(k)) snprintf(right[n], 12, "Lv %d/%d", tower_skill_level(k), SKILL_LV_MAX + 1); else snprintf(right[n], 12, "-");
         style[n] = !knows(k) ? FONT_STYLE_GREY : f ? FONT_STYLE_GOLD : FONT_STYLE_WHITE;
+        card[n] = BOON_LEARN_MOONBLADE + k;     // (its Details: the whole track and both forms)
     }
     for (int i = 0; i < TOWER_SLOTS && n < max; i++, n++) {      // the slots: name in its family's colour, its level ("+" at the top)
-        if (!s.slot[i]) { snprintf(left[n], 40, "Empty slot"); right[n][0] = 0; style[n] = FONT_STYLE_GREY; continue; }
+        if (!s.slot[i]) { snprintf(left[n], 40, "Empty slot"); right[n][0] = 0; style[n] = FONT_STYLE_GREY; card[n] = -1; continue; }
         BoonId b = (BoonId)(s.slot[i] - 1);
         snprintf(left[n], 40, "%s", BOONS[b].name);
+        card[n] = b;
         if (BOONS[b].duo && s.merged[i][0]) {       // a duo: "Duo", its two boons on a row under it
             snprintf(right[n], 12, "Duo");
             style[n] = FONT_STYLE_GOLD;
-            if (n + 1 < max) { n++; snprintf(left[n], 40, "  %s + %s", BOONS[s.merged[i][0] - 1].name, BOONS[s.merged[i][1] - 1].name); right[n][0] = 0; style[n] = FONT_STYLE_GREY; }
+            if (n + 1 < max) { n++; snprintf(left[n], 40, "  %s + %s", BOONS[s.merged[i][0] - 1].name, BOONS[s.merged[i][1] - 1].name); right[n][0] = 0; style[n] = FONT_STYLE_GREY; card[n] = b; }
             continue;
         }
         bool plus = false;
@@ -2123,17 +2474,43 @@ int tower_build_rows(char left[][40], char right[][12], int style[], int max)
         snprintf(right[n], 12, "Lv %d/%d%s", s.stacks[b], BOONS[b].maxStacks, plus ? "+" : "");
         style[n] = FAMILIES[BOONS[b].family].style;
     }
-    // the rivals locked out, greyed, a few to a row
-    int len = 0;
+    // the rivals locked out, greyed, one a row (each its own Details)
     for (int b = 0; b < BOON_COUNT && n < max; b++) {
         if (!s.locked[b]) continue;
-        int w = (int)strlen(BOONS[b].name);
-        if (len && len + 2 + w > 38) { n++; len = 0; if (n >= max) break; }
-        if (!len) { len = snprintf(left[n], 40, "Locked: %s", BOONS[b].name); right[n][0] = 0; style[n] = FONT_STYLE_GREY; }
-        else len += snprintf(left[n] + len, 40 - len, ", %s", BOONS[b].name);
+        snprintf(left[n], 40, "Locked: %s", BOONS[b].name); snprintf(right[n], 12, "rival"); style[n] = FONT_STYLE_GREY; card[n] = b; n++;
     }
-    if (len) n++;
     return n;
+}
+
+// The Stats pages: the run's numbers (pause menu > Stats; paged by ui_pages)
+void tower_stats_doc(UiDoc *d)
+{
+    char nl[96];
+    ui_doc_row(d, FONT_STYLE_GOLD, NULL, "Floor %d", s.floor);
+    if (tower_circle() > 1) ui_doc_row(d, FONT_STYLE_RED, NULL, "Ascension %d", tower_circle() - 1);
+    if (s.night) ui_doc_text(d, FONT_STYLE_RED, "%s", night_line(s.night, nl, sizeof nl));
+    ui_doc_row(d, FONT_STYLE_GOLD, NULL, "Gold %d   Embers this run %d", s.gold, s.runEmbers);
+    int e = tower_relic_equipped();
+    if (e >= 0) ui_doc_text(d, FONT_STYLE_WHITE, "Relic: %s (%s)", tower_relic_name(e), tower_relic_desc(e));
+    else ui_doc_text(d, FONT_STYLE_GREY, "Relic: none");
+    ui_doc_gap(d);
+    ui_doc_text(d, FONT_STYLE_WHITE, "Damage x%.2f, damage taken x%.2f", (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken());
+    ui_doc_text(d, FONT_STYLE_WHITE, "Max health %.0f, potions %d (most %d)", (double)tower_mod_max_health(), character.healthPotions, tower_mod_max_potions());
+    if (s.potionDebt) ui_doc_text(d, FONT_STYLE_RED, "Potions owed to Thirst: %d", s.potionDebt);
+    ui_doc_gap(d);
+    int k = 0;
+    for (int i = 0; i < PB_COUNT; i++) if (s.bless[i] || s.halfBless[i]) {     // (a Brazier's half: "1.5")
+        int h = 2 * s.bless[i] + s.halfBless[i];
+        char r[12]; snprintf(r, sizeof r, "x%d%s", h / 2, h % 2 ? ".5" : "");
+        ui_doc_row(d, FONT_STYLE_GOLD, r, "%s%s: %s", k++ ? "" : "Blessings: ", BLESSINGS[i].name, BLESSINGS[i].desc);
+    }
+    if (!k) ui_doc_text(d, FONT_STYLE_GREY, "Blessings: none");
+    k = 0;
+    for (int i = 0; i < PC_COUNT; i++) if (s.curse[i]) {
+        char r[12]; snprintf(r, sizeof r, "x%d", s.curse[i]);
+        ui_doc_row(d, FONT_STYLE_RED, r, "%s%s: %s", k++ ? "" : "Curses: ", CURSES[i].name, CURSES[i].desc);
+    }
+    if (!k) ui_doc_text(d, FONT_STYLE_GREY, "Curses: none");
 }
 
 // ---- The unlock ladder ----
@@ -2171,6 +2548,15 @@ const char* tower_pack_desc(int i)
         if (BOONS[b].pack && BOONS[b].family == f) n += snprintf(d + n, sizeof d - n, "%s%s", n ? ", " : "New boons: ", BOONS[b].name);
     return d;
 }
+// one line under the Unlocks list (R: all of it)
+const char* tower_pack_brief(int i)
+{
+    static char d[64];
+    int f = pack_family(i), k = pack_form(i), n = 0;
+    if (k >= 0) snprintf(d, sizeof d, "%s's second Lv 5 form", BOONS[BOON_LEARN_MOONBLADE + k].name);
+    else { for (int b = 0; b < BOON_COUNT; b++) n += f >= 0 && BOONS[b].pack && BOONS[b].family == f; snprintf(d, sizeof d, "%d new %s boon%s", n, f >= 0 ? FAMILIES[f].name : "", n == 1 ? "" : "s"); }
+    return d;
+}
 static int pack_bit(int i) { int f = pack_family(i), k = pack_form(i); return f >= 0 ? f : k >= 0 ? FAM_COUNT + k : -1; }
 bool tower_pack_owned(int i) { int bit = pack_bit(i); TowerSave t; tower_load(&t); return bit >= 0 && ((t.unlocks >> bit) & 1); }
 int  tower_pack_cost(int i)
@@ -2193,6 +2579,72 @@ bool tower_pack_buy(int i)
     debugf("[unlock] bought %s for %d: unlocks %03x, Embers %d\n", tower_pack_name(i), cost, t.unlocks, t.embers);
 #endif
     return save_controller_set_tower(&t);
+}
+
+// The Shrine's Details (R): an upgrade, a relic (id; -1 none), an unlock (a pack or a B form), the Nightfarer
+void tower_details_shrine(int kind, int i)
+{
+    UiPanel *p = ui_details();
+    UiDoc *d = ui_panel_doc(p);
+    char t[64] = ""; int st = FONT_STYLE_GOLD;
+    ui_doc_clear(d);
+    text_load();
+    if (kind == TOWER_SHRINE_UPGRADE) {
+        int lv = tower_upgrade_level((UpgradeId)i), c = tower_upgrade_cost((UpgradeId)i);
+        snprintf(t, sizeof t, "%s", UPGRADES[i].name);
+        ui_doc_text(d, FONT_STYLE_WHITE, "%s a level, for every climb (the Tower only).", UPGRADES[i].desc);
+        ui_doc_text(d, FONT_STYLE_GOLD, "Lv %d of %d now.", lv, UPG_MAX_LEVEL);
+        if (c >= 0) ui_doc_text(d, tower_embers() >= c ? FONT_STYLE_WHITE : FONT_STYLE_RED, "Next level: %d Embers (you hold %d).", c, tower_embers());
+        else ui_doc_text(d, FONT_STYLE_GREY, "At its max.");
+    } else if (kind == TOWER_SHRINE_RELIC) {
+        if (i < 0) { snprintf(t, sizeof t, "No relic"); ui_doc_text(d, FONT_STYLE_WHITE, "Climb with no relic: no blessing, no curse."); }
+        else {
+            snprintf(t, sizeof t, "%s", RELICS[i].name);
+            for (int k = 0; k < 2; k++) { int fx = k ? RELICS[i].fx & 15 : RELICS[i].fx >> 4;
+                ui_doc_text(d, fx >= RELIC_FRAIL ? FONT_STYLE_RED : FONT_STYLE_WHITE, "%s: %s", RELIC_FX[fx].adj, RELIC_FX[fx].desc); }
+            ui_doc_gap(d);
+            ui_doc_text(d, FONT_STYLE_GREY, "One relic is worn for a whole climb.");
+            if (tower_relic_equipped() == i) ui_doc_text(d, FONT_STYLE_GOLD, "Worn. A takes it off.");
+            else if (tower_relic_owned(i)) ui_doc_text(d, FONT_STYLE_WHITE, "Owned. A wears it.");
+            else ui_doc_text(d, tower_embers() >= RELIC_COST ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d Embers (you hold %d). A buys and wears it.", RELIC_COST, tower_embers());
+        }
+    } else if (kind == TOWER_SHRINE_UNLOCK) {
+        int f = pack_family(i), k = pack_form(i), c = tower_pack_cost(i);
+        if (f >= 0) {
+            snprintf(t, sizeof t, "%s pack", FAMILIES[f].name); st = FAMILIES[f].style;
+            ui_doc_text(d, FONT_STYLE_GREY, "New %s boons, in the drafts and Shops of every climb from then on:", FAMILIES[f].name);
+            for (int b = 0; b < BOON_COUNT; b++) if (BOONS[b].pack && BOONS[b].family == f) {
+                char r[24]; snprintf(r, sizeof r, "%s", TIER_NAME[BOONS[b].tier]);
+                ui_doc_gap(d); ui_doc_keep(d);
+                ui_doc_row(d, NAME_STYLE[BOONS[b].tier], r, "%s  (max Lv %d)", BOONS[b].name, BOONS[b].maxStacks);
+                ui_doc_text(d, FONT_STYLE_WHITE, "%s", full_text(b));
+                if (rival_of(b) >= 0) { char rn[48]; rival_names(b, rn, sizeof rn); ui_doc_text(d, FONT_STYLE_RED, "Rival: %s", rn); }
+            }
+            char line[160]; int m = 0; line[0] = 0;
+            for (int du = 0; du < BOON_COUNT; du++) if (BOONS[du].duo && (BOONS[du].family == f || BOONS[du].duo - 1 == f))
+                m += snprintf(line + m, m < (int)sizeof line ? sizeof line - m : 0, "%s%s (%s)", m ? ", " : "", BOONS[du].name, FAMILIES[BOONS[du].family == f ? BOONS[du].duo - 1 : BOONS[du].family].name);
+            ui_doc_gap(d);
+            ui_doc_text(d, FONT_STYLE_GOLD, "Duos it opens, with the other family's pack: %s", line);
+        } else if (k >= 0) {
+            BoonId fb = skill_form_card(k, SKILL_FORM_B), fa = skill_form_card(k, SKILL_FORM_A);
+            snprintf(t, sizeof t, "%s", BOONS[fb].name); st = FONT_STYLE_GOLD;
+            ui_doc_text(d, FONT_STYLE_GREY, "%s's second Lv 5 form, offered beside %s once the skill reaches Lv 4:", BOONS[BOON_LEARN_MOONBLADE + k].name, BOONS[fa].name);
+            ui_doc_text(d, FONT_STYLE_WHITE, "%s", full_text(fb));
+            ui_doc_gap(d);
+            ui_doc_text(d, FONT_STYLE_RED, "Its rival, %s: %s", BOONS[fa].name, full_text(fa));
+        }
+        ui_doc_gap(d);
+        if (c < 0) ui_doc_text(d, FONT_STYLE_GREY, "Owned.");
+        else ui_doc_text(d, tower_embers() >= c ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d Embers (you hold %d)%s.", c, tower_embers(), f >= 0 ? "; each pack bought raises the next one's price" : "");
+    } else {
+        snprintf(t, sizeof t, "Nightfarer");
+        ui_doc_text(d, FONT_STYLE_WHITE, "A skin: a tracker's winged helm and blue coat. It changes nothing in a fight.");
+        if (tower_nightfarer_owned()) ui_doc_text(d, FONT_STYLE_GREY, "Owned: worn from Settings > Skin.");
+        else ui_doc_text(d, tower_embers() >= NIGHTFARER_COST ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d Embers (you hold %d).", NIGHTFARER_COST, tower_embers());
+    }
+    text_free();
+    ui_panel_open(p, t, st, false);
+    p->owner = UI_OWNER_MENU;
 }
 
 const char* tower_death_summary(void)
@@ -2754,8 +3206,8 @@ int tower_test_skills(void)
     take_boon(BOON_FULL_MOON);
     CHECK(tower_skill_level(SKILL_HALFMOON_SLASH) == 5 && tower_skill_form(SKILL_HALFMOON_SLASH) == SKILL_FORM_B && s.locked[BOON_TWIN_MOON] && !offerable(BOON_TWIN_MOON) && !offerable(BOON_FULL_MOON),
           "Full Moon taken: Lv 5, form B, Twin Moon locked out for the run");
-    { char l[TOWER_BUILD_ROWS][40], r[TOWER_BUILD_ROWS][12]; int st[TOWER_BUILD_ROWS];
-      int n = tower_build_rows(l, r, st, TOWER_BUILD_ROWS); bool locked = false;
+    { char l[TOWER_BUILD_ROWS][40], r[TOWER_BUILD_ROWS][12]; int st[TOWER_BUILD_ROWS], cd[TOWER_BUILD_ROWS];
+      int n = tower_build_rows(l, r, st, cd, TOWER_BUILD_ROWS); bool locked = false;
       for (int i = 0; i < n; i++) locked |= strstr(l[i], "Locked:") && strstr(l[i], "Twin Moon");
       CHECK(strstr(l[1], "Full Moon") && !strcmp(r[1], "Lv 5/5") && st[1] == FONT_STYLE_GOLD && !strcmp(r[0], "-") && locked,
             "Build: \"%s\" \"%s\", the other form greyed under Locked", l[1], r[1]); }
@@ -2896,8 +3348,8 @@ int tower_test_stage2(void)
       CHECK(b4 == 6.0f, "merged Storm Blade still calls lightning on hit 4 (%.0f)", (double)b4); }
     { character.maxHealth = 200.0f; character.health = 100.0f; float d = tower_on_lightning(6.0f, false);
       CHECK(d == 6.0f && fabsf(character.health - 100.0f - 0.5f * 0.24f * 6.0f) < 0.01f, "Crimson Storm: a bolt of 6 heals 0.72 with Bloodthirst Lv 2 (%.2f, bolt %.1f)", (double)(character.health - 100.0f), (double)d); }
-    { char l[TOWER_BUILD_ROWS][40], r[TOWER_BUILD_ROWS][12]; int st[TOWER_BUILD_ROWS];
-      int n = tower_build_rows(l, r, st, TOWER_BUILD_ROWS); bool duoRow = false, both = false; int lock = 0;
+    { char l[TOWER_BUILD_ROWS][40], r[TOWER_BUILD_ROWS][12]; int st[TOWER_BUILD_ROWS], cd[TOWER_BUILD_ROWS];
+      int n = tower_build_rows(l, r, st, cd, TOWER_BUILD_ROWS); bool duoRow = false, both = false; int lock = 0;
       for (int i = 0; i < n; i++) { duoRow |= !strcmp(l[i], "Crimson Storm") && !strcmp(r[i], "Duo"); both |= strstr(l[i], "Bloodthirst + Storm Blade") != NULL;
                                     lock += (strstr(l[i], "Executioner") != NULL) + (strstr(l[i], "Moon Mastery") != NULL) + (strstr(l[i], "Last Stand") != NULL);
                                     debugf("[stage2] build row %d: %s | %s\n", i, l[i], r[i]); }
@@ -2997,12 +3449,13 @@ int tower_test_stage2(void)
 // Stage 3's self-check (HLE_TEST_TOWER): 1,000 seeded maps against section 2's rules (checked path by
 // path, apart from map_rules_ok), walks through whole circles by the screens' own presses, a Rest's
 // choices and Release, Elites; returns the failures
+static int s_walkRestBack;
 static int s_mapFails, s_walkShops, s_walkEvents, s_walkFightGold, s_walkEventGold;
 #define MCHECK(c, ...) do { if (!(c)) { s_mapFails++; debugf("[map] FAIL: " __VA_ARGS__); debugf("\n"); } } while (0)
 static bool test_press(int key)     // a press on the screens between fights, past their input delay
 {
     s.scrOpenMs = s.draftOpenMs = get_ticks_ms() - DRAFT_INPUT_DELAY_MS - 1;
-    return tower_between_update(key == 'L', key == 'R', key == 'U', key == 'D', key == 'A', key == 'B');
+    return tower_between_update(key == 'L', key == 'R', key == 'U', key == 'D', key == 'A', key == 'B', key == 'r');     // ('r': the R button)
 }
 // One circle through the map from its first screen: random moves, A or Up to enter; a Rest heals and
 // keeps the boons; a fight is won (with its draft's first card, or none); returns its fights
@@ -3015,14 +3468,41 @@ static int walk_circle(bool drafts)
     for (int step = 0; step < 12 && s.circle == c; step++) {
         for (int m = rng_next() % 3; m > 0; m--) test_press(rng_next() % 2 ? 'L' : 'R');
         onlyReach &= map_reachable(s.map.row + 1, s.map.sel);
-        if (!test_press(rng_next() % 2 ? 'A' : 'U')) {      // a Rest, a Shop or an Event
+        // pick, then confirm: Up and Down never enter, A opens the node's page, its B the map again, its A enters;
+        // the map's B asks for the pause menu, R its Details (closed by R)
+        int row0 = s.map.row, sel0 = s.map.sel;
+        test_press('U'); test_press('D');
+        MCHECK(s.scr == SCR_MAP && s.map.row == row0, "Up and Down never enter a node (screen %d, row %d)", s.scr, s.map.row);
+        test_press('B');
+        MCHECK(tower_take_pause_request() && s.scr == SCR_MAP && s.map.row == row0, "the map's B: the pause menu, nothing entered");
+        test_press('r');
+        MCHECK(ui_details()->open && !ui_details()->confirm && s.map.row == row0, "the map's R: the node's Details");
+        test_press('r');
+        MCHECK(!ui_details()->open && s.scr == SCR_MAP, "R again closes them");
+        test_press('A');
+        MCHECK(s.scr == SCR_CONFIRM && ui_details()->open && ui_details()->confirm && ui_details()->pg.pages == 1 && s.map.row == row0,
+               "A: the node's page (one page: %d), not entered", ui_details()->pg.pages);
+        if (rng_next() % 3 == 0) {
+            test_press('B');
+            MCHECK(s.scr == SCR_MAP && !ui_details()->open && s.map.row == row0 && s.map.sel == sel0, "B on the node's page: the map, the cursor where it was");
+            test_press('A');
+        }
+        if (!test_press('A')) {      // a Rest, a Shop or an Event
             int t = s.map.type[s.map.row][s.map.path[s.map.row]];
             MCHECK((t == NODE_REST && s.scr == SCR_REST) || (t == NODE_SHOP && s.scr == SCR_SHOP) || (t == NODE_EVENT && s.scr == SCR_EVENT),
                    "a node that isn't a fight opens its own screen (node %d, screen %d)", t, s.scr);
             int g = s.gold;
             if (t == NODE_SHOP) { test_press('B'); s_walkShops++; MCHECK(s.gold == g, "B leaves a Shop, nothing bought"); }
             else if (t == NODE_EVENT) { test_press('A'); s_walkEventGold += s.gold - g; test_press('A'); s_walkEvents++; }   // its first choice, then Continue
-            else { test_press('A'); if (s.scr == SCR_RELEASE) test_press('A'); }
+            else {
+                if (s_walkRestBack++ % 2 == 0) {    // a Rest's B: the map, the Rest still to choose; then in again
+                    test_press('B');
+                    MCHECK(s.scr == SCR_MAP && s.map.row == row0 && map_reachable(row0 + 1, s.map.sel) && s.map.type[row0 + 1][s.map.sel] == NODE_REST, "a Rest's B: the map, its node to choose again");
+                    test_press('A'); test_press('A');
+                    MCHECK(s.scr == SCR_REST, "and A, A: the Rest again (%d)", s.scr);
+                }
+                test_press('A'); if (s.scr == SCR_RELEASE) test_press('A');
+            }
             MCHECK(tower_map_is_open() && s.floor == floor0 + fights, "after a Rest, a Shop or an Event, the map again, no floor counted (%d)", s.floor);
             continue;
         }
@@ -3123,6 +3603,75 @@ int tower_test_map(void)
     debugf("[map] 80 circles walked: %d with 4 fights, %d with 5, %d with 6; %d Shops and %d Events entered; fights' gold %d a circle (circles 1-2), events' %d in all\n",
            hist[4], hist[5], hist[6], s_walkShops, s_walkEvents, s_walkFightGold / 80, s_walkEventGold);
     save_controller_set_tower(&was);
+    // 2b. every node's confirm page fits one page: each Elite with every pair of affixes on each Bonus boss (and as
+    // the jailer), each boss node under each night; and every card's Details page count (they page)
+    {
+        UiPanel *dp = ui_details(); char t[64]; int st, worst = 0, cards = 0, most = 0, mostCard = 0, cardBad = 0, noText = 0;
+        text_load();
+        for (int k = 0; k < TXT_COUNT; k++) if (!full_text(k)[0] && noText++ < 3) debugf("[map] FAIL: rom:/ui/tower_text.bin has no text %d\n", k);
+        MCHECK(!noText && s_text, "every card's and affix's Details text is in ROM (%d missing)", noText);
+        tower_begin_run(9); s.circle = AFX_TWO_CIRCLE; s.map.row = 0; s.map.path[0] = 1; s.floor = 123; s.gold = 99999;
+        for (int pr = 0; pr < 2; pr++) for (int b = TOWER_FALLEN_KNIGHT; b <= TOWER_SHADOWBORN; b++)
+            for (int a = 0; a < AFX_COUNT; a++) for (int c = a + 1; c < AFX_COUNT; c++) {
+                s.prisoner = pr; s.map.type[1][1] = pr ? NODE_FIGHT : NODE_ELITE; s.map.boss[1][1] = (uint8_t)(b + 1); s.map.afx[1][1] = (uint8_t)((1 << a) | (1 << c));
+                ui_doc_clear(ui_panel_doc(dp)); doc_node(dp->doc, 1, 1, true, t, sizeof t, &st); ui_panel_open(dp, t, st, true);
+                if (dp->pg.pages > 1 && worst++ < 3) debugf("[map] FAIL: %s takes %d pages\n", t, dp->pg.pages);
+            }
+        s.prisoner = false;
+        for (int n = 1; n < NIGHT_COUNT; n++) for (int r = 0; r < MAP_ROWS; r += MAP_ROWS - 1) {
+            s.night = (Night)n; s.map.row = r - 1;
+            for (int ty = NODE_FIGHT; ty <= NODE_BOSS; ty++) {
+                int rr = r ? 3 : r; if (ty != NODE_BOSS) { s.map.type[rr][1] = (uint8_t)ty; s.map.boss[rr][1] = TOWER_SHACKLED_SUN + 1; s.map.afx[rr][1] = 0x30; } else rr = r;
+                ui_doc_clear(ui_panel_doc(dp)); doc_node(dp->doc, rr, 1, true, t, sizeof t, &st); ui_panel_open(dp, t, st, true);
+                if (dp->pg.pages > 1 && worst++ < 6) debugf("[map] FAIL: %s under %s takes %d pages\n", t, NIGHTS[n].name, dp->pg.pages);
+            }
+        }
+        s.packs = (1 << FAM_COUNT) - 1;
+        for (int b = 0; b < BOON_COUNT; b++) { details_card(b); cards++; if (dp->pg.pages > most) { most = dp->pg.pages; mostCard = b; } }
+        // every card's text fits its card: the draft's (name, text, then its bottom lines up from the foot) and the Shop's
+        // (name, text, then the price): the lines as drawn (tower_draft_draw, shop_draw)
+        for (int b = 0; b < BOON_COUNT; b++) for (int lv = 0; lv < (is_learn(b) ? SKILL_LV_MAX : 1); lv++) {
+            const BoonDef *bd = &BOONS[b];
+            const char *desc = is_learn(b) ? (lv ? SKILL_LV_DESC[b - BOON_LEARN_MOONBLADE][lv - 1] : "Learn it: C-right") : bd->desc;
+            int nl = ui_text_lines(bd->name, 88), dl = ui_text_lines(desc, 84), descEnd = 31 + 17 * (nl > 1 ? nl : 1) + 17 * (dl - 1);
+            int nb = 1, extra = 0;
+            if (bd->duo) nb = 3;
+            else if (is_form(b)) { nb = 2; extra = ui_text_lines(BOONS[rival_of(b)].name, 98) - 1; }
+            else if (rival_of(b) >= 0) { char rn[48]; rival_names(b, rn, sizeof rn); nb = 3; extra = ui_text_lines(rn, 98) - 1; }
+            int topBottom = DRAFT_CARD_H - 3 - 12 * (nb - 1) - 17 * extra;
+            if (descEnd + 16 > topBottom && cardBad++ < 30) debugf("[map] FAIL: draft card %s%s: its text ends at %d, its bottom lines start at %d\n", bd->name, lv ? " (a level)" : "", descEnd, topBottom);
+            if (!is_skill_card(b) && !bd->up && descEnd + 15 > 100 - 3 && cardBad++ < 30) debugf("[map] FAIL: shop card %s: its text ends at %d, the price at 97\n", bd->name, descEnd);
+        }
+        // every one-line text inside its room: the map's lines and the screens' rows, with 5-digit gold, floor 123, Ascension 19
+        {
+            int wide = 0; char ln[128];
+            #define FIT(w, ...) do { snprintf(ln, sizeof ln, __VA_ARGS__); if (ui_text_width(ln) > (w) && wide++ < 20) debugf("[map] FAIL: too wide (%d > %d): %s\n", ui_text_width(ln), (w), ln); } while (0)
+            FIT(272, "Floor %d   Ascension %d   Gold %d", 123, 19, 99999);
+            FIT(272, "Floor %d cleared   +%d Embers   +%d gold", 123, 999, 999);
+            FIT(272, "Choose a Boon   Next: floor %d", 124);
+            FIT(160, "Skip: +%d Embers, +%d gold", SKIP_EMBERS, 99);
+            FIT(272, "Shop   Gold %d", 99999);
+            FIT(272, "Health %d/%d   Potions %d/%d", 999, 999, 15, 15);
+            FIT(272, "Gold %d   Health %d/%d   Potions %d", 99999, 999, 999, 15);
+            for (int n = 1; n < NIGHT_COUNT; n++) { FIT(272, "%s: %s", NIGHTS[n].name, NIGHTS[n].brief); FIT(272, "Next: floor %d, a new circle: %s", 124, NIGHTS[n].name); }
+            for (int b = TOWER_FALLEN_KNIGHT; b <= TOWER_SHADOWBORN; b++) for (int a = 0; a < AFX_COUNT; a++) for (int c = a + 1; c < AFX_COUNT; c++)
+                FIT(272, "Elite: %s %s %s", AFFIXES[a].name, AFFIXES[c].name, BOSS_NAMES[b]);
+            for (int pb = 0; pb < PB_COUNT; pb++) for (int pc = 0; pc < PC_COUNT; pc++) FIT(272, "Blessing %s, its curse %s", BLESSINGS[pb].name, CURSES[pc].name);
+            for (int i = 0; i < SHOP_ITEMS; i++) { s.gold = 0; FIT(272, "%s", shop_block(i)); }
+            for (int b = 0; b < BOON_COUNT; b++) { FIT(220, "%s (top level)", BOONS[b].name); FIT(220, "%s   Lv %d -> %d", BOONS[b].name, 4, 5); FIT(220, "%s   Duo, with its two", BOONS[b].name); }
+            for (int e = 0; e < EV_COUNT; e++) for (int i = 0; i < EVENTS[e].choices; i++) { s.event = (int8_t)e; character.maxHealth = 999; character.health = 1; char lb[96]; event_label(i, lb, sizeof lb); FIT(220, "%s", lb); }
+            FIT(220, "Heal 40%%: +%d health", 999); FIT(220, "Temper: +1 level on a boon or skill");
+            #undef FIT
+            MCHECK(!wide, "every one-line text fits its room (%d don't)", wide);
+            s.gold = 99999;
+        }
+        ui_panel_close(dp);
+        text_free();
+        debugf("[ui] pitch %d; widths: %d (alphabet a-z), %d (Enter: Elite Relentless Smouldering Shackled Sun), %d (an Elite's reward line)\n", ui_line_pitch(), ui_text_width("abcdefghijklmnopqrstuvwxyz"),
+               ui_text_width("Enter: Elite Relentless Smouldering Shackled Sun"), ui_text_width("x1.25 health. Reward: a Rare-or-better draft (a duo if one is ready), x1.5 gold (75) and Embers."));
+        debugf("[map] node pages: %d too long; %d cards' Details, the longest %d pages (%s)\n", worst, cards, most, BOONS[mostCard].name);
+        MCHECK(!worst && most <= 4 && !cardBad, "every node's page fits one page (%d don't), every card's Details 4 pages at most (%d), every card's text fits it (%d don't)", worst, most, cardBad);
+    }
     // 3. the circle's scaling, by maps (no drafts: no skills offered, no nights)
     tower_begin_run(7); tower_map_open();
     walk_circle(false);
@@ -3633,3 +4182,120 @@ void tower_floor_restore(void)
     debugf("[potions] floor %d: %d (max %d, owed %d)\n", s.floor, character.healthPotions, tower_mod_max_potions(), s.potionDebt);
 #endif
 }
+
+#ifdef HLE_TOWER_GALLERY
+// Test aid (HLE_TOWER_GALLERY, driven by hle/autoplay.c between floors): every Tower screen in its worst case
+// for a look, one a step (the longest names, two-affix Elites, 5-digit gold, floor 123, Ascension 19, every
+// night, every pact pair, a full bar with a duo and every rival locked, 15 potions, 0 gold); returns the
+// step's name, NULL past the last. [gallery] logs each with its VI frame (HLE_LOG_MOVE_MS)
+static bool gal_press(int key)
+{
+    s.scrOpenMs = s.draftOpenMs = get_ticks_ms() - DRAFT_INPUT_DELAY_MS - 1;
+    return tower_between_update(key == 'L', key == 'R', key == 'U', key == 'D', key == 'A', key == 'B', key == 'r');
+}
+static void gallery_full_run(void)
+{
+    tower_begin_run(77);
+    s.packs = (1 << FAM_COUNT) - 1; s.forms = (1 << SKILL_COUNT) - 1;
+    s.floor = 123; s.circle = 20; s.night = NIGHT_STARFALL; s.gold = 99999; s.runEmbers = 99999;
+    #define MAXB(b) while (s.stacks[b] < BOONS[b].maxStacks) take_boon(b)
+    MAXB(BOON_PHANTOM_STEP); MAXB(BOON_BLOODTHIRST); take_boon(BOON_SHADES_MERCY);     // a duo (Shadow + Blood)
+    MAXB(BOON_CRUSHING_BLOWS); take_boon(BOON_CRUSHING_BLOWS_PLUS); MAXB(BOON_STATIC); take_boon(BOON_EMBER_EDGE); take_boon(BOON_RALLY); take_boon(BOON_LAST_STAND);
+    #undef MAXB
+    for (unsigned i = 0; i < sizeof RIVALS / sizeof RIVALS[0]; i++) s.locked[RIVALS[i][1]] = true;     // every rival locked
+    s.skills = 7; s.stacks[BOON_LEARN_MOONBLADE] = 3; s.stacks[BOON_LEARN_CLEAVE] = 2; s.stacks[BOON_LEARN_HALFMOON] = 4; s.stacks[BOON_TWIN_MOON] = 1;
+    for (int b = 0; b < PB_COUNT; b++) s.bless[b] = 2;
+    for (int c = 0; c < PC_COUNT; c++) s.curse[c] = 2;
+    s.halfBless[PB_MIGHT] = 1; s.potionDebt = 2;
+    character.maxHealth = tower_mod_max_health(); character.health = character.maxHealth * 0.6f; character.healthPotions = POTION_CAP;
+}
+static void gallery_draft(int a, int b, int c, int sel, bool cleared)
+{
+    s.choices[0] = a; s.choices[1] = b; s.choices[2] = c; s.nChoices = 3; s.sel = sel;
+    s.draftOpen = true; s.draftOpenMs = get_ticks_ms() - 2000; s.scr = SCR_NONE;
+    s.circleCleared = cleared; s.nextNight = NIGHT_STARFALL; s.lastFloorEmbers = 999; s.lastFloorGold = 999;
+}
+static void gallery_map(int t, uint8_t afx, int boss, bool prisoner)
+{
+    s.draftOpen = false; ui_panel_close(ui_details());
+    s.map.row = 0; s.map.path[0] = 1;
+    for (int l = 0; l < MAP_LANES; l++) s.map.type[1][l] = NODE_FIGHT;
+    s.map.type[1][1] = (uint8_t)t; s.map.boss[1][1] = (uint8_t)(boss + 1); s.map.afx[1][1] = afx;
+    s.prisoner = prisoner;
+    tower_map_open();
+    s.map.sel = 1;
+}
+static void gallery_details(void) { details_for_cursor(true); }
+static void gallery_confirm(int page) { s.scr = SCR_MAP; gal_press('A'); ui_details()->pg.page = (int8_t)(page < ui_details()->pg.pages ? page : ui_details()->pg.pages - 1); }
+static void gallery_event(int e, bool done)
+{
+    s.draftOpen = false; ui_panel_close(ui_details());
+    s.event = (int8_t)e; s.eventPick = PB_LAST_BREATH; s.eventDone = false;
+    s.scr = SCR_EVENT; list_open(SCR_EVENT);
+    if (done) { int g = s.gold, p = character.healthPotions; event_take(0); s.gold = g; character.healthPotions = p; }
+    s.scrOpenMs = get_ticks_ms() - 2000;
+}
+const char *tower_test_gallery(int k)
+{
+    static char name[80];
+    if (k == 0) gallery_full_run();
+    ui_panel_close(ui_details());
+    int i = 0;
+    #define STEP(nm, ...) if (k == i++) { __VA_ARGS__; snprintf(name, sizeof name, "%s", nm); return name; }
+    STEP("draft: skill cards, a new circle", gallery_draft(BOON_LEARN_MOONBLADE, BOON_FULL_MOON_DANCE, BOON_LONG_CLEAVE, 0, true))
+    STEP("draft: duos", gallery_draft(BOON_BLOOD_MOON_RITE, BOON_ANVIL_OF_STORMS, BOON_STEEL_HEARTH, 1, false))
+    STEP("draft: the longest pacts", gallery_draft(PACT_CARD(PB_WOUNDED, PC_EXPOSED), PACT_CARD(PB_LAST_BREATH, PC_WEAKNESS), PACT_CARD(PB_STAGGERED, PC_IMPAIRED), 2, false))
+    STEP("draft: rivals", gallery_draft(BOON_RIPOSTE, BOON_IRON_SKIN, BOON_BERSERKER, 1, false))
+    STEP("draft: pluses and the purse", gallery_draft(BOON_CRUSHING_BLOWS_PLUS, BOON_PHANTOM_STEP_PLUS, GOLD_CARD, 2, false))
+    STEP("details: Iron Skin (rivals)", gallery_draft(BOON_RIPOSTE, BOON_IRON_SKIN, BOON_BERSERKER, 1, false); gallery_details())
+    STEP("details: Full Moon Dance 1", gallery_draft(BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE, BOON_RALLY, 0, false); gallery_details())
+    STEP("details: Full Moon Dance 2", gallery_draft(BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE, BOON_RALLY, 0, false); gallery_details(); gal_press('A'))
+    STEP("details: Full Moon Dance 3", gallery_draft(BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE, BOON_RALLY, 0, false); gallery_details(); gal_press('A'); gal_press('A'))
+    STEP("details: Full Moon Dance 4", gallery_draft(BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE, BOON_RALLY, 0, false); gallery_details(); gal_press('A'); gal_press('A'); gal_press('A'))
+    STEP("details: Rally (held, its +)", gallery_draft(BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE, BOON_RALLY, 2, false); gallery_details())
+    STEP("details: Shade's Mercy (a duo held)", gallery_draft(BOON_SHADES_MERCY, BOON_STALWART, BOON_RALLY, 0, false); gallery_details())
+    STEP("details: Stalwart (new)", gallery_draft(BOON_SHADES_MERCY, BOON_STALWART, BOON_RALLY, 1, false); gallery_details())
+    STEP("details: a pact", gallery_draft(PACT_CARD(PB_WOUNDED, PC_EXPOSED), PACT_CARD(PB_LAST_BREATH, PC_WEAKNESS), PACT_CARD(PB_STAGGERED, PC_IMPAIRED), 0, false); gallery_details())
+    STEP("details: the purse", gallery_draft(BOON_CRUSHING_BLOWS_PLUS, BOON_PHANTOM_STEP_PLUS, GOLD_CARD, 2, false); gallery_details())
+    STEP("map: Elite Relentless Smouldering Shackled Sun, Starfall", gallery_map(NODE_ELITE, (1 << AFX_RELENTLESS) | (1 << AFX_SMOULDERING), TOWER_SHACKLED_SUN, false))
+    STEP("map: the jailer, Swift Ironclad", gallery_map(NODE_FIGHT, (1 << AFX_SWIFT) | (1 << AFX_IRONCLAD), TOWER_FALLEN_KNIGHT, true))
+    STEP("map: Blood Moon", s.night = NIGHT_BLOOD_MOON; gallery_map(NODE_SHOP, 0, 0, false))
+    STEP("map: Iron Night", s.night = NIGHT_IRON; gallery_map(NODE_REST, 0, 0, false))
+    STEP("map: no night", s.night = NIGHT_NONE; gallery_map(NODE_EVENT, 0, 0, false))
+    STEP("map: R on the Elite", s.night = NIGHT_STARFALL; gallery_map(NODE_ELITE, (1 << AFX_RELENTLESS) | (1 << AFX_SMOULDERING), TOWER_SHACKLED_SUN, false); gallery_details())
+    STEP("confirm: Elite, page 1", gallery_map(NODE_ELITE, (1 << AFX_RELENTLESS) | (1 << AFX_SMOULDERING), TOWER_SHACKLED_SUN, false); gallery_confirm(0))
+    STEP("confirm: Elite, page 2", gallery_map(NODE_ELITE, (1 << AFX_RELENTLESS) | (1 << AFX_SMOULDERING), TOWER_SHACKLED_SUN, false); gallery_confirm(1))
+    STEP("confirm: the jailer Swift Ironclad", gallery_map(NODE_FIGHT, (1 << AFX_SWIFT) | (1 << AFX_IRONCLAD), TOWER_FALLEN_KNIGHT, true); gallery_confirm(0))
+    STEP("confirm: a Fight", gallery_map(NODE_FIGHT, 0, TOWER_SHADOWBORN, false); gallery_confirm(0))
+    STEP("confirm: Rest", gallery_map(NODE_REST, 0, 0, false); gallery_confirm(0))
+    STEP("confirm: Shop", gallery_map(NODE_SHOP, 0, 0, false); gallery_confirm(0))
+    STEP("confirm: Event", gallery_map(NODE_EVENT, 0, 0, false); gallery_confirm(0))
+    STEP("confirm: Guardian Unbound, Starfall", gallery_map(NODE_FIGHT, 0, 2, false); s.map.row = MAP_ROWS - 2; s.map.path[s.map.row] = 1; s.map.sel = 1; gallery_confirm(0))
+    STEP("shop: 99999 gold, the longest cards", s.draftOpen = false; shop_open(); s.shop.card[0] = BOON_SANGUINE_FLASK; s.shop.card[1] = BOON_SHADES_MERCY; s.shop.card[2] = BOON_CRUSHING_BLOWS; s.shop.pact = PACT_CARD(PB_WOUNDED, PC_EXPOSED); s.scrOpenMs -= 2000)
+    STEP("shop: on the pact", s.shop.sel = SHOP_PACT)
+    STEP("shop: on Potion, 15 held", s.shop.sel = SHOP_POTION)
+    STEP("shop: 0 gold, on a card", s.gold = 0; s.shop.sel = SHOP_CARD1)
+    STEP("shop: R on a card", s.gold = 99999; s.shop.sel = SHOP_CARD0; gallery_details())
+    STEP("shop: R on A level", s.shop.sel = SHOP_LEVEL; gallery_details())
+    STEP("shop: a level's list", list_open(SCR_SHOP_LEVEL))
+    STEP("shop: a +'s list", s.stacks[BOON_RALLY] = 2; s.stacks[BOON_EMBER_EDGE] = 5; list_open(SCR_SHOP_PLUS))
+    STEP("shop: Release's list", list_open(SCR_SHOP_RELEASE); s.listSel = 0)
+    STEP("shop: R on Release's duo", list_open(SCR_SHOP_RELEASE); s.listSel = 0; gallery_details())
+    STEP("event 1", gallery_event(EV_ALTAR, false)) STEP("event 1 result", gallery_event(EV_ALTAR, true))
+    STEP("event 2", gallery_event(EV_GRAVE, false)) STEP("event 2 result", gallery_event(EV_GRAVE, true))
+    STEP("event 3", gallery_event(EV_MIRROR, false)) STEP("event 3 result", gallery_event(EV_MIRROR, true))
+    STEP("event 4", gallery_event(EV_MERCHANT, false)) STEP("event 4 result", gallery_event(EV_MERCHANT, true))
+    STEP("event 5", gallery_event(EV_POOL, false)) STEP("event 5 result", s.skills = 3; gallery_event(EV_POOL, true); s.skills = 7)
+    STEP("event 6", gallery_event(EV_PRISONER, false)) STEP("event 6 result", gallery_event(EV_PRISONER, true))
+    STEP("event 7", gallery_event(EV_BONES, false)) STEP("event 7 result", gallery_event(EV_BONES, true))
+    STEP("event 8", gallery_event(EV_BRAZIER, false)) STEP("event 8 result", gallery_event(EV_BRAZIER, true))
+    STEP("event: R on the Mirror", gallery_event(EV_MIRROR, false); gallery_details())
+    STEP("rest", s.draftOpen = false; list_open(SCR_REST); s.scrOpenMs -= 2000)
+    STEP("rest: R on Temper", list_open(SCR_REST); s.listSel = 1; gallery_details())
+    STEP("temper's list", s.stacks[BOON_EMBER_EDGE] = 1; s.stacks[BOON_RALLY] = 1; list_open(SCR_TEMPER))
+    STEP("release's list", list_open(SCR_RELEASE))
+    STEP("map: to the Elite (A, A fights it)", s.prisoner = false; gallery_map(NODE_ELITE, (1 << AFX_RELENTLESS) | (1 << AFX_SMOULDERING), TOWER_SHACKLED_SUN, false))
+    #undef STEP
+    return NULL;
+}
+#endif

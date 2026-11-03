@@ -1,0 +1,73 @@
+# The Tower's Details texts, one a line (src/game/tower/tower.c's TXT_ keys, in order): every BoonId, then the six affixes. No line breaks inside a text.
+Your damage +15% a level at Lv 1-3, then +10% a level at Lv 4-5 (+65% at Lv 5).
+Damage taken -15% a level at Lv 1-2, and -10% more at Lv 3 (about -35% in all).
++3 to the run's most potions a level, and 3 potions now (15 at most).
+Potions heal 25% more a level (a potion heals 45% of max health before boons).
+Rolls cost 40% less stamina.
+Stamina refills 40% faster a level, and an empty bar waits less before it refills.
+Skill cooldowns -20% a level (x0.8 each level: x0.51 at Lv 3). Offered once a skill is known.
+Each sword hit heals 12% a level of its base damage (a sword hit of 4 heals 0.5 a level). Skills and lightning don't heal.
++25 max health a level, and 25 health at once.
+Below 30% health your damage is +40% a level.
+Once a floor, a killing blow leaves you at 1 health instead.
+Perfect dodges are easier: the first 0.28 s of a roll count (0.20 without it). Each perfect dodge heals 2% of max health.
+A perfect dodge gives +50% damage for 2.5 s.
+A staggered boss stays down 50% longer.
+A staggered boss takes +60% damage. The stagger bonuses add up, +100% at most.
+Every 4th sword hit calls a bolt of lightning on the boss (6 damage).
+Your damage +35%, and potions heal 25% less.
+Health a blow takes can be won back by hitting the boss: each hit wins back a quarter of its base damage (Lv 2: half). It waits 1 s (Lv 2: 1.5 s), then drains away over 4 s.
+The combo's 3rd hit makes the boss bleed 4 a level over 3 s (a tick every 0.5 s); another finisher adds to it. It heals nothing.
+Drinking a potion gives +25% damage for 6 s.
++10% damage a level for every full 25% of your health missing.
+With Storm Blade: its bolts +1.5 a level. Without it: every 8th sword hit calls a bolt of its own (6, +1.5 a level above Lv 1).
+The combo's 3rd hit calls a bolt of lightning (6).
+Lightning fills the boss's stagger meter as a sword hit does. Offered once something calls lightning.
+When the boss is staggered, your next 5 sword hits each call lightning.
+Each sword hit takes 0.3 s a level off every skill cooldown. Offered once a skill is known.
+A skill's hit on a staggered boss deals +50% (the stagger bonuses add up, +100% at most).
+Each skill cast gives the sword +15% damage for 4 s.
+The combo's 3rd hit fills the stagger meter 20% more a level.
+A blow that would take over 20% of your max health deals 25% less.
+Any roll gives +8% damage a level for 2 s.
+A perfect dodge gives the roll's stamina back.
+After 3 perfect dodges on a floor, the next blow that lands deals nothing (once a floor).
++20% gold a level, from every source: fights, Skip, the purse and the Events.
+Below half health: a blow that doesn't knock you down can't flinch you or break a skill's wind-up; each sword hit in a row +8% damage, up to +40% (a blow taken or 2 s without a hit ends the streak); and no potions.
+Leap and send 5 crosses round you (0.8 each, about 4 a cast; they fill the stagger meter like one sword hit). Cooldown 15 s.
+Charge 2 s, then a wide slash in front (28). A blow during the charge breaks it. Cooldown 45 s.
+5 blades fly out in a fan, each hitting up to 4 times (about 10 a cast). Cooldown 18 s.
+10 crosses of 2 each (about 20 a cast); the first five keep Lv 1's stagger.
+7 crosses of 1.75, each filling the stagger meter like two thirds of a sword hit: the heart of a stagger build.
+A second slash 0.35 s after the first, the same arc at 40% of its damage and stagger.
+The slash all the way round you, x1.15 damage, 60% stagger; blows don't break its charge or slash (their damage still lands).
+3 more blades follow the middle three 0.3 s behind, at 70% damage (8 blades a cast).
+Blades fly 1.6x as far and hit 6 times, in a narrower fan, to hit from range.
+The combo's 3rd hit deals +25%.
+The first blow each floor deals half.
+Storm Blade's lightning comes every 3rd hit (was every 4th).
+A staggered boss takes +90% (was +60%).
+When a staggered boss rises, its stagger meter doesn't drain for 3 s.
+Riposte's +50% lasts 4 s (was 2.5 s).
+When Unbroken saves you, you also heal 20% of max health.
+Bloodthirst heals 16% a level of a hit's base (was 12%).
+Rally wins back three quarters of each hit's base (a sword hit 3).
+The perfect dodge's window is 0.31 s (was 0.28 s).
+Storm Blade's and Static's bolts deal +50%.
+Thunderclap's bolt deals +50% (9).
+Moon Mastery cuts 25% a level (was 20%: x0.42 at Lv 3).
+With Bloodthirst, each bolt of lightning heals at half its rate (of the bolt's damage); without it, bolts deal +25%.
+A perfect dodge calls two bolts on the boss, 0.3 s apart (Storm Blade's, with Static's bonus).
+Each skill cast costs 3% of max health (never the last of it), and skills' hits deal +40%.
+When the boss is staggered, every skill cooldown is ready again.
+A perfect dodge opens Riposte's window (2.5 s); hits in it win back 60% of their base of the health blows took (on top of Rally's share).
+Lightning on a staggered boss deals double.
+A perfect dodge takes 2 s off every skill cooldown.
+Each potion drunk: +10 max health for the floor (up to +30) and -40% damage taken for 4 s.
+A skill's first hit each cast calls Storm Blade's pillar on the boss (6).
+footwork, breathers and cooldowns 20% faster; strikes keep their timing.
++30% health, a stagger bar 30% longer.
+below half health, blows +25%, shorter breathers.
+its stagger drains 2x, it rises in 2.5 s, shorter breathers.
+heals 25% of the health its blows take.
+slams and dives leave fire for 2-3 s.

@@ -76,18 +76,25 @@ bool tower_map_is_open(void);
 bool tower_rest_is_open(void);          // a Rest's, a Shop's or an Event's screens
 bool tower_between_open(void);          // any of them
 // Returns true once a fight's node is entered on the map (the scene starts tower_floor_boss's fight).
-// back (B) leaves a Shop; it does nothing on the other screens
-bool tower_between_update(bool left, bool right, bool up, bool down, bool confirm, bool back);
+// (B goes back a level, never into anything; details: R opens the Details panel for the cursor's card, node or row)
+bool tower_between_update(bool left, bool right, bool up, bool down, bool confirm, bool back, bool details);
+bool tower_take_pause_request(void);    // the map's B: open the pause menu (the screen behind it); read once
+void tower_enter_guardian(void);        // a run's first floor, entered without the map (it's always the Guardian)
 int  tower_gold(void);                  // this run's gold (lost when it ends)
 void tower_between_draw(void);
 void tower_hud_draw(void);              // floor / circle during a run fight
 const char* tower_death_summary(void);   // a line for the death screen
-const char* tower_run_summary(void);     // the run so far, for the pause menu's Stats page (several lines)
+#include "ui_pages.h"
+void tower_stats_doc(UiDoc *d);         // the run so far, for the pause menu's Stats pages
+void tower_details_card(int card);      // the Details panel (ui_details(), owner the menu) for a boon or skill card (a BoonId)
+enum { TOWER_SHRINE_UPGRADE, TOWER_SHRINE_RELIC, TOWER_SHRINE_UNLOCK, TOWER_SHRINE_NIGHTFARER };
+void tower_details_shrine(int kind, int i);     // the same for a Shrine entry (an UpgradeId, a relic id or -1, an unlock's index)
 // The Build page: the 3 skills, then the 5 boon slots (name, its level on the right, a font style); returns the rows
 #define TOWER_SLOTS 5
 // (a duo's two boons on a row under it, then the rivals locked out this run, greyed)
-#define TOWER_BUILD_ROWS (3 + 2 * TOWER_SLOTS + 3)
-int tower_build_rows(char left[][40], char right[][12], int style[], int max);
+// card: each row's BoonId for its Details (-1 none); a locked rival is a row of its own
+#define TOWER_BUILD_ROWS (3 + 2 * TOWER_SLOTS + 12)     // (10 rival pairs: 10 locked at most)
+int tower_build_rows(char left[][40], char right[][12], int style[], int card[], int max);
 
 // ---- Nights: from the second circle each circle has one (a trade-off, more Embers) ----
 const char* tower_night_name(void);     // "" for none
@@ -111,6 +118,7 @@ bool tower_nightfarer_buy(void);
 int  tower_pack_count(void);
 const char* tower_pack_name(int i);
 const char* tower_pack_desc(int i);     // the boons it adds
+const char* tower_pack_brief(int i);    // a line: how many, or the form
 bool tower_pack_owned(int i);
 int  tower_pack_cost(int i);            // -1 owned
 bool tower_pack_buy(int i);

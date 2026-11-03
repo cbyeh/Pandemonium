@@ -13,6 +13,7 @@
 #include "../character/character.h"
 #include "../character/character_skin.h"
 #include "../game/tower/tower.h"
+#include "../utilities/ui_pages.h"
 
 #include "../utilities/globals.h"
 #include "../utilities/video_layout.h"
@@ -57,6 +58,24 @@ static sprite_t *iconStart = NULL;
 static sprite_t *iconStick = NULL;
 static sprite_t *iconCLeft = NULL;
 static sprite_t *iconDpad = NULL;
+// The Controls page's icons (26 KB of CI8 sprites) only while it's up: they were held all the time, a fight's
+// low point included. A is shared with the button prompts and stays
+static void controls_icons(bool want)
+{
+    if (want == (iconB != NULL)) return;
+    if (want) {
+        iconB = sprite_load("rom:/buttons/B.sprite");
+        iconZ = sprite_load("rom:/buttons/Z.sprite");
+        iconStart = sprite_load("rom:/buttons/Start.sprite");
+        iconStick = sprite_load("rom:/buttons/StickTexture.sprite");
+        iconCLeft = sprite_load("rom:/buttons/CLeft.sprite");
+        iconDpad = sprite_load("rom:/buttons/Dpad.sprite");
+        return;
+    }
+    rspq_wait();        // (the last frame drew them)
+    sprite_t **all[] = { &iconB, &iconZ, &iconStart, &iconStick, &iconCLeft, &iconDpad };
+    for (unsigned i = 0; i < sizeof all / sizeof all[0]; i++) { if (*all[i]) sprite_free(*all[i]); *all[i] = NULL; }
+}
 
 // Input handling for edge detection
 static bool lastStartPressed = false;
@@ -66,6 +85,7 @@ static bool lastLeftPressed = false;
 static bool lastRightPressed = false;
 static bool lastAPressed = false;
 static bool lastBPressed = false;
+static bool lastRPressed = false;      // R: Details (no layout moves it)
 static bool lastStickUp = false;
 static bool lastStickDown = false;
 static bool lastStickLeft = false;
@@ -76,7 +96,41 @@ static bool overscanCalibrating = false;
 static int8_t overscanPrevX = 0;
 static int8_t overscanPrevY = 0;
 
-static int runPage;     // the Stats menu's page: 0 the run's numbers, 1 its build
+// The Stats menu: the run's numbers, then its build, as one paged list (ui_pages: the corners); on a Build
+// page Up/Down move a row cursor (-1: the corners) and A or R opens the row's Details
+static UiPager runPager;
+static int runRow = -1;
+static UiDoc *s_statsDoc;     // (these two on the heap while the Stats menu is open: none during a fight)
+// the menus' box for the Stats pages, inside the title-safe area
+#define RUN_TX 30
+#define RUN_TW (SCREEN_WIDTH - 60)
+#define RUN_CY 34           // the corners' baseline
+#define RUN_BODY 56         // the first line's
+#define RUN_BODY_END 204    // the last line's
+typedef struct { int statsPages, buildPages, n, perPage; char left[TOWER_BUILD_ROWS][40], right[TOWER_BUILD_ROWS][12]; int style[TOWER_BUILD_ROWS], card[TOWER_BUILD_ROWS]; } RunPages;
+static RunPages *s_run;
+static void run_pages_free(void) { free(s_statsDoc); free(s_run); s_statsDoc = NULL; s_run = NULL; }
+static void run_pages_build(void)
+{
+    if (!s_statsDoc) s_statsDoc = malloc(sizeof *s_statsDoc);
+    if (!s_run) s_run = malloc(sizeof *s_run);
+    ui_doc_clear(s_statsDoc);
+    tower_stats_doc(s_statsDoc);
+    int pitch = ui_line_pitch();
+    s_run->statsPages = ui_doc_layout(s_statsDoc, RUN_TW, RUN_BODY_END - RUN_BODY + pitch);
+    s_run->n = tower_build_rows(s_run->left, s_run->right, s_run->style, s_run->card, TOWER_BUILD_ROWS);
+    s_run->perPage = (RUN_BODY_END - RUN_BODY - 8) / pitch + 1;     // (8: the gap under the skills)
+    s_run->buildPages = s_run->n > 0 ? (s_run->n + s_run->perPage - 1) / s_run->perPage : 1;
+    runPager.pages = (int8_t)(s_run->statsPages + s_run->buildPages);
+    if (runPager.page >= runPager.pages) runPager.page = runPager.pages - 1;
+}
+static int run_rows_on_page(void)
+{
+    int b = runPager.page - s_run->statsPages;
+    if (b < 0) return 0;
+    int n = s_run->n - b * s_run->perPage;
+    return n < s_run->perPage ? n : s_run->perPage;
+}
 
 // Menu text
 static const char* mainMenuOptions[MENU_MAIN_COUNT] = {
@@ -175,7 +229,7 @@ static int get_menu_option_count(MenuState menu)
         case MENU_UNLOCKS:   return tower_pack_count() + 1;     // the packs, Back
         case MENU_SKINS:     return SKIN_COUNT + 1;
         case MENU_CONTROLS:  return 3;    // Layout, Camera speed, Back
-        case MENU_RUN:       return runPage ? 1 : 2;    // the title row's corners: Stats has Back and Next, Build only Prev
+        case MENU_RUN:       return 1;      // (its corners and rows: runPager, runRow)
         case MENU_CREDITS:   return 1;
         default:             return 1;
     }
@@ -279,12 +333,7 @@ void menu_controller_init(void)
     }
 
     iconA = sprite_load_shared("rom:/buttons/A.sprite");
-    iconB = sprite_load("rom:/buttons/B.sprite");
-    iconZ = sprite_load("rom:/buttons/Z.sprite");
-    iconStart = sprite_load("rom:/buttons/Start.sprite");
-    iconStick = sprite_load("rom:/buttons/StickTexture.sprite");
-    iconCLeft = sprite_load("rom:/buttons/CLeft.sprite");
-    iconDpad = sprite_load("rom:/buttons/Dpad.sprite");
+    // (the Controls page's other icons load with it: controls_icons)
 }
 
 MenuAction menu_controller_consume_action(void)
@@ -363,6 +412,8 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
     lastStickUp = stickUp; lastStickDown = stickDown; lastStickLeft = stickLeft; lastStickRight = stickRight;
     bool aJustPressed = aPressed && !lastAPressed;
     bool bJustPressed = bPressed && !lastBPressed;
+    bool rJustPressed = btn.r && !lastRPressed;
+    lastRPressed = btn.r;
 
     lastUpPressed = upPressed;
     lastDownPressed = downPressed;
@@ -373,6 +424,22 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
 
     if (state == GAME_STATE_TITLE && startJustPressed) {
         aJustPressed = true;
+    }
+
+    // a Details panel opened here (R on the Build page or the Shrine) takes every press until it closes
+    UiPanel *dp = ui_details();
+    if (dp->open && dp->owner == UI_OWNER_MENU) {
+        ui_panel_input(dp, upJustPressed, downJustPressed, leftJustPressed, rightJustPressed, aJustPressed, bJustPressed, rJustPressed);
+        return;
+    }
+    if (rJustPressed) {     // R: what the row under the cursor does in full
+        if (currentMenu == MENU_SHRINE) {
+            if (selectedOption < MENU_SHRINE_UPGRADES) tower_details_shrine(TOWER_SHRINE_UPGRADE, selectedOption);
+            else if (selectedOption == MENU_SHRINE_RELIC) tower_details_shrine(TOWER_SHRINE_RELIC, tower_relic_equipped());
+            else if (selectedOption == MENU_SHRINE_NIGHTFARER) tower_details_shrine(TOWER_SHRINE_NIGHTFARER, 0);
+        } else if (currentMenu == MENU_RELICS && selectedOption <= tower_relic_total()) tower_details_shrine(TOWER_SHRINE_RELIC, selectedOption - 1);
+        else if (currentMenu == MENU_UNLOCKS && selectedOption < tower_pack_count()) tower_details_shrine(TOWER_SHRINE_UNLOCK, selectedOption);
+        if (dp->open) return;
     }
 
     if (!(currentMenu == MENU_VIDEO && overscanCalibrating)) {
@@ -409,8 +476,9 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
 
                 case MENU_MAIN_RUN:
                     currentMenu = MENU_RUN;
-                    selectedOption = 1;     // Next
-                    runPage = 0;
+                    run_pages_build();
+                    ui_pager_reset(&runPager, runPager.pages);     // page 0, on Next
+                    runRow = -1;
                     break;
 
                 case MENU_MAIN_RESTART:
@@ -714,12 +782,22 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             (void)save_controller_save_settings();
         }
     } else if (currentMenu == MENU_RUN) {
-        // two pages, their buttons in the title row's corners (Stats: Back | Next >, Build: < Prev only):
-        // Left/Right pick a corner, A takes it, B closes from either page
-        if (leftJustPressed) selectedOption = 0;
-        else if (rightJustPressed) selectedOption = runPage ? 0 : 1;
-        else if (bJustPressed || (aJustPressed && !runPage && selectedOption == 0)) { currentMenu = MENU_MAIN; selectedOption = MENU_MAIN_RUN; }
-        else if (aJustPressed) { runPage ^= 1; selectedOption = runPage ? 0 : 1; }     // Prev, or back onto Next
+        // the pages' buttons in the title row's corners (Back | Next >, < Prev | Next >, < Prev): Left/Right pick
+        // a corner, A takes it, B closes from any page. On a Build page Up/Down walk its rows; A or R: the row's Details
+        run_pages_build();
+        int rows = run_rows_on_page();
+        if (runRow >= rows) runRow = rows - 1;
+        if (rows && downJustPressed) runRow = runRow + 1 < rows ? runRow + 1 : runRow;
+        else if (rows && upJustPressed) runRow = runRow >= 0 ? runRow - 1 : -1;
+        int at = (runPager.page - s_run->statsPages) * s_run->perPage + runRow;
+        if (runRow >= 0 && !bJustPressed && !leftJustPressed && !rightJustPressed) {
+            if ((aJustPressed || rJustPressed) && s_run->card[at] >= 0) tower_details_card(s_run->card[at]);
+        } else {
+            if (leftJustPressed || rightJustPressed) runRow = -1;
+            int r = ui_pager_input(&runPager, leftJustPressed, rightJustPressed, aJustPressed, bJustPressed);
+            if (r == UI_PAGER_BACK) { currentMenu = MENU_MAIN; selectedOption = MENU_MAIN_RUN; run_pages_free(); }
+            else if (r == UI_PAGER_TURNED) runRow = -1;
+        }
     } else if (currentMenu == MENU_CREDITS) {
         if (aJustPressed || bJustPressed) {
             currentMenu = parentMenu;
@@ -816,6 +894,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
 
 void menu_controller_update(void)
 {
+    if (currentMenu != MENU_CONTROLS || !menuActive) controls_icons(false);
     menu_controller_update_for_state(
         scene_get_game_state(),
         scene_is_cutscene_active()
@@ -824,6 +903,7 @@ void menu_controller_update(void)
 
 void menu_controller_update_title(void)
 {
+    if (currentMenu != MENU_CONTROLS || !menuActive) controls_icons(false);
     menu_controller_update_for_state(
         GAME_STATE_TITLE,
         false
@@ -932,6 +1012,15 @@ static void draw_menu_line(int x, int y, int w, int h, rdpq_align_t align, const
     rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
     rdpq_set_prim_color(RGBA32(255, 200, 90, 255));
     for (int r = 0; r < 7; r++) rdpq_fill_rectangle(mx + 3 - ROW[r] / 2, my - 3 + r, mx + 3 - ROW[r] / 2 + ROW[r], my - 2 + r);
+}
+
+// The Shrine's title row: Embers left (5 digits), the title centred unless that would touch them (then just right of them)
+static void tower_menu_title(int x, int y, int w, int h, const char *title)
+{
+    char e[24]; snprintf(e, sizeof e, "Embers %d", tower_embers());
+    int tw = ui_text_width(title), tx = x + (w - tw) / 2, after = x + 4 + ui_text_width(e) + 10;
+    if (tx < after) tx = after;
+    rdpq_text_printf(&(rdpq_textparms_t){ .width = tw + 8, .height = h }, FONT_UNBALANCED, tx, y, "%s", title);
 }
 
 static void draw_icon_line(sprite_t *icon, int x, int rowBaselineY, int lineH, int w, const char *text)
@@ -1207,7 +1296,10 @@ void menu_controller_draw(void)
 
     draw_pause_menu_background(x, y, dialogWidth, dialogHeight);
 
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 90));
+    // the Tower's menus darker: their rows sit over the title's bright fire or the hall's light (the dialog's art doesn't show on Delta's renderer)
+    bool towerMenu = currentMenu == MENU_TOWER || currentMenu == MENU_SHRINE || currentMenu == MENU_RELICS || currentMenu == MENU_UNLOCKS || currentMenu == MENU_RUN;
+    if (towerMenu) { rdpq_mode_alphacompare(0); rdpq_mode_combiner(RDPQ_COMBINER_FLAT); }     // (a flat fill: the art's blit left a texture combiner)
+    rdpq_set_prim_color(RGBA32(0, 0, 0, towerMenu ? 200 : 90));
     rdpq_fill_rectangle(x, y, x + dialogWidth, y + dialogHeight);
 
     rdpq_set_prim_color(RGBA32(180, 160, 120, 255));
@@ -1353,12 +1445,13 @@ void menu_controller_draw(void)
         }
         rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
     } else if (currentMenu == MENU_SHRINE) {
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
-                         FONT_UNBALANCED, x, y + titleYOffset, "SHRINE");
-        // Embers on the title's row: the rows and the description below need the room
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 8, .height = contentH, .style_id = FONT_STYLE_GOLD },
-                         FONT_UNBALANCED, x, y + titleYOffset, "Embers %d", tower_embers());
-        y += lineHeight * 2 + titleYOffset;
+        tower_menu_title(x, y + titleYOffset, contentW, contentH, "SHRINE");
+        // Embers on the title's row, left (the rows and the description below need the room); R's hint right
+        rdpq_text_printf(&(rdpq_textparms_t){ .width = contentW, .height = contentH, .style_id = FONT_STYLE_GOLD },
+                         FONT_UNBALANCED, x + 4, y + titleYOffset, "Embers %d", tower_embers());
+        if (selectedOption != MENU_SHRINE_PACKS && selectedOption < MENU_SHRINE_COUNT - 1)
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 4, .height = contentH, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y + titleYOffset, "R Details");
+        y += lineHeight + titleYOffset + 4;     // (its description under the nine rows stays in the title-safe area: it was at 224)
         for (int i = 0; i < MENU_SHRINE_COUNT; i++) {
             char name[40], right[24];
             right[0] = 0;
@@ -1401,7 +1494,7 @@ void menu_controller_draw(void)
         const char *desc = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_desc((UpgradeId)selectedOption)
                          : selectedOption == MENU_SHRINE_RELIC ? "Choose the relic you climb with"
                          : selectedOption == MENU_SHRINE_NIGHTFARER ? "A tracker's winged helm and blue coat"
-                         : selectedOption == MENU_SHRINE_PACKS ? "New boons for a family, a skill's second form"
+                         : selectedOption == MENU_SHRINE_PACKS ? "New boons and skill forms"
                          : "Skills are learned in the climb";
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
                          FONT_UNBALANCED, x, y + 6, "%s", desc);
@@ -1409,12 +1502,14 @@ void menu_controller_draw(void)
     } else if (currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS) {
         // A list to scroll: name on the left, its state on the right, what the hovered one does below
         bool relics = currentMenu == MENU_RELICS, packs = currentMenu == MENU_UNLOCKS;
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
-                         FONT_UNBALANCED, x, y + titleYOffset, relics ? "RELICS" : packs ? "UNLOCKS" : "SKINS");
+        if (relics || packs) tower_menu_title(x, y + titleYOffset, contentW, contentH, relics ? "RELICS" : "UNLOCKS");
+        else rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH }, FONT_UNBALANCED, x, y + titleYOffset, "SKINS");
         if (relics || packs)
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 8, .height = contentH, .style_id = FONT_STYLE_GOLD },
-                             FONT_UNBALANCED, x, y + titleYOffset, "Embers %d", tower_embers());
-        y += (packs ? lineHeight : lineHeight * 2) + titleYOffset;     // (the Unlocks' ten rows: tighter, so what it holds fits under them)
+            rdpq_text_printf(&(rdpq_textparms_t){ .width = contentW, .height = contentH, .style_id = FONT_STYLE_GOLD },
+                             FONT_UNBALANCED, x + 4, y + titleYOffset, "Embers %d", tower_embers());
+        if ((relics || packs) && selectedOption < get_menu_option_count(currentMenu) - 1)
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 4, .height = contentH, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y + titleYOffset, "R Details");
+        y += (packs || relics ? lineHeight : lineHeight * 2) + titleYOffset;     // (the Unlocks' ten rows: tighter, so what it holds fits under them; a relic's two effects can take two lines)
         int rows = get_menu_option_count(currentMenu);
         for (int i = 0; i < rows; i++) {
             const char *name, *right = "";
@@ -1453,7 +1548,7 @@ void menu_controller_draw(void)
             y += lineHeight + (packs ? -1 : 1);
         }
         const char *desc = selectedOption == rows - 1 ? ""
-                         : packs ? tower_pack_desc(selectedOption)
+                         : packs ? tower_pack_brief(selectedOption)
                          : relics ? (selectedOption == 0 ? "Climb without a relic" : tower_relic_desc(selectedOption - 1))
                          : save_controller_skin_unlocked(selectedOption) ? "" : skin_lock_hint(selectedOption);
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
@@ -1555,6 +1650,7 @@ void menu_controller_draw(void)
 
         rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
     } else if (currentMenu == MENU_CONTROLS) {
+        controls_icons(true);
         rdpq_text_printf(&(rdpq_textparms_t){
             .align = ALIGN_CENTER,
             .width = contentW,
@@ -1598,33 +1694,26 @@ void menu_controller_draw(void)
         if (selectedOption == 2) draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW - 20);
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH }, FONT_UNBALANCED, x, y, "Back");
     } else if (currentMenu == MENU_RUN) {
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
-                         FONT_UNBALANCED, x, y + titleYOffset, runPage ? "BUILD" : "STATS");
-        if (!runPage) {
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW + 40, .height = contentH, .wrap = WRAP_WORD },
-                             FONT_UNBALANCED, x - 20, y + titleYOffset + 22, "%s", tower_run_summary());
-        } else {
-            // the 3 skills, then the 5 boon slots (each in its family's colour, its level on the right; a
-            // duo's two boons under it), then the rivals locked out; rows closer when there are more
-            char left[TOWER_BUILD_ROWS][40], right[TOWER_BUILD_ROWS][12]; int style[TOWER_BUILD_ROWS];
-            int n = tower_build_rows(left, right, style, TOWER_BUILD_ROWS);
-            int top = y + titleYOffset + 22, step = n > 1 ? (contentH - titleYOffset - 22 - 8 - 4) / (n - 1) : 16;
-            if (step > 16) step = 16;
-            for (int i = 0; i < n; i++) {
-                int ry = top + i * step + (i >= 3 ? 8 : 0);     // a gap between the skills and the slots
-                rdpq_text_printf(&(rdpq_textparms_t){ .width = contentW, .height = contentH, .style_id = style[i] }, FONT_UNBALANCED, x, ry, "%s", left[i]);
-                if (right[i][0])
-                    rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW, .height = contentH, .style_id = style[i] }, FONT_UNBALANCED, x, ry, "%s", right[i]);
+        // Stats then Build, paged (ui_pages), inside the title-safe area, on a dark box (the dialog's art lets the hall's light through)
+        run_pages_build();
+        rdpq_sync_pipe(); rdpq_set_mode_standard(); rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY); rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+        rdpq_set_prim_color(RGBA32(24, 18, 14, 235));
+        rdpq_fill_rectangle(RUN_TX - 8, RUN_CY - 16, RUN_TX + RUN_TW + 8, RUN_BODY_END + 20);
+        bool build = runPager.page >= s_run->statsPages;
+        ui_pager_draw(&runPager, RUN_TX, RUN_CY, RUN_TW, build ? "BUILD" : "STATS");
+        if (!build) ui_doc_draw(s_statsDoc, runPager.page, RUN_TX, RUN_BODY, RUN_TW);
+        else {
+            // the 3 skills, the 5 boon slots (each in its family's colour, its level on the right; a duo's two boons
+            // under it), then the rivals locked out; the row under the cursor boxed (A or R: its Details)
+            int pitch = ui_line_pitch(), first = (runPager.page - s_run->statsPages) * s_run->perPage;
+            for (int k = 0; k < run_rows_on_page(); k++) {
+                int i = first + k, ry = RUN_BODY + k * pitch + (i >= 3 && first == 0 ? 8 : 0);     // a gap between the skills and the slots
+                if (k == runRow) ui_select_box(RUN_TX - 4, ry - 12, RUN_TX + RUN_TW + 4, ry + 4);
+                rdpq_text_printf(&(rdpq_textparms_t){ .width = RUN_TW - UI_RIGHT_W, .style_id = s_run->style[i] }, FONT_UNBALANCED, RUN_TX, ry, "%s", s_run->left[i]);
+                if (s_run->right[i][0])
+                    rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W, .style_id = s_run->style[i] }, FONT_UNBALANCED, RUN_TX + RUN_TW - UI_RIGHT_W, ry, "%s", s_run->right[i]);
             }
-        }
-        // the title row's corners: Stats has Back and Next, Build only Prev
-        const int cornerW = 70, wideW = contentW + 40;
-        for (int i = 0; i < (runPage ? 1 : 2); i++) {
-            int cx = i ? x - 20 + wideW - cornerW : x - 20;
-            if (i == selectedOption) draw_menu_selection_highlight(cx - 4, y + titleYOffset, cornerW + 8, lineHeight);
-            const char *label = runPage ? "< Prev" : i ? "Next >" : "Back";
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = i ? ALIGN_RIGHT : ALIGN_LEFT, .width = cornerW, .height = contentH }, FONT_UNBALANCED,
-                             cx, y + titleYOffset, "%s", label);
+            ui_hint(RUN_TX + RUN_TW, RUN_BODY_END + 14, runRow >= 0 ? "A or R: Details" : "Down: a row");
         }
     } else if (currentMenu == MENU_CREDITS) {
         rdpq_text_printf(&(rdpq_textparms_t){
@@ -1672,6 +1761,7 @@ void menu_controller_draw(void)
             .wrap = WRAP_WORD,
         }, FONT_UNBALANCED, x, y, "Aethrone");
     }
+    if (ui_details()->open && ui_details()->owner == UI_OWNER_MENU) ui_panel_draw(ui_details());     // Details (R), over the menu
 }
 
 void menu_controller_free(void)
@@ -1689,37 +1779,13 @@ void menu_controller_free(void)
         iconA = NULL;
     }
 
-    if (iconB) {
-        sprite_free(iconB);
-        iconB = NULL;
-    }
-
-    if (iconZ) {
-        sprite_free(iconZ);
-        iconZ = NULL;
-    }
-
-    if (iconStart) {
-        sprite_free(iconStart);
-        iconStart = NULL;
-    }
-
-    if (iconStick) {
-        sprite_free(iconStick);
-        iconStick = NULL;
-    }
-
-    if (iconCLeft) {
-        sprite_free(iconCLeft);
-        iconCLeft = NULL;
-    }
-
-    if (iconDpad) {
-        sprite_free(iconDpad);
-        iconDpad = NULL;
-    }
+    controls_icons(false);
 }
 
+#ifdef HLE_AUTOPLAY
+int menu_controller_test_state(int *option) { if (option) *option = selectedOption; return currentMenu; }     // test aid
+int menu_controller_test_run(int *page, int *pages, int *row) { *page = runPager.page; *pages = runPager.pages; *row = runRow; return runPager.sel; }
+#endif
 bool menu_controller_is_active(void)
 {
     return menuActive;
@@ -1738,9 +1804,14 @@ bool menu_controller_is_pause_menu_active(void)
 void menu_controller_toggle(void)
 {
     menuActive = !menuActive;
+    if (ui_details()->owner == UI_OWNER_MENU) ui_panel_close(ui_details());
+    run_pages_free();
 
     if (menuActive) {
         joypad_rumble_stop();
+        // the press that opened it (Start, or B on the Tower's map) isn't a press in it
+        lastAPressed = btn.a; lastBPressed = btn.b; lastRPressed = btn.r;
+        lastUpPressed = btn.d_up; lastDownPressed = btn.d_down; lastLeftPressed = btn.d_left; lastRightPressed = btn.d_right;
 
         GameState state = scene_get_game_state();
 
@@ -1783,8 +1854,17 @@ void menu_controller_toggle(void)
     }
 }
 
+void menu_controller_open_pause(int option)
+{
+    if (!menuActive) menu_controller_toggle();
+    currentMenu = MENU_MAIN;
+    selectedOption = option;
+}
+
 void menu_controller_close(void)
 {
+    if (ui_details()->owner == UI_OWNER_MENU) ui_panel_close(ui_details());
+    run_pages_free();
     menuActive = false;
     joypad_rumble_stop();
     overscanCalibrating = false;

@@ -146,5 +146,6 @@ bool menu_controller_is_pause_menu_active(void);
 
 void menu_controller_toggle(void);
 void menu_controller_close(void);
+void menu_controller_open_pause(int option);     // the pause menu, its cursor on this row (the Tower map's B: Stats)
 
 #endif
