@@ -392,6 +392,10 @@ void audio_play_music(const char *path, bool loop)
     musicPlaying = true;
 }
 
+#ifdef HLE_AUTOPLAY
+// test aid: the music playing now (its path), "fading" while it fades out, "" for none
+const char *audio_music_now(void) { return !audio_is_music_playing() ? "" : musicFadingOut ? "fading" : currentMusicPath; }
+#endif
 bool audio_is_music_playing(void)
 {
     if (!musicPlaying) return false;

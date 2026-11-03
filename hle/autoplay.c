@@ -15,7 +15,7 @@
 #ifdef HLE_TEST_TOWER     // the Unbroken check hits the player
 #include "character.h"
 #endif
-#if defined(HLE_TEST_PACKS) || defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_OOB) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE)
+#if defined(HLE_TEST_PACKS) || defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_TOWER_NAV) || defined(HLE_TOWER_GALLERY) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_OOB) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE)
 #include "camera_controller.h"
 #include "joypad_utility.h"
 #include "character_skin.h"
@@ -27,7 +27,7 @@
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #include "scenes/guardian/guardian_scene_bounds.h"
 #endif
-#if defined(HLE_TEST_PACKS) || defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH)
+#if defined(HLE_TEST_PACKS) || defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_TOWER_NAV) || defined(HLE_TOWER_GALLERY) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH)
 #include "utilities/save_controller.h"
 #include "controllers/scene_controller.h"
 #include "controllers/menu_controller.h"
@@ -36,6 +36,8 @@
 #include "game/boss/boss.h"
 #endif
 
+#include "utilities/ui_pages.h"
+#include <string.h>
 int hle_task_log;
 float hle_dummy_damage;
 int hle_dummy_hits;
@@ -199,8 +201,8 @@ void hle_tower_screen(joypad_inputs_t *in, joypad_buttons_t *pressed, int frame)
 #endif
 #ifdef HLE_MAP_WALK
 // Test aid (with HLE_TEST_TOWER_RUN): a path through the Tower's map that enters a Shop, an Event, a Rest in
-// rows 2-5 and an Elite when it can, once each (else a Fight), moving with the D-pad and the stick in turn and entering with A
-// and Up in turn; at each Rest, two of HLE_REST_SEQ's letters: H heal, T Temper (the first on its list),
+// rows 2-5 and an Elite when it can, once each (else a Fight), moving with the D-pad and the stick in turn, Up in between (it enters
+// nothing), then A (the node's page) and A (in); at each Rest, two of HLE_REST_SEQ's letters: H heal, T Temper (the first on its list),
 // P potions, then k (keep the boons) or n (release the n-th on the list: slot order)
 #ifndef HLE_REST_SEQ
 #define HLE_REST_SEQ "T1Hk"
@@ -218,6 +220,7 @@ void hle_map_walk(joypad_inputs_t *in, joypad_buttons_t *pressed, int frame)
     static const char seq[] = HLE_REST_SEQ;
     static int scr = -99, row = -99, since, target, moves, enters, rp, want; static bool sawRest, sawElite, sawShop, sawEvent;
     int now = tower_screen(), r = tower_map_row();
+    if (now == 10) { if (frame % 12 == 0) { pressed->a = 1; in->btn.a = 1; debugf("[walk] the node's page: A enters (frame %d)\n", frame); } return; }     // (SCR_CONFIRM)
     if (now >= SCR_SHOP) { hle_tower_screen(in, pressed, frame); return; }      // a Shop's screens, an Event's
     if (now != scr || r != row) { scr = now; row = r; since = 0; want = -1; }
     if (++since < 60) return;       // past the screen's input delay
@@ -247,8 +250,9 @@ void hle_map_walk(joypad_inputs_t *in, joypad_buttons_t *pressed, int frame)
         if (t == NODE_ELITE) sawElite = true;
         if (t == NODE_SHOP) sawShop = true;
         if (t == NODE_EVENT) sawEvent = true;
-        if (enters++ % 2) { pressed->d_up = 1; in->btn.d_up = 1; } else { pressed->a = 1; in->btn.a = 1; }
-        debugf("[walk] enter with %s (frame %d)\n", enters % 2 ? "A" : "Up", frame);
+        if (enters++ % 2 && row == r) { pressed->d_up = 1; in->btn.d_up = 1; debugf("[walk] Up: enters nothing (frame %d)\n", frame); return; }   // (pick then confirm: Up never enters)
+        pressed->a = 1; in->btn.a = 1;
+        debugf("[walk] A: the node's page (frame %d)\n", frame);
         return;
     }
     if (now == SCR_REST && since == 60) character.health = character.maxHealth * 0.5f;    // hurt (instant kills cost nothing): the heal shows
@@ -287,6 +291,19 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         t = TICKS_READ(); for (int i = 0; i < 4096; i++) u[i] = i; t = TICKS_READ() - t; debugf("[membench] uncached store %lu ticks / 4096\n", t);
         t = TICKS_READ(); for (volatile int i = 0; i < 4096; i++) s ^= s << 1; t = TICKS_READ() - t; debugf("[membench] alu loop     %lu ticks / 4096 (%lu)\n", t, s);
     }
+#endif
+#ifdef HLE_TEST_SPRITE_COST     // test aid: the heap each of these sprites holds once loaded
+    if (frame == 300) {
+        static const char *const P[] = { "rom:/buttons/B.sprite", "rom:/buttons/Z.sprite", "rom:/buttons/Start.sprite", "rom:/buttons/StickTexture.sprite", "rom:/buttons/CLeft.sprite", "rom:/buttons/Dpad.sprite", "rom:/buttons/A.sprite" };
+        for (unsigned i = 0; i < sizeof P / sizeof P[0]; i++) {
+            heap_stats_t h0, h1; sys_get_heap_stats(&h0); sprite_t *sp = sprite_load(P[i]); sys_get_heap_stats(&h1);
+            debugf("[spritecost] %s: %d bytes (%dx%d format %d)\n", P[i], h1.used - h0.used, sp->width, sp->height, sprite_get_format(sp));
+            sprite_free(sp);
+        }
+    }
+#endif
+#ifdef HLE_OVERSCAN_X      // test aid: the Video menu's overscan setting (X and Y: -15 the smallest, 0 the 7.5% title-safe margin, more moves the HUD in)
+    { extern int8_t uiOverscanX, uiOverscanY; uiOverscanX = HLE_OVERSCAN_X; uiOverscanY = HLE_OVERSCAN_Y; }
 #endif
 #ifdef HLE_PAD_LAYOUT       // test aid: play in this button layout (0 Classic, 1 A/B Swapped, 2 Skills on C)
     { extern void joypad_set_layout(int); joypad_set_layout(HLE_PAD_LAYOUT); }     // every frame: loading the save sets it too
@@ -900,6 +917,220 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         return;
     }
 #endif
+#ifdef HLE_TEST_TOWER_NAV
+    // The Tower's screens by their presses (HLE_NAV_MODE: 0 the D-pad, 1 the stick, 2 "A only": moves on the D-pad, every
+    // exit by its own row or button and A, never B or R), in the layout HLE_PAD_LAYOUT: a run from the title, its first
+    // fight (no map before it), the draft, the map (Up/Down enter nothing, B the pause menu, R Details, A the node's page,
+    // its B or Back the map, its A in), a Shop, an Event and a Rest on the way (R, B a level back), the music on each
+    // screen, then a death. [nav] PASS / FAIL lines; [nav] done with the counts
+    {
+#ifndef HLE_NAV_MODE
+#define HLE_NAV_MODE 0
+#endif
+        extern int tower_screen(void), tower_map_row(void), tower_map_sel(void), tower_map_next(int), tower_list_sel(void), tower_shop_sel(void), tower_floor(void), tower_draft_selected(void);
+        extern bool tower_active(void), tower_between_open(void), tower_draft_is_open(void), tower_event_done(void);
+        extern const char *audio_music_now(void); extern int menu_controller_test_state(int *);
+        enum { S_MAP = 1, S_REST, S_TEMPER, S_RELEASE, S_SHOP, S_EVENT = 9, S_CONFIRM = 10, N_SHOP = 4, N_EVENT = 3, N_REST = 5, N_ELITE = 2 };
+        static int phase, t0, k, pass, fail, entry = -99, mapsSeen, lastRow = -9, sawShop, sawEvent, sawRest, sawElite, fights;
+        static char seq[64]; static int expectRow;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0;
+        bool det = ui_details()->open && !ui_details()->confirm, menu = menu_controller_is_active();
+        #define PR(f) do { pressed->f = 1; in->btn.f = 1; } while (0)
+        #define CHECK(c, ...) do { if (c) pass++; else fail++; debugf("[nav] %s: ", (c) ? "PASS" : "FAIL"); debugf(__VA_ARGS__); debugf(" (frame %d)\n", frame); } while (0)
+        #define MUSIC(where) debugf("[nav] music on %s: %s\n", where, audio_music_now()[0] ? audio_music_now() : "silent")
+        if (phase == 0) {       // the title: Tower, Climb
+            if (menu_controller_is_active()) { phase = 1; t0 = frame; k = 0; }
+            else if (frame > 200 && frame % 30 == 0) PR(a);
+            return;
+        }
+        if (phase == 1) {
+            static const char ts[] = "DDAA";
+            if (t >= 20 && ts[k]) { if (ts[k] == 'D') pressed->d_down = 1; else PR(a); k++; t0 = frame; }
+            if (!ts[k] && boss && tower_active() && boss->mode == BOSS_MODE_COMBAT && t > 30) {
+                CHECK(!tower_between_open() && boss->phaseIndex == 1 && tower_floor() == 1, "the run's first floor is the Guardian, no map before it (between %d, phase %d)", tower_between_open(), boss->phaseIndex);
+                MUSIC("the first fight");
+                phase = 2; t0 = frame; fights = 1;
+            }
+            return;
+        }
+        if (phase == 2) {       // a fight: 60 frames, then the kill
+            if (t == 30) MUSIC("a fight");
+            if (t >= 60 && t % 60 == 0 && boss->health > 0.0f) boss_apply_damage(boss, boss->maxHealth * 2.0f);     // (again if a move's state shrugged it off)
+            if (t > 60 && tower_draft_is_open()) { phase = 3; t0 = frame; entry = -99; }
+            return;
+        }
+        if (phase == 5) {       // the end: a death, its screen
+            if ((t == 10 || t == 40) && character_get_state() != CHAR_STATE_DEAD) { character.health = 1.0f; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(1000.0f); }   // (twice: Unbroken)
+            if (t == 200) { CHECK(character_get_state() == CHAR_STATE_DEAD, "the death screen"); MUSIC("the death screen");
+                            debugf("[nav] done: mode %d layout %d, %d PASS, %d FAIL, shop %d event %d rest %d elite %d, %d fights\n", HLE_NAV_MODE,
+#ifdef HLE_PAD_LAYOUT
+                                   HLE_PAD_LAYOUT,
+#else
+                                   0,
+#endif
+                                   pass, fail, sawShop, sawEvent, sawRest, sawElite, fights); phase = 6; }
+            return;
+        }
+        if (phase != 3) return;
+        // between floors: a script for each screen as it comes up, a press every 24 frames (past the screens' input delay)
+        int now = tower_draft_is_open() ? -1 : tower_screen();
+        if (!tower_between_open() && !menu) {      // a fight began
+            fights++;
+            CHECK(boss && boss->mode == BOSS_MODE_COMBAT, "a fight's node entered: its fight (floor %d)", tower_floor());
+            if (tower_floor() >= 9 || (sawShop && sawEvent && sawRest)) { phase = 5; t0 = frame; return; }
+            phase = 2; t0 = frame; return;
+        }
+        if (now != entry && !menu && !det && now != S_CONFIRM && now != S_TEMPER && now != S_RELEASE && !(entry == S_REST && now == S_MAP && seq[0] == 'B' && k == 1)) {
+            if (entry != -99 && !seq[k]) {      // the script's last press left that screen: where it went
+                if (entry == -1) CHECK(now == S_MAP, "the draft's A takes the card: the map (%d)", now);
+                else if (entry == S_MAP) CHECK(tower_map_row() == expectRow + 1, "A, A: the node entered (row %d -> %d, screen %d)", expectRow + 2, tower_map_row() + 2, now);
+                else CHECK(now == S_MAP, "screen %d left by its last press (%c): the map (%d)", entry, k ? seq[k - 1] : '-', now);
+            }
+            entry = now; k = 0; t0 = frame;
+            bool aOnly = HLE_NAV_MODE == 2;
+            if (now == -1) { MUSIC("the draft"); snprintf(seq, sizeof seq, aOnly ? ">v^A" : "rrB>v^A"); }
+            else if (now == S_MAP) {
+                MUSIC("the map");
+                // the node to go to: a Shop, an Event, a Rest, an Elite not seen yet, else straight on
+                int target = -1;
+                static const int PREF[4] = { N_SHOP, N_EVENT, N_REST, N_ELITE };
+                for (int p = 0; p < 4 && target < 0; p++) {
+                    if ((PREF[p] == N_SHOP && sawShop) || (PREF[p] == N_EVENT && sawEvent) || (PREF[p] == N_REST && (sawRest || tower_map_row() + 1 >= 5)) || (PREF[p] == N_ELITE && sawElite)) continue;
+                    for (int l = 0; l < 3; l++) if (tower_map_next(l) == PREF[p]) { target = l; break; }
+                }
+                if (target < 0) target = tower_map_sel();
+                int n = 0, sel = tower_map_sel();
+                n += snprintf(seq + n, sizeof seq - n, aOnly ? "A>A" : "^vBBrrABA>A");     // (A only: the page's Back button by A)
+                for (; sel < target; sel++) seq[n++] = '>';
+                for (; sel > target; sel--) seq[n++] = '<';
+                seq[n++] = 'A'; seq[n++] = 'A'; seq[n] = 0;
+                int nt = tower_map_next(target);
+                sawShop |= nt == N_SHOP; sawEvent |= nt == N_EVENT; sawRest |= nt == N_REST; sawElite |= nt == N_ELITE;
+                expectRow = tower_map_row();
+                mapsSeen++;
+                debugf("[nav] map row %d: next %d %d %d, cursor %d, to %d: \"%s\"\n", tower_map_row() + 2, tower_map_next(0), tower_map_next(1), tower_map_next(2), tower_map_sel(), target, seq);
+            }
+            else if (now == S_SHOP) { MUSIC("a Shop"); snprintf(seq, sizeof seq, aOnly ? ">vvvA" : "vrr>vB"); }
+            else if (now == S_EVENT) { MUSIC("an Event"); snprintf(seq, sizeof seq, aOnly ? "vvvA..A" : "rrB"); }     // (a result waits 0.75 s for Continue's press)
+            else if (now == S_REST) { MUSIC("a Rest"); snprintf(seq, sizeof seq, aOnly ? "AA" : "BAAvABrr^^AB"); }
+            else seq[0] = 0;
+        }
+        if (t < 50 || (t - 50) % 24 || !seq[k]) {      // (the first press past the screens' 0.75 s input delay)
+            if (t > 50 && (t - 50) % 24 == 12 && k > 0) {     // the last press's check, half-way to the next
+                char c = seq[k - 1]; int sc = tower_screen();
+                if (entry == -1) {
+                    if (c == 'r') CHECK(det == (k == 1), "the draft's R: Details %s", k == 1 ? "open" : "closed");
+                    if (c == 'B') CHECK(tower_draft_is_open() && !det && !menu, "the draft's B: nothing (still the draft)");
+                    if (c == 'v') CHECK(tower_draft_selected() == 3, "Down: Skip (%d)", tower_draft_selected());
+                    if (c == '^') CHECK(tower_draft_selected() == 1, "Up: back on the card (%d)", tower_draft_selected());
+                    if (c == 'A') CHECK(!tower_draft_is_open() && (sc == S_MAP || !tower_between_open()), "A takes the card: the map (%d)", sc);
+                } else if (entry == S_MAP) {
+                    int pos = k - 1; bool aOnly = HLE_NAV_MODE == 2;
+                    if (!aOnly && pos <= 1) CHECK(sc == S_MAP && tower_map_row() == expectRow && !menu, "the map's %s enters nothing", c == '^' ? "Up" : "Down");
+                    if (!aOnly && pos == 2) { int opt; int m = menu_controller_test_state(&opt); CHECK(menu && m == 0 && opt == 1, "the map's B: the pause menu, on Stats (menu %d row %d)", m, opt); }
+                    if (!aOnly && pos == 3) CHECK(!menu && sc == S_MAP, "B again closes it: the map");
+                    if (!aOnly && pos == 4) CHECK(det && sc == S_MAP, "the map's R: the node's Details");
+                    if (!aOnly && pos == 5) CHECK(!det && sc == S_MAP, "R again: closed");
+                    if ((!aOnly && pos == 6) || (aOnly && pos == 0)) CHECK(sc == S_CONFIRM && tower_map_row() == expectRow, "A: the node's page, nothing entered (%d)", sc);
+                    if (!aOnly && pos == 7) CHECK(sc == S_MAP && tower_map_row() == expectRow, "the page's B: the map");
+                    if ((!aOnly && pos == 10) || (aOnly && pos == 2)) CHECK(sc == S_MAP && tower_map_row() == expectRow, "the page's Back button (Right, A): the map");
+                    if (!seq[k]) CHECK(tower_map_row() == expectRow + 1, "A, A: the node entered (row %d -> %d)", expectRow + 2, tower_map_row() + 2);
+                } else if (entry == S_SHOP) {
+                    if (c == 'r') CHECK(det == (k == 2), "the Shop's R on A level: Details %s", k == 2 ? "open" : "closed");
+                    if (c == 'v' && k == 1) CHECK(tower_shop_sel() == 3, "Down: the row under (%d)", tower_shop_sel());
+                    if (c == '>' && k == 4) CHECK(tower_shop_sel() == 4, "Right: the next item (%d)", tower_shop_sel());
+                    if (c == 'B' || (c == 'A' && !seq[k])) CHECK(sc == S_MAP, "the Shop's %s: left, the map (%d)", c == 'B' ? "B" : "Leave", sc);
+                } else if (entry == S_EVENT) {
+                    if (c == 'r') CHECK(det == (k == 1), "the Event's R: Details %s", k == 1 ? "open" : "closed");
+                    if (c == 'B') CHECK(sc == S_MAP, "the Event's B: Leave, the map (%d)", sc);
+                    if (c == 'A' && !seq[k]) CHECK(sc == S_MAP, "Leave (A), then Continue (A): the map (%d)", sc);
+                } else if (entry == S_REST) {
+                    bool aOnly = HLE_NAV_MODE == 2;
+                    if (!aOnly && k == 1) CHECK(sc == S_MAP && tower_map_row() == expectRow, "the Rest's B: the map, the Rest still to choose");
+                    if (!aOnly && k == 3) CHECK(sc == S_REST, "A, A: the Rest again");
+                    if (!aOnly && k == 5) CHECK(sc == S_TEMPER || sc == S_RELEASE || sc == S_MAP, "Down, A: Temper's list (or, nothing to Temper, Down passed it: the potions taken) (%d)", sc);
+                    if (!aOnly && k == 6) CHECK(sc == S_REST && !det, "B: back to the Rest's choices (%d)", sc);
+                    if (!aOnly && k == 7) CHECK(det && sc == S_REST, "R on its row: Details");
+                    if (!aOnly && k == 8) CHECK(!det && sc == S_REST, "R again: closed");
+                    if (!seq[k]) CHECK(sc == S_MAP, "the Rest taken, %s: the map (%d)", aOnly ? "Keep (A)" : "B keeps the boons", sc);
+                }
+            }
+            return;
+        }
+        // a press: the moves on the D-pad, or the stick (one push a press)
+        char c = seq[k++];
+        bool stick = HLE_NAV_MODE == 1;
+        switch (c) {
+        case 'A': PR(a); break;
+        case 'B': PR(b); break;
+        case 'r': PR(r); break;
+        case '>': if (stick) in->stick_x = 70; else pressed->d_right = 1; break;
+        case '<': if (stick) in->stick_x = -70; else pressed->d_left = 1; break;
+        case '^': if (stick) in->stick_y = 70; else pressed->d_up = 1; break;
+        case 'v': if (stick) in->stick_y = -70; else pressed->d_down = 1; break;
+        default: break;     // '.': a press's time, no press
+        }
+        debugf("[nav] press %c%s on screen %d (frame %d)\n", c, stick && strchr("<>^v", c) ? " (stick)" : "", now, frame);
+        #undef PR
+        #undef CHECK
+        #undef MUSIC
+        return;
+    }
+#endif
+#ifdef HLE_TOWER_GALLERY
+    // Every Tower screen in its worst case (tower.c's tower_test_gallery), then an Elite fight's HUD and name bar, the
+    // pause menu's Stats and Build pages (A along them, Down to rows, A for a row's Details, R to close) and the death
+    // screen. [gallery] lines give each one's VI frame (build with HLE_LOG_MOVE_MS: Mupen's shot numbers)
+    {
+        extern const char *tower_test_gallery(int); extern bool tower_active(void), tower_draft_is_open(void), tower_between_open(void);
+        extern uint32_t dragon_vi_frame(void);
+#ifndef HLE_GALLERY_HOLD
+#define HLE_GALLERY_HOLD 40
+#endif
+        static int phase = 0, t0 = 0, step = 0, k = 0;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0;
+        #define PR(f) do { pressed->f = 1; in->btn.f = 1; } while (0)
+        if (phase == 0) {
+            if (menu_controller_is_active()) { phase = 1; t0 = frame; }
+            else if (frame > 200 && frame % 30 == 0) PR(a);
+        } else if (phase == 1) {
+            static const char seq[] = "DDAA";
+            if (t >= 20 && step < 4) { if (seq[step] == 'D') pressed->d_down = 1; else PR(a); step++; t0 = frame; }
+            if (step == 4 && boss && tower_active() && boss->mode == BOSS_MODE_COMBAT) { phase = 2; t0 = frame; debugf("[gallery] the run's first floor: %s, map %d (VI %d)\n", boss->name, tower_between_open(), (int)dragon_vi_frame()); }
+        } else if (phase == 2) {
+            if (t >= 60 && t % 60 == 0 && boss->health > 0.0f) boss_apply_damage(boss, boss->maxHealth * 2.0f);     // (again if a move shrugged it off)
+            if (tower_draft_is_open() && t > 60) { phase = 3; t0 = frame; }
+        } else if (phase == 3) {
+            if (t % HLE_GALLERY_HOLD == 0) {
+                const char *nm = tower_test_gallery(k);
+                if (!nm) { phase = 4; t0 = frame; step = 0; return; }
+                debugf("[gallery] %d %s (VI %d, frame %d)\n", k, nm, (int)dragon_vi_frame(), frame);
+                k++;
+            }
+        } else if (phase == 4) {      // A, A: the Elite's fight; its HUD; then the pause menu's pages
+            static const char seq[] = "AA.....SDAAAADDAr.BB.....";      // (the Build page: Down x2 a row, A its Details, R closes)
+            if (t >= 30 && seq[step]) {
+                char c = seq[step];
+                if (c == 'A') PR(a); else if (c == 'B') PR(b); else if (c == 'S') PR(start); else if (c == 'r') PR(r);
+                else if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1;
+                debugf("[gallery] press %c (VI %d, frame %d)\n", c, (int)dragon_vi_frame(), frame);
+                step++; t0 = frame;
+            }
+            if (!seq[step]) { phase = 6; t0 = frame; }
+        } else if (phase == 6) {      // the Elite down: its draft over the Sun's hall (its fire)
+            if (t == 1) boss_apply_damage(boss, boss->maxHealth * 2.0f);
+            if (tower_draft_is_open() && t > 1) { debugf("[gallery] the draft over the Sun's hall (VI %d, frame %d)\n", (int)dragon_vi_frame(), frame); phase = 5; t0 = frame; }     // (then the death: over the draft)
+            if (t > 600) { phase = 5; t0 = frame; }
+        } else if (phase == 5) {
+            if (t == 100 && character_get_state() != CHAR_STATE_DEAD) { character.health = 1.0f; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(1000.0f); }
+            if (t == 70) { character.health = 1.0f; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(1000.0f); debugf("[gallery] death (VI %d, frame %d)\n", (int)dragon_vi_frame(), frame); }
+        }
+        #undef PR
+        return;
+    }
+#endif
 #ifdef HLE_TEST_TOWER_STATS
     // The pause menu's Stats pages with every boon held (tower.c fills the run): Title > Tower >
     // Climb; in the fight Start, D-down (Stats), A: page 1; A: page 2; Right: page 1; Left: page 2;
@@ -909,7 +1140,15 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         Boss *boss = boss_get_instance();
         int t = frame - t0;
         if (phase == 0) {
-            if (menu_controller_is_active()) { phase = 1; t0 = frame; debugf("[stats] title at %d\n", frame); }
+            if (menu_controller_is_active()) {
+                phase = 1; t0 = frame; debugf("[stats] title at %d\n", frame);
+#ifdef HLE_SHRINE_STATE     // test aid: the Shrine's extremes: 0 nothing owned and no Embers, 1 everything owned and 65535 Embers
+                TowerSave ts; save_controller_get_tower(&ts);
+                if (HLE_SHRINE_STATE) { ts.embers = 65535; ts.unlocks = 0x1ff; ts.relicsOwned = 0x1f; ts.relicEquipped = 3; ts.flags |= TOWER_FLAG_NIGHTFARER; for (int u = 0; u < 5; u++) ts.levels[u] = 3; }
+                else { ts.embers = 0; ts.unlocks = 0; ts.relicsOwned = 0; ts.relicEquipped = 0; ts.flags &= ~TOWER_FLAG_NIGHTFARER; for (int u = 0; u < 5; u++) ts.levels[u] = 0; }
+                save_controller_set_tower(&ts);
+#endif
+            }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
             extern bool tower_active(void);
@@ -920,6 +1159,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                     char c = tseq[step];
                     if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1; else if (c == 'L') pressed->d_left = 1;
                     else if (c == 'R') pressed->d_right = 1; else if (c == 'A') { pressed->a = 1; in->btn.a = 1; } else if (c == 'B') { pressed->b = 1; in->btn.b = 1; }
+                    else if (c == 'r') { pressed->r = 1; in->btn.r = 1; }
                     debugf("[stats] title step %c at frame %d\n", c, frame);
                     step++; t0 = frame;
                 }
@@ -961,17 +1201,26 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_STATS_SEQ     // another walk through the pause menu (S, D/L/R, A, B)
             static const char seq[] = HLE_STATS_SEQ;
 #else
-            static const char seq[] = "SDAARALADDDADDAB";
-#endif   // pause, Stats, Next, Right (stays on Prev), Prev, Left, Back (A only), down to Controls, its Back; B closes the pause menu
+            static const char seq[] = "SDAAAAARALDDADrBDDDADDAB";
+#endif   // pause, Stats, Next x4 (the full bar: Stats 1-3, Build 1-2), Right on the last (stays on Prev), Prev (Build 1), Left (stays),
+         // Down x2 (a row), A (its Details), Down (it stays open), R closes, B (the pause menu, on Stats), down to Controls, its Back
+         // (A), B closes the pause menu
             if (t >= (step ? 60 : 300) && seq[step]) {
                 char c = seq[step];
                 extern bool tower_active(void);
                 if (!step) debugf("[stats] in the Tower: %d\n", tower_active());
                 if (c == 'S') { pressed->start = 1; in->btn.start = 1; } else if (c == 'D') pressed->d_down = 1;
                 else if (c == 'A') { pressed->a = 1; in->btn.a = 1; } else if (c == 'B') { pressed->b = 1; in->btn.b = 1; }
-                else if (c == 'R') pressed->d_right = 1; else if (c == 'L') pressed->d_left = 1;
+                else if (c == 'R') pressed->d_right = 1; else if (c == 'L') pressed->d_left = 1; else if (c == 'U') pressed->d_up = 1;
+                else if (c == 'r') { pressed->r = 1; in->btn.r = 1; }
                 debugf("[stats] step %c at frame %d\n", c, frame);
                 step++; t0 = frame;
+            }
+            if (step && t == 20) {     // where the press left it
+                extern int menu_controller_test_state(int *), menu_controller_test_run(int *, int *, int *);
+                int opt, page, pages, row, m = menu_controller_test_state(&opt), sel = menu_controller_test_run(&page, &pages, &row);
+                debugf("[stats] after %c: menu %d (active %d) row %d | Stats page %d of %d, corner %d, Build row %d, Details %d\n", seq[step - 1], m, menu_controller_is_active(), opt,
+                       page + 1, pages, sel, row, ui_details()->open);
             }
         }
         return;
