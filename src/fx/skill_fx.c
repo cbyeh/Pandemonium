@@ -564,12 +564,36 @@ static void build_tri(int a, int b, int c)
 }
 
 static bool s_drawHostile;      // crimson palette for the effect being drawn
+static bool s_drawPlayer;       // the player's effect being drawn: its skill palette
+
+#ifndef HLE_SKILL_PALETTE       // test aid (preview): 0 today's cyan/white, 1 Sunforged, 2 Moonlit
+#define HLE_SKILL_PALETTE 0
+#endif
+static int s_skillPalette = HLE_SKILL_PALETTE;
+// Per palette: the deep end and the white end of the waves' cyan ramp, then the sparks' base and tip
+static const uint8_t SKILL_PAL[3][4][3] = {
+    { { 40, 120, 255 }, { 245, 252, 255 }, { 255, 210, 80 }, { 255, 245, 190 } },     // today (unused: as drawn)
+    { { 255, 185, 60 }, { 255, 250, 235 }, { 255, 210, 80 }, { 255, 245, 190 } },     // Sunforged: amber to warm white
+    { { 135, 162, 192 }, { 238, 244, 255 }, { 205, 218, 240 }, { 245, 248, 255 } },   // Moonlit: grey-blue to silver
+};
 
 static inline uint32_t rgba(int r, int g, int b, float a)
 {
     if (s_drawHostile) {        // cyan/white -> crimson/rose, gold -> violet
         int nr = b, ng = g / 4, nb = r / 2;
         r = nr; g = ng; b = nb;
+    } else if (s_drawPlayer && s_skillPalette) {
+        const uint8_t (*P)[3] = SKILL_PAL[s_skillPalette];
+        if (r == 255) {         // the gold sparks: base, or tip (its blue is the higher)
+            const uint8_t *c = P[b > 130 ? 3 : 2];
+            r = c[0]; g = c[1]; b = c[2];
+        } else {                // the cyan waves: their red is how white they are (40 deep .. 245 white)
+            int t = (r - 40) * 5 / 4;
+            t = t < 0 ? 0 : t > 256 ? 256 : t;
+            r = P[0][0] + (((P[1][0] - P[0][0]) * t) >> 8);
+            g = P[0][1] + (((P[1][1] - P[0][1]) * t) >> 8);
+            b = P[0][2] + (((P[1][2] - P[0][2]) * t) >> 8);
+        }
     }
     int ai = (int)(a * 255.0f);
     ai = ai < 0 ? 0 : ai > 255 ? 255 : ai;
@@ -998,6 +1022,7 @@ void skill_fx_draw(void)
     for (int i = 0; i < SKILL_FX_MAX; i++) {
         const SkillFx *f = &s_fx[i];
         s_drawHostile = f->hostile;
+        s_drawPlayer = !f->hostile;
         switch (f->type) {
             case FX_ARC:    draw_arc(f); break;
             case FX_WAVE:   if (f->shape == SKILL_WAVE_ORB) draw_orb(f); else if (f->shape != SKILL_WAVE_BLADE) draw_xwave(f); else draw_blade(f); break;
@@ -1007,6 +1032,7 @@ void skill_fx_draw(void)
             default: break;
         }
     }
+    s_drawPlayer = false;
 #ifndef HLE_FIRE_NODRAW     // test aid: the fire trail's cost (not drawn)
     draw_fire_trail();
 #endif

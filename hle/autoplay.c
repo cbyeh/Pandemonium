@@ -1991,7 +1991,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
             else if (frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 4) {
-#ifdef HLE_DUMMY_CAST    // test aid: a skill (1-3) cast every HLE_DUMMY_CAST_EVERY frames, locked on, its cooldown zeroed, in a Tower
+#ifdef HLE_DUMMY_CAST    // test aid: a skill (1-3; 4 five in turn, [palcast]) cast every HLE_DUMMY_CAST_EVERY frames, locked on, its cooldown zeroed, in a Tower
                          // run begun here; with HLE_SKILL_LV=<skill>,<lv>,<form> the casts alternate Lv 1 and that level: [castft] the
                          // frame time through each (mean, worst), the most effects alive, any dropped ([fxfull])
             {
@@ -2003,25 +2003,46 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 static int k, n; static uint32_t prev, sum, worst, cnt; static int live;
                 if (!tower_active()) tower_begin_run(1);
                 int c = k % HLE_DUMMY_CAST_EVERY;
+#if HLE_DUMMY_CAST == 4     // 4: each in turn, Moon Blade Dance, Full Moon Dance, Halfmoon Slash, Crescent Cleave, Crescent Storm (palette shots)
+                static const int CYC[5][3] = { { 1, 1, 0 }, { 1, 5, 1 }, { 2, 1, 0 }, { 3, 1, 0 }, { 3, 5, 1 } };
+                int sk = CYC[n % 5][0];
                 if (c == 0) {
-#ifdef HLE_SKILL_LV
+                    tower_test_skill_lv(sk - 1, CYC[n % 5][1], CYC[n % 5][2]);
+                    debugf("[palcast] cast %d skill %d lv %d at VI frame ~%lu\n", n, sk, CYC[n % 5][1], (unsigned long)(get_ticks_ms() * 60 / 1000));
+#elif defined(HLE_SKILL_LV)
+                const int sk = HLE_DUMMY_CAST;
+                if (c == 0) {
                     static const int L[3] = { HLE_SKILL_LV };
                     tower_test_skill_lv(HLE_DUMMY_CAST - 1, n % 2 ? L[1] : 1, n % 2 ? L[2] : 0);
 #else
+                const int sk = HLE_DUMMY_CAST;
+                if (c == 0) {
                     tower_test_skill_lv(HLE_DUMMY_CAST - 1, 1, 0);
 #endif
                     character_cut_skill_cooldowns(1e6f); character.stamina = character.maxStamina;
                 }
+#if HLE_DUMMY_CAST == 4 && defined(HLE_PALCAM)   // HLE_PALCAM=<back>: the player set 60 from the boss each cast, a still camera
+                // that far behind him and off to his right, above, looking past him at the boss (its effects against the boss)
+                if (boss) {
+                    static float bx, bz, gy;
+                    float dx = character.pos[0] - boss->pos[0], dz = character.pos[2] - boss->pos[2], d = sqrtf(dx * dx + dz * dz) + 1e-3f;
+                    if (c == 0) { boss->health = boss->maxHealth; character.pos[0] = boss->pos[0] + dx / d * 60.0f; character.pos[2] = boss->pos[2] + dz / d * 60.0f; bx = dx / d; bz = dz / d; gy = character.pos[1]; }
+                    float px = boss->pos[0] + bx * 60.0f, pz = boss->pos[2] + bz * 60.0f;
+                    customCamPos = (T3DVec3){{ px + bx * HLE_PALCAM - bz * HLE_PALCAM * 0.45f, gy + 40.0f, pz + bz * HLE_PALCAM + bx * HLE_PALCAM * 0.45f }};
+                    customCamTarget = (T3DVec3){{ px - bx * 28.0f, gy + 40.0f, pz - bz * 28.0f }};
+                    camera_mode_smooth(CAMERA_CUSTOM, 0.0f);
+                }
+#endif
                 if (k % 60 == 1) pressed->z = 1;
                 in->btn.z = 1;
-                if (c == 5) { if (HLE_DUMMY_CAST == 1) pressed->d_up = 1; else if (HLE_DUMMY_CAST == 2) pressed->d_right = 1; else pressed->d_down = 1; }
+                if (c == 5) { if (sk == 1) pressed->d_up = 1; else if (sk == 2) pressed->d_right = 1; else pressed->d_down = 1; }
                 uint32_t now = get_ticks_us();
                 if (c > 5 && c <= HLE_DUMMY_CAST_EVERY - 10) { uint32_t d = now - prev; sum += d; cnt++; if (d > worst) worst = d; int l = skill_fx_live(); if (l > live) live = l; }
                 prev = now;
                 if (c == HLE_DUMMY_CAST_EVERY - 9 && cnt) {
                     extern int tower_skill_level(int), tower_skill_form(int);
-                    debugf("[castft] cast %d (Lv %d form %d): mean %u us, worst %u us over %u frames, at most %d effects alive\n", n, tower_skill_level(HLE_DUMMY_CAST - 1),
-                           tower_skill_form(HLE_DUMMY_CAST - 1), (unsigned)(sum / cnt), (unsigned)worst, (unsigned)cnt, live);
+                    debugf("[castft] cast %d (Lv %d form %d): mean %u us, worst %u us over %u frames, at most %d effects alive\n", n, tower_skill_level(sk - 1),
+                           tower_skill_form(sk - 1), (unsigned)(sum / cnt), (unsigned)worst, (unsigned)cnt, live);
                     sum = worst = cnt = 0; live = 0; n++;
                 }
                 k++;
