@@ -412,6 +412,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                ts.relicsOwned, ts.relicEquipped, ts.flags, ts.unlocks, d ? d->_pad[24] : 0, d ? d->_pad[25] : 0, d ? d->_pad[26] : 0, d ? d->_pad[27] : 0);
         extern int tower_pack_count(void); extern bool tower_pack_owned(int); extern const char *tower_pack_name(int);
         for (int i = 0; i < tower_pack_count(); i++) debugf("[tsave] pack %s: %s\n", tower_pack_name(i), tower_pack_owned(i) ? "owned" : "not bought");
+        extern const char *tower_offers_line(void); extern int tower_milestone_count(void), tower_milestone_floor(int); extern bool tower_milestone_reached(int);
+        extern int tower_relic_equipped(void);
+        debugf("[tsave] set aside for the next climb: %s | relic worn %d | milestones reached:", tower_offers_line()[0] ? tower_offers_line() : "none", tower_relic_equipped());
+        for (int i = 0; i < tower_milestone_count(); i++) if (tower_milestone_reached(i)) debugf(" %d", tower_milestone_floor(i));
+        debugf("\n");
     }
 #endif
 #ifdef HLE_TEST_PACKS
@@ -640,6 +645,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         { extern int tower_test_skills(void); fails += tower_test_skills(); }   // the skills' levels and forms, the B forms' unlocks, the stagger cap
         { extern int tower_test_shop(void), tower_test_events(void); fails += tower_test_shop(); fails += tower_test_events(); }   // gold, the Shop, the Events
         { extern int tower_test_affixes(void); fails += tower_test_affixes(); }     // stage 6: the Elites' affixes, Berserker
+        { extern int tower_test_offerings(void); fails += tower_test_offerings(); }     // the Offerings, the milestones, the seed, the Codex's fit
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }
     return;
@@ -1148,10 +1154,32 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 else { ts.embers = 0; ts.unlocks = 0; ts.relicsOwned = 0; ts.relicEquipped = 0; ts.flags &= ~TOWER_FLAG_NIGHTFARER; for (int u = 0; u < 5; u++) ts.levels[u] = 0; }
                 save_controller_set_tower(&ts);
 #endif
+#ifdef HLE_BEST_FLOOR       // test aid: the save's best floor (the milestones, the Offerings' locks, the Codex's last page)
+                { TowerSave tb; save_controller_get_tower(&tb); tb.bestFloor = HLE_BEST_FLOOR; save_controller_set_tower(&tb); }
+#endif
             }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
             extern bool tower_active(void);
+#ifdef HLE_CODEX_WALK   // instead: Tower > Codex, every topic open and every page of it, by A alone (B closes a topic, Down to the next)
+            {
+                extern int tower_codex_count(void); extern bool tower_codex_open_ok(int); extern const char *tower_codex_title(int);
+                static int k = 0, sub = 0; static const char pre[] = "DDADDDA";
+                UiPanel *dp = ui_details();
+                if (t < 45) return;
+                t0 = frame;
+                if (pre[step]) { char c = pre[step++]; if (c == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } return; }
+                if (k >= tower_codex_count()) { if (k++ == tower_codex_count()) debugf("[codexwalk] done (frame %d)\n", frame); return; }
+                if (!dp->open) {
+                    if (sub == 0) { debugf("[codexwalk] list, topic %d %s%s (frame %d)\n", k, tower_codex_title(k), tower_codex_open_ok(k) ? "" : " (locked)", frame); sub = 1; return; }
+                    if (sub == 1 && tower_codex_open_ok(k)) { pressed->a = 1; in->btn.a = 1; sub = 2; return; }
+                    pressed->d_down = 1; k++; sub = 0; return;     // (closed, or locked: the next topic)
+                }
+                if (sub == 2) { debugf("[codexwalk] topic %d %s page %d/%d (frame %d)\n", k, tower_codex_title(k), dp->pg.page + 1, dp->pg.pages, frame); sub = 3; return; }
+                if (dp->pg.page + 1 < dp->pg.pages) { pressed->a = 1; in->btn.a = 1; sub = 2; return; }      // (the cursor on Next)
+                pressed->b = 1; in->btn.b = 1; sub = 4; return;
+            }
+#endif
 #ifdef HLE_TITLE_SEQ    // instead: these presses on the title's menus (D/U/L/R, A, B), 1 s apart, and no climb
             {
                 static const char tseq[] = HLE_TITLE_SEQ;
@@ -1322,6 +1350,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             static int heapMin = 1 << 30;     // the lowest free heap in the climb, sampled every 10 frames
             if (frame % 10 == 0) { heap_stats_t h; sys_get_heap_stats(&h); if (h.total - h.used < heapMin) heapMin = h.total - h.used; }
 #endif
+            { static bool was; bool now = tower_draft_is_open();     // the draft's open and close (a milestone's notice over it), for shots
+              if (now != was) debugf("[run] draft %s at floor %d, notice %d (frame %d)\n", now ? "open" : "closed", tower_floor(), ui_details()->open, frame);
+              was = now; }
             if (tower_map_is_open() || tower_rest_is_open()) {     // the map (and a Rest): A on the cursor's node (straight up), heal, keep the boons
 #ifdef HLE_MAP_WALK
                 extern void hle_map_walk(joypad_inputs_t *, joypad_buttons_t *, int); hle_map_walk(in, pressed, frame);
@@ -1553,7 +1584,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
             if (lastFloor == HLE_RUN_FLOORS && t == 60) { phase = 3; t0 = frame; character_apply_damage(9999.0f); }
         } else if (phase == 3) {
-            if (t == 30) debugf("[run] died: state %d, \"%s\"\n", character_get_state(), tower_death_summary());
+            if (t == 30 || t == 160) debugf("[run] died: state %d, \"%s\" (frame %d)\n", character_get_state(), tower_death_summary(), frame);
             if (t > 150 && t % 30 == 0) { pressed->a = 1; in->btn.a = 1; in->btn.a = 1; }
             if (t > 150 && !boss) { debugf("[run] back at the title, run %s\n", tower_active() ? "STILL ACTIVE" : "ended"); phase = 4; }
         }
