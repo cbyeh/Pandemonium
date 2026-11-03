@@ -15,7 +15,7 @@
 #ifdef HLE_TEST_TOWER     // the Unbroken check hits the player
 #include "character.h"
 #endif
-#if defined(HLE_TEST_PACKS) || defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_TOWER_NAV) || defined(HLE_TOWER_GALLERY) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_OOB) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE)
+#if defined(HLE_TEST_PACKS) || defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_TOWER_NAV) || defined(HLE_TOWER_GALLERY) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_OOB) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE) || defined(HLE_TEST_MENUS)
 #include "camera_controller.h"
 #include "joypad_utility.h"
 #include "character_skin.h"
@@ -27,7 +27,7 @@
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #include "scenes/guardian/guardian_scene_bounds.h"
 #endif
-#if defined(HLE_TEST_PACKS) || defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_TOWER_NAV) || defined(HLE_TOWER_GALLERY) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH)
+#if defined(HLE_TEST_PACKS) || defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_TOWER_NAV) || defined(HLE_TOWER_GALLERY) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_TEST_MENUS)
 #include "utilities/save_controller.h"
 #include "controllers/scene_controller.h"
 #include "controllers/menu_controller.h"
@@ -846,6 +846,132 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         if (step >= 10 && t > 200 && (t - 200) % 60 == 30)
             debugf("[skin] now %d (%s) at %d | cam %.1f,%.1f,%.1f -> %.1f,%.1f,%.1f scale %.3f\n", character_skin_get(), character_skin_name(character_skin_get()), frame,
                    (double)camPos.v[0], (double)camPos.v[1], (double)camPos.v[2], (double)camTarget.v[0], (double)camTarget.v[1], (double)camTarget.v[2], (double)character.scale[0]);
+        return;
+    }
+#endif
+#ifdef HLE_TEST_MENUS
+#include "scenes/guardian/guardian_scene.h"
+    // Every menu by its presses, from the title and from the pause menus of a Story, a Bonus and a Tower fight
+    // (HLE_NAV_MODE: 0 D-pad and B, 1 stick and B, 2 D-pad and "A only", 3 stick and "A only": every level left by its
+    // Back row and A, a pager's Back corner by Left and A; HLE_PAD_LAYOUT the layout). Each visit walks down its path
+    // (the rows, A at each), logs "[menus] at <name> (frame f)" (Mupen's shot numbers: shoot a second run at f+20),
+    // opens Details with R where marked and closes it (B, or its Back corner by A), then backs out a level at a time:
+    // each level must land on its parent's row it came from. [menus] PASS/FAIL, [menus] done with the counts
+    {
+#ifndef HLE_NAV_MODE
+#define HLE_NAV_MODE 0
+#endif
+        extern int menu_controller_test_nav(int *row, int *back, int *corner);
+        extern bool scene_is_cutscene_active(void); extern bool tower_active(void), tower_between_open(void);
+        typedef struct { const char *name, *path; int menu; bool r; } Visit;
+        static const Visit TITLE[] = {
+            { "Title", "", MENU_TITLE, false }, { "Bonus", "1", MENU_BONUS, false }, { "Tower", "2", MENU_TOWER, false },
+            { "Shrine", "21", MENU_SHRINE, true }, { "Relics", "215", MENU_RELICS, false }, { "Unlocks", "217", MENU_UNLOCKS, true },
+            { "Offerings", "22", MENU_OFFERINGS, true }, { "Codex", "23", MENU_CODEX, false }, { "Load Game", "3", MENU_LOAD_GAME, false },
+            { "Settings", "4", MENU_SETTINGS, false }, { "Audio", "40", MENU_AUDIO, false }, { "Video", "41", MENU_VIDEO, false },
+            { "Overscan", "411", 100, false }, { "Controls", "42", MENU_CONTROLS, false }, { "Skins", "44", MENU_SKINS, false },
+            { "Credits", "5", MENU_CREDITS, false }, { NULL, NULL, 0, false } };
+        static const Visit PAUSE[] = {
+            { "Pause", "", MENU_MAIN, false }, { "Pause Settings", "3", MENU_SETTINGS, false }, { "Pause Audio", "30", MENU_AUDIO, false },
+            { "Pause Video", "31", MENU_VIDEO, false }, { "Pause Overscan", "311", 100, false }, { "Pause Settings Controls", "32", MENU_CONTROLS, false },
+            { "Pause Skins", "34", MENU_SKINS, false }, { "Pause Controls", "4", MENU_CONTROLS, false }, { NULL, NULL, 0, false } };
+        static const Visit TPAUSE[] = {
+            { "Tower Pause", "", MENU_MAIN, false }, { "Stats", "1", MENU_RUN, false }, { "Tower Pause Codex", "5", MENU_CODEX, false },
+            { "Tower Pause Settings", "3", MENU_SETTINGS, false }, { "Tower Pause Controls", "4", MENU_CONTROLS, false }, { NULL, NULL, 0, false } };
+        static const char *const GAME[] = { "Story", "Bonus", "Tower" };
+        static int phase, t0, vi, lvl, sub, game, pass, fail;
+        static int at[8];       // the row taken at each level of the path
+        #define PR(f) do { pressed->f = 1; in->btn.f = 1; } while (0)
+        #define CHECK(c, ...) do { if (c) pass++; else fail++; debugf("[menus] %s: ", (c) ? "PASS" : "FAIL"); debugf(__VA_ARGS__); debugf(" (frame %d)\n", frame); } while (0)
+        bool stick = HLE_NAV_MODE & 1, aOnly = HLE_NAV_MODE >= 2;
+        int t = frame - t0, row, back, corner, m = menu_controller_test_nav(&row, &back, &corner);
+        Boss *boss = boss_get_instance();
+        const Visit *vs = phase == 1 ? TITLE : game == 2 ? TPAUSE : PAUSE;
+        if (phase == 0) {       // the title menu
+            if (menu_controller_is_active() && !boss) { if (t > 40) { phase = 1; t0 = frame; vi = 0; lvl = 0; sub = 0; } }
+            else { t0 = frame; if (!boss && frame > 200 && frame % 30 == 0) PR(a); }
+            return;
+        }
+        if (phase == 2) {       // start the next game: Story (row 0), Bonus > Fallen Warrior, Tower > Climb; skip to the fight; pause
+            static const char *const START[] = { "A", "AA", "AA" };
+            const char *sq = START[game];
+            if (t >= 20 && sub == 0 && m == MENU_TITLE && row != game) { if (row > game) pressed->d_up = 1; else pressed->d_down = 1; t0 = frame; return; }   // (the title's row: Story, Bonus, Tower)
+            if (t >= 20 && sq[sub]) { PR(a); sub++; t0 = frame; return; }
+            if (!sq[sub]) {
+                if (boss && boss->mode == BOSS_MODE_COMBAT && !scene_is_cutscene_active() && scene_get_game_state() == GAME_STATE_PLAYING && !(game == 2 && tower_between_open())) {
+                    if (t > 30) { PR(start); phase = 3; t0 = frame; vi = 0; lvl = 0; sub = 0; debugf("[menus] %s fight, paused (frame %d)\n", GAME[game], frame); }
+                } else { t0 = frame; if (frame % 20 == 0) PR(a); }
+                if (character.health < character.maxHealth) character.health = character.maxHealth;
+            }
+            return;
+        }
+        if (phase == 4) {       // Main Menu: back to the title for the next game (or done)
+            if (t == 30) { if (row != MENU_MAIN_QUIT) { pressed->d_down = 1; t0 = frame - 20; } else PR(a); }
+            if (t > 40 && menu_controller_is_active() && !boss) {
+                if (++game < 3) { phase = 2; t0 = frame; sub = 0; }
+                else { debugf("[menus] done: mode %d layout %d, %d PASS, %d FAIL\n", HLE_NAV_MODE,
+#ifdef HLE_PAD_LAYOUT
+                               HLE_PAD_LAYOUT,
+#else
+                               0,
+#endif
+                               pass, fail); phase = 5; }
+            }
+            return;
+        }
+        if (phase != 1 && phase != 3) return;
+        if (t < 20) return;     // a press every 20 frames
+        t0 = frame;
+        const Visit *v = &vs[vi];
+        if (!v->name) {         // the root's visits done
+            if (phase == 1) { phase = 2; game = 0; sub = 0; } else { phase = 4; }
+            return;
+        }
+        int depth = (int)strlen(v->path);
+        // a move: the D-pad or the stick, one push a press
+        #define MOVE(d_) do { char dir = (d_); if (stick) { if (dir == 'U') in->stick_y = 70; else if (dir == 'D') in->stick_y = -70; else if (dir == 'L') in->stick_x = -70; else in->stick_x = 70; } \
+                               else if (dir == 'U') pressed->d_up = 1; else if (dir == 'D') pressed->d_down = 1; else if (dir == 'L') pressed->d_left = 1; else pressed->d_right = 1; } while (0)
+        if (sub == 0) {         // down the path
+            if (lvl < depth) {
+                int want = v->path[lvl] - '0';
+                if (row != want) { MOVE(row < want ? 'D' : 'U'); return; }
+                at[lvl++] = want; PR(a); return;
+            }
+            CHECK(m == v->menu, "%s: menu %d (want %d), row %d, Back row %d", v->name, m, v->menu, row, back);
+            debugf("[menus] at %s (frame %d)\n", v->name, frame);
+            sub = v->r ? 1 : 3; return;
+        }
+        static bool seen;
+        if (sub == 1) { PR(r); sub = 2; seen = false; return; }           // Details
+        if (sub == 2) {
+            UiPanel *dp = ui_details();
+            if (!seen) { seen = true; CHECK(dp->open && dp->owner == UI_OWNER_MENU, "%s: R opens Details", v->name); debugf("[menus] at %s Details (frame %d)\n", v->name, frame); if (!dp->open) { sub = 3; return; } }
+            if (!dp->open) { CHECK(m == v->menu, "%s: Details closed by %s, the menu as it was (%d)", v->name, aOnly ? "its Back corner" : "B", m); sub = 3; return; }
+            if (!aOnly) { PR(b); return; }
+            if (dp->pg.sel != 0) { MOVE('L'); return; }      // its Back corner
+            PR(a); return;
+        }
+        if (sub == 3) { sub = 4; return; }      // (a moment for the shot)
+        // back up the path, a level at a time
+        if (lvl == 0) { vi++; sub = 0; return; }
+        if (sub == 4) {
+            if (!aOnly || m == 100) { if (aOnly) PR(a); else PR(b); sub = 5; return; }     // (the overscan screen: A saves, B cancels)
+            if (back >= 0) { if (row != back) { MOVE(row < back ? 'D' : 'U'); return; } PR(a); sub = 5; return; }
+            if (row != -1) { MOVE('U'); return; }               // a pager: its corners, then Back (page 0's left)
+            if (corner != 0) { MOVE('L'); return; }
+            PR(a); sub = 5; return;
+        }
+        if (sub == 5) {
+            lvl--;
+            const char *pm = v->path;
+            int pmenu = lvl == 0 ? vs[0].menu : -1;
+            for (int k = 0; vs[k].name && pmenu < 0; k++) if ((int)strlen(vs[k].path) == lvl && !strncmp(vs[k].path, pm, lvl)) pmenu = vs[k].menu;
+            CHECK(m == pmenu && row == at[lvl], "%s: %s from level %d: menu %d row %d (want %d row %d)", v->name, aOnly ? "its Back row" : "B", lvl + 1, m, row, pmenu, at[lvl]);
+            sub = 4; return;
+        }
+        #undef MOVE
+        #undef PR
+        #undef CHECK
         return;
     }
 #endif

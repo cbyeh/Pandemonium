@@ -1916,6 +1916,17 @@ void menu_controller_free(void)
 
 #ifdef HLE_AUTOPLAY
 int menu_controller_test_state(int *option) { if (option) *option = selectedOption; return currentMenu; }     // test aid
+// the cursor (a pager's row: -1 its corners, *corner which), the Back row (-1: a pager's Back corner); 100 the overscan screen
+int menu_controller_test_nav(int *row, int *back, int *corner)
+{
+    *corner = 0;
+    if (currentMenu == MENU_VIDEO && overscanCalibrating) { *row = 0; *back = -2; return 100; }
+    if (currentMenu == MENU_RUN) { *row = runRow; *back = -1; *corner = runPager.sel; return currentMenu; }
+    if (currentMenu == MENU_CODEX) { *row = codexRow; *back = -1; *corner = codexPager.sel; return currentMenu; }
+    *row = selectedOption;
+    *back = currentMenu == MENU_MAIN ? MENU_MAIN_RESUME : currentMenu == MENU_TITLE ? -3 : get_menu_option_count(currentMenu) - 1;
+    return currentMenu;
+}
 int menu_controller_test_run(int *page, int *pages, int *row) { *page = runPager.page; *pages = runPager.pages; *row = runRow; return runPager.sel; }
 #endif
 bool menu_controller_is_active(void)
