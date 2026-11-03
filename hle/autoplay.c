@@ -949,7 +949,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 float back1 = character.health - h0;
                 for (int i = 0; i < 40; i++) { boss->health = boss->maxHealth; boss_apply_hit(boss, 4.0f, 0.0f); }
                 float back = character.health - h0;
-                debugf("[heal] Rally: one hit of 4 (x%.2f after boons) wins back %.1f (4: its base)\n", (double)tower_mod_damage_dealt(), (double)back1);
+                debugf("[heal] Rally: one hit of 4 (x%.2f after boons) wins back %.1f (1: Lv 1, a quarter of its base; TOWER_STATS holds Rally Lv 1/2)\n", (double)tower_mod_damage_dealt(), (double)back1);
                 character.health = 100.0f; tower_on_perfect_dodge();
                 debugf("[heal] damage x%.2f max %.0f | sword hit 4 heals %.2f (12%%x2 of base: 0.96) | lost %.1f, Rally won back %.1f (%.0f%%, all: 100) | perfect dodge +%.1f (2%%: %.1f), window %.2f s\n",
                        (double)tower_mod_damage_dealt(), (double)mh, (double)steal, (double)lost, (double)back, (double)(lost > 0.0f ? 100.0f * back / lost : 0.0f),

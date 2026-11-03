@@ -288,7 +288,7 @@ Any visual reuses existing effects: the Storm pillar, the skill waves, the red w
 | Boon | Tier | Lv | Effect |
 |---|---|---|---|
 | Bloodthirst | Rare | 2 | sword hits heal 12% a level of their base damage (not skills or lightning) |
-| Rally | Rare | 2 | hitting back wins back the whole blow, each hit by its base damage (4 a sword hit); Lv 2 holds it 1.5 s (1 s) |
+| Rally | Rare | 2 | hitting back wins back the blow, each hit a quarter of its base (a sword hit 1; Lv 2 half, held 1.5 s) |
 | Blood Pact | Legendary | 1 | +35% damage, potions -25% |
 | Last Stand | Rare | 2 | +40% damage below 30% health |
 | **Hemorrhage** (New) | Common | 3 | the combo's 3rd hit deals +4 bleed over 3 s (damage only, no heal); each bleed tick shows as the boss's existing hit flash, a quarter as bright |
@@ -385,7 +385,7 @@ A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists loc
 | Riposte+ | 4 s |
 | Unbroken+ | when it fires, heal 20% |
 | Bloodthirst+ | 16% a level |
-| Rally+ | each hit counts 6 (its base x1.5) |
+| Rally+ | each hit three quarters of its base (a sword hit 3) |
 | Phantom Step+ | 0.31 s window (still inside the roll's invincibility) |
 | Static+ / Thunderclap+ | +50% lightning |
 | Moon Mastery+ | -25% a level |

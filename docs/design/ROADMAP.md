@@ -54,7 +54,7 @@ Until a skill is known the first card is a Learn card; after that a third of the
 | Boon | Family | Tier | Max Lv | Effect |
 |---|---|---|---|---|
 | Bloodthirst | Blood | Rare | 2 | sword hits (not skills or lightning) heal 12% a level of their base damage (before damage boons) |
-| Rally | Blood | Rare | 2 | hitting back wins back the health just lost, each hit its damage before boons; Lv 2 holds it 1.5 s (1 s) |
+| Rally | Blood | Rare | 2 | hitting back wins back the health just lost, each hit a quarter of its base (a sword hit 1; Lv 2 half, held 1.5 s; Rally+ three quarters) |
 | Blood Pact | Blood | Legendary | 1 | +35% damage, potions -25% |
 | Last Stand | Blood | Rare | 2 | +40% damage a level below 30% health |
 | Hemorrhage (pack) | Blood | Common | 3 | the combo's 3rd hit bleeds 4 a level over 3 s (ticks every 0.5 s, a quarter of a hit's flash, no flinch, no healing) |

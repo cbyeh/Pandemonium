@@ -99,7 +99,7 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_RIPOSTE_PLUS]       = { "Riposte+",       "Riposte lasts 4 s",           1, TIER_RARE, FAM_SHADOW, PLUS(BOON_RIPOSTE) },
     [BOON_UNBROKEN_PLUS]      = { "Unbroken+",      "When it saves you, heal 20%", 1, TIER_RARE, FAM_IRON, PLUS(BOON_UNBROKEN) },
     [BOON_BLOODTHIRST_PLUS]   = { "Bloodthirst+",   "Heals 16% a level",           1, TIER_RARE, FAM_BLOOD, PLUS(BOON_BLOODTHIRST) },
-    [BOON_RALLY_PLUS]         = { "Rally+",         "Each hit wins back 6",        1, TIER_RARE, FAM_BLOOD, PLUS(BOON_RALLY) },
+    [BOON_RALLY_PLUS]         = { "Rally+",         "Each hit wins back 3",        1, TIER_RARE, FAM_BLOOD, PLUS(BOON_RALLY) },
     [BOON_PHANTOM_STEP_PLUS]  = { "Phantom Step+",  "Dodge window 0.31 s",         1, TIER_RARE, FAM_SHADOW, PLUS(BOON_PHANTOM_STEP) },
     [BOON_STATIC_PLUS]        = { "Static+",        "Its lightning +50%",          1, TIER_RARE, FAM_STORM, PLUS(BOON_STATIC) },
     [BOON_THUNDERCLAP_PLUS]   = { "Thunderclap+",   "Its lightning +50%",          1, TIER_RARE, FAM_STORM, PLUS(BOON_THUNDERCLAP) },
@@ -2552,7 +2552,7 @@ float tower_mod_lifesteal(void) { return (tower_boon_stacks(BOON_BLOODTHIRST_PLU
 // one Halfmoon Slash for most of a heavy one). A new blow adds to it and holds it again
 #define RALLY_HOLD  1.0f
 #define RALLY_DRAIN 4.0f
-#define RALLY_RATIO 1.0f
+#define RALLY_RATIO 0.25f    // of each hit's base won back, Lv 1 (a sword hit 1); Lv 2 0.5, Rally+ 0.75 (all of it out-healed every floor: 60-90% of what landed)
 void tower_on_player_hurt(float lost)
 {
     if (s.berserkHits) BFX("Berserker: a blow ends a streak of %d\n", s.berserkHits);
@@ -2571,7 +2571,7 @@ void tower_on_boss_hurt(float dealt)
     if (s.rally <= 0.0f || dealt <= 0.0f) return;
     extern double nowS;
     // Rally's rate (Rally+: each hit counts 1.5x its base), and Shade's Mercy's 60% in Riposte's window
-    float ratio = tower_boon_stacks(BOON_RALLY) ? (tower_boon_stacks(BOON_RALLY_PLUS) ? 1.5f : RALLY_RATIO) : 0.0f;
+    float ratio = tower_boon_stacks(BOON_RALLY_PLUS) ? 3.0f * RALLY_RATIO : tower_boon_stacks(BOON_RALLY) >= 2 ? 2.0f * RALLY_RATIO : tower_boon_stacks(BOON_RALLY) ? RALLY_RATIO : 0.0f;
     bool mercy = tower_boon_stacks(BOON_SHADES_MERCY) && nowS < s.mercyUntil;
     if (mercy) ratio += 0.6f;
     if (ratio <= 0.0f) return;
