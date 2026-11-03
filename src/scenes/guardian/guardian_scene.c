@@ -2564,7 +2564,7 @@ void scene_draw(T3DViewport *viewport)
     }
     if (s_towerDraft && !isDead) tower_between_draw();
 
-    // Slide-up overlay for boss title after fight starts (no fading)
+    // The boss's name title as the fight starts (1.8 s, then its bar grows)
     if (!cutsceneActive && !isEndScreen && bossTitleFade > 0.0f && g_boss && !s_towerDraft) {   // (not over the Tower's map)
         rdpq_sync_pipe();
         rdpq_set_mode_standard();
@@ -2575,23 +2575,18 @@ void scene_draw(T3DViewport *viewport)
         int barHeight = 23;
         int barTop = 35;
         int barLeft = (SCREEN_WIDTH - barWidth) / 2;
-        int slideDistance = 120; // pixels to move upward until off-screen
-        float t = 1.0f - bossTitleFade; // 0 -> 1 as we slide up
-        if (s_tower) {      // the Tower: held under the HUD's top line, inside the title-safe area, until the bar grows (sliding off the top cut it after 0.4 s)
-            t = 0.0f;
-            if (ui_safe_margin_y() + 36 > barTop) barTop = ui_safe_margin_y() + 36;     // (under the Floor, Ascension and night lines)
-        }
-
-        // Compute current Y positions while sliding upward
-        int currentBarTop = barTop - (int)(slideDistance * t);
-        int currentTextY = barTop + 15 - (int)(slideDistance * t);
+        // held inside the title-safe area until the bar grows (it slid off the top: cut after 0.4 s), under the
+        // player's bars (they end 20 under the margin) or in the Tower its Floor, Ascension and night lines
+        { int top = ui_safe_margin_y() + (s_tower ? 36 : 24); if (top > barTop) barTop = top; }
+        int currentBarTop = barTop;
+        int currentTextY = barTop + 15;
 
         // Draw centered black bar behind the title (constant alpha)
         int barAlpha = 120;
         rdpq_set_prim_color(RGBA32(0, 0, 0, barAlpha));
         rdpq_fill_rectangle(barLeft, currentBarTop, barLeft + barWidth, currentBarTop + barHeight);
 
-        // Draw centered title text (constant intensity while sliding up)
+        // Draw centered title text
         rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
         rdpq_text_printf(&(rdpq_textparms_t){
             .align = ALIGN_CENTER,
