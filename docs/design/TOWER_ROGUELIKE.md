@@ -41,15 +41,27 @@ Stage 4 built (2026-11-02): gold, the Shop, the 8 Events, Event and Shop nodes o
 Stage 5 built (2026-11-02): the skills' levels (Lv 1-4) and their six Lv 5 forms, Skyfall (built in stage 2), the stagger bonuses' cap, the B forms at the Shrine. Calls made while building it:
 - **A skill's card is its level:** the Learn card (Common) is Lv 1; the same card again is its next level (Lv 2-4, Rare, "Lv 2 -> 3" on its slot line, the level's text as its description); the forms are their own cards (Legendary, "Lv 5 form", the other form named under "Locks out"). The old "+" cards are gone (Moon Blade Dance+ is Lv 3, Halfmoon+ Lv 3, Cleave+ Lv 2). The two forms are a rival pair: one taken locks the other out for the run (Build lists it greyed).
 - **Skill cards in drafts** (section 14's call, measured): a Learn card leads every draft until a skill is known; after that **a third of the drafts hold one skill card** (a skill at Lv 2+ twice as likely as each other skill's card; measured x2.00), and a skill just at Lv 4 leads the next draft with its forms (both once the B form is bought: two of the three cards; never both in an ordinary draft). Skill cards as plain pool cards came 1.2-1.7 a draft (54 by floor 35 for a sword build), so they're held to one a draft a third of the time: by floor 35 (33 drafts, 40 runs each) a skill build sees 13.5 skill cards and reaches Lv 5 in 33 of 40 runs (at floor 18.5 on average), a sword build sees 12.2 (section 14: about 11). An Elite's draft (Rare or better) holds levels and forms, not Learn cards.
-- **Moon Blade Dance's stagger:** today's crosses fill the meter by their damage, a fifth of a sword hit each, which is exactly Shattering Dance's share, so with that rule Shattering would have been Lv 4 with less to it. From Lv 2 the crosses deal more and **fill no stagger** (the design's builds count none from them); Lv 1 keeps today's (one sword hit a cast, the Story's skill too); **Shattering Dance's 7 crosses fill a fifth of a sword hit each** (1.4 a cast) and keep Lv 4's 1.5 damage (10.5). Ten crosses fly the five's fan twice, so all ten reach the boss.
+- (Stage 6, the user's call: Lv 2-4 keep Lv 1's stagger on the first five crosses; Shattering's crosses two thirds of a sword hit each, 1.75 damage.) **Moon Blade Dance's stagger:** today's crosses fill the meter by their damage, a fifth of a sword hit each, which is exactly Shattering Dance's share, so with that rule Shattering would have been Lv 4 with less to it. From Lv 2 the crosses deal more and **fill no stagger** (the design's builds count none from them); Lv 1 keeps today's (one sword hit a cast, the Story's skill too); **Shattering Dance's 7 crosses fill a fifth of a sword hit each** (1.4 a cast) and keep Lv 4's 1.5 damage (10.5). Ten crosses fly the five's fan twice, so all ten reach the boss.
 - **Halfmoon:** Lv 2's shorter charge plays the clip 1.25x until the release, so the swing still lands on it; Lv 4's reach is the arc's radius (85 to 106). **Twin Moon** replays the slash's arc, its hit, sound, shake and debris (three bursts a step, not five) 0.35 s after the first at 40% of its damage and stagger; the knight's clip isn't replayed (no snap back into the swing). **Full Moon:** the arc all round (its hit and its drawing: the ring keeps a 35% width at its back, as the bosses' rings do, since it hurts there), stagger 60%, and its charge and slash take blows without breaking or knocking the knight down (the damage still lands).
-- **A Cleave blade hits only as far as it's drawn** (a shared fix, the Story's skill too): its hit was a ball of 7 round a blade drawn 4 wide, so a third to a half of its hits landed with the blade up to 5 past the boss's body (`[skillhit]`); it's 4 now, as the bosses' own blades (drawn the same). The plain Cleave a cast, 30 from the Guardian: 12.5 -> 10 (the design's own figure).
+- (Reverted in stage 6, the user's call: the player's blades hit 7 round again, as on main.) **A Cleave blade hits only as far as it's drawn** (a shared fix, the Story's skill too): its hit was a ball of 7 round a blade drawn 4 wide, so a third to a half of its hits landed with the blade up to 5 past the boss's body (`[skillhit]`); it's 4 now, as the bosses' own blades (drawn the same). The plain Cleave a cast, 30 from the Guardian: 12.5 -> 10 (the design's own figure).
 - **Crescent Cleave's levels:** Lv 3's 5 hits come in the time 4 took (0.24 s apart): a blade passes through the boss in under 0.7 s, so a fifth hit 0.3 s apart never landed (Lv 3 measured the same as Lv 2). Lv 4's shorter wind-up plays the clip 1.42x until the release. **Crescent Storm's** three trailing blades (0.3 s behind the middle three) deal full damage. **Long Cleave:** blades live 1.6x as long (about 145 out), hit 6 times at Lv 3's pace, and its fan is 60% as wide so they stay on a target at their range (at full width only the middle blade reached past 85 and Long Cleave was best nowhere).
 - **The stagger bonuses add** (Executioner +60% or +90%, Breaker +15% a stack, half a stack from the Brazier, Eclipse +50% on a skill's hit) **up to +100%**, in `tower_mod_stagger_damage`; before, Breaker and Eclipse multiplied in the hit's other bonuses.
 - **The B forms at the Shrine:** Shrine > Unlocks (was Boon Packs) lists the six packs, then Shattering Dance, Full Moon and Long Cleave at 200 Embers each, in the slot's unlock bits 6-8 (`_pad[24]` bits 6-7, `_pad[25]` bit 0: never written before, so older saves own none).
 - **Temper and the Moonlit Pool** raise a known skill's level below Lv 4 (a real level now); neither gives a form (a draft's choice). The Shop sells no skill cards (as in stage 4).
 - **Skyfall** needed nothing more (stage 2 built it): Twin Moon's second slash is the same cast, so it calls one pillar.
 - **The effect pool** is 48 (was 40): Crescent Storm in the Shackled Sun's spiral had 39 alive at once in Ares (4 MB); a spawn that finds the pool full is logged (`[fxfull]`, none seen).
+
+Stage 6 built (2026-11-02): the six elite affixes, Berserker, and the balance pass measured (section 14d has the tables and the method; sections 11 and 14's estimate tables stand beside them). Calls made while building it:
+- **The affixes** are rolled with an Elite's boss when its node becomes reachable (and the Chained Prisoner's jailer's): one in circles 1-3, two from circle 4, of the unlocked ones (Swift, Ironclad, Enraged from the start; Relentless, Vampiric, Smouldering at best floor 15, 20, 25), never Smouldering on Shadowborne; only an Elite (Bonus bosses only) has them. The map's two bottom lines name them ("Elite: Swift Ironclad Shackled Sun", then "Rare draft (a duo if ready), x1.5 gold and Embers"); the fight's name bar has them in red before the plate. A two-affix Elite's draft (circle 4 on) turns its last card into a duo when one is ready.
+- **Swift:** its footwork, its breathers and its moves' cooldowns run 20% fast (the wind-ups and strikes as ever: the dodge timing is the same); its own sounds play 12% higher (the Tower has no intro to pitch: every sound it makes). At 12% on footwork and breathers alone it cost x1.42 (under the 1.5-1.7 band): Shadowborne's pauses end when a move comes off cooldown, not when the breather does, so the cooldowns run fast too.
+- **Ironclad:** +30% on the Elite's x1.25 health (x1.625), the stagger meter 30% slower to fill, its bar drawn 1.3x long.
+- **Enraged:** below half health its blows +25% and its breathers 15% shorter (-30% cost x1.77 / 2.25 / 1.88 on the three, over the band); its half-health war cry, the Sun's break and Shadowborne's roar are held 1.4-1.5x as long (the tell).
+- **Relentless:** the stagger meter drains 2x, it's up after 2.5 s (the Fallen Warrior's kneel plays faster to fit), and it presses on: breathers 15% shorter. The stagger alone cost only the Elite's x1.25 on the metric (a passive dummy staggers nothing) and x1.2-1.4 on the bot: the cheapest Elite for anyone, so it was the one always taken.
+- **Vampiric:** heals 25% of the health its blows take (8% cost x1.34: the cheapest after Relentless); the bar's white heal trail shows it.
+- **Smouldering:** Shadowborne's ground flames (the same octahedra, tilt, tumble and colours, a small module of their own: `fx/floor_fire.c`, no texture, so nothing more for the Sun's scene to load) where the Fallen Warrior's Triangle Slam, Holy Slam and Plunge bite and where the Sun's chain lands, a patch of five burning 3 s; round the Sun's body where its dive lands, a ring of eight burning 2 s (the flame under it would be inside it); two patches at once (a third slam's puts out the oldest flames: three cost 57.2 fps in Ares with a Triangle Slam on a loop, two 58.4). 6 a second felt, a burn every 0.5 s while touching a flame as drawn (`[affix]` logs each burn's distance off the flame's edge), heard as Shadowborne's fire from where it catches. 2 s everywhere cost the Fallen Warrior x1.38; 3 s everywhere the Sun x1.78 (the ring shuts its whole rest-on-the-floor opening).
+- **Berserker** (the user's boon): Legendary, Blood, max 1, in the Blood pack (older saves with the pack have it). Below half health a blow that doesn't knock you down doesn't flinch you or break a skill's wind-up (a sword swing is never broken by a flinch: the wind-ups are what it saves); each sword hit in a row +8% up to +40% (a blow taken or 2 s without a hit ends the streak; +5% to +30% measured +14% a minute on the sword, under its rival Iron Skin's -15% taken everywhere: dominated); no potions while it's on (the potion key dims as a locked skill's does, the press does nothing). Its rival is Iron Skin (Iron Skin locks out both its rivals now). Knockdowns still knock you down: 3-19% of the Fallen Warrior's landed blows are knockdowns by circle, 11-64% of the Sun's, 22-61% of Shadowborne's, 36-58% of the Guardian's (`[hit]`), so ignoring them too would make Halfmoon and Cleave unbreakable below half against most heavy blows, Full Moon's own point.
+- **The builds, measured** (section 14d: a bot on four bosses, the core five's band +-10%), retuned: Static +1.5 a level (was +3) and Thunderclap 6 (was 8; Thunderclap+ 9): the Storm build 192 -> 160 a minute (+21% -> +4%); Shattering Dance's crosses two thirds of a sword hit's stagger each (was a fifth) and 1.75 damage (was 1.5): the stagger build 124 -> 147 (-22% -> -5%; more stagger alone stopped paying past two thirds); Full Moon's slash x1.15 (38.6): 140 -> 145 (-12% -> -6%); Crescent Storm's trailing blades 70% (27.5-29 a cast): 174 -> 157 (+12% -> +2%, with the blades hitting 7 round again). Rally heals far over its target (section 14d): the user's rule, left for the user.
+- **The skills at Lv 1 are today's, in the Tower too** (the user's call): a Cleave blade hits 7 round again (stage 5's 4 is reverted: the Story's Cleave 12.5 a cast, as on main), and Moon Blade Dance's Lv 2-4 and Full Moon Dance keep Lv 1's stagger on their first five crosses (stage 5 gave them none: never less than Lv 1); the extra crosses fill none. Everything outside a Tower run plays as on main e0a7988 (section 14d: the same [sdmg] a cast, skill by skill).
 
 Scope approved by the user (2026-11-01): a branching map each circle (4-6 fights a path), Vampire Survivors-style slots (5 boon slots, boons levelling inside their slot; the three skills level outside them, with two final forms each, and no new skills), boon families with duos as evolutions, rival pairs and "+" upgrades, and elite affixes. Not in scope: rerolls, removing boons, relics found mid-run. Nothing here is built yet. Numbers are starting points for the balance pass (stage 5).
 
@@ -282,6 +294,7 @@ Any visual reuses existing effects: the Storm pillar, the skill waves, the red w
 | **Hemorrhage** (New) | Common | 3 | the combo's 3rd hit deals +4 bleed over 3 s (damage only, no heal); each bleed tick shows as the boss's existing hit flash, a quarter as bright |
 | **Sanguine Flask** (New) | Rare | 1 | drinking a potion gives +25% damage for 6 s |
 | **Red Thirst** (New) | Common | 3 | +10% damage per 25% of health missing |
+| **Berserker** (New, stage 6) | Legendary | 1 | below 50% health: a blow that doesn't knock you down can't flinch you out of an attack (a skill's wind-up goes on), each sword hit in a row +5% up to +30% (a blow taken or 2 s without a hit ends the streak), and no potions (the potion key is dimmed, the press does nothing) |
 
 ### Storm: hit-count procs
 | Boon | Tier | Lv | Effect |
@@ -357,6 +370,7 @@ Healing check: no new boon heals; Hemorrhage and the rest deal damage. The exist
 | Last Stand vs Vigor | live low, or live big |
 | Bloodthirst vs Moon Mastery | sword build, or skill build |
 | Vanish vs Unbroken | earn your safety net, or be handed one |
+| Berserker vs Iron Skin | fight on low, or take less (Iron Skin locks out both its rivals) |
 
 A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists locked boons, greyed out.
 
@@ -382,14 +396,14 @@ A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists loc
 
 **How players know:** an elite is told by the map node, the boss's name bar ("Swift Shackled Sun") and the boss's body, timing and sound. There is nothing glowing on the boss and no rings or floor warnings. One affix per elite in circles 1-3, two from circle 4 on.
 
-| Affix | Effect | How the player can tell |
+| Affix | Effect (stage 6, measured: section 14d) | How the player can tell |
 |---|---|---|
-| **Swift** | Moves and recoveries 12% faster; strike timing unchanged | quicker footwork; its intro sound plays higher |
-| **Ironclad** | +30% health, stagger bar +30% | the name; the stagger bar is drawn longer (HUD) |
-| **Enraged** | Below 50%: blows +25%, breathers -30% | the half-health war cry or break it already has, held longer |
-| **Relentless** | Stagger meter drains 2x; stays down 2.5 s (not 3.5) | the name; the HUD stagger bar drains visibly faster |
-| **Vampiric** | Heals 8% of the damage it deals | its health bar refills (HUD) |
-| **Smouldering** | Its slams leave Shadowborne's floor fire (2 s, 6 dmg/s); not rolled on Shadowborne | the fire is the hazard itself, drawn where it hurts (the shared floor-fire pool; perf check in section 15) |
+| **Swift** | Footwork, breathers and its moves' cooldowns 20% faster; wind-ups and strikes unchanged | quicker footwork; its sounds play higher (the Tower skips the intros: every sound it makes) |
+| **Ironclad** | +30% health (on the Elite's x1.25), stagger bar +30% | the name; the stagger bar is drawn 1.3x longer (HUD) |
+| **Enraged** | Below 50%: blows +25%, breathers -15% | the half-health war cry, the Sun's break, Shadowborne's roar held 1.4-1.5x longer |
+| **Relentless** | Stagger meter drains 2x; stays down 2.5 s (not 3.5); breathers -15% | the name; the HUD stagger bar drains visibly faster; shorter pauses |
+| **Vampiric** | Heals 25% of the health its blows take | its health bar refills (the HUD's white heal trail) |
+| **Smouldering** | Its slams leave Shadowborne's floor fire (a blade's bite: 5 flames, 3 s; the Sun's dive: a ring of 8 round its body, 2 s; 6 dmg/s felt); not rolled on Shadowborne | the fire is the hazard itself, drawn where it hurts (`fx/floor_fire.c`: Shadowborne's ground flames, no texture) |
 
 **Rewards:**
 - the draft is all Rare or better;
@@ -419,13 +433,13 @@ A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists loc
   - shop Mend: 77 HP for 50 gold;
   - the healing boons: about 15-25% of a floor each; with 5 slots a build carries one or two of them, not all.
 - **What that means:** a careful path (4 fights plus a Shop and an Event) ends a circle close to even. A greedy path (6 fights, an Elite) is about 35% short unless the build carries it. Elites are the risk you take for rare drafts.
-- **To measure in stage 5:**
-  - `HLE_RUN_CLIMB` along three set paths (safe, normal, greedy), logging health in and out per circle;
-  - `HLE_TEST_DUMMY` on each affixed Bonus boss for its cost.
+- **Measured in stage 6** (section 14d):
+  - `HLE_RUN_CLIMB HLE_RUN_BOT` along three set paths (`HLE_RUN_PATH` safe, normal, greedy), logging health, potions, gold and Embers out of each circle;
+  - `HLE_TEST_DUMMY HLE_ELITE_SWEEP` on each affixed Bonus boss for its cost.
 - **Target:** a normal path is about even through circle 4. Greedy paths win more Embers and better boons but end runs around circle 5 without a strong build.
 
 ## 14. Game theory check (no option strictly better)
-Method, as for the bosses: each option's value is its change in **fight cost** (boss damage a minute × 30% × time to kill, over the player's resources), estimated from the code's numbers at a reference build (circle 3, 2 slots filled). The test for each choice set: every option wins in some context, and the options' expected values sit within **±10% of the set's mean**. An option outside the band, or never best anywhere, is changed. All figures are estimates to measure in stages 5-6 (`HLE_TEST_DUMMY`, `HLE_RUN_CLIMB`, `HLE_SDMG_TOWER`).
+Method, as for the bosses: each option's value is its change in **fight cost** (boss damage a minute × 30% × time to kill, over the player's resources), estimated from the code's numbers at a reference build (circle 3, 2 slots filled). The test for each choice set: every option wins in some context, and the options' expected values sit within **±10% of the set's mean**. An option outside the band, or never best anywhere, is changed. All figures below are the estimates; stage 6 measured the builds, forms, Elites, the healing, Berserker's pair and the routes (section 14d), and changed what fell outside its band there. The duos', families' and the other rivals' tables stand as estimates.
 
 ### Builds (base damage a minute, maxed; band 216-264)
 | Build | Value | Best when | Worst when |
@@ -542,6 +556,89 @@ In from the start: today's 24 boons (now in their families), the map with every 
 - The unlocks take **9 bits** in `_pad[24..25]`: 6 family packs and 3 B forms. Events and affixes come from the saved best floor and duos from the packs, so they need no bits. Old saves read zeros: nothing bought, Embers and best floor kept.
 - The run seed is shown at the end of a run (the death screen and Stats), not saved.
 
+## 14d. Stage 6: the payoff tables measured
+Section 14's tables were estimates from the code's numbers; these are measured in the HLE emulator (Mupen, the Delta-like core), each from 240 s windows (a fight's first window dropped), in several orders so a window's place in the fight doesn't count, at most 10 emulators at once. The counts in brackets are windows.
+
+**The method.** A fight's cost is the agreed metric: the boss's damage a second on the passive dummy (`HLE_TEST_DUMMY`, hazards once a cast: `HLE_FIRE_ONCE` for Smouldering's patches) x 30% landing x the time to kill it with the sword in its openings (each opening (g - 0.4) / 0.65 x 4, the `sword` the dummy logs), each half of its health on its own half's numbers (`HLE_DUMMY_HALF`), over 352 resources, at the Tower's circle 3 (the reference build): the boss's blows x0.88 (x1.0 damage, the baseline's x0.94 twice), the player's x1.2, its health x0.55 x1.3 x1.16 (two skills offered). An affix is swept in turn with the plain fight (`HLE_ELITE_FORCE=0 HLE_ELITE_SWEEP`) and its cost given as a multiple of the plain fight's; an Elite is x1.25 health on top. The builds are fought by a bot (`HLE_DUMMY_BUILD`): it stays as close as the dummy, swings in the openings and casts its build's skill there when it's ready; 30% of the blows land, breaking a wind-up and ending Berserker's streak as a real one would; its health is held at 40% (Berserker on) and what it heals is counted; the boss's health is held in its half. A bot swings less often than the metric's sword (the plain sword 79 a minute on average, the metric's 148), so the builds are compared with one another, not with section 6's figures.
+
+### Elites (an Elite's cost, x a plain fight; target 1.5-1.7)
+| Affix | Fallen Warrior | Shackled Sun | Shadowborne | mean |
+|---|---|---|---|---|
+| none (x1.25 health) | x1.25 | x1.25 | x1.25 | x1.25 |
+| **Swift** (x1.20 footwork, breathers, cooldowns) | x1.56 (9) | x1.53 (9) | x1.57 (9) | **x1.55** |
+| Swift before (x1.12, no cooldowns) | x1.47 (15) | x1.42 (13) | x1.38 (12) | x1.42 |
+| **Ironclad** | x1.62 | x1.62 | x1.62 | **x1.62** |
+| **Enraged** (blows +25%, breathers -15%) | x1.53 (15) | x1.70 (14) | x1.61 (12) | **x1.61** |
+| Enraged before (breathers -30%) | x1.77 (2) | x2.25 (1) | x1.88 (3) | x1.97 |
+| **Relentless** (with breathers -15%) | x1.39 (9) | x1.51 (9) | x1.48 (7) | **x1.46** (x1.55-1.6 for a player who staggers) |
+| Relentless before (the stagger alone) | x1.25 (the bot x1.39) | x1.25 (x1.07) | x1.25 (x1.22) | x1.25 (the bot's 2 windows each: x1.07-1.39) |
+| **Vampiric** (25%) | x1.56 | x1.60 | x1.60 | **x1.58** |
+| Vampiric before (8%) | x1.33 | x1.34 | x1.34 | x1.34 |
+| **Smouldering** (blades 3 s, the Sun's ring 2 s, two patches at once) | x1.50 (9) | x1.62 (9) | - | **x1.56** |
+| Smouldering with three patches at once (16 flames) | x1.55 (9) | x1.60 (7) | - | x1.58 |
+| Smouldering before (2 s) | x1.38 (15) | x1.55 (14) | - | x1.47 |
+| Smouldering at 3 s everywhere | x1.55 | x1.78 (9) | - | x1.67 |
+
+Ironclad's and Vampiric's costs follow from the plain fight's own windows (their health and heal on the same damage and openings: 32, 33 and 29 windows); the others are their own windows against the plain ones in the same runs. The mean of the six is x1.56 and each affix's mean sits in the band (x1.46-1.62), each between x1.39 and x1.70 on any one boss. The stagger affixes on the bot (`HLE_DUMMY_BUILD` with `HLE_ELITE_SWEEP`, the sword and the stagger build): Relentless's drain cut the Fallen Warrior's staggers under the sword from 1.2 to 0.5 a minute; Ironclad's longer bar cost the stagger build on the Sun 12% of its damage; both affixes' other effects showed as on the metric. Two affixes from circle 4: their costs multiply above the x1.25 (about x2.4 for two of the six), for a Rare draft with a duo in it.
+
+What the bot showed under the affixes it was run with (2 windows each, the sword and the stagger build): Vampiric's heals took 28% of what the sword dealt on the Fallen Warrior a minute (10% on the Sun) and 16-19% of the stagger build's; Ironclad's bar cost the stagger build 12% of its damage on the Sun and nothing on the Fallen Warrior; Relentless left the stagger build's staggers as they were (it fills the meter faster than the drain) and halved the sword's. Swift, Enraged and Smouldering weren't run on the bot: their best and worst builds are section 14's estimates still.
+
+### Builds (damage a minute on each boss; the band is the core five's mean +-10%)
+| Build | Guardian | Fallen Warrior | Shackled Sun | Shadowborne | mean | vs the
+
+The core five (Storm, Full Moon Dance, Twin Moon, Crescent Storm, the stagger build) average 154 a minute, band 139-170: all five and both B-form builds sit inside it (-6% to +4%), and the best on each boss differs: Crescent Storm on the Guardian and Shadowborne (the bot can't stay on Shadowborne: ranged blades win), Full Moon Dance on the Fallen Warrior, Storm and the stagger build on the Sun. What it took (the mean of four bosses, before -> after):
+- **Storm** (Storm Blade, Static Lv 4, Thunderclap): 192 a minute (+21% over the mean, best on three of four bosses) with Static +3 a level and Thunderclap 8; 178 (+13%) with +2 and 6; **160 (+4%) with Static +1.5 a level and Thunderclap 6** (Thunderclap+ 9).
+- **The stagger build** (Shattering Dance, Heavy Hand 3, Crushing Blows, Executioner, Eclipse): 124 (-22%) with a fifth of a sword hit a cross (stage 5); a third 124, a half 132 (-17%), two thirds 139 (-12%), a whole hit 140: more stagger a cross stops paying, a boss can only go down between its moves and stays down its 5.25 s. So **two thirds of a hit a cross and the crosses 1.75 (Lv 4's 1.5): 147 (-5%)**.
+- **Full Moon**: 140 (-12%) at Lv 3's 33.6; **x1.15 on its slash (38.6): 145 (-6%)**.
+- **Crescent Storm**: 174 (+10%, +12% once Storm came down) with its trailing blades at full damage and the blades hitting 7 round again; **the three trailing blades at 70%: 157 (+2%)**.
+- Twin Moon (152), Full Moon Dance (154) and Long Cleave (147) as they were.
+- The sword alone (82) and the single boons aren't builds: Berserker is its rival's table below.
+
+### Skill forms (pairs, damage a minute, the boss each wins on)
+| Skill | A | B | A wins | B wins |
+|---|---|---|---|---|
+| Moon Blade Dance | Full Moon Dance 154 | Shattering Dance (its Iron build) 147 | the Fallen Warrior (162 vs 113), Shadowborne (78 vs 58) | the Sun (190 vs 176), the Guardian (227 vs 199) |
+| Halfmoon Slash | Twin Moon 152 | Full Moon 145 | the Guardian (203 vs 185), Shadowborne (94 vs 82), the Sun (171 vs 167) | the Fallen Warrior (144 vs 142) |
+| Crescent Cleave | Crescent Storm 157 | Long Cleave 147 | the Guardian (230 vs 210), the Sun (143 vs 127), the Fallen Warrior | Shadowborne a tie (137 vs 136), safe play at range |
+
+Each pair is within 7% and each form is best (or level) somewhere; none is taken in every build. Full Moon's other worth, its unbroken charge, doesn't show on a bot that only casts in openings: on a bot whose casts get broken it would count more.
+
+### Healing (a minute, on the bot: 30% of the blows land; its health held at 40%)
+| Boon | Guardian | Fallen Warrior | Shackled Sun | Shadowborne | of the landed damage (circle 1) |
+|---|---|---|---|---|---|
+| Bloodthirst Lv 2 | 29 | 21 | 24 | 8 | about 30% |
+| Rally Lv 1 | 72 | 59 | 91 | 27 | about 90% |
+| Rally Lv 2 | 78 | 60 | 87 | 28 | the same as Lv 1 |
+| Both (the Blood build) | 106 | 83 | 116 | 29 | over 100% |
+
+The landed damage a minute on the bot is about 77 at circle 1 (113 at circle 3, 160 at circle 6). Bloodthirst sits at the design's 15-25% of a floor by circle 3 (22%); **Rally heals 60-90% of what lands** at circles 1-3 (it wins back the whole blow when the bot hits back in the opening that follows, which it nearly always does), three times Bloodthirst and far over the 15-25% target, and Rally Lv 2 (held 1.5 s, not 1) adds nothing measurable. Rally's rule (the whole blow back, each hit its base damage) is the user's own (v1.0), so it isn't changed here: the user's call. A proposal: each hit wins back a quarter of its base at Lv 1 (1 a sword hit: about 25% of what lands) and half at Lv 2 (about 45%), so its second level is worth taking.
+
+### Rival: Berserker vs Iron Skin
+| | Berserker (below half health) | Iron Skin Lv 1 |
+|---|---|---|
+| damage a minute (the bot, mean of four) | +13% at +5% a hit to +30% (88 vs 78); **+18% at +8% to +40%** (93 vs 79) | as the sword |
+| fight cost | -15% while it's on (and no potions then) | -15% always |
+| wins | a Blood build living low (Bloodthirst, Rally, Red Thirst, Last Stand), the wind-ups it keeps (Halfmoon, Cleave) | everyone else |
+
+At the approved +5% to +30% Berserker was worse than its rival everywhere (-12% only while on, against -15% always): dominated. Its streak rarely tops out (2 s without a hit ends it, and a boss's openings are shorter than its attacks), so the step is +8% to +40%: while it's on it matches Iron Skin, and it wins in the builds that live below half without potions. Knockdowns still knock you down (the numbers in stage 6's calls).
+
+### Map routes (`HLE_RUN_CLIMB HLE_RUN_BOT HLE_RUN_PATH`: the bot fights every floor, takes the metric's 30% of each blow and dies for real)
+The climbing bot is weaker than the metric's player (its sword brought to the metric's rate, x1.9; it never dodges, 30% of each blow lands; a potion below 40%), a fresh save (no packs, best floor 0: Swift, Ironclad and Enraged only), the route picked by `HLE_RUN_PATH`, Shops bought from (Mend below 65%, potions, the cheapest card) and Rests taken (heal below 60%, else Temper). Two seeds a route (21, 22):
+
+| Route | Fights a circle | Out of circle 1 (health, potions, gold, Embers) | Where it ended |
+|---|---|---|---|
+| Safe | 4 | 115/150, 3, 75, 75 (seed 21) | circle 2's Unbound (floor 8); floor 2, Shadowborne (seed 22) |
+| Normal | 5 | 72/128, 1, 150, 95 (21); 122/150, 7, 210, 95 (22) | circle 2's Guardian (floor 6); seed 22 alive past floor 26: out of circles 2-5 at 51%, 75%, 69%, 63% health with 5, 1, 6, 8 potions, 315-515 gold, 264 / 515 / 826 / 1151 Embers |
+| Greedy | 6 | 135/175, 2, 180, 118 (22) | floor 5 (circle 1, Shadowborne) and floor 9 (circle 2, Shadowborne) |
+
+What holds across them: a greedy circle earns the most (118 Embers out of circle 1 against 95 and 75) and ends runs soonest; the normal route held even, about 50-75% health out of every circle through circle 5 on the seed that lived; the deaths are mostly Shadowborne, which the bot can't reach (the builds' table: 28 a minute against 78-115 on the others). No Elite stood on a greedy path the bot's maps gave it. Too few runs for an Embers-a-run comparison across the routes (section 14's claim stays an estimate); the heap stayed 3.1 MB free (Expansion Pak in Mupen) throughout.
+
+### The Story and the Bonus fights (outside a Run)
+Everything outside a Tower run plays as on main e0a7988 (the user's call): the same `HLE_TEST_SKILL_DMG` a cast, the Guardian 30 away, on main and the branch, 28 casts each: the combo 8.0 (stagger 0.18), Moon Blade Dance 4.0 (0.09), Halfmoon Slash 28.0 (0.33), the Cleave 12.5 or 13.8 (0.28 or 0.31: an 11th tick lands or not by the frame's phase, 17/10 casts on main, 15/12 on the branch; 12.96 and 13.1 a cast). A dummy fight can't match line for line (the bosses' rolls follow the clock, and the builds' frames differ), so the Guardian's and the Fallen Warrior's 660-810 s on each: 5175 / 5190 and 6042 / 6257 damage, 46.7 / 45.4% and 43.8 / 42.1% open. The Story Guardian's cost (sword only 31-32%, x0.3 landing) with the Cleave on its cooldown is 23.4-23.8% (Unbound 22.9%), as on main; stage 5's 4-wide Cleave hit (10 a cast) had made it 24.9-25.3% (Unbound 24.0%: +1.5 points, +6%), now reverted. The shared changes stages 1-6 made outside the Tower: the effect pool 40 -> 48 (a full pool dropped effects; at Lv 1 none was ever full), a failed arc spawn no longer leaving its next-arc settings for the next one (a bug fix), the SFX channels sized for a 13% higher rate (2 KB of heap: a Swift Elite's voice); every other one reads the Tower's state and does nothing outside a run.
+
+### Frame time and heap (Ares, 4 MB, no Expansion Pak)
+Frame time by affix (`HLE_TEST_DUMMY HLE_DUMMY_HALF HLE_ELITE_SWEEP HLE_LOG_FPS`, 40 s windows, the Mupens stopped): every affix on the Fallen Warrior and the Sun runs at 59.6-59.8 fps, the CPU's update + draw 7.4 ms plain and 7.5-7.9 with any affix (Swift's and Enraged's faster footwork the most), the RSP 0.5-0.9 ms behind. Smouldering's worst case, a Triangle Slam on a loop (`HLE_FK_FORCE=6`, the dummy standing in the fire, the camera through it): 57.2 fps with 16 flames (the alpha-blended octahedra filling the screen, the RSP 2.85 ms behind), so the patches are held to two at once (10 flames: a third slam's patch puts out the oldest flames): 58.4 fps (1.9 ms); the Sun's dive on a loop 59.6 fps. In a fight that isn't a loop it costs nothing measurable (59.8 fps, no refresh missed). Heap, the Tower's low point (`RUN_CLIMB RUN_STRIKE RUN_TOPUP SB_LAST`, 7 floors, the Shadowborne floor, three fresh ROM folders): 479/479/479 KB (stage 5's tip on the same path today 483; the code is 9 KB larger, the SFX channels' 13% headroom 2 KB); with every middle node a Smouldering Elite (`HLE_TOWER_ELITES HLE_ELITE_FORCE=6`) 472 KB.
+
 ## 15. Memory and ROM
 - **Heap:**
   - map state: 21 nodes × 2 bytes;
@@ -557,7 +654,7 @@ In from the start: today's 24 boons (now in their families), the map with every 
   - icons: 1 KB.
 - **ROM size:** accepted (the user's call). About 25-30 KB more: one or two 16 KiB steps, so the release pages likely read about 20.6-20.7 / 12.6-12.7 MB.
 - **Frame time:** none in fights, except where noted. Elite affixes are table lookups.
-  - **Smouldering** uses the shared floor-fire pool in `skill_fx` (24 points, static) that the Fallen Warrior's fire lunge already draws. In the Fallen Warrior's scene it costs nothing new; in the Shackled Sun's it adds the fire texture if that scene doesn't hold it (up to 30 KB: check against its heap low point at 4 MB); Shadowborne doesn't roll it (it has its own fire). The patches are the attack itself, drawn where they burn: no warnings or glows.
+  - **Smouldering** (stage 6) draws Shadowborne's ground flames from a module of its own (`fx/floor_fire.c`: 10 flames, a matrix each a frame from the frame's GPU arena, one 8-triangle mesh built on the first slam and freed with the boss), not skill_fx's fire trail, so the Sun's scene loads no fire texture (the trail's heat map is 30 KB); Shadowborne doesn't roll it (it has its own fire). The patches are the attack itself, drawn where they burn: no warnings or glows. Frame time and heap measured in section 14d.
   - Crescent Storm draws 8 blades (5 today).
   - Measure both in Ares at 4 MB and on Delta's core.
 
@@ -588,4 +685,4 @@ The user's answers (2026-11-01):
 9. Release: at both a Rest and a Shop (section 14).
 10. Skill forms: Crescent Storm is the 5 blades plus 3 trailing (the user's design); Shattering Dance anchors a stagger build; skill cards per section 14.
 
-Open questions: none. The payoff tables are estimates; stages 5-6 measure them, and any number that moves out of its band comes back to the user.
+Open questions: Rally's healing (section 14d: 60-90% of the damage that lands, the user's rule, a proposal there). The payoff tables are measured in section 14d where stage 6 could; the rest stand as estimates.

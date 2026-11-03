@@ -31,7 +31,7 @@ The Bonus bosses climb past the story (`boss_target_max_health`, `boss_damage_sc
 ## The Tower (shipped)
 A run climbs floors, one fight each:
 - **A circle is a map** (branch tower-rogue, stage 3; [TOWER_ROGUELIKE.md](TOWER_ROGUELIKE.md) section 2): 7 rows of 3 lanes, the Guardian in row 1, Guardian Unbound in row 7 (a floor of its own), a Rest on every lane of row 6, rows 2-5 rolled (Fight 45, Elite 15, Event 20, Shop 12, Rest 8), rerolled until every lane has 2+ Fights, every path 2-4 fights in those rows, a Shop sits in row 3 or 4 on some lane, no Elite in row 2 and no two Shops or Rests in a row on any path (the rules leave a map about 65% Fights, 10% Elites, 10% Events, 12% Shops, 3% Rests in rows 2-5). A path has 4-6 fights (23% / 51% / 26% of paths); each Fight or Elite is a Bonus boss not met this circle while any are left (set when its node becomes reachable).
-- **Elites:** the Bonus boss at x1.25 health, a Rare-or-better draft, x1.5 gold and Embers (affixes: stage 6).
+- **Elites:** the Bonus boss at x1.25 health, a Rare-or-better draft, x1.5 gold and Embers, and its affixes (stage 6; TOWER_ROGUELIKE sections 11 and 14d): one in circles 1-3, two from circle 4 (then its last card is a duo when one is ready), Swift, Ironclad and Enraged from the start, Relentless, Vampiric and Smouldering at best floor 15, 20, 25, never Smouldering on Shadowborne. Swift: footwork, breathers and cooldowns x1.2, its sounds 12% higher. Ironclad: +30% health (x1.625 in all), stagger bar +30%. Enraged: below half blows +25%, breathers -15%. Relentless: stagger drain x2, down 2.5 s, breathers -15%. Vampiric: heals 25% of the health its blows take. Smouldering: its slams leave Shadowborne's floor fire (5 flames 3 s where a blade bites, a ring of 8 for 2 s round the Sun's landing; 6 a second). Each costs 1.5-1.7x a plain fight on the agreed metric.
 - **Gold** (stage 4; this run only, lost when it ends): 25 + 5 x circle a fight (any boss; x1.5 an Elite), +15 for a Skip, +40 from the purse card that fills a complete build's drafts; Prospector (Hearth pack) +20% a level on every gain. About 166 a circle from fights in circles 1-2.
 - **Shops:** three new-boon cards rolled as a draft (Common 60, Rare 110, Legendary 180; buy one), a level on a slotted boon 70, a maxed boon's "+" 150, the free pact card, a potion 45 (up to the run's max), Mend (heal 35%) 50, Release 20; each once a visit (potions until the max). Left/Right along the shelf, Up/Down by rows, A buys, B or Leave leaves.
 - **Events** (one screen, 2-3 choices, the last Leave; no repeat in a run until all unlocked are met): the Bleeding Altar, a Knight's Grave, Mirror of Shadows, Merchant of Ash from the start; Moonlit Pool, the Chained Prisoner, Gambler's Bones and the Ember Brazier at best floor 10, 15, 20, 25.
@@ -60,9 +60,10 @@ Until a skill is known the first card is a Learn card; after that a third of the
 | Hemorrhage (pack) | Blood | Common | 3 | the combo's 3rd hit bleeds 4 a level over 3 s (ticks every 0.5 s, a quarter of a hit's flash, no flinch, no healing) |
 | Sanguine Flask (pack) | Blood | Rare | 1 | a potion: +25% damage for 6 s |
 | Red Thirst (pack) | Blood | Common | 3 | +10% damage a level per full 25% of health missing |
+| Berserker (pack, stage 6) | Blood | Legendary | 1 | below half health: a blow that doesn't knock you down doesn't flinch you or break a wind-up, each sword hit in a row +8% to +40% (a blow or 2 s ends it), no potions; Iron Skin's rival |
 | Storm Blade | Storm | Legendary | 1 | every 4th hit calls lightning (+6; was +12, best in every build) |
-| Static (pack) | Storm | Common | 4 | Storm Blade's bolt +3 a level; without it, every 8th hit a bolt of 6 (+3 a level above 1) |
-| Thunderclap (pack) | Storm | Rare | 1 | the combo's 3rd hit calls lightning (+8) |
+| Static (pack) | Storm | Common | 4 | Storm Blade's bolt +1.5 a level; without it, every 8th hit a bolt of 6 (+1.5 a level above 1) (stage 6: was +3; the Storm build was +21% over the builds' mean, now +4%) |
+| Thunderclap (pack) | Storm | Rare | 1 | the combo's 3rd hit calls lightning (+6; stage 6: was +8) |
 | Conductor (pack) | Storm | Rare | 1 | lightning fills the stagger meter like a sword hit (offered once something calls lightning) |
 | Overcharge (pack) | Storm | Legendary | 1 | a stagger: the next 5 hits each call Storm Blade's bolt (6, +3 a Static level) |
 | Moon Mastery | Moon | Rare | 3 | skill cooldowns -20% a level (x0.8 each) |
@@ -89,24 +90,26 @@ Until a skill is known the first card is a Learn card; after that a third of the
 | Learn Moon Blade Dance / Halfmoon Slash / Crescent Cleave | Skill | Common, then Rare | 4 | the skill on its button (no slot); the card again is its next level (below) |
 | The six Lv 5 forms | Skill | Legendary | 1 | at Lv 4; one locks the other out (below); the B forms bought at the Shrine |
 
-**Skill levels** (stage 5, TOWER_ROGUELIKE section 6; damage a cast measured with `HLE_TEST_SKILL_DMG` + `HLE_SDMG_TOWER`, the Guardian 30 away, circle 1):
+**Skill levels** (stages 5-6, TOWER_ROGUELIKE sections 6 and 14d; damage and stagger a cast measured with `HLE_TEST_SKILL_DMG` + `HLE_SDMG_TOWER`, the Guardian 30 away, circle 1; the meter's peak in sword hits of the Guardian's 11). Lv 1 is main's, in the Tower too (stage 6):
 
 | Lv | Moon Blade Dance (15 s) | Halfmoon Slash (45 s) | Crescent Cleave (18 s) |
 |---|---|---|---|
-| 1 | 5 crosses of 0.8: 4 (a fifth of a sword hit's stagger each) | 28, charge 2 s, stagger 30% | 5 blades, 4 hits each 0.3 s apart: 10 (each hits only as far as it's drawn, 4: was 7, 12.5) |
-| 2 | crosses 1.5: 7.5 (no stagger from here) | charge 1.6 s: 28 | +20%: 12 |
-| 3 | 7 crosses: 10.5 | +20%: 33.6 | 5 hits 0.24 s apart: 15 |
-| 4 | cooldown 12 s | reach 85 to 106 | wind-up 0.6 s (was 0.85) |
-| 5 A | Full Moon Dance: 10 crosses of 2: 20 | Twin Moon: the slash again 0.35 s later at 40%: 47 | Crescent Storm: 3 more blades 0.3 s behind the middle three: 25.5 (24 at 60 away) |
-| 5 B | Shattering Dance: 7 crosses of 1.5 filling a fifth of a sword hit each: 10.5 | Full Moon: all round, charge and slash unbroken, stagger 60%: 33.6 | Long Cleave: blades 1.6x as far, 6 hits, fan 60% as wide: 19.5 (15 at 60 and 85, 10.5 at 110; Storm 9 and 6 at 85 and 110) |
+| 1 | 5 crosses of 0.8: 4, stagger 1 hit | 28, charge 2 s, stagger 3.6 hits | 5 blades, 4 hits each 0.3 s apart, 7 round: 12.5-13.8, 3.1-3.4 hits |
+| 2 | crosses 1.5: 7.5 (the first five keep Lv 1's stagger: 1 hit) | charge 1.6 s: 28 | +20%: 15-16.5 |
+| 3 | 7 crosses: 10.5 (1 hit) | +20%: 33.6 | 5 hits 0.24 s apart: 18-19.5 |
+| 4 | cooldown 12 s | reach 85 to 106 | wind-up 0.6 s (was 0.85): 19.5 |
+| 5 A | Full Moon Dance: 10 crosses of 2: 20 (1 hit) | Twin Moon: the slash again 0.35 s later at 40%: 47, 5 hits | Crescent Storm: 3 more blades 0.3 s behind the middle three at 70%: 27.5-29 (stage 6: at full damage 33, +12% over the builds' mean) |
+| 5 B | Shattering Dance: 7 crosses of 1.75 filling two thirds of a sword hit each: 12.2, 4.7 hits (stage 5: 1.5, a fifth: 1.4 hits; the build -22%) | Full Moon: all round, charge and slash unbroken, stagger 60%, x1.15: 38.6, 7.2 hits (was 33.6: -12%) | Long Cleave: blades 1.6x as far, 6 hits, fan 60% as wide: 21 |
+
+Stage 5 had cut the player's Cleave blades' reach to 4 (10 a cast at Lv 1) and Moon Blade Dance's Lv 2-4 to no stagger; stage 6 put both back as on main (the user's call) and rebalanced the levels and forms from that Lv 1 (TOWER_ROGUELIKE 14d).
 
 The B forms cost 200 Embers each at the Shrine (Unlocks, after the packs; bits 6-8 of the unlock bits).
 
 Not built yet: Hearth's pack (Quick Draught needs a drinking time, which potions don't have; Prospector needs gold, stage 4), so the Shrine sells five packs.
 
 **Rivals, "+" and duos** (tower-rogue stage 2):
-- **Rivals:** taking one locks the other out for the run (never offered after, never on one draft together): Riposte / Iron Skin, Blood Pact / Kindled Flask, Storm Blade / Executioner, Last Stand / Vigor, Bloodthirst / Moon Mastery, Vanish / Unbroken. The card names the rival ("Locks out"); Build lists the locked ones, greyed.
-- **"+"** (Rare, no slot, offered once its boon is at its max; Build shows "Lv 5/5+"): Ember Edge+ finishers +25%; Iron Skin+ the first blow a floor deals half; Storm Blade+ every 3rd hit; Executioner+ +90%; Crushing Blows+ no stagger drain for 3 s after the boss rises; Riposte+ 4 s; Unbroken+ heals 20% when it saves you; Bloodthirst+ 16% a level; Rally+ each hit wins back 1.5x its base (6 a sword hit); Phantom Step+ 0.31 s window; Static+ Storm Blade's and Static's bolts +50%; Thunderclap+ its bolt 12; Moon Mastery+ -25% a level. Second Wind+ is held back (a potion is drunk at once).
+- **Rivals:** taking one locks the other out for the run (never offered after, never on one draft together): Riposte / Iron Skin, Blood Pact / Kindled Flask, Storm Blade / Executioner, Last Stand / Vigor, Bloodthirst / Moon Mastery, Vanish / Unbroken, Berserker / Iron Skin (stage 6: Iron Skin locks out both). The card names the rival ("Locks out"); Build lists the locked ones, greyed.
+- **"+"** (Rare, no slot, offered once its boon is at its max; Build shows "Lv 5/5+"): Ember Edge+ finishers +25%; Iron Skin+ the first blow a floor deals half; Storm Blade+ every 3rd hit; Executioner+ +90%; Crushing Blows+ no stagger drain for 3 s after the boss rises; Riposte+ 4 s; Unbroken+ heals 20% when it saves you; Bloodthirst+ 16% a level; Rally+ each hit wins back 1.5x its base (6 a sword hit); Phantom Step+ 0.31 s window; Static+ Storm Blade's and Static's bolts +50%; Thunderclap+ its bolt +50% (9); Moon Mastery+ -25% a level. Second Wind+ is held back (a potion is drunk at once).
 - **Duos** (Legendary): offered once a maxed boon of each of its two families is slotted and both families' packs are bought (Hearth has none yet: open). Taking one merges those two (the first maxed of each family) into one slot, both still at their max, and opens the other slot; Build shows the duo and its two boons.
 
 | Duo | Families | Effect |
