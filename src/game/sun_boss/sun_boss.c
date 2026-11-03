@@ -18,6 +18,8 @@
 #include "../boss/environmental_mechanics/boss_ground_crush.h"
 #include "simple_collision_utility.h"
 #include "controllers/audio_controller.h"
+#include "game/tower/tower.h"
+#include "fx/floor_fire.h"
 #include "../../scenes/guardian/guardian_scene_sfx.h"
 #include "../../scenes/guardian/guardian_scene_bounds.h"
 
@@ -170,14 +172,14 @@ static float boss_dist(void)
     float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
     return sqrtf(dx * dx + dz * dz);
 }
-static int sfx(int id, float vol) { return audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, boss_dist()); }
+static int sfx(int id, float vol) { return audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, boss_dist()), tower_elite_pitch()); }
 static int rushCh = -1;     // a ram's or dive's rush: heard from the sun as it moves (sun_boss_update)
 // A ranged move's impact, heard from where it lands (from the boss, one by the player at range
 // was faint or silent)
 static void sfx_at(int id, float vol, float x, float z)
 {
     float dx = character.pos[0] - x, dz = character.pos[2] - z;
-    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+    audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz)), tower_elite_pitch());     // (Swift: higher)
 }
 static void sfx_boom(void) { sfx(SCENE1_SFX_BOSS_SMASH1, 1.0f); }
 static void sfx_cast(void) { sfx(SCENE1_SFX_SUN_CAST, 1.0f); }
@@ -187,7 +189,7 @@ static void sfx_cam(int id, float vol)
 {
     Boss *b = boss_get_instance();
     float dx = customCamPos.v[0] - b->pos[0], dz = customCamPos.v[2] - b->pos[2];     // (the cutscene camera as it moves)
-    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+    audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz)), tower_elite_pitch());     // (Swift: higher)
 }
 
 static float speed_mult(void) { return s.unshackled ? 1.35f : 1.0f; }
@@ -209,6 +211,7 @@ void sun_boss_free(void)
     for (int i = 0; i < MAT_RING; i++) { rspq_block_free(s.linkBlock[i]); free_uncached(s.linkVB[i]); }
     proc_mesh_free(&s.weight);
     free_uncached(s.chainMat);
+    floor_fire_free();
     memset(&s, 0, sizeof(s));
 }
 
@@ -492,6 +495,7 @@ static void dive_update(Boss *b, float dt)
             // A shockwave along the floor: wide, but jumping over it (Moon Blade Dance) avoids it
             if (to_player(b, &dx, &dz) < 34.0f && character.pos[1] - s.groundY < 6.0f) character_apply_damage(hurt(20.0f));
             boss_ground_crush_spawn(b->pos[0], s.groundY + 0.25f, b->pos[2]);
+            floor_fire_slam(b->pos[0], s.groundY, b->pos[2], SUN_R + 6.0f);     // (a Smouldering Elite's: round where it lands)
             screen_shake_set_shake_mag(14.0f);
             sfx_boom();
             enter(SB_REST);
@@ -935,6 +939,7 @@ static void lash_update(Boss *b, float dt)
 #endif
             boss_ground_crush_spawn(root[0] + s.strikeDir[0] * CHAIN_LEN * 0.6f, s.groundY + 0.25f,
                                     root[2] + s.strikeDir[1] * CHAIN_LEN * 0.6f);
+            floor_fire_slam(root[0] + s.strikeDir[0] * CHAIN_LEN * 0.6f, s.groundY, root[2] + s.strikeDir[1] * CHAIN_LEN * 0.6f, 9.0f);
             screen_shake_set_shake_mag(10.0f);
             sfx_boom();
             sfx_chain(1);
@@ -1210,18 +1215,23 @@ void sun_boss_update(Boss* b, float dt)
 {
     if (!s.ready) return;
     if (b->damageFlashTimer > 0.0f) b->damageFlashTimer -= dt;
-    s.t += dt;
+    // A Swift Elite drifts and breathes quicker, an Enraged one's pauses shorter below half health
+    // (section 11): the hover (its pause between attacks) and its rest after a dive, not a stagger's
+    bool paced = s.state == SB_HOVER || (s.state == SB_REST && b->staggerT <= 0.0f);
+    float pace = paced ? tower_elite_pace(true, b->health / fmaxf(b->maxHealth, 1.0f)) : 1.0f, drift = tower_elite_pace(false, 1.0f);
+    s.t += dt * pace;
     s.life += dt;
     if (rushCh >= 0) audio_set_scene_sfx_dist(rushCh, SCENE1_SFX_SUN_RUSH, boss_dist());    // (ignored once it has ended)
 #ifdef HLE_SUN_HITME    // test aid: a sword hit every 1.2 s, every third one a finisher (the passive dummy never hits it)
     { static float ht; static int n; if (b->mode == BOSS_MODE_COMBAT && (ht += dt) >= 1.2f) { ht = 0.0f; n++; boss_apply_hit(b, 0.01f, (n % 3 ? 1.0f : 2.5f) * 4.0f / POISE_DAMAGE); } }
 #endif
-    float sm = speed_mult();
-    s.cdGlare -= dt * sm; s.cdRain -= dt * sm; s.cdCorona -= dt * sm; s.cdDive -= dt * sm; s.cdLash -= dt * sm; s.cdSweep -= dt * sm;
-    s.cdSpiral -= dt * sm; s.cdEmber -= dt * sm; s.cdFlare -= dt * sm; s.cdRam -= dt * sm; s.cdEclipse -= dt * sm;
+    float sm = speed_mult(), cm = sm * drift;     // (Swift: its moves come round sooner too)
+    s.cdGlare -= dt * cm; s.cdRain -= dt * cm; s.cdCorona -= dt * cm; s.cdDive -= dt * cm; s.cdLash -= dt * cm; s.cdSweep -= dt * cm;
+    s.cdSpiral -= dt * cm; s.cdEmber -= dt * cm; s.cdFlare -= dt * cm; s.cdRam -= dt * cm; s.cdEclipse -= dt * cm;
     s.raysSpin += (1.0f - s.raysSpin) * fminf(1.0f, dt * 2.0f);
     rain_tick(dt);
     flare_tick(dt);
+    floor_fire_update(dt);
     if (!s.chainsReady) chains_reset(b);
 
     float dx, dz, dist = to_player(b, &dx, &dz);
@@ -1247,7 +1257,7 @@ void sun_boss_update(Boss* b, float dt)
     b->striking = s.state == SB_DIVE || ((s.state == SB_GLARE || s.state == SB_CORONA || s.state == SB_LASH || s.state == SB_SWEEP
                                           || s.state == SB_SPIRAL || s.state == SB_EMBER || s.state == SB_FLARE || s.state == SB_RAM
                                           || s.state == SB_ECLIPSE) && s.step > 0);
-#ifdef HLE_TEST_DUMMY
+#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT)
     { extern void hle_open_tick(bool, float); hle_open_tick((s.state == SB_HOVER || s.state == SB_REST), dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {
@@ -1269,13 +1279,13 @@ void sun_boss_update(Boss* b, float dt)
         // Drift around the player at a distance, bobbing
         s.combo = false;
         face_player(b, dt, 3.0f);
-        s.orbit += dt * 0.35f * sm;
+        s.orbit += dt * 0.35f * sm * drift;
         float away = atan2f(-dx, -dz) + s.orbit * 0.3f;
         float keep = KEEP_DIST;
 #ifdef HLE_SUN_FORCE
         if (HLE_SUN_FORCE == 5 || HLE_SUN_FORCE == 7) keep = 85.0f;     // test aid: hovers at range (the ranged moves)
 #endif
-        move_toward(b, character.pos[0] + sinf(away) * keep, character.pos[2] + cosf(away) * keep, DRIFT_SPEED * sm, dt);
+        move_toward(b, character.pos[0] + sinf(away) * keep, character.pos[2] + cosf(away) * keep, DRIFT_SPEED * sm * drift, dt);
         float hy = s.groundY + HOVER_H + sinf(s.life * 2.0f) * 3.0f;
         b->pos[1] += (hy - b->pos[1]) * fminf(1.0f, dt * 3.0f);
         if (s.t > 1.5f / sm) choose(b, dist);     // a pause between attacks: the opening
@@ -1326,7 +1336,7 @@ void sun_boss_update(Boss* b, float dt)
             if (s.step == 0) sfx(SCENE1_SFX_SUN_BREAK, 1.0f);     // the boom, its roar, the chains whipping free 0.5 s on
             s.step++;
         }
-        if (s.t > 2.0f) { b->mode = BOSS_MODE_COMBAT; s.cdCorona = 0.0f; s.cdEclipse = 6.0f; enter(SB_HOVER); }
+        if (s.t > 2.0f * (tower_elite_held_longer() ? 1.4f : 1.0f)) { b->mode = BOSS_MODE_COMBAT; s.cdCorona = 0.0f; s.cdEclipse = 6.0f; enter(SB_HOVER); }     // (an Enraged Elite's break held longer)
         break;
 
     case SB_DEAD:
@@ -1589,6 +1599,7 @@ void sun_boss_draw(Boss* b)
     face_draw(&base, h, eyeTint);
     SPROF(2);
     t3d_fog_set_enabled(true);
+    floor_fire_draw();
 #ifdef HLE_PROF_DRAGON
     gpu_prof_end();
     if (++spN == 120) { debugf("[sunprof] rays %.2f ball %.2f face %.2f ms\n", TICKS_TO_US(sp[0] / 120) / 1000.0, TICKS_TO_US(sp[1] / 120) / 1000.0,

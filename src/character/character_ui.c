@@ -436,6 +436,7 @@ void character_ui_draw_c_buttons(void)
     int potionCount = character_get_health_potion_count();
     unsigned look = potionCount > 0 ? 8 : 0;
     for (int i = 0; i < 3; i++) if (character_skill_usable(keys[i].s)) look |= 1u << i;
+    if (tower_potion_blocked()) look |= 16;     // Berserker below half health: the potion key dimmed as a skill's is
 
     // The keys, icons and bottle change only with that: recorded once for it (64 px sprites
     // scaled down, each with its own mode, cost the RSP half a millisecond a frame). The
@@ -473,6 +474,14 @@ void character_ui_draw_c_buttons(void)
             rdpq_mode_filter(FILTER_BILINEAR);
             rdpq_set_prim_color(RGBA32(220, 50, 50, 255));
             character_ui_draw_icon(s_healthBottleSprite, &s_healthBottleSurf, leftX, leftY, keyPx * 0.65f);
+        }
+        if (look & 16) {    // (over the bottle: it can't be drunk now)
+            int half = (int)(keyPx * 0.40f);
+            rdpq_set_mode_standard();
+            rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+            rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+            rdpq_set_prim_color(RGBA32(0, 0, 0, 140));
+            rdpq_fill_rectangle(leftX - half, leftY - half, leftX + half, leftY + half);
         }
         s_keysBlock = gpu_block_end();
         s_keysLook = look;

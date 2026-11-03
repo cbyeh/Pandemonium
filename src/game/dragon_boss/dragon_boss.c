@@ -18,6 +18,7 @@
 #include "fx/screen_shake.h"
 #include "../boss/environmental_mechanics/boss_ground_crush.h"
 #include "controllers/audio_controller.h"
+#include "game/tower/tower.h"
 #include "../../scenes/guardian/guardian_scene_sfx.h"
 #include "../../scenes/guardian/guardian_scene_bounds.h"
 
@@ -382,14 +383,14 @@ static int sfx(int id, float vol)
 {
     Boss *b = boss_get_instance();
     float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
-    return audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+    return audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz)), tower_elite_pitch());
 }
 // A ranged move's impact, heard from where it lands (from the dragon, a blast by the player at
 // range was faint or silent)
 static void sfx_at(int id, float vol, float x, float z)
 {
     float dx = character.pos[0] - x, dz = character.pos[2] - z;
-    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+    audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz)), tower_elite_pitch());     // (Swift: higher)
 }
 // The beam: its burst as it fires, from the dragon (a launch), and its hum while it's on, heard from
 // the beam's nearest point as it moves (beam_at). The burst alone, repeated, was lost under the
@@ -942,7 +943,7 @@ static void beam_at(const float to[3], float w, float dmg, bool blasts, float dt
     s.beamOn = true; s.beamW = w; s.glow = 1.0f;
     float bg = fminf(axis_dist_seg(s.mouth, to) - w, axis_dist_pt(to) - 9.0f);
     float bd = axis_dist_seg(s.mouth, to);
-    if (!audio_set_scene_sfx_dist(humCh, SCENE1_SFX_BEAM_HUM, bd)) humCh = audio_play_scene_sfx_dist(SCENE1_SFX_BEAM_HUM, BONUS_SFX_VOL, bd);     // (or stopped: all sounds stopped, its channel taken)
+    if (!audio_set_scene_sfx_dist(humCh, SCENE1_SFX_BEAM_HUM, bd)) humCh = audio_scene_sfx_pitch(audio_play_scene_sfx_dist(SCENE1_SFX_BEAM_HUM, BONUS_SFX_VOL, bd), tower_elite_pitch());     // (or stopped: all sounds stopped, its channel taken)
     humD = bd; humming = true;
     HB_TOUCH(HB_BEAM, bg - 8.0f);
     if (!s.hitDone && bg < PLAYER_R) { HB_HIT(HB_BEAM, bg - 8.0f); character_apply_damage(dmg); s.hitDone = true; }
@@ -968,7 +969,7 @@ static void breathe(const float to[3], float speed, float life, float dt)
     roarT -= dt;
     float d = axis_dist_seg(s.mouth, to);
     if (roarT <= 0.0f || s.emit == 0.0f) {
-        breathCh = audio_play_scene_sfx_dist(SCENE1_SFX_BREATH, 0.9f * BONUS_SFX_VOL, d);
+        breathCh = audio_scene_sfx_pitch(audio_play_scene_sfx_dist(SCENE1_SFX_BREATH, 0.9f * BONUS_SFX_VOL, d), tower_elite_pitch());
         roarT = 3.5f;
     } else audio_set_scene_sfx_dist(breathCh, SCENE1_SFX_BREATH, d);
     breathing = true;
@@ -2360,12 +2361,13 @@ static void roar_update(Boss *b, float dt)
     s.tNeckPitch = 0.8f; s.tJaw = 1.0f; s.tWingSpan = 1.0f; s.tWingRaise = 0.7f; s.tCrouch = 2.0f;
     s.tRear = 7.0f; s.tWingSweep = 0.0f; s.tTailUp = 0.3f; s.tNeckYaw = 0.08f * fm_sinf(s.life * 9.0f);     // reared, shaking with it
     if (s.t <= dt) sfx_roar();      // loud 0.28 s in: the quakes from then
-    key_play(&ROAR, s.t, 1.0f, 1.0f, 1.0f);
-    if (s.step < 8 && s.t >= 0.25f + 0.3f * s.step) {
+    float k = tower_elite_held_longer() ? 1.4f : 1.0f;     // (an Enraged Elite's roar held longer)
+    key_play(&ROAR, s.t, k, 1.0f, 1.0f);
+    if (s.step < 8 && s.t >= 0.25f + 0.3f * k * s.step) {
         screen_shake_set_shake_mag(8.0f);
         s.step++;
     }
-    if (s.t >= 2.4f) { s.alt = 0.0f; b->mode = BOSS_MODE_COMBAT; s.cdNova = 1.0f; enter(DG_IDLE); }
+    if (s.t >= 2.4f * k) { s.alt = 0.0f; b->mode = BOSS_MODE_COMBAT; s.cdNova = 1.0f; enter(DG_IDLE); }
 }
 
 static void nova_update(Boss *b, float dt)
@@ -3171,14 +3173,17 @@ void dragon_boss_update(Boss* b, float dt)
     if (b->damageFlashTimer > 0.0f) b->damageFlashTimer -= dt;
     key_remove();       // the moves and the easing work on the pose under the keyframed layer
     memset(s.kv, 0, sizeof(s.kv));
-    s.t += dt;
+    // A Swift Elite's footwork and pauses quicker, an Enraged one's pauses shorter below half health
+    // (section 11): its pause between attacks and its turns (their clock and steps), its strikes as ever
+    float sw = s.state == DG_IDLE || s.state == DG_TURN ? tower_elite_pace(false, 1.0f) : 1.0f;
+    s.t += dt * (s.state == DG_IDLE ? tower_elite_pace(true, b->health / fmaxf(b->maxHealth, 1.0f)) : sw);
     s.life += dt;
-    float sm = s.dark ? 1.2f : 1.0f;
-    s.cdWhip -= dt * sm;
-    s.cdClaw -= dt * sm; s.cdBite -= dt * sm; s.cdTail -= dt * sm; s.cdBreath -= dt * sm; s.cdCharge -= dt * sm;
-    s.cdFly -= dt * sm; s.cdNova -= dt * sm; s.cdOrbs -= dt * sm; s.cdBeam -= dt * sm; s.cdTriple -= dt * sm; s.cdSnipe -= dt * sm; s.cdSweep -= dt * sm; s.cdCone -= dt * sm;
+    float sm = s.dark ? 1.2f : 1.0f, cm = sm * tower_elite_pace(false, 1.0f);    // (Swift: its moves come round sooner too)
+    s.cdWhip -= dt * cm;
+    s.cdClaw -= dt * cm; s.cdBite -= dt * cm; s.cdTail -= dt * cm; s.cdBreath -= dt * cm; s.cdCharge -= dt * cm;
+    s.cdFly -= dt * cm; s.cdNova -= dt * cm; s.cdOrbs -= dt * cm; s.cdBeam -= dt * cm; s.cdTriple -= dt * cm; s.cdSnipe -= dt * cm; s.cdSweep -= dt * cm; s.cdCone -= dt * cm;
     s.fireCd -= dt;
-    s.cdBackstep -= dt * sm; s.cdSwipe -= dt * sm; s.passT -= dt;
+    s.cdBackstep -= dt * cm; s.cdSwipe -= dt * cm; s.passT -= dt;
 
     float dx, dz, dist = to_player(b, &dx, &dz);
     float rel = remainderf(atan2f(dx, dz) - b->rot[1], 2.0f * T3D_PI);
@@ -3203,7 +3208,7 @@ void dragon_boss_update(Boss* b, float dt)
     b->striking = s.state == DG_FLY || s.state == DG_TAIL || (s.state == DG_CLAW && s.step != 0 && s.step != 2) ||
                   ((s.state == DG_BITE || s.state == DG_BREATH || s.state == DG_CHARGE || s.state == DG_WHIP || s.state == DG_NOVA || s.state == DG_BEAM ||
                     s.state == DG_TRIPLE || s.state == DG_SNIPE || s.state == DG_SKYBEAM || s.state == DG_SWEEP || s.state == DG_CONE || s.state == DG_HOVER || s.state == DG_SWIPE || s.state == DG_STOMP) && s.step > 0);
-#ifdef HLE_TEST_DUMMY
+#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT)
     { extern void hle_open_tick(bool, float); hle_open_tick((s.state == DG_IDLE || s.state == DG_TURN || s.state == DG_DOWN), dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {
@@ -3244,14 +3249,14 @@ void dragon_boss_update(Boss* b, float dt)
         if (pace) {
             float sgn = ((int)((s.t - 0.4f) / 2.8f) & 1) ? -s.paceSg : s.paceSg;
             float off = sgn * (1.15f - fminf(fmaxf((dist - 120.0f) / 150.0f, -0.35f), 0.35f));
-            float d = turn_toward(b, atan2f(dx, dz) + off, 1.6f * sm, dt);
-            if (fabsf(d) < 0.6f) move_by(b, s.F[0] * 24.0f * sm * dt, s.F[2] * 24.0f * sm * dt);
+            float d = turn_toward(b, atan2f(dx, dz) + off, 1.6f * sm * sw, dt);
+            if (fabsf(d) < 0.6f) move_by(b, s.F[0] * 24.0f * sm * sw * dt, s.F[2] * 24.0f * sm * sw * dt);
             s.tNeckYaw = fminf(fmaxf(s.lookRel * 0.85f, -1.1f), 1.1f);
             if (!s.growled) { s.growled = true; if (pick_rng() % 100 < 60) sfx(SCENE1_SFX_DRAGON_GROWL, 0.8f); }     // a low growl as it starts to prowl
         } else {
-            float d = turn_toward(b, atan2f(dx, dz), (wait >= 1.8f && s.t >= wait - 0.8f ? 2.2f : 0.7f) * sm, dt);    // (back round from its pacing)
-            if (dist > 75.0f && fabsf(d) < 0.8f) move_by(b, s.F[0] * 30.0f * sm * dt, s.F[2] * 30.0f * sm * dt);
-            else if (dist < 50.0f && fabsf(d) < 1.0f) move_by(b, -s.F[0] * 18.0f * dt, -s.F[2] * 18.0f * dt);
+            float d = turn_toward(b, atan2f(dx, dz), (wait >= 1.8f && s.t >= wait - 0.8f ? 2.2f : 0.7f) * sm * sw, dt);    // (back round from its pacing)
+            if (dist > 75.0f && fabsf(d) < 0.8f) move_by(b, s.F[0] * 30.0f * sm * sw * dt, s.F[2] * 30.0f * sm * sw * dt);
+            else if (dist < 50.0f && fabsf(d) < 1.0f) move_by(b, -s.F[0] * 18.0f * sw * dt, -s.F[2] * 18.0f * sw * dt);
         }
         if (s.t > 0.3f && s.t < s.idleWait / sm - 0.3f) {   // every pause it breathes, its body rising and sinking
             if (s.heavyRest) {      // spent (after landing, or three beam sweeps): heaving, head low, panting, wings sagging

@@ -821,6 +821,7 @@ int character_get_health_potion_count(void)
 bool character_try_use_health_potion(void)
 {
     if (character.healthPotions <= 0) return false;
+    if (tower_potion_blocked()) return false;     // Berserker below half health (the HUD dims the key)
 
     // Block while mid-action — potions are only usable from a neutral state.
     if (characterState != CHAR_STATE_NORMAL) return false;
@@ -1216,6 +1217,15 @@ static const float MBD_WAVE_SPEED = 70.0f;
 static const float MBD_FIRST_WAVE = 0.6f;
 static const float MBD_WAVE_GAP = 0.25f;
 static const int   MBD_WAVES = 5;
+#ifndef SHATTER_HIT
+#define SHATTER_HIT (2.0f / 3.0f)   // a Shattering Dance cross's stagger, in sword hits (a plain cross: a fifth); the stagger build against the builds' mean: a third -21%, a half -17%, two thirds -11%
+#endif
+#ifndef SHATTER_DMG
+#define SHATTER_DMG 1.75f           // its crosses' damage (Lv 4's 1.5: the stagger build stayed -11..-13% with any stagger a cross, its breaks capped by the bosses' moves)
+#endif
+#ifndef FULL_MOON_HIT
+#define FULL_MOON_HIT 1.15f         // Full Moon's slash, on Lv 3's (as it was: the Halfmoon build -13% under the mean)
+#endif
 // The skills' levels and Lv 5 forms (docs/design/TOWER_ROGUELIKE.md section 6; outside the Tower Lv 1):
 // Moon Blade Dance Lv 2 crosses 1.5, Lv 3 7 of them, Lv 4 a 12 s cooldown; Full Moon Dance 10 crosses
 // of 2, Shattering Dance 7 that fill the stagger meter
@@ -1252,6 +1262,9 @@ static inline float halfmoon_end(void) { return HALFMOON_END - (HALFMOON_CHARGE 
 // Cleave Lv 2 +20%, Lv 3 5 hits a blade, Lv 4 a 0.6 s wind-up; Crescent Storm 3 more blades 0.3 s
 // behind the middle three, Long Cleave blades 1.6x as far, 6 hits
 static const float STORM_GAP = 0.3f;
+#ifndef STORM_TRAIL_HIT
+#define STORM_TRAIL_HIT 0.7f    // the trailing blades' damage (full: the Crescent Storm build +10-11% over the builds' mean, with the blades hitting 7 round again)
+#endif
 static const float LONG_FAN = 0.6f;     // Long Cleave's fan (its blades stay on a target out at their range)
 static inline float cleave_release(void) { return skill_lv(SKILL_CRESCENT_CLEAVE) >= 4 ? 0.6f : CLEAVE_RELEASE; }
 static inline bool cleave_storm(void) { return skill_form(SKILL_CRESCENT_CLEAVE) == SKILL_FORM_A; }
@@ -1388,11 +1401,12 @@ static void skill_fire_moon_blade(void)
     if (len < 1.0f) len = 1.0f;
     float vel[3] = { d[0] / len * MBD_WAVE_SPEED, d[1] / len * MBD_WAVE_SPEED, d[2] / len * MBD_WAVE_SPEED };
     // Lv 1: 5 crosses of 0.8 (4, for the dodge), each filling the stagger meter by its damage (a fifth of
-    // a sword hit); from Lv 2 they cut, not stagger, but for Shattering Dance's (a fifth of a hit each)
+    // a sword hit). The levels never stagger less: Lv 2-4 and Full Moon Dance keep that for the first 5
+    // crosses (the extra ones fill none); Shattering Dance's crosses fill SHATTER_HIT of a sword hit each
     int lv = skill_lv(SKILL_MOON_BLADE_DANCE), form = skill_form(SKILL_MOON_BLADE_DANCE);
-    float dmg = form == SKILL_FORM_A ? 2.0f : lv >= 2 ? 1.5f : 0.8f;
-    if (form == SKILL_FORM_B) skill_fx_next_poise(0.8f / POISE_DAMAGE);
-    else if (lv >= 2) skill_fx_next_poise(0.0f);
+    float dmg = form == SKILL_FORM_A ? 2.0f : form == SKILL_FORM_B ? SHATTER_DMG : lv >= 2 ? 1.5f : 0.8f;
+    if (form == SKILL_FORM_B) skill_fx_next_poise(SHATTER_HIT * 4.0f / POISE_DAMAGE);
+    else if (lv >= 2) skill_fx_next_poise(skillStep < 5 ? 0.8f / POISE_DAMAGE : 0.0f);
     skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, dmg, 1, 0.0f, len / MBD_WAVE_SPEED, skillStep == n - 1);
     character_play_swing();
     audio_play_scene_sfx_dist(SCENE1_SFX_MBD_X, 0.55f, 0.0f);
@@ -1449,7 +1463,7 @@ static void update_skill(float dt)
             skill_fx_next_poise((full ? 2.0f : 1.0f) * HALFMOON_POISE * share);
             if (full) skill_fx_next_arc_half(T3D_PI);       // all round
             skill_fx_spawn_arc((float[3]){ character.pos[0], character.pos[1] + 10.0f, character.pos[2] },
-                               yaw, radius, HALFMOON_DAMAGE * (skill_lv(SKILL_HALFMOON_SLASH) >= 3 ? 1.2f : 1.0f) * share);
+                               yaw, radius, HALFMOON_DAMAGE * (skill_lv(SKILL_HALFMOON_SLASH) >= 3 ? 1.2f : 1.0f) * (full ? FULL_MOON_HIT : 1.0f) * share);
             screen_shake_set_shake_mag(skillStep ? 8.0f : 14.0f);
             character_play_swing();
             audio_play_scene_sfx_dist(SCENE1_SFX_BLADE_SLASH, skillStep ? 0.7f : 1.0f, 0.0f);
@@ -1493,7 +1507,7 @@ static void update_skill(float dt)
             // more hits only count if they come sooner); Long Cleave 6 at that pace, through its longer flight
             int hits = cleave_long() ? 6 : lv >= 3 ? 5 : 4;
             skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 56.0f, 0.0f, dz * 56.0f },
-                                1.25f * (lv >= 2 ? 1.2f : 1.0f), hits, lv >= 3 ? 1.2f / 5 : 0.3f,
+                                1.25f * (lv >= 2 ? 1.2f : 1.0f) * (skillStep >= CLEAVE_BLADES ? STORM_TRAIL_HIT : 1.0f), hits, lv >= 3 ? 1.2f / 5 : 0.3f,
                                 cleave_long() ? 1.6f * 1.6f : 1.6f, false);    // ~8 ticks a cast in reach: 10
             skill_fx_spawn_burst(origin, a);
             audio_play_scene_sfx_dist(SCENE1_SFX_CLEAVE_BEAM, 0.45f, 0.0f);
@@ -3478,6 +3492,7 @@ void character_apply_damage(float amount)
 {
     if (amount <= 0.0f || characterState == CHAR_STATE_DEAD) return;   // the death screen's attacks still in flight: harmless
     amount *= boss_damage_scale();      // the Bonus bosses hit harder than their attacks' base numbers
+    { Boss *b = boss_get_instance(); if (b) amount *= tower_elite_blow(b->health / fmaxf(b->maxHealth, 1.0f)); }     // (an Enraged Elite below half: +25%)
     if (character_is_invulnerable()) {
         // A perfect dodge: a real blow (not a hazard's tick) caught in the first moments of a roll
         if (characterState == CHAR_STATE_ROLLING && !s_perfectThisRoll && amount >= 6.0f
@@ -3509,6 +3524,19 @@ void character_apply_damage(float amount)
 #ifdef HLE_LOG_MOVES     // test aid: each hit, after the move that dealt it ([move])
     debugf("[hit] %.1f\n", (double)amount);
 #endif
+#ifdef HLE_DUMMY_BUILD   // the build bot: 30% of blows land (the metric's dodging), as a real one would: it breaks a skill's wind-up (not Full
+                         // Moon's, nor Berserker's below half), ends Berserker's streak and fills Rally's pool; the health stays as it was
+    { static float land; land += 0.3f;
+      if (land >= 1.0f) {
+          land -= 1.0f;
+          extern int hle_build_breaks;
+          bool unbroken = characterState == CHAR_STATE_SKILL && activeSkill == SKILL_HALFMOON_SLASH && halfmoon_full();
+          bool steady = tower_berserk() && amount * tower_mod_damage_taken() < 20.0f;
+          if (characterState == CHAR_STATE_SKILL && skillStep == 0 && activeSkill != SKILL_MOON_BLADE_DANCE && !unbroken && !steady) { end_skill(); hle_build_breaks++; }
+          tower_on_player_hurt(amount * boss_hp_loss_scale() * tower_mod_damage_taken());
+          tower_on_boss_dealt(amount * boss_hp_loss_scale() * tower_mod_damage_taken());     // (a Vampiric Elite's heal)
+      } }
+#endif
     { extern float hle_dummy_damage; extern int hle_dummy_hits; hle_dummy_damage += amount * boss_hp_loss_scale(); hle_dummy_hits++; return; }   // test aid: count hits, never hurt
 #endif
 #endif
@@ -3516,17 +3544,27 @@ void character_apply_damage(float amount)
     // A hit during a wind-up cancels the skill (the cooldown is still spent); Full Moon's can't be broken
     // (no knockdown either: it takes the blow and slashes)
     bool unbroken = characterState == CHAR_STATE_SKILL && activeSkill == SKILL_HALFMOON_SLASH && halfmoon_full();
-    if (characterState == CHAR_STATE_SKILL && skillStep == 0 && activeSkill != SKILL_MOON_BLADE_DANCE && !unbroken) {
+    // Berserker below half health: a blow that doesn't knock him down leaves him in his attack (no flinch); a knockdown still does
+    bool steady = tower_berserk() && amount * tower_mod_damage_taken() < 20.0f;
+#ifdef HLE_LOG_BOONFX
+    if (steady) debugf("[boonfx] Berserker: a blow of %.1f, no flinch (state %d)\n", (double)(amount * tower_mod_damage_taken()), characterState);
+#endif
+    if (characterState == CHAR_STATE_SKILL && skillStep == 0 && activeSkill != SKILL_MOON_BLADE_DANCE && !unbroken && !steady) {
         end_skill();
     }
 
     amount = tower_mod_blow(amount * tower_mod_damage_taken());     // 1 outside a Tower run (Stalwart, Vanish)
     if (amount <= 0.0f) return;     // Vanish: the blow does nothing
     float before = character.health;
+#ifdef HLE_RUN_BOT     // test aid: the climbing bot takes the metric's 30% of each blow (70% dodged)
+    character.health -= amount * boss_hp_loss_scale() * 0.3f;
+#else
     character.health -= amount * boss_hp_loss_scale();     // the reactions below still go by the full blow
+#endif
     if (character.health <= 0.0f && tower_mod_try_unbroken()) character.health = 1.0f + tower_mod_unbroken_heal();   // the Unbroken boon (+: and 20%)
     if (character.health < 0.0f) character.health = 0.0f;
     if (character.health > 0.0f) tower_on_player_hurt(before - character.health);     // the Rally boon
+    tower_on_boss_dealt(before - character.health);     // (a Vampiric Elite heals by it)
 #if defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_STRIKE) || defined(HLE_TEST_CRUCIFIX)   // test aid: log every hit, never die
     debugf("[dmg] %.0f -> hp %.0f (state %d)\n", (double)amount, (double)character.health, characterState);
     if (character.health < 60.0f) character.health = character.maxHealth;
@@ -3545,7 +3583,7 @@ void character_apply_damage(float amount)
            amount > 20.0f ? "shove" : amount >= 20.0f ? "knockdown" : "flinch");
 #endif
     // Only knockdown if the hit is strong enough (>= 20 dmg)
-    if (amount < 20.0f && !unbroken) s_flinchT = FLINCH_S;      // knocked down below: that is its own reaction
+    if (amount < 20.0f && !unbroken && !steady) s_flinchT = FLINCH_S;      // knocked down below: that is its own reaction
     if (amount >= 20.0f && !unbroken) {
         // Prevent re-triggering knockdown if we are already rolling (invuln) or similar
         if (characterState != CHAR_STATE_ROLLING) {

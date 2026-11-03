@@ -6,6 +6,7 @@
 #include <math.h>
 
 #include "../../utilities/globals.h"
+#include "../tower/tower.h"
 #include "../../utilities/game_time.h"
 #include "../../utilities/video_layout.h"
 #include "../../utilities/button_prompt_utility.h"
@@ -599,6 +600,15 @@ void boss_ui_draw_health_bar(const char *name, float ratio, float flash)
         s_frameLayout = layout;
     }
     rspq_block_run(s_frameBlock);
+    // An Elite's affixes before its name ("Swift Shackled Sun"; section 11), right up to the plate
+    const char *tag = tower_affix_tag();
+    if (tag[0] && s_bossUiIntro > 0.99f) {
+        rdpq_set_mode_standard();
+        rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+        rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = layout.nameX - 4, .style_id = FONT_STYLE_RED }, FONT_UNBALANCED,
+                         0, layout.nameY + boss_ui_health_name_height() / 2 + 4, "%s", tag);
+    }
 }
 
 // The stagger meter: a thin gold line under the health fill, growing from the centre;
@@ -609,7 +619,8 @@ void boss_ui_draw_poise_bar(float poise, bool staggered, float time)
     BossUiHealthLayout layout = boss_ui_make_health_layout();
     boss_ui_prepare_flat_ui_pipe();
     int center = layout.fillX + layout.fillW / 2;
-    int half = (int)((float)(layout.fillW / 2) * boss_ui_clampf(staggered ? 1.0f : poise, 0.0f, 1.0f) * s_bossUiIntro);
+    // (an Ironclad Elite's bar is drawn 1.3x as long: it takes as much more to fill)
+    int half = (int)((float)(layout.fillW / 2) * tower_mod_poise_bar() * boss_ui_clampf(staggered ? 1.0f : poise, 0.0f, 1.0f) * s_bossUiIntro);
     int y0 = layout.fillY + layout.fillH + 2, y1 = y0 + 2;
     if (staggered) {
         int k = 200 + (int)(55.0f * (0.5f + 0.5f * sinf(time * 20.0f)));

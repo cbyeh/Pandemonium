@@ -589,7 +589,7 @@ static void boss_poise_update(Boss* boss, float dt)
         }
         return;
     }
-    if (boss->poiseIdleT > POISE_KEEP_S && !tower_poise_drain_held()) boss->poise = fmaxf(0.0f, boss->poise - POISE_DRAIN * rec);
+    if (boss->poiseIdleT > POISE_KEEP_S && !tower_poise_drain_held()) boss->poise = fmaxf(0.0f, boss->poise - POISE_DRAIN * tower_mod_poise_drain() * rec);   // (Relentless: 2x)
 }
 
 bool boss_try_stagger(Boss* boss)
@@ -623,7 +623,7 @@ void boss_update(Boss* boss)
 #endif
     if (boss->phaseIndex <= 2)      // the Guardian's and Unbound's: a blow's live part, or the barrage in the air
         boss->striking = boss->handAttackColliderActive || boss->sphereAttackColliderActive || boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE;
-#ifdef HLE_TEST_DUMMY   // test aid: the Guardian's and Unbound's openings (time not attacking), like the Bonus bosses'
+#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT)   // test aid: the Guardian's and Unbound's openings (time not attacking), like the Bonus bosses'
     if (boss->phaseIndex <= 2 && boss->mode == BOSS_MODE_COMBAT) { extern void hle_open_tick(bool, float); hle_open_tick(!boss->isAttacking, deltaTime); }
 #endif
 #ifdef HLE_TEST_FREEZE_BOSS

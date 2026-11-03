@@ -103,6 +103,7 @@ static float sfxMinDist = 10.0f;   // full volume at/inside this
 static float sfxMaxDist = 200.0f;  // silent at/after this
 static float sfxMinGain = 0.0f;    // floor gain
 
+#define SFX_PITCH_MAX 1.13f
 static inline bool ch_is_sfx_eligible(int ch)
 {
     return (ch >= SFX_CH_FIRST && ch <= SFX_CH_LAST);
@@ -317,6 +318,10 @@ void audio_initialize(void)
     wav64_init_compression(1);
 
     mixer_ch_set_limits(CHANNEL_MUSIC, 0, 22050, 0);
+    // a sound may play up to 13% fast (a Swift Elite's voice: audio_scene_sfx_pitch); its channel's buffer is sized for it
+#ifndef HLE_NO_SFX_PITCH    // (test aid: the heap without it)
+    for (int ch = 0; ch < MIXER_NUM_CHANNELS; ch++) if (ch_is_sfx_eligible(ch)) mixer_ch_set_limits(ch, 0, 22050.0f * SFX_PITCH_MAX, 0);
+#endif
 
     sceneCount = 0;
     for (int i = 0; i < AUDIO_SCENE_MAX_SFX; i++) {
@@ -501,6 +506,15 @@ int audio_play_scene_sfx_dist(int sceneSfxIndex, float baseVolume, float distanc
 
     wav64_play(sceneHeld[sceneSfxIndex] ? sceneHeld[sceneSfxIndex] : &sceneWavs[sceneSfxIndex], slot->ch);
     return slot->ch;
+}
+
+int audio_scene_sfx_pitch(int ch, float k)
+{
+    if (ch < 0 || ch >= MIXER_NUM_CHANNELS || k == 1.0f || !ch_is_sfx_eligible(ch) || !sfxSlots[ch].inUse) return ch;
+    k = fminf(k, SFX_PITCH_MAX);
+    int i = sfxSlots[ch].sceneIndex;
+    mixer_ch_set_freq(ch, (sceneHeld[i] ? sceneHeld[i] : &sceneWavs[i])->wave.frequency * k);
+    return ch;
 }
 
 bool audio_set_scene_sfx_dist(int ch, int sceneSfxIndex, float distance)

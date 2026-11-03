@@ -30,6 +30,7 @@ typedef enum {
     BOON_HEAVY_HAND, BOON_STALWART,                                                  // Iron
     BOON_SHADOW_EDGE, BOON_EVASION, BOON_VANISH,                                     // Shadow
     BOON_PROSPECTOR,                                                                 // Hearth (gold: stage 4)
+    BOON_BERSERKER,                                                                  // Blood (stage 6)
     // Skill cards (no slot): learn a skill for the run, its card again its next level (Lv 2-4), then
     // one of its two Lv 5 forms (A, B: taking one locks the other out for the run)
     BOON_LEARN_MOONBLADE, BOON_LEARN_HALFMOON, BOON_LEARN_CLEAVE,
@@ -170,6 +171,21 @@ bool  tower_poise_drain_held(void);     // the stagger meter doesn't drain now (
 float tower_on_lightning(float bolt, bool staggered);   // a bolt about to land: its damage (Crimson Storm, Anvil of Storms)
 void  tower_on_skill_hit(void);         // a skill's hit landed (Skyfall)
 float tower_mod_blow(float amount);     // a blow about to land, after damage taken: what it deals (Stalwart, Vanish)
+// ---- Elite affixes (docs/design/TOWER_ROGUELIKE.md section 11): the three Bonus bosses only ----
+enum { AFX_SWIFT, AFX_IRONCLAD, AFX_ENRAGED, AFX_RELENTLESS, AFX_VAMPIRIC, AFX_SMOULDERING, AFX_COUNT };
+bool  tower_affix(int a);               // the fight under way is an Elite with it
+const char* tower_affix_tag(void);      // its affixes' names for the name bar ("Swift Ironclad"), "" for none
+// The boss's footwork and breathers sped up: Swift x1.12; Enraged's breathers -30% below half health (a dt multiplier)
+float tower_elite_pace(bool breather, float bossHealthFrac);
+float tower_elite_blow(float bossHealthFrac);   // its blows (Enraged: +25% below half health)
+float tower_mod_poise_drain(void);      // how fast the stagger meter drains (Relentless 2x)
+float tower_mod_poise_bar(void);        // the stagger bar's drawn length (Ironclad: 1.3x)
+void  tower_on_boss_dealt(float lost);  // health a blow took (Vampiric: the boss heals 8% of it)
+bool  tower_elite_held_longer(void);    // Enraged: its half-health war cry or break held longer
+float tower_elite_pitch(void);          // its own sounds' rate (Swift: 1.12, a little higher)
+// ---- Berserker (Blood, section 7): below half health ----
+bool  tower_berserk(void);              // active: blows don't flinch, no potions
+bool  tower_potion_blocked(void);
 // Boss health in a run, from its usual (skills off) health for that phase
 float tower_boss_health_scale(int phase);
 // Between floors: the health and potions given back

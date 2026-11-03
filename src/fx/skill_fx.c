@@ -388,7 +388,7 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
     if (f->shape == SKILL_WAVE_BLADE) {
         if (f->age < 0.2f) return;      // still rising out of the ground
         c[0] = f->pos[0]; c[1] = f->pos[1] + 14.0f; c[2] = f->pos[2];
-        r = 4.0f;   // drawn 4 wide (and bowed 2.5 forward): no further, the player's too (7 hit 5 past its edge)
+        r = f->hostile ? 4.0f : 7.0f;   // a hostile one is drawn 4 wide: no further (the player's own reaches wider, the user's call: as on main, in the Tower too)
     } else {
         memcpy(c, f->pos, sizeof(c));
         r = (f->shape == SKILL_WAVE_ORB ? 5.0f : f->shape == SKILL_WAVE_CRESCENT ? 14.0f : f->hostile ? 12.0f : 7.5f) * f->scale;     // the player's X is drawn 15 long (hit as drawn)
