@@ -39,15 +39,23 @@
 int hle_task_log;
 float hle_dummy_damage;
 int hle_dummy_hits;
+int hle_build_breaks;       // (HLE_DUMMY_BUILD) casts broken by a blow
 // Openings (HLE_TEST_DUMMY): time a Bonus boss spends not attacking, and how many such gaps
-float hle_open_time, hle_open_cur;
+float hle_open_time, hle_open_cur, hle_open_dmg;
 int hle_open_gaps;
 bool hle_open_now;      // the boss is between attacks this frame (the bot playtest strikes then)
 void hle_open_tick(bool open, float dt)
 {
+#ifdef HLE_TEST_DUMMY   // (a Smouldering Elite: an opening with its fire burning by the boss is no opening: the sword can't reach it from there)
+    { extern bool floor_fire_near(float, float, float); Boss *b = boss_get_instance(); if (open && b && floor_fire_near(b->pos[0], b->pos[2], 26.0f)) open = false; }
+#endif
     hle_open_now = open;
     if (open) { hle_open_time += dt; hle_open_cur += dt; }
-    else if (hle_open_cur > 0.0f) { hle_open_gaps++; hle_open_cur = 0.0f; }
+    else if (hle_open_cur > 0.0f) {
+        hle_open_gaps++;
+        hle_open_dmg += fmaxf(0.0f, hle_open_cur - 0.4f) / 0.65f * 4.0f;     // the metric's sword in it: 4 a 0.65 s, after a 0.4 s reaction
+        hle_open_cur = 0.0f;
+    }
 }
 
 #ifdef HLE_TEST_FOG_AB
@@ -614,6 +622,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         { extern int tower_test_stage2(void); fails += tower_test_stage2(); }   // rivals, "+", duos
         { extern int tower_test_skills(void); fails += tower_test_skills(); }   // the skills' levels and forms, the B forms' unlocks, the stagger cap
         { extern int tower_test_shop(void), tower_test_events(void); fails += tower_test_shop(); fails += tower_test_events(); }   // gold, the Shop, the Events
+        { extern int tower_test_affixes(void); fails += tower_test_affixes(); }     // stage 6: the Elites' affixes, Berserker
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }
     return;
@@ -1087,10 +1096,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                     extern float tower_mod_damage_dealt(void), tower_mod_damage_taken(void), tower_mod_max_health(void);
                     extern int tower_run_embers(void), tower_circle(void);
                     heap_stats_t h; sys_get_heap_stats(&h);
-                    debugf("[climb] floor %d circle %d boss %d hp %.0f | dealt x%.2f taken x%.2f maxhp %.0f potions %d | embers %d | heap %d KB free (min so far %d)\n",
-                           lastFloor, tower_circle(), tower_floor_boss(), (double)boss->maxHealth, (double)tower_mod_damage_dealt(),
-                           (double)tower_mod_damage_taken(), (double)tower_mod_max_health(), character.healthPotions, tower_run_embers(),
-                           (h.total - h.used) / 1024, heapMin / 1024);
+                    extern int tower_gold(void); extern const char *tower_affix_tag(void);
+                    debugf("[climb] floor %d circle %d boss %d hp %.0f%s%s | dealt x%.2f taken x%.2f health %.0f/%.0f potions %d gold %d | embers %d | heap %d KB free (min so far %d)\n",
+                           lastFloor, tower_circle(), tower_floor_boss(), (double)boss->maxHealth, tower_affix_tag()[0] ? " elite " : "", tower_affix_tag(),
+                           (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken(), (double)character.health, (double)tower_mod_max_health(),
+                           character.healthPotions, tower_gold(), tower_run_embers(), (h.total - h.used) / 1024, heapMin / 1024);
                 }
 #endif
             }
@@ -1166,9 +1176,43 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (boss->health < boss->maxHealth * 0.7f) boss->health = boss->maxHealth;     // the fight lasts the window
             }
 #endif
-#ifdef HLE_RUN_STRIKE      // fight with the sword for 20 s first (the boons that hook into hits)
+#ifdef HLE_RUN_BOT         // the climbing bot (HLE_RUN_PATH's climbs): stays close and strikes in the boss's openings, drinks below 40%;
+                            // it takes the metric's 30% of each blow (character.c), its sword x1.9 (tower.c: the metric's rate), and dies for real
+            {
+                extern bool hle_open_now;
+                static int k, lastRoll, deadAt;
+                if (character_get_state() == CHAR_STATE_DEAD) {
+                    if (!deadAt) { deadAt = frame; extern int tower_circle(void), tower_gold(void);
+                        debugf("[bot] died on floor %d (circle %d), boss %d at %.0f/%.0f, potions %d, gold %d\n", tower_floor(), tower_circle(), tower_floor_boss(),
+                               (double)boss->health, (double)boss->maxHealth, character.healthPotions, tower_gold()); }
+                    if (frame - deadAt == 60) debugf("[run] died: \"%s\"\n", tower_death_summary());
+                    if (frame - deadAt > 150 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+                    return;
+                }
+                if (boss->mode == BOSS_MODE_COMBAT && boss->health > 0.0f) {
+                    k++;
+                    if (k % 60 == 1) pressed->z = 1;
+                    in->btn.z = 1;
+                    float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
+                    if (character.health < character.maxHealth * 0.4f && character.healthPotions > 0 && character_get_state() == CHAR_STATE_NORMAL && k % 10 == 0) { pressed->d_left = 1; in->btn.d_left = 1; }
+                    else {      // close in and stay there, as the passive dummy the metric is taken on; swing in the openings
+                        if (d > 34.0f) in->stick_y = 70;
+                        if (hle_open_now && d < 40.0f && k % 20 == 0) { pressed->b = 1; in->btn.b = 1; }
+                    }
+                    (void)lastRoll;
+                    if (t == 300 * 60) { debugf("[bot] floor %d: timed out at 300 s, boss %.0f/%.0f\n", tower_floor(), (double)boss->health, (double)boss->maxHealth); boss_apply_damage(boss, boss->maxHealth * 2.0f); }
+                }
+            }
+#elif defined(HLE_RUN_STRIKE)      // fight with the sword for 20 s first (the boons that hook into hits)
 #ifdef HLE_RUN_TOPUP       // (and never die: a full climb, every floor's sounds and effects, for the heap's low point)
             if (character.health < character.maxHealth * 0.6f) character.health = character.maxHealth;
+#endif
+#ifdef HLE_BERSERK_RUN     // (with HLE_TOWER_GIVE=BOON_BERSERKER HLE_LOG_BOONFX): the fight below half health (Berserker on), a potion pressed now and then
+            if (t < HLE_STRIKE_FRAMES && (character.health > character.maxHealth * 0.45f || character.health < character.maxHealth * 0.2f)) character.health = character.maxHealth * 0.4f;
+            extern bool tower_potion_blocked(void);
+            if (t > 0 && t % 600 == 300) { int p0 = character.healthPotions; pressed->d_left = 1; in->btn.d_left = 1;
+                debugf("[berserk-run] t %d: the potion pressed at %.0f/%.0f health, %d potions (blocked %d)\n", t, (double)character.health, (double)character.maxHealth, p0, tower_potion_blocked()); }
+            if (t > 0 && t % 600 == 320) debugf("[berserk-run] t %d: potions now %d\n", t, character.healthPotions);
 #endif
             if (t < HLE_STRIKE_FRAMES) {
                 if (t == 1) pressed->z = 1;
@@ -1184,10 +1228,14 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
                 boss_apply_damage(boss, boss->maxHealth * 2.0f);
             }
-#else
+#elif !defined(HLE_RUN_BOT)
             if (t == 90) boss_apply_damage(boss, boss->maxHealth * 2.0f);
 #endif
+#ifdef HLE_RUN_BOT
+            if (boss->state == BOSS_STATE_DEAD) {
+#else
             if (t >= 90 && t < 140) {   // stand facing the fallen boss, where its "A" prompt would show
+#endif
                 float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
                 if (d > 60.0f) { character.pos[0] += dx / d * (d - 60.0f); character.pos[2] += dz / d * (d - 60.0f); }
             }
@@ -1699,6 +1747,59 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 k++;
             }
 #endif
+#ifdef HLE_DUMMY_BUILD   // test aid: the builds compared (section 14) on this boss: a window of HLE_SWEEP_S s each of the list HLE_DUMMY_BUILD
+                         // (tower_test_build), round and round. The bot stays close as the passive dummy, swings in the boss's openings and
+                         // casts the build's skill there when it's ready; 30% of the blows land (character.c), its health held at 40% (Berserker
+                         // on) and what the build heals counted; the boss's health kept in its half. [build] each window's damage a minute,
+                         // staggers, casts, casts broken, healing a minute
+            {
+#ifndef HLE_SWEEP_S
+#define HLE_SWEEP_S 240.0f
+#endif
+                extern int tower_test_build(int);
+                extern bool hle_open_now; extern int hle_build_breaks;
+                static const int L[] = { HLE_DUMMY_BUILD };
+                static int w = -1, skill, casts, staggers, b0, k; static float w0, dealt, heal, prevHp, wasStag, took0;
+                if (w < 0 || tm - w0 >= HLE_SWEEP_S) {
+                    if (w >= 0) debugf("[build] boss %d build %d window %d: %.0f s dealt %.1f (%.1f a minute) | staggers %d, casts %d, broken %d | healed %.1f (%.1f a minute) | boss max %.0f | took %.1f\n",
+                                       HLE_DUMMY_BOSS, L[w % (int)(sizeof L / sizeof L[0])], w, (double)(tm - w0), (double)dealt, (double)(dealt * 60.0f / (tm - w0)), staggers, casts,
+                                       hle_build_breaks - b0, (double)heal, (double)(heal * 60.0f / (tm - w0)), (double)boss->maxHealth, (double)(hle_dummy_damage - took0));
+                    w++; w0 = tm; dealt = heal = 0.0f; casts = staggers = 0; b0 = hle_build_breaks; took0 = hle_dummy_damage;
+                    skill = tower_test_build(L[w % (int)(sizeof L / sizeof L[0])]);
+#ifdef HLE_ELITE_SWEEP      // (and each window this affix: a list as long as the builds'; with HLE_ELITE_FORCE=0)
+                    { extern int hle_elite_force; static const int A[] = { HLE_ELITE_SWEEP }; int a = A[w % (int)(sizeof A / sizeof A[0])];
+                      hle_elite_force = a ? 1 << (a - 1) : 0; debugf("[build] window %d: affix %d\n", w, a); }
+#endif
+                    character_cut_skill_cooldowns(1e6f);
+                    prevHp = boss->health;
+                }
+#ifdef HLE_DUMMY_HALF
+                const float lo = 0.1f, hi = 0.45f;
+#else
+                const float lo = 0.55f, hi = 1.0f;
+#endif
+                dealt += prevHp - boss->health;     // (net: a Vampiric Elite's heals come off it)
+                if (boss->health < boss->maxHealth * lo) boss->health = boss->maxHealth * hi;
+                if (boss->health > boss->maxHealth * hi) boss->health = boss->maxHealth * hi;
+                prevHp = boss->health;
+                if (boss->staggerT > 0.0f && wasStag <= 0.0f) staggers++;
+                wasStag = boss->staggerT;
+                float keep = character.maxHealth * 0.4f;
+                if (character.health > keep) heal += character.health - keep;
+                character.health = keep; character.stamina = character.maxStamina;
+                k++;
+                if (k % 60 == 1) pressed->z = 1;
+                in->btn.z = 1;
+                float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
+                if (d > 34.0f && character_get_state() != CHAR_STATE_SKILL) in->stick_y = 70;
+                if (hle_open_now && d < 45.0f && character_get_state() == CHAR_STATE_NORMAL && skill && character_get_skill_cooldown(skill - 1) <= 0.0f) {
+                    if (skill == 1) pressed->d_up = 1; else if (skill == 2) pressed->d_right = 1; else pressed->d_down = 1;
+                    casts++;
+                } else if (hle_open_now && d < 40.0f && k % 20 == 0) { pressed->b = 1; in->btn.b = 1; }
+                tm += deltaTime;
+                return;
+            }
+#endif
 #ifdef HLE_DUMMY_REAL    // the bot playtest: it fights (HLE_DUMMY_STRIKE, HLE_DUMMY_ROLL), drinks below 40% and says how it went
             {
                 static int potions0 = -1, done;
@@ -1926,14 +2027,32 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_DUMMY_ROLL     // roll every 0.7 s: some catch a blow right at the start (a perfect dodge)
             { static int k; if (++k % 42 == 0) { pressed->a = 1; in->btn.a = 1; } }
 #endif
+#ifdef HLE_ELITE_SWEEP   // test aid (with HLE_ELITE_FORCE=0): the fight in windows of HLE_SWEEP_S s, each with the next affix of the list
+                         // (AFX_ + 1; 0 none), round and round: [afxwin] each window's damage, hits and openings (the metric's sword in them)
+            {
+#ifndef HLE_SWEEP_S
+#define HLE_SWEEP_S 240.0f
+#endif
+                extern int hle_elite_force;
+                static const int L[] = { HLE_ELITE_SWEEP };
+                static int w = -1; static float w0, d0, o0, od0; static int h0, g0;
+                if (w < 0 || tm - w0 >= HLE_SWEEP_S) {
+                    if (w >= 0) debugf("[afxwin] boss %d affix %d window %d: %.0f s damage %.1f hits %d | open %.1f s, %d gaps, sword %.1f\n", HLE_DUMMY_BOSS, L[w % (int)(sizeof L / sizeof L[0])], w,
+                                       (double)(tm - w0), (double)(hle_dummy_damage - d0), hle_dummy_hits - h0, (double)(hle_open_time - o0), hle_open_gaps - g0, (double)(hle_open_dmg - od0));
+                    w++; w0 = tm; d0 = hle_dummy_damage; h0 = hle_dummy_hits; o0 = hle_open_time; g0 = hle_open_gaps; od0 = hle_open_dmg;
+                    int a = L[w % (int)(sizeof L / sizeof L[0])];
+                    hle_elite_force = a ? 1 << (a - 1) : 0;
+                }
+            }
+#endif
             float prev = tm;
             tm += deltaTime;
             static int heapMin = 1 << 30;     // the lowest free heap, sampled each second
             if ((int)tm != (int)prev) { heap_stats_t h; sys_get_heap_stats(&h); if (h.total - h.used < heapMin) heapMin = h.total - h.used; }
             if ((int)(tm / 30.0f) != (int)(prev / 30.0f))
-                debugf("[dummy] boss %d t %.0f s damage %.0f hits %d | open %.1f%% of the time, %d gaps of %.2f s | %.1f fps, heap min %d KB free\n", HLE_DUMMY_BOSS, (double)tm,
+                debugf("[dummy] boss %d t %.0f s damage %.0f hits %d | open %.1f%% of the time, %d gaps of %.2f s, sword %.0f | %.1f fps, heap min %d KB free\n", HLE_DUMMY_BOSS, (double)tm,
                        (double)hle_dummy_damage, hle_dummy_hits, (double)(100.0f * hle_open_time / (tm > 0 ? tm : 1)), hle_open_gaps,
-                       (double)(hle_open_gaps ? hle_open_time / hle_open_gaps : 0.0f), (double)display_get_fps(), heapMin / 1024);
+                       (double)(hle_open_gaps ? hle_open_time / hle_open_gaps : 0.0f), (double)hle_open_dmg, (double)display_get_fps(), heapMin / 1024);
         }
         return;
     }
