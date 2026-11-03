@@ -16,7 +16,7 @@ A staggered boss stays down 50% longer.
 A staggered boss takes +60% damage. The stagger bonuses add up, +100% at most.
 Every 4th sword hit calls a bolt of lightning on the boss (6 damage).
 Your damage +35%, and potions heal 25% less.
-Health a blow takes can be won back by hitting the boss: each hit wins back a quarter of its base damage (Lv 2: half). It waits 1 s (Lv 2: 1.5 s), then drains away over 4 s.
+Health a blow takes can be won back by hitting the boss: each hit wins back an eighth of its base damage (Lv 2: a quarter). It waits 1 s (Lv 2: 1.5 s), then drains away over 4 s.
 The combo's 3rd hit makes the boss bleed 4 a level over 3 s (a tick every 0.5 s); another finisher adds to it. It heals nothing.
 Drinking a potion gives +25% damage for 6 s.
 +10% damage a level for every full 25% of your health missing.
@@ -51,7 +51,7 @@ When a staggered boss rises, its stagger meter doesn't drain for 3 s.
 Riposte's +50% lasts 4 s (was 2.5 s).
 When Unbroken saves you, you also heal 20% of max health.
 Bloodthirst heals 16% a level of a hit's base (was 12%).
-Rally wins back three quarters of each hit's base (a sword hit 3).
+Rally wins back three eighths of each hit's base (a sword hit 1.5).
 The perfect dodge's window is 0.31 s (was 0.28 s).
 Storm Blade's and Static's bolts deal +50%.
 Thunderclap's bolt deals +50% (9).

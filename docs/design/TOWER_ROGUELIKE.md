@@ -328,7 +328,7 @@ Any visual reuses existing effects: the Storm pillar, the skill waves, the red w
 | Boon | Tier | Lv | Effect |
 |---|---|---|---|
 | Bloodthirst | Rare | 2 | sword hits heal 12% a level of their base damage (not skills or lightning) |
-| Rally | Rare | 2 | hitting back wins back the blow, each hit a quarter of its base (a sword hit 1; Lv 2 half, held 1.5 s) |
+| Rally | Rare | 2 | hitting back wins back the blow, each hit an eighth of its base (a sword hit 0.5; Lv 2 a quarter, held 1.5 s) |
 | Blood Pact | Legendary | 1 | +35% damage, potions -25% |
 | Last Stand | Rare | 2 | +40% damage below 30% health |
 | **Hemorrhage** (New) | Common | 3 | the combo's 3rd hit deals +4 bleed over 3 s (damage only, no heal); each bleed tick shows as the boss's existing hit flash, a quarter as bright |
@@ -425,7 +425,7 @@ A card names its rival: "Locks out: Iron Skin". The Stats > Build page lists loc
 | Riposte+ | 4 s |
 | Unbroken+ | when it fires, heal 20% |
 | Bloodthirst+ | 16% a level |
-| Rally+ | each hit three quarters of its base (a sword hit 3) |
+| Rally+ | each hit three eighths of its base (a sword hit 1.5) |
 | Phantom Step+ | 0.31 s window (still inside the roll's invincibility) |
 | Static+ / Thunderclap+ | +50% lightning |
 | Moon Mastery+ | -25% a level |
@@ -654,6 +654,17 @@ Each pair is within 7% and each form is best (or level) somewhere; none is taken
 
 The landed damage a minute on the bot is about 77 at circle 1 (113 at circle 3, 160 at circle 6). Bloodthirst sits at the design's 15-25% of a floor by circle 3 (22%); **Rally heals 60-90% of what lands** at circles 1-3 (it wins back the whole blow when the bot hits back in the opening that follows, which it nearly always does), three times Bloodthirst and far over the 15-25% target, and Rally Lv 2 (held 1.5 s, not 1) adds nothing measurable. Rally's rule (the whole blow back, each hit its base damage) is the user's own (v1.0), so it isn't changed here: the user's call. A proposal: each hit wins back a quarter of its base at Lv 1 (1 a sword hit: about 25% of what lands) and half at Lv 2 (about 45%), so its second level is worth taking.
 
+Rally since (the user's calls, 2026-11-03): first a quarter of each hit's base at Lv 1 (a sword hit 1), half at Lv 2, three quarters with Rally+; then, judged unfair a pick (about three times Bloodthirst's), an eighth at Lv 1 (a sword hit 0.5), a quarter at Lv 2 and three eighths with Rally+ (`RALLY_RATIO`). Measured on the same bot (`HLE_DUMMY_BUILD`, a 240 s window a build), healing a minute:
+
+| Build | Guardian | Fallen Warrior | Shackled Sun | Shadowborne | mean | a pick |
+|---|---|---|---|---|---|---|
+| Rally Lv 1 | 13.4 | 9.3 | 15.7 | 2.4 | 10.2 | 10.2 |
+| Rally Lv 2 | 28.1 | 18.3 | 30.0 | 5.5 | 20.5 | 10.3 |
+| Bloodthirst Lv 2 | 29.2 | 16.9 | 31.6 | 6.2 | 21.0 | 10.5 |
+| both (the Blood build) | 56.9 | 37.2 | 64.0 | 11.7 | 42.4 | |
+
+Each pick of either healing boon now heals about 10 a minute. The bot's first window counts 22.5 a minute of healing no boon gave (the sword's own window 0 shows it; its later windows 0), so these leave it out (the quarter's "Lv 1 35" was most likely that first window: about 12.5 without it; its "Lv 2 42" was not).
+
 ### Rival: Berserker vs Iron Skin
 | | Berserker (below half health) | Iron Skin Lv 1 |
 |---|---|---|
@@ -726,7 +737,7 @@ The user's answers (2026-11-01):
 9. Release: at both a Rest and a Shop (section 14).
 10. Skill forms: Crescent Storm is the 5 blades plus 3 trailing (the user's design); Shattering Dance anchors a stagger build; skill cards per section 14.
 
-Open questions: Rally's healing (section 14d: 60-90% of the damage that lands, the user's rule, a proposal there). The payoff tables are measured in section 14d where stage 6 could; the rest stand as estimates.
+Open questions: none for Rally (an eighth of a hit's base at Lv 1, a quarter at Lv 2: about 10 a minute a pick, as Bloodthirst; section 14d). The payoff tables are measured in section 14d where stage 6 could; the rest stand as estimates.
 
 Final QA pass (2026-11-03, before the beta): calls and what was measured.
 - **Overscan:** the screens between fights lay out from one top margin, the setting's as far as each screen's content still fits (never under the 7.5% area): the draft (200 px) and the Shop (204 px) are full screens and stay at the 7.5% area at any larger setting; the map, a node's page, the Rests' lists and shorter Events move in with it; the Details panel, the pause menu's Stats/Build pages and the Codex list follow any setting and page more. The overscan setting itself still goes to +118 (main's Video menu): nothing was capped.
