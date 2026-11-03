@@ -101,12 +101,15 @@ static int8_t overscanPrevY = 0;
 static UiPager runPager;
 static int runRow = -1;
 static UiDoc *s_statsDoc;     // (these two on the heap while the Stats menu is open: none during a fight)
-// the menus' box for the Stats pages, inside the title-safe area
-#define RUN_TX 30
-#define RUN_TW (SCREEN_WIDTH - 60)
-#define RUN_CY 34           // the corners' baseline
-#define RUN_BODY 56         // the first line's
-#define RUN_BODY_END 204    // the last line's
+// the menus' box for the Stats pages and the Codex, inside the title-safe area (the overscan setting's, never wider than
+// the fixed 7.5% one: the default and smallest settings keep it where it was, a larger one moves it in, its pages shorter)
+static int run_mx(void) { int m = ui_safe_margin_x(); return m < TITLE_SAFE_MARGIN_X ? TITLE_SAFE_MARGIN_X : m; }
+static int run_my(void) { int m = ui_safe_margin_y(); return m < TITLE_SAFE_MARGIN_Y ? TITLE_SAFE_MARGIN_Y : m; }
+#define RUN_TX (run_mx() + 6)                           // 30 at 7.5%
+#define RUN_TW (SCREEN_WIDTH - 2 * RUN_TX)
+#define RUN_CY (run_my() + 16)                          // the corners' baseline (34)
+#define RUN_BODY (RUN_CY + 22)                          // the first line's (56)
+#define RUN_BODY_END (SCREEN_HEIGHT - run_my() - 18)    // the last line's (204)
 typedef struct { int statsPages, buildPages, n, perPage; char left[TOWER_BUILD_ROWS][40], right[TOWER_BUILD_ROWS][12]; int style[TOWER_BUILD_ROWS], card[TOWER_BUILD_ROWS]; } RunPages;
 static RunPages *s_run;
 static void run_pages_free(void) { free(s_statsDoc); free(s_run); s_statsDoc = NULL; s_run = NULL; }
@@ -1342,6 +1345,11 @@ void menu_controller_draw(void)
     } else if (currentMenu == MENU_SHRINE || currentMenu == MENU_RUN || currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS ||
                currentMenu == MENU_OFFERINGS || currentMenu == MENU_CODEX) {
         dialogWidth = 300;
+    }
+
+    if (currentMenu == MENU_RUN || currentMenu == MENU_CODEX) {     // (framing their box: 300 x 230 at the 7.5% area, as the others)
+        dialogWidth = SCREEN_WIDTH - 2 * (RUN_TX - 20);
+        dialogHeight = SCREEN_HEIGHT - 2 * (RUN_CY - 29);
     }
 
     rdpq_sync_pipe();

@@ -21,6 +21,7 @@
 #include "game_time.h"
 
 #include "globals.h"
+#include "../../utilities/video_layout.h"
 #include "../../utilities/button_prompt_utility.h"
 
 #include "../../managers/cutscene_manager.h"
@@ -2576,10 +2577,14 @@ void scene_draw(T3DViewport *viewport)
         int barLeft = (SCREEN_WIDTH - barWidth) / 2;
         int slideDistance = 120; // pixels to move upward until off-screen
         float t = 1.0f - bossTitleFade; // 0 -> 1 as we slide up
+        if (s_tower) {      // the Tower: held under the HUD's top line, inside the title-safe area, until the bar grows (sliding off the top cut it after 0.4 s)
+            t = 0.0f;
+            if (ui_safe_margin_y() + 36 > barTop) barTop = ui_safe_margin_y() + 36;     // (under the Floor, Ascension and night lines)
+        }
 
         // Compute current Y positions while sliding upward
         int currentBarTop = barTop - (int)(slideDistance * t);
-        int currentTextY = 50 - (int)(slideDistance * t);
+        int currentTextY = barTop + 15 - (int)(slideDistance * t);
 
         // Draw centered black bar behind the title (constant alpha)
         int barAlpha = 120;

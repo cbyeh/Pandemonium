@@ -1367,6 +1367,9 @@ static int safe_my(void) { int m = ui_safe_margin_y(); return m < TITLE_SAFE_MAR
 #define SAFE_X1 (SCREEN_WIDTH - safe_mx())
 #define SAFE_Y0 safe_my()
 #define SAFE_Y1 (SCREEN_HEIGHT - safe_my())
+// A screen h px tall from its top margin: the margin above, as far as the screen still holds it (never under the
+// 7.5% one): a full screen (the draft, the Shop) stays there at a larger overscan, a shorter one moves in with it
+static int fit_my(int h) { int most = (SCREEN_HEIGHT - h) / 2; if (most < TITLE_SAFE_MARGIN_Y) most = TITLE_SAFE_MARGIN_Y; return safe_my() < most ? safe_my() : most; }
 
 static void flat_mode(void)
 {
@@ -1394,18 +1397,19 @@ static void tower_draft_draw(void)
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
     char line[80];
+    const int T = fit_my(200);      // (the header's three lines, the cards and Skip: 200 px)
     snprintf(line, sizeof line, "Floor %d cleared   +%d Embers   +%d gold", s.floor, s.lastFloorEmbers, s.lastFloorGold);
-    text_style(0, SAFE_Y0 + 9, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
+    text_style(0, T + 9, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
     if (s.circleCleared) {
         snprintf(line, sizeof line, "Circle cleared: +%d Embers", CIRCLE_EMBERS);
-        text_style(0, 40, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_BLUE, line);
+        text_style(0, T + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_BLUE, line);
     }
     // the next floor on the third line (a new circle's night in red: its effect is on the map, its Guardian's page and Stats)
     if (s.circleCleared) snprintf(line, sizeof line, "Next: floor %d, a new circle: %s", s.floor + 1, NIGHTS[s.nextNight].name);
     else snprintf(line, sizeof line, "Choose a Boon   Next: floor %d", s.floor + 1);
-    text_style(0, 53, SCREEN_WIDTH, ALIGN_CENTER, s.circleCleared ? FONT_STYLE_RED : FONT_STYLE_WHITE, line);
+    text_style(0, T + 35, SCREEN_WIDTH, ALIGN_CENTER, s.circleCleared ? FONT_STYLE_RED : FONT_STYLE_WHITE, line);
 
-    const int cw = 96, ch = DRAFT_CARD_H, gap = 6, y0 = 60;     // (tall enough for a rival or a duo's two boons, or a form's rival, under the text)
+    const int cw = 96, ch = DRAFT_CARD_H, gap = 6, y0 = T + 42;     // (tall enough for a rival or a duo's two boons, or a form's rival, under the text)
     int x0 = (SCREEN_WIDTH - (cw * s.nChoices + gap * (s.nChoices - 1))) / 2;
     for (int i = 0; i < s.nChoices; i++) {
         int x = x0 + i * (cw + gap), card = s.choices[i];
@@ -1487,7 +1491,8 @@ static void tower_draft_draw(void)
     // Skip, under the cards
     // A button of its own under the cards, framed like them: Down to it, Up back to the card
     bool skip = s.sel == s.nChoices;
-    const int bw = 160, bh = 16, bx = (SCREEN_WIDTH - bw) / 2 - 16, by = y0 + ch + 4;     // (left of centre: the R hint beside it)
+    const int bw = 160, bh = 16, by = y0 + ch + 4;
+    const int bx = SAFE_X1 - 68 - bw < (SCREEN_WIDTH - bw) / 2 - 16 ? SAFE_X1 - 68 - bw : (SCREEN_WIDTH - bw) / 2 - 16;     // (left of centre, the R hint beside it at any overscan)
     if (s.sel < s.nChoices) ui_hint(SAFE_X1, by + 12, "R Details");     // (beside Skip)
     flat_mode();
     rdpq_set_prim_color(skip ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
@@ -2440,16 +2445,17 @@ static void rest_draw(void)
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     static const char *const HEAD[] = { [SCR_REST] = "Rest: choose one", [SCR_TEMPER] = "Temper: +1 level", [SCR_RELEASE] = "Release a boon? Free, with its levels",
                                         [SCR_SHOP_LEVEL] = "A level: 70 gold", [SCR_SHOP_PLUS] = "A \"+\": 150 gold", [SCR_SHOP_RELEASE] = "Release a boon: 20 gold, with its levels" };
-    text_style(0, 40, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, HEAD[s.scr]);
+    const int T = fit_my(66 + 15 * s.listN + 16);      // (the rows under three lines, and the Rest's last line)
+    text_style(0, T + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, HEAD[s.scr]);
     static const char *const BACK[] = { [SCR_REST] = "B Map", [SCR_TEMPER] = "B Back", [SCR_RELEASE] = "B Keep all", [SCR_SHOP_LEVEL] = "B Back", [SCR_SHOP_PLUS] = "B Back", [SCR_SHOP_RELEASE] = "B Back" };
-    text_style(SAFE_X0, SAFE_Y0 + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, BACK[s.scr]);
-    if (details_for_cursor(false)) ui_hint(SAFE_X1, SAFE_Y0 + 10, "R Details");
+    text_style(SAFE_X0, T + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, BACK[s.scr]);
+    if (details_for_cursor(false)) ui_hint(SAFE_X1, T + 10, "R Details");
     char line[80];
     bool shopList = s.scr >= SCR_SHOP_LEVEL, boonRows = s.scr == SCR_TEMPER || s.scr == SCR_SHOP_LEVEL || s.scr == SCR_SHOP_PLUS;
     if (shopList) snprintf(line, sizeof line, "Gold %d", s.gold);
     else snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d", (double)character.health, (double)character.maxHealth, character.healthPotions);
-    text_style(0, 56, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
-    const int x = 50, w = SCREEN_WIDTH - 100, y0 = 84, pitch = 15;
+    text_style(0, T + 38, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+    const int x = 50, w = SCREEN_WIDTH - 100, y0 = T + 66, pitch = 15;
     for (int i = 0; i < s.listN; i++) {
         int v = s.list[i], y = y0 + pitch * i, style = row_ok(i) ? FONT_STYLE_WHITE : FONT_STYLE_GREY;
         if (i == s.listSel) select_box(x - 6, y - 11, x + w + 6, y + 3);
@@ -2505,14 +2511,15 @@ static void shop_draw(void)
     rdpq_set_prim_color(RGBA32(0, 0, 0, 205));     // (dark enough to read over the hall's light)
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     char line[96];
+    const int T = fit_my(204);      // (the header, the shelf, Leave and the line under it: 204 px)
     snprintf(line, sizeof line, "Shop   Gold %d", s.gold);
-    text_style(0, SAFE_Y0 + 10, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
-    text_style(SAFE_X0, SAFE_Y0 + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, "B Leave");
-    if (details_for_cursor(false)) ui_hint(SAFE_X1, SAFE_Y0 + 10, "R Details");
+    text_style(0, T + 10, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
+    text_style(SAFE_X0, T + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, "B Leave");
+    if (details_for_cursor(false)) ui_hint(SAFE_X1, T + 10, "R Details");
     snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d/%d", (double)character.health, (double)character.maxHealth, character.healthPotions, tower_mod_max_potions());
-    text_style(0, SAFE_Y0 + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+    text_style(0, T + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
     // the three boon cards, as the draft's (shorter: the price at the foot)
-    const int cw = 96, ch = 100, gap = 6, y0 = SAFE_Y0 + 28, x0 = (SCREEN_WIDTH - (3 * cw + 2 * gap)) / 2;     // (room for 3 lines of text over the price)
+    const int cw = 96, ch = 100, gap = 6, y0 = T + 28, x0 = (SCREEN_WIDTH - (3 * cw + 2 * gap)) / 2;     // (room for 3 lines of text over the price)
     for (int i = 0; i < 3; i++) {
         int x = x0 + i * (cw + gap), card = s.shop.card[i];
         bool on = i == s.shop.sel, sold = (s.shop.sold >> i) & 1;
@@ -2561,7 +2568,7 @@ static void shop_draw(void)
     // one line under the shelf: why it can't be bought (red), else what it does (R: all of it)
     const char *why = shop_block(i);
     if (!why[0] && i == SHOP_PACT) snprintf(line, sizeof line, "Blessing %s, its curse %s", BLESSINGS[b].name, CURSES[c].name);
-    text_style(SAFE_X0, by + 15 + 12, SAFE_X1 - SAFE_X0, ALIGN_CENTER, why[0] ? FONT_STYLE_RED : FONT_STYLE_WHITE, why[0] ? why : line);     // (under Leave, whatever the overscan)
+    text_style(TITLE_SAFE_MARGIN_X, by + 15 + 12, SCREEN_WIDTH - 2 * TITLE_SAFE_MARGIN_X, ALIGN_CENTER, why[0] ? FONT_STYLE_RED : FONT_STYLE_WHITE, why[0] ? why : line);     // (one line under Leave: as wide as the shelf, which keeps the 7.5% area)
 }
 
 static void event_label(int i, char *out, int n)
@@ -2592,14 +2599,20 @@ static void event_draw(void)
     flat_mode();
     rdpq_set_prim_color(RGBA32(0, 0, 0, 205));     // (dark enough to read over the hall's light)
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    text_style(0, SAFE_Y0 + 24, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, EVENTS[s.event].name);
-    text_style(SAFE_X0, SAFE_Y0 + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, s.eventDone ? "B Continue" : "B Leave");
-    if (details_for_cursor(false)) ui_hint(SAFE_X1, SAFE_Y0 + 10, "R Details");
-    const int lh = 16;      // the font's line pitch
-    int y = SAFE_Y0 + 42 + lh * text_style(36, SAFE_Y0 + 42, SCREEN_WIDTH - 72, ALIGN_CENTER, FONT_STYLE_WHITE, EVENTS[s.event].text);
+    const int lh = 16, tw = SCREEN_WIDTH - 72;      // the font's line pitch, the text's width
     char line[96];
-    if (s.event == EV_BRAZIER && !s.eventDone) {     // the blessing's own words (a full pact's stack)
+    if (s.event == EV_BRAZIER && !s.eventDone)     // the blessing's own words (a full pact's stack)
         snprintf(line, sizeof line, "%s: %s at a full stack", BLESSINGS[s.eventPick].name, BLESSINGS[s.eventPick].desc);
+    // its height (the text, the blessing's line or the result, the rows, the bottom line), so it moves in only as far as it fits
+    int h = 42 + lh * ui_text_lines(EVENTS[s.event].text, tw) + 12 + 15 * s.listN + 6;
+    if (s.event == EV_BRAZIER && !s.eventDone) h += lh * ui_text_lines(line, tw);
+    if (s.eventDone) h += lh * ui_text_lines(s.eventResult, tw) + 8;
+    const int T = fit_my(h);
+    text_style(0, T + 24, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, EVENTS[s.event].name);
+    text_style(SAFE_X0, T + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, s.eventDone ? "B Continue" : "B Leave");
+    if (details_for_cursor(false)) ui_hint(SAFE_X1, T + 10, "R Details");
+    int y = T + 42 + lh * text_style(36, T + 42, tw, ALIGN_CENTER, FONT_STYLE_WHITE, EVENTS[s.event].text);
+    if (s.event == EV_BRAZIER && !s.eventDone) {
         y += lh * text_style(36, y, SCREEN_WIDTH - 72, ALIGN_CENTER, FONT_STYLE_GREY, line);
     }
     if (s.eventDone) y += lh * text_style(36, y + 4, SCREEN_WIDTH - 72, ALIGN_CENTER, FONT_STYLE_GOLD, s.eventResult) + 4;
@@ -2611,7 +2624,7 @@ static void event_draw(void)
         text_style(x, y, w, ALIGN_CENTER, row_ok(i) ? FONT_STYLE_WHITE : FONT_STYLE_GREY, line);
     }
     snprintf(line, sizeof line, "Gold %d   Health %.0f/%.0f   Potions %d", s.gold, (double)character.health, (double)character.maxHealth, character.healthPotions);
-    text_style(0, y + 6 > SAFE_Y1 - 4 ? y + 6 : SAFE_Y1 - 4, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);     // (never over the rows)
+    text_style(0, y + 6 > SCREEN_HEIGHT - T - 4 ? y + 6 : SCREEN_HEIGHT - T - 4, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);     // (never over the rows)
 }
 
 void tower_between_draw(void)
@@ -4056,6 +4069,16 @@ int tower_test_map(void)
                 FIT(272, "Elite: %s %s %s", AFFIXES[a].name, AFFIXES[c].name, BOSS_NAMES[b]);
             for (int pb = 0; pb < PB_COUNT; pb++) for (int pc = 0; pc < PC_COUNT; pc++) FIT(272, "Blessing %s, its curse %s", BLESSINGS[pb].name, CURSES[pc].name);
             for (int i = 0; i < SHOP_ITEMS; i++) { s.gold = 0; FIT(272, "%s", shop_block(i)); }
+            for (int b = 0; b < BOON_COUNT; b++) {      // the Shop's line under Leave: a card's rivals, a duo's two longest boons
+                if (rival_of(b) >= 0) { char rn[48]; rival_names(b, rn, sizeof rn); FIT(272, "New: slot %d/%d. Locks out %s", 5, 5, rn); }
+                if (!BOONS[b].duo) continue;
+                const char *na = "", *nb = "";
+                for (int k = 0; k < BOON_COUNT; k++) if (takes_slot(k) && !BOONS[k].duo) {
+                    if (BOONS[k].family == BOONS[b].family && strlen(BOONS[k].name) > strlen(na)) na = BOONS[k].name;
+                    if (BOONS[k].family == BOONS[b].duo - 1 && strlen(BOONS[k].name) > strlen(nb)) nb = BOONS[k].name;
+                }
+                FIT(272, "Duo: merges %s + %s", na, nb);
+            }
             for (int b = 0; b < BOON_COUNT; b++) { FIT(220, "%s (top level)", BOONS[b].name); FIT(220, "%s   Lv %d -> %d", BOONS[b].name, 4, 5); FIT(220, "%s   Duo, with its two", BOONS[b].name); }
             for (int e = 0; e < EV_COUNT; e++) for (int i = 0; i < EVENTS[e].choices; i++) { s.event = (int8_t)e; character.maxHealth = 999; character.health = 1; char lb[96]; event_label(i, lb, sizeof lb); FIT(220, "%s", lb); }
             FIT(220, "Heal 40%%: +%d health", 999); FIT(220, "Temper: +1 level on a boon or skill");
