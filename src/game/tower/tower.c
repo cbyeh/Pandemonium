@@ -795,6 +795,15 @@ int  tower_offer_price(int i)
     int n = offers_held(b);
     return OFFERINGS[i].price + ((offer_in(b, i) ? n == 2 : n >= 1) ? OFFER_SECOND : 0);
 }
+// why A can't set it aside now ("": it can, or it's set and A takes it back), as the Shop's refusals
+const char *tower_offer_why(int i)
+{
+    if (i < 0 || i >= OFF_COUNT || tower_offer_set(i)) return "";
+    if (tower_offer_lock(i)[0]) return tower_offer_lock(i);
+    if (tower_offers_held() >= OFFER_MAX) return "Two are set aside: take one back first";
+    if (tower_embers() < tower_offer_price(i)) return "Not enough Embers";
+    return "";
+}
 // A on it: set it aside (Embers paid now) or take it back (paid back); false if neither can be done
 bool tower_offer_toggle(int i)
 {
@@ -2540,7 +2549,7 @@ static void shop_draw(void)
     text_style(0, T + 10, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
     text_style(SAFE_X0, T + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, "B Leave");
     if (details_for_cursor(false)) ui_hint(SAFE_X1, T + 10, "R Details");
-    snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d/%d", (double)character.health, (double)character.maxHealth, character.healthPotions, tower_mod_max_potions());
+    snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d (max %d)", (double)character.health, (double)character.maxHealth, character.healthPotions, tower_mod_max_potions());
     text_style(0, T + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
     // the three boon cards, as the draft's (shorter: the price at the foot)
     const int cw = CARD_W, ch = 100, gap = CARD_GAP, y0 = T + 28, x0 = (SCREEN_WIDTH - (3 * cw + 2 * gap)) / 2;     // (room for 3 lines of text over the price)
@@ -2684,7 +2693,7 @@ int tower_build_rows(char left[][40], char right[][12], int style[], int card[],
         snprintf(left[n], 40, "%s %s", joypad_skill_button(k), BOONS[f ? skill_form_card(k, f) : BOON_LEARN_MOONBLADE + k].name);
         if (knows(k)) snprintf(right[n], 12, "Lv %d/%d", tower_skill_level(k), SKILL_LV_MAX + 1); else snprintf(right[n], 12, "-");
         style[n] = !knows(k) ? FONT_STYLE_GREY : f ? FONT_STYLE_GOLD : FONT_STYLE_WHITE;
-        card[n] = BOON_LEARN_MOONBLADE + k;     // (its Details: the whole track and both forms)
+        card[n] = f ? skill_form_card(k, f) : BOON_LEARN_MOONBLADE + k;     // (its Details, titled as the row: the whole track and both forms)
     }
     for (int i = 0; i < TOWER_SLOTS && n < max; i++, n++) {      // the slots: name in its family's colour, its level ("+" at the top)
         if (!s.slot[i]) { snprintf(left[n], 40, "Empty slot"); right[n][0] = 0; style[n] = FONT_STYLE_GREY; card[n] = -1; continue; }
@@ -2725,7 +2734,7 @@ void tower_stats_doc(UiDoc *d)
     else ui_doc_text(d, FONT_STYLE_GREY, "Relic: none");
     ui_doc_gap(d);
     ui_doc_text(d, FONT_STYLE_WHITE, "Damage x%.2f, damage taken x%.2f", (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken());
-    ui_doc_text(d, FONT_STYLE_WHITE, "Max health %.0f, potions %d (most %d)", (double)tower_mod_max_health(), character.healthPotions, tower_mod_max_potions());
+    ui_doc_text(d, FONT_STYLE_WHITE, "Max health %.0f, potions %d (max %d)", (double)tower_mod_max_health(), character.healthPotions, tower_mod_max_potions());
     if (s.potionDebt) ui_doc_text(d, FONT_STYLE_RED, "Potions owed to Thirst: %d", s.potionDebt);
     ui_doc_gap(d);
     int k = 0;
@@ -3640,8 +3649,8 @@ int tower_test_skills(void)
     { char l[TOWER_BUILD_ROWS][40], r[TOWER_BUILD_ROWS][12]; int st[TOWER_BUILD_ROWS], cd[TOWER_BUILD_ROWS];
       int n = tower_build_rows(l, r, st, cd, TOWER_BUILD_ROWS); bool locked = false;
       for (int i = 0; i < n; i++) locked |= strstr(l[i], "Locked:") && strstr(l[i], "Twin Moon");
-      CHECK(strstr(l[1], "Full Moon") && !strcmp(r[1], "Lv 5/5") && st[1] == FONT_STYLE_GOLD && !strcmp(r[0], "-") && locked,
-            "Build: \"%s\" \"%s\", the other form greyed under Locked", l[1], r[1]); }
+      CHECK(strstr(l[1], "Full Moon") && !strcmp(r[1], "Lv 5/5") && st[1] == FONT_STYLE_GOLD && !strcmp(r[0], "-") && locked && cd[1] == BOON_FULL_MOON && cd[0] == BOON_LEARN_MOONBLADE,
+            "Build: \"%s\" \"%s\", its Details the form's (%s), the other form greyed under Locked", l[1], r[1], cd[1] >= 0 ? BOONS[cd[1]].name : "-"); }
     // a Learn card leads every draft until a skill is known; then skill cards are ordinary
     RUN(302);
     { int lead = 0; for (int k = 0; k < 200; k++) { tower_draft_open(); lead += is_learn(s.choices[0]); } s.draftOpen = false;
@@ -4106,7 +4115,7 @@ int tower_test_map(void)
             FIT(272, "Choose a Boon   Next: floor %d", 124);
             FIT(160, "Skip: +%d Embers, +%d gold", SKIP_EMBERS, 99);
             FIT(272, "Shop   Gold %d", 99999);
-            FIT(272, "Health %d/%d   Potions %d/%d", 999, 999, 15, 15);
+            FIT(272, "Health %d/%d   Potions %d (max %d)", 999, 999, 15, 15);
             FIT(272, "Gold %d   Health %d/%d   Potions %d", 99999, 999, 999, 15);
             for (int n = 1; n < NIGHT_COUNT; n++) { FIT(272, "%s: %s", NIGHTS[n].name, NIGHTS[n].brief); FIT(272, "Next: floor %d, a new circle: %s", 124, NIGHTS[n].name); }
             for (int b = TOWER_FALLEN_KNIGHT; b <= TOWER_SHADOWBORN; b++) for (int a = 0; a < AFX_COUNT; a++) for (int c = a + 1; c < AFX_COUNT; c++)
@@ -4583,17 +4592,20 @@ int tower_test_offerings(void)
     CHECK(ea == 840 && tower_embers() == 1000, "Flask then Whetstone: 160 too (%d)", 1000 - ea);
     // 0 Embers, the exact price, 65535
     SAVE(0, 0, 0);
-    CHECK(!tower_offer_toggle(OFF_CANDLE) && !tower_offers_held() && tower_embers() == 0, "0 Embers: nothing set aside");
+    CHECK(!strcmp(tower_offer_why(OFF_CANDLE), "Not enough Embers") && !tower_offer_toggle(OFF_CANDLE) && !tower_offers_held() && tower_embers() == 0, "0 Embers: nothing set aside (\"%s\")", tower_offer_why(OFF_CANDLE));
     SAVE(30, 0, 0);
-    CHECK(tower_offer_toggle(OFF_CANDLE) && tower_embers() == 0 && !tower_offer_toggle(OFF_WHETSTONE), "30 Embers: the Candle (30), then nothing (0 left)");
+    { bool ok = !tower_offer_why(OFF_CANDLE)[0];
+      CHECK(ok && tower_offer_toggle(OFF_CANDLE) && tower_embers() == 0 && !tower_offer_why(OFF_CANDLE)[0] && !strcmp(tower_offer_why(OFF_WHETSTONE), "Not enough Embers") && !tower_offer_toggle(OFF_WHETSTONE),
+            "30 Embers: the Candle (30), then nothing (0 left; the Whetstone's line \"%s\")", tower_offer_why(OFF_WHETSTONE)); }
     SAVE(65535, 0, 0);
     tower_offer_toggle(OFF_OATH); tower_offer_toggle(OFF_HEARTH);
     int eMax = tower_embers();
+    CHECK(!strcmp(tower_offer_why(OFF_FLASK), "Two are set aside: take one back first") && !tower_offer_why(OFF_OATH)[0], "two set aside: a third's line \"%s\", a set one's none", tower_offer_why(OFF_FLASK));
     tower_offer_toggle(OFF_HEARTH); tower_offer_toggle(OFF_OATH);
     CHECK(eMax == 65535 - 175 && tower_embers() == 65535, "65535 Embers: two (%d left), both back to 65535 (%d)", eMax, tower_embers());
     // the locks: Kindling at best floor 20, the Candle with Skills off
     SAVE(1000, 19, 0);
-    CHECK(tower_offer_lock(OFF_KINDLING)[0] && !tower_offer_toggle(OFF_KINDLING), "Kindling locked below floor 20 (%s)", tower_offer_lock(OFF_KINDLING));
+    CHECK(tower_offer_lock(OFF_KINDLING)[0] && !strcmp(tower_offer_why(OFF_KINDLING), tower_offer_lock(OFF_KINDLING)) && !tower_offer_toggle(OFF_KINDLING), "Kindling locked below floor 20 (%s)", tower_offer_lock(OFF_KINDLING));
     SAVE(1000, 20, 0);
     CHECK(!tower_offer_lock(OFF_KINDLING)[0] && tower_offer_toggle(OFF_KINDLING), "Kindling at floor 20");
     character_set_skills_enabled(false);

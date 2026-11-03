@@ -1662,12 +1662,10 @@ void menu_controller_draw(void)
             y += lineHeight - 1;
         }
         // (one line: two would leave the title-safe area)
-        const char *desc = "";
-        if (selectedOption < rows - 1) {
-            const char *why = tower_offer_lock(selectedOption);
-            desc = why[0] ? why : !tower_offer_set(selectedOption) && held >= 2 ? "Two are set aside: take one back first" : tower_offer_brief(selectedOption);
-        }
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
+        // (why A can't set it aside in red, as the Shop's refusals; else what it does)
+        const char *desc = "", *why = selectedOption < rows - 1 ? tower_offer_why(selectedOption) : "";
+        if (selectedOption < rows - 1) desc = why[0] ? why : tower_offer_brief(selectedOption);
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = why[0] ? FONT_STYLE_RED : FONT_STYLE_GREY },
                          FONT_UNBALANCED, x, y + 6, "%s", desc);
         rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
     } else if (currentMenu == MENU_CODEX) {

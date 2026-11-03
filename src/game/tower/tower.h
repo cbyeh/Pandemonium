@@ -102,6 +102,7 @@ int  tower_offer_count(void);
 const char *tower_offer_name(int i);
 const char *tower_offer_brief(int i);
 const char *tower_offer_lock(int i);    // why it can't be set aside ("" if it can)
+const char *tower_offer_why(int i);     // why A can't set it aside now: its lock, two held, too few Embers ("" if it can)
 bool tower_offer_set(int i);            // set aside for the next climb
 int  tower_offers_held(void);
 int  tower_offer_price(int i);          // to set it aside now, or (set) what taking it back returns
