@@ -6,6 +6,7 @@
 
 #include "tower.h"
 #include "character.h"
+#include "character_skin.h"
 #include "globals.h"
 #include "save_controller.h"
 #include "video_controller.h"
@@ -132,11 +133,14 @@ static const char *const SKILL_LV_DESC[SKILL_COUNT][3] = {
     { "Charges in 1.6 s", "+20% damage", "Reach +25%" },
     { "+20% damage", "Blades hit 5 times", "Wind-up 0.6 s" },
 };
-// What each card does in full, for its Details panel (R): the numbers are the code's
-// What each card does in full, for its Details panel (R), and the affixes' (the numbers are the code's): in ROM,
-// rom:/ui/tower_text.bin, a text a line after its header line (every BoonId in order, then the six affixes), read when
-// a Details page is built and freed after it (the page keeps its own copy): about 7 KB less RAM in a fight
-enum { TXT_BOON = 0, TXT_AFFIX = BOON_COUNT, TXT_COUNT = BOON_COUNT + AFX_COUNT };
+// The Codex's pages (the Tower menu and the pause menu): each its text in tower_text.bin, and some its tables (codex_gen)
+enum { CX_CLIMB, CX_MAP, CX_FIGHTS, CX_STOPS, CX_SLOTS, CX_FAMILIES, CX_RIVALS, CX_PLUS, CX_SKILLS, CX_MBD, CX_HALFMOON, CX_CLEAVE,
+       CX_AFFIXES, CX_GOLD, CX_EMBERS, CX_OFFERINGS, CX_MILESTONES, CX_PACTS, CX_NIGHTS, CX_HEART, CX_COUNT };
+#define OFFER_TXT 7         // (OFF_COUNT, below)
+// What each card does in full, for its Details panel (R), the affixes', the Offerings' and the Codex's pages (the numbers
+// are the code's): in ROM, rom:/ui/tower_text.bin, a text a line after its header line (every BoonId in order, then the
+// six affixes, the Offerings, the Codex pages), read when a page is built and freed after it (the page keeps its own copy)
+enum { TXT_BOON = 0, TXT_AFFIX = BOON_COUNT, TXT_OFFER = TXT_AFFIX + AFX_COUNT, TXT_CODEX = TXT_OFFER + OFFER_TXT, TXT_COUNT = TXT_CODEX + CX_COUNT };
 static char *s_text;
 static const char *s_line[TXT_COUNT];
 static void text_load(void)
@@ -284,10 +288,44 @@ static const struct { uint8_t fx; const char *name; } RELICS[] = {
     { R(RELIC_SKILL, RELIC_STAMINA),  "Moonlit Tome" },      // a skill from the start, the stamina to use it
     { R(RELIC_EMBERS, RELIC_DAMAGE),  "Ember Crown" },       // for Embers
     { R(RELIC_FURY, RELIC_FRAIL),     "Brand of Wrath" },    // glass cannon
+    { R(RELIC_WARD, RELIC_HEALTH),    "Climber's Sigil" },   // not sold: best floor 50's milestone (keep it last)
 };
 #undef R
 #define RELIC_COUNT ((int)(sizeof RELICS / sizeof RELICS[0]))
 #define RELIC_COST  200
+#define RELIC_SIGIL (RELIC_COUNT - 1)   // the Climber's Sigil: not sold, owned from best floor 50 (a milestone)
+
+// ---- Offerings (the Tower menu): gifts for the next climb only, bought before it, two at most; the second costs
+// OFFER_SECOND more (prices never climb across climbs). Set aside in the save (_pad[26]), used when the climb starts;
+// a climb quit (or restarted) before its first Guardian falls sets them aside again. Their full texts: tower_text.bin
+enum { OFF_FLASK, OFF_OATH, OFF_PURSE, OFF_WHETSTONE, OFF_CANDLE, OFF_HEARTH, OFF_KINDLING, OFF_COUNT };
+static const struct { const char *name, *brief; uint8_t price, floor; } OFFERINGS[OFF_COUNT] = {
+    [OFF_FLASK]     = { "Spare Flask",      "+1 potion, and one more at most", 70, 0 },
+    [OFF_OATH]      = { "Hale Oath",        "+10 max health for the climb", 70, 0 },
+    [OFF_PURSE]     = { "Pilgrim's Purse",  "Start with 60 gold", 55, 0 },
+    [OFF_WHETSTONE] = { "Whetstone",        "+25% damage in the first circle", 40, 0 },
+    [OFF_CANDLE]    = { "Scholar's Candle", "The first draft: two skill cards", 30, 0 },
+    [OFF_HEARTH]    = { "Hearth Ember",     "The first Rest also heals 40%", 55, 0 },
+    [OFF_KINDLING]  = { "Kindling",         "Start with a random Common boon", 55, 20 },
+};
+_Static_assert(OFF_COUNT == OFFER_TXT, "tower_text.bin: one text an Offering");
+#define OFFER_MAX     2
+#define OFFER_SECOND  50        // the second Offering of a climb costs this much more
+#define OFFER_GOLD    60        // Pilgrim's Purse
+#define OFFER_HP      10.0f     // Hale Oath
+#define OFFER_DAMAGE  1.25f     // Whetstone, circle 1
+#define OFFER_HEAL    0.40f     // Hearth Ember, the first Rest
+
+// ---- Floor milestones: lasting rewards from the best floor (no save bits). Floor 10 is the Teal Cloak, as ever
+enum { MS_TEAL, MS_KINDLING, MS_POTION, MS_SIGIL, MS_HEART, MS_TITLE, MS_COUNT };
+static const struct { uint8_t floor; const char *name, *reward; } MILESTONES[MS_COUNT] = {
+    [MS_TEAL]     = { 10, "The Teal Cloak", "A skin, worn from Settings > Skin" },
+    [MS_KINDLING] = { 20, "Kindling", "A new Offering: a Common boon to start" },
+    [MS_POTION]   = { 30, "A deeper belt", "Every climb starts with one more potion" },
+    [MS_SIGIL]    = { 50, "Climber's Sigil", "A relic: -6% damage taken, +15 max health" },
+    [MS_HEART]    = { 75, "The Tower's Heart", "A Codex page" },
+    [MS_TITLE]    = { 100, "Tower-Breaker", "A title, on the Tower's menu" },
+};
 #define CIRCLE_EMBERS 25        // a circle cleared
 
 // ---- The map (docs/design/TOWER_ROGUELIKE.md section 2): 7 rows of 3 lanes a circle, climbed bottom to
@@ -415,6 +453,12 @@ static struct {
     uint16_t bless[PB_COUNT], curse[PC_COUNT];   // pacts taken
     int potionDebt;                 // Thirst with no potion: the next bosses' potions are owed
     double exposedUntil;            // Exposed: after a roll
+    uint32_t seed;                  // the run's seed (shown at its end and in Stats)
+    uint8_t offers;                 // the Offerings this climb (bit per OFF_), and the save's byte they came from
+    uint8_t offerByte;
+    bool firstCleared;              // its first Guardian fell: the Offerings are spent
+    bool hearthUsed, milestonePotion;
+    int8_t notice;                  // a milestone just reached (MS_ + 1): its notice over the draft
     // draft
     bool draftOpen;
     uint32_t draftOpenMs;           // when it opened (input waits DRAFT_INPUT_DELAY_MS)
@@ -661,7 +705,7 @@ static void tower_load(TowerSave *t)
     for (int i = 0; i < TOWER_RELIC_SLOTS; i++) {
         if (!t->relics[i]) continue;
         int id = -1;
-        for (int k = 0; k < RELIC_COUNT; k++) if (RELICS[k].fx == t->relics[i]) id = k;
+        for (int k = 0; k < RELIC_SIGIL; k++) if (RELICS[k].fx == t->relics[i]) id = k;     // (never the Sigil: a milestone's)
         if (id >= 0) { t->relicsOwned |= 1 << id; if (i == e) t->relicEquipped = id + 1; }
         else { int m = t->embers + RELIC_COST; t->embers = m > 65535 ? 65535 : m; }
         t->relics[i] = 0;
@@ -679,20 +723,27 @@ const char* tower_relic_desc(int id)
     snprintf(desc, sizeof desc, "%s, %s", RELIC_FX[RELICS[id].fx >> 4].desc, RELIC_FX[RELICS[id].fx & 15].desc);
     return desc;
 }
-bool tower_relic_owned(int id) { TowerSave t; tower_load(&t); return id >= 0 && id < RELIC_COUNT && ((t.relicsOwned >> id) & 1); }
-int  tower_relic_cost(int id) { return tower_relic_owned(id) ? -1 : RELIC_COST; }
+static bool relic_owned_t(const TowerSave *t, int id)
+{
+    if (id == RELIC_SIGIL) return t->bestFloor >= MILESTONES[MS_SIGIL].floor;      // (never a bit: 1.0 has five relics)
+    return id >= 0 && id < RELIC_COUNT && ((t->relicsOwned >> id) & 1);
+}
+bool tower_relic_owned(int id) { TowerSave t; tower_load(&t); return relic_owned_t(&t, id); }
+int  tower_relic_cost(int id) { return tower_relic_owned(id) ? -1 : id == RELIC_SIGIL ? -2 : RELIC_COST; }   // (-2: not sold, a milestone's)
+int  tower_relic_floor(int id) { return id == RELIC_SIGIL ? MILESTONES[MS_SIGIL].floor : 0; }
 int  tower_relic_equipped(void)
 {
     TowerSave t; tower_load(&t);
     int e = t.relicEquipped - 1;
-    return (e >= 0 && e < RELIC_COUNT && ((t.relicsOwned >> e) & 1)) ? e : -1;
+    return relic_owned_t(&t, e) ? e : -1;
 }
 bool tower_relic_select(int id)
 {
     TowerSave t; tower_load(&t);
     if (id < 0) { t.relicEquipped = 0; return save_controller_set_tower(&t); }     // climb without one
     if (id >= RELIC_COUNT) return false;
-    if (!((t.relicsOwned >> id) & 1)) {             // buy it
+    if (!relic_owned_t(&t, id)) {                   // buy it
+        if (id == RELIC_SIGIL) return false;        // (not sold)
         if (t.embers < RELIC_COST) return false;
         t.embers -= RELIC_COST;
         t.relicsOwned |= 1 << id;
@@ -716,10 +767,91 @@ bool tower_nightfarer_buy(void)
     return save_controller_set_tower(&t);
 }
 
+// ---- Offerings: set aside in the save for the next climb (the byte's two nibbles, id + 1 each) ----
+
+static int offer_at(uint8_t b, int k) { return ((b >> (4 * k)) & 15) - 1; }     // the k-th set aside, -1 none
+static int offers_held(uint8_t b) { return (offer_at(b, 0) >= 0) + (offer_at(b, 1) >= 0); }
+static bool offer_in(uint8_t b, int i) { return i >= 0 && (offer_at(b, 0) == i || offer_at(b, 1) == i); }
+static uint8_t offers_now(void) { TowerSave t; save_controller_get_tower(&t); return t.offers; }
+int  tower_offer_count(void) { return OFF_COUNT; }
+const char *tower_offer_name(int i) { return i >= 0 && i < OFF_COUNT ? OFFERINGS[i].name : ""; }
+const char *tower_offer_brief(int i) { return i >= 0 && i < OFF_COUNT ? OFFERINGS[i].brief : ""; }
+bool tower_offer_set(int i) { return offer_in(offers_now(), i); }
+int  tower_offers_held(void) { return offers_held(offers_now()); }
+// why it can't be set aside now ("" if it can): a milestone not reached, the Skills setting off (the Candle)
+const char *tower_offer_lock(int i)
+{
+    static char why[32];
+    if (i < 0 || i >= OFF_COUNT) return "";
+    if (tower_best_floor() < OFFERINGS[i].floor) { snprintf(why, sizeof why, "Reach floor %d", OFFERINGS[i].floor); return why; }
+    if (i == OFF_CANDLE && !character_skills_enabled()) return "Skills are off";
+    return "";
+}
+// its price now: to set it aside (the second one OFFER_SECOND more), or what taking it back returns (the
+// price of a set of two is the two plus OFFER_SECOND, whichever came first)
+int  tower_offer_price(int i)
+{
+    uint8_t b = offers_now();
+    int n = offers_held(b);
+    return OFFERINGS[i].price + ((offer_in(b, i) ? n == 2 : n >= 1) ? OFFER_SECOND : 0);
+}
+// A on it: set it aside (Embers paid now) or take it back (paid back); false if neither can be done
+bool tower_offer_toggle(int i)
+{
+    if (i < 0 || i >= OFF_COUNT) return false;
+    TowerSave t; tower_load(&t);
+    int price = tower_offer_price(i);
+    if (offer_in(t.offers, i)) {
+        uint8_t keep = 0;
+        for (int k = 0; k < OFFER_MAX; k++) if (offer_at(t.offers, k) >= 0 && offer_at(t.offers, k) != i) keep = (uint8_t)(offer_at(t.offers, k) + 1);
+        int e = t.embers + price; t.embers = e > 65535 ? 65535 : e;
+        t.offers = keep;
+    } else {
+        if (offers_held(t.offers) >= OFFER_MAX || tower_offer_lock(i)[0] || t.embers < price) return false;
+        t.embers -= price;
+        t.offers = offer_at(t.offers, 0) >= 0 ? (uint8_t)(t.offers | ((i + 1) << 4)) : (uint8_t)(i + 1);
+    }
+#ifdef HLE_AUTOPLAY
+    debugf("[offer] %s %s for %d: set aside %02x, Embers %d\n", offer_in(t.offers, i) ? "set aside" : "taken back", OFFERINGS[i].name, price, t.offers, t.embers);
+#endif
+    return save_controller_set_tower(&t);
+}
+// "Spare Flask, Whetstone" (or "")
+const char *tower_offers_line(void)
+{
+    static char line[48];
+    uint8_t b = s.active ? s.offerByte : offers_now();
+    int n = 0; line[0] = 0;
+    for (int k = 0; k < OFFER_MAX; k++) if (offer_at(b, k) >= 0) n += snprintf(line + n, sizeof line - n, "%s%s", n ? ", " : "", OFFERINGS[offer_at(b, k)].name);
+    return line;
+}
+// A climb ended before its first Guardian fell, alive (quit or restarted): its Offerings are set aside again
+static void offers_restore(void)
+{
+    if (!s.active || s.firstCleared || !s.offerByte || character.health <= 0.0f) return;
+    TowerSave t; tower_load(&t);
+    if (!t.offers) { t.offers = s.offerByte; save_controller_set_tower(&t); }
+#ifdef HLE_AUTOPLAY
+    debugf("[offer] the climb ended before its first Guardian fell: %s set aside again\n", tower_offers_line());
+#endif
+    s.offerByte = 0;
+}
+bool tower_offer_active(int i) { return s.active && ((s.offers >> i) & 1); }
+
+// ---- Milestones ----
+int  tower_milestone_count(void) { return MS_COUNT; }
+int  tower_milestone_floor(int i) { return MILESTONES[i].floor; }
+const char *tower_milestone_name(int i) { return MILESTONES[i].name; }
+const char *tower_milestone_reward(int i) { return MILESTONES[i].reward; }
+bool tower_milestone_reached(int i) { return tower_best_floor() >= MILESTONES[i].floor; }
+const char *tower_title_badge(void) { return tower_milestone_reached(MS_TITLE) ? MILESTONES[MS_TITLE].name : ""; }
+
 // ---- Run ----
 
+static bool offerable(BoonId b);
 void tower_begin_run(uint32_t seed)
 {
+    offers_restore();       // (a restart before the first Guardian fell: the same Offerings again)
     memset(&s, 0, sizeof(s));
     if (ui_details()->owner == UI_OWNER_TOWER) ui_panel_close(ui_details());     // (one left open by a run quit from the pause menu)
     s.active = true;
@@ -731,6 +863,10 @@ void tower_begin_run(uint32_t seed)
 #endif
 #ifdef HLE_TOWER_SEED       // test aid: a set run seed (the map, the drafts)
     s.rng = HLE_TOWER_SEED;
+#endif
+    s.seed = s.rng;
+#ifdef HLE_MILESTONE_AT     // test aid: the climb starts on this floor, the save's best one below it (its milestone's notice at the first kill)
+    { TowerSave tm; tower_load(&tm); tm.bestFloor = HLE_MILESTONE_AT - 1; save_controller_set_tower(&tm); s.floor = HLE_MILESTONE_AT; }
 #endif
     new_circle();
 #if defined(HLE_TEST_TOWER_STATS) && !defined(HLE_STATS_BARE)   // test aid (BARE: as the run starts): a full bar (two of a family, two new boons, all at their most), every skill and its cards, every pact twice
@@ -808,11 +944,32 @@ void tower_begin_run(uint32_t seed)
                (double)tower_mod_roll_cost(), (double)tower_mod_lifesteal());
 #endif
     }
+    // The Offerings set aside: this climb's, gone from the save (a quit before the first Guardian falls puts them back)
+    {
+        TowerSave t; tower_load(&t);
+        s.milestonePotion = t.bestFloor >= MILESTONES[MS_POTION].floor;
+        s.offerByte = t.offers;
+        for (int k = 0; k < OFFER_MAX; k++) if (offer_at(t.offers, k) >= 0 && offer_at(t.offers, k) < OFF_COUNT) s.offers |= 1 << offer_at(t.offers, k);
+        if (t.offers) { t.offers = 0; save_controller_set_tower(&t); }
+    }
+    if (tower_offer_active(OFF_PURSE)) s.gold += OFFER_GOLD;
+    if (tower_offer_active(OFF_KINDLING)) {     // a random Common boon the draft could offer now (never Deep Flask: +3 potions at once)
+        BoonId pool[BOON_COUNT]; int n = 0;
+        for (int b = 0; b < BOON_COUNT; b++) if (BOONS[b].tier == TIER_COMMON && takes_slot(b) && b != BOON_DEEP_FLASK && offerable(b)) pool[n++] = b;
+        if (n) take_boon(pool[rng_next() % n]);
+    }
+#ifdef HLE_AUTOPLAY
+    if (s.offers) {
+        int g = -1; for (int i = 0; i < TOWER_SLOTS; i++) if (s.slot[i]) g = s.slot[i] - 1;
+        debugf("[offer] the climb starts with %s (seed %08lx): gold %d, max health %.0f, potions most %d, damage x%.2f, boon %s\n", tower_offers_line(), (unsigned long)s.seed, s.gold,
+               (double)tower_mod_max_health(), tower_mod_max_potions(), (double)tower_mod_damage_dealt(), g >= 0 ? BOONS[g].name : "none");
+    }
+#endif
 }
 
 static void icons_free(void);
 static int map_enter(void);
-void tower_end_run(void) { s.active = false; s.draftOpen = false; s.scr = SCR_NONE; icons_free(); if (ui_details()->owner == UI_OWNER_TOWER) ui_panel_close(ui_details()); }   // (a run quit from its Details)
+void tower_end_run(void) { offers_restore(); s.active = false; s.draftOpen = false; s.scr = SCR_NONE; icons_free(); if (ui_details()->owner == UI_OWNER_TOWER) ui_panel_close(ui_details()); }   // (a run quit from its Details)
 bool tower_active(void) { return s.active; }
 int  tower_floor(void) { return s.floor; }
 int  tower_circle(void) { return s.circle; }
@@ -848,6 +1005,7 @@ static void bank_embers(int e)
     s.runEmbers += e;
 }
 
+static void milestone_notice(int i);
 void tower_floor_cleared(void)
 {
     if (!s.active) return;
@@ -859,12 +1017,17 @@ void tower_floor_cleared(void)
     s.runEmbers += s.lastFloorEmbers;
     int e = t.embers + s.lastFloorEmbers;
     t.embers = e > 65535 ? 65535 : e;
+    int was = t.bestFloor;
     if (s.floor > t.bestFloor) t.bestFloor = s.floor > 255 ? 255 : s.floor;
     save_controller_set_tower(&t);
+    s.firstCleared = true;      // (the Offerings are spent)
+    s.notice = 0;
+    for (int i = 0; i < MS_COUNT; i++) if (was < MILESTONES[i].floor && t.bestFloor >= MILESTONES[i].floor) s.notice = (int8_t)(i + 1);
     if (s.circleCleared) {      // a circle cleared: its bonus (above), and the next circle's night
         s.nextNight = (Night)(1 + rng_next() % (NIGHT_COUNT - 1));
     }
     tower_draft_open();
+    if (s.notice) milestone_notice(s.notice - 1);
 }
 
 void tower_next_floor(void)
@@ -1060,6 +1223,18 @@ void tower_draft_open(void)
         lead[k] = lead[--nl];
     }
     if (nsk && s.nChoices < DRAFT_CHOICES && (int)(rng_next() % 100) < SKILL_CARD_CHANCE) s.choices[s.nChoices++] = sk[rng_next() % nsk];
+    if (tower_offer_active(OFF_CANDLE) && s.floor == 1 && due < 0) {     // Scholar's Candle: the climb's first draft holds two skill cards
+        int have = 0;
+        for (int i = 0; i < s.nChoices; i++) have += is_skill_card((BoonId)s.choices[i]);
+        while (have < 2 && s.nChoices < DRAFT_CHOICES && (nl || nsk)) {
+            BoonId c;
+            if (nl) { int k = rng_next() % nl; c = lead[k]; lead[k] = lead[--nl]; }
+            else { int k = rng_next() % nsk; c = sk[k]; sk[k] = sk[--nsk]; }
+            bool dup = false;
+            for (int i = 0; i < s.nChoices; i++) dup |= s.choices[i] == (int)c;
+            if (!dup) { s.choices[s.nChoices++] = c; have++; }
+        }
+    }
     // The rest by rarity, a pact now and then; once the boons run out, a +40 gold card and pacts
     bool purse = false;
     while (s.nChoices < DRAFT_CHOICES) {
@@ -1533,6 +1708,17 @@ static void release_open(void)
     else tower_map_open();
 }
 
+// Hearth Ember: the climb's first Rest heals 40% on top of its choice
+static void rest_offering(void)
+{
+    if (!tower_offer_active(OFF_HEARTH) || s.hearthUsed) return;
+    s.hearthUsed = true;
+    float h = character.health;
+    character.health = fminf(character.maxHealth, h + OFFER_HEAL * character.maxHealth);
+#ifdef HLE_AUTOPLAY
+    debugf("[offer] Hearth Ember: the first Rest heals 40%% more: %.0f -> %.0f of %.0f\n", (double)h, (double)character.health, (double)character.maxHealth);
+#endif
+}
 static void rest_take(int v)
 {
     float mh = character.maxHealth, h = character.health;
@@ -1543,6 +1729,7 @@ static void rest_take(int v)
     if (v == REST_HEAL_ROW) debugf("[rest] heal 40%%: %.0f -> %.0f of %.0f\n", (double)h, (double)character.health, (double)mh);
     else debugf("[rest] +2 potions: %d -> %d (up to %d)\n", p, character.healthPotions, pm);
 #endif
+    rest_offering();
 }
 
 
@@ -2058,7 +2245,10 @@ bool tower_take_pause_request(void) { bool r = s_pauseReq; s_pauseReq = false; r
 bool tower_between_update(bool left, bool right, bool up, bool down, bool confirm, bool back, bool details)
 {
     UiPanel *dp = ui_details();
-    if (dp->open && !dp->confirm) { ui_panel_input(dp, up, down, left, right, confirm, back, details); return false; }    // Details over the screen
+    if (dp->open && !dp->confirm) {     // Details over the screen (a milestone's notice over the draft waits out its delay: a fight's mashed press)
+        if (!(s.draftOpen && get_ticks_ms() - s.draftOpenMs < DRAFT_INPUT_DELAY_MS)) ui_panel_input(dp, up, down, left, right, confirm, back, details);
+        return false;
+    }
     if (s.draftOpen) {
         if (details && get_ticks_ms() - s.draftOpenMs >= DRAFT_INPUT_DELAY_MS) { details_for_cursor(true); return false; }
         if (tower_draft_update(left, right, up, down, confirm)) { tower_floor_restore(); tower_next_floor(); tower_map_open(); }
@@ -2141,6 +2331,7 @@ bool tower_between_update(bool left, bool right, bool up, bool down, bool confir
             debugf("[rest] temper: %s Lv %d -> %d\n", BOONS[v].name, s.stacks[v], s.stacks[v] + 1);
 #endif
             take_boon((BoonId)v);
+            rest_offering();
             release_open();
         }
     } else {
@@ -2490,6 +2681,8 @@ void tower_stats_doc(UiDoc *d)
     if (tower_circle() > 1) ui_doc_row(d, FONT_STYLE_RED, NULL, "Ascension %d", tower_circle() - 1);
     if (s.night) ui_doc_text(d, FONT_STYLE_RED, "%s", night_line(s.night, nl, sizeof nl));
     ui_doc_row(d, FONT_STYLE_GOLD, NULL, "Gold %d   Embers this run %d", s.gold, s.runEmbers);
+    ui_doc_text(d, FONT_STYLE_GREY, "Seed %08lX", (unsigned long)s.seed);
+    if (s.offers) ui_doc_text(d, FONT_STYLE_WHITE, "Offerings: %s", tower_offers_line());
     int e = tower_relic_equipped();
     if (e >= 0) ui_doc_text(d, FONT_STYLE_WHITE, "Relic: %s (%s)", tower_relic_name(e), tower_relic_desc(e));
     else ui_doc_text(d, FONT_STYLE_GREY, "Relic: none");
@@ -2606,6 +2799,7 @@ void tower_details_shrine(int kind, int i)
             ui_doc_text(d, FONT_STYLE_GREY, "One relic is worn for a whole climb.");
             if (tower_relic_equipped() == i) ui_doc_text(d, FONT_STYLE_GOLD, "Worn. A takes it off.");
             else if (tower_relic_owned(i)) ui_doc_text(d, FONT_STYLE_WHITE, "Owned. A wears it.");
+            else if (i == RELIC_SIGIL) ui_doc_text(d, FONT_STYLE_GREY, "Not sold: it's yours once you reach floor %d.", MILESTONES[MS_SIGIL].floor);
             else ui_doc_text(d, tower_embers() >= RELIC_COST ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d Embers (you hold %d). A buys and wears it.", RELIC_COST, tower_embers());
         }
     } else if (kind == TOWER_SHRINE_UNLOCK) {
@@ -2636,6 +2830,17 @@ void tower_details_shrine(int kind, int i)
         ui_doc_gap(d);
         if (c < 0) ui_doc_text(d, FONT_STYLE_GREY, "Owned.");
         else ui_doc_text(d, tower_embers() >= c ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d Embers (you hold %d)%s.", c, tower_embers(), f >= 0 ? "; each pack bought raises the next one's price" : "");
+    } else if (kind == TOWER_SHRINE_OFFERING) {
+        snprintf(t, sizeof t, "%s", OFFERINGS[i].name);
+        ui_doc_text(d, FONT_STYLE_WHITE, "%s", full_text(TXT_OFFER + i));
+        ui_doc_gap(d);
+        ui_doc_text(d, FONT_STYLE_GREY, "For the next climb only, used as it starts. Quit before its first Guardian falls and it waits for the next one.");
+        const char *why = tower_offer_lock(i);
+        int c = tower_offer_price(i);
+        if (why[0]) ui_doc_text(d, FONT_STYLE_RED, "%s.", why);
+        else if (tower_offer_set(i)) ui_doc_text(d, FONT_STYLE_GOLD, "Set aside. A takes it back: %d Embers returned.", c);
+        else if (tower_offers_held() >= OFFER_MAX) ui_doc_text(d, FONT_STYLE_RED, "Two are set aside: take one back first.");
+        else ui_doc_text(d, tower_embers() >= c ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d Embers (you hold %d)%s.", c, tower_embers(), tower_offers_held() ? ": a second Offering costs 50 more" : "");
     } else {
         snprintf(t, sizeof t, "Nightfarer");
         ui_doc_text(d, FONT_STYLE_WHITE, "A skin: a tracker's winged helm and blue coat. It changes nothing in a fight.");
@@ -2647,15 +2852,201 @@ void tower_details_shrine(int kind, int i)
     p->owner = UI_OWNER_MENU;
 }
 
+// A milestone reached: its notice over the draft (R, B or A closes it; it waits out the draft's input delay)
+static void milestone_notice(int i)
+{
+    static const char *const WHERE[MS_COUNT] = { "It waited high within the Tower.", "Set it aside at Tower > Offerings.", "From the next climb on.",
+                                                 "Worn from Tower > Shrine > Relics.", "Read it in the Codex.", "Yours for good." };
+    UiPanel *p = ui_details();
+    UiDoc *d = ui_panel_doc(p);
+    char t[40];
+    ui_doc_clear(d);
+    snprintf(t, sizeof t, "Floor %d reached", MILESTONES[i].floor);
+    ui_doc_text(d, FONT_STYLE_GOLD, "%s", MILESTONES[i].name);
+    ui_doc_text(d, FONT_STYLE_WHITE, "%s.", MILESTONES[i].reward);
+    ui_doc_gap(d);
+    ui_doc_text(d, FONT_STYLE_GREY, "%s", WHERE[i]);
+    ui_panel_open(p, t, FONT_STYLE_GOLD, false);
+    p->owner = UI_OWNER_TOWER;
+#ifdef HLE_AUTOPLAY
+    debugf("[milestone] floor %d reached: %s (%s), notice over the draft\n", MILESTONES[i].floor, MILESTONES[i].name, MILESTONES[i].reward);
+#endif
+}
+
+// ---- The Codex: a page a topic (tower_text.bin's text, segments split by '|': '#' a heading, '%' grey, '!' red,
+// '+' after a gap, '~' a new page, '@' the topic's own table here), read from ROM while it's built ----
+static const char *const CODEX_TITLE[CX_COUNT] = {
+    "The climb", "The map", "Fights and Elites", "Rests, Shops, Events", "Slots and levels", "Families", "Rivals", "\"+\" and duos",
+    "Skills", "Moon Blade Dance", "Halfmoon Slash", "Crescent Cleave", "Elite affixes", "Gold", "Embers and the Shrine", "Offerings",
+    "Milestones", "Pacts", "Nights", "The Tower's Heart",
+};
+int  tower_codex_count(void) { return CX_COUNT; }
+const char *tower_codex_title(int i) { return i >= 0 && i < CX_COUNT ? CODEX_TITLE[i] : ""; }
+int  tower_codex_floor(int i) { return i == CX_HEART ? MILESTONES[MS_HEART].floor : 0; }     // a page found deeper (0: open)
+bool tower_codex_open_ok(int i) { return i >= 0 && i < CX_COUNT && tower_best_floor() >= tower_codex_floor(i); }
+
+// a short text mid-sentence: its first letter small ("Start with 60 gold" after a colon), a name's capitals kept
+static const char *lc(const char *t)
+{
+    static char b[2][96]; static int k;
+    char *o = b[k++ & 1];     // (two at once: a row's printf holds no more)
+    snprintf(o, 96, "%s", t);
+    if (o[0] >= 'A' && o[0] <= 'Z' && ((o[1] >= 'a' && o[1] <= 'z') || o[1] == ' ') && strncmp(o, "Storm Blade", 11)) o[0] += 'a' - 'A';
+    return o;
+}
+static void codex_gen(UiDoc *d, int k)
+{
+    char line[200];
+    int best = tower_best_floor();
+    switch (k) {
+    case CX_STOPS:
+        ui_doc_text(d, FONT_STYLE_WHITE, "A new boon or duo: %d, %d or %d by its tier.", TIER_PRICE[0], TIER_PRICE[1], TIER_PRICE[2]);
+        ui_doc_text(d, FONT_STYLE_WHITE, "A level: %d. A \"+\": %d. Release: %d.", PRICE_LEVEL, PRICE_PLUS, PRICE_RELEASE);
+        ui_doc_text(d, FONT_STYLE_WHITE, "A potion: %d, up to your most. Mend: %d, heals 35%%.", PRICE_POTION, PRICE_MEND);
+        ui_doc_text(d, FONT_STYLE_WHITE, "A pact: free. Its curse is the price.");
+        break;
+    case CX_FAMILIES: {
+        TowerSave sv; tower_load(&sv);
+        for (int f = 0; f < FAM_COUNT; f++) {
+            int n = 0, m = 0; line[0] = 0;
+            char pk[120]; pk[0] = 0;
+            for (int b = 0; b < BOON_COUNT; b++) if (BOONS[b].family == f && takes_slot(b)) {
+                if (BOONS[b].pack) m += snprintf(pk + m, m < (int)sizeof pk ? sizeof pk - m : 0, "%s%s", m ? ", " : "", BOONS[b].name);
+                else n += snprintf(line + n, n < (int)sizeof line ? sizeof line - n : 0, "%s%s", n ? ", " : "", BOONS[b].name);
+            }
+            bool own = s.active ? family_open(f) : (sv.unlocks >> f) & 1;
+            ui_doc_gap(d);
+            ui_doc_text(d, FAMILIES[f].style, "%s: %s", FAMILIES[f].name, line);
+            if (m) ui_doc_text(d, own ? FAMILIES[f].style : FONT_STYLE_GREY, "%s %s", own ? "Its pack:" : "Its pack (Shrine):", pk);
+        }
+        break; }
+    case CX_RIVALS:
+        for (unsigned i = 0; i < sizeof RIVALS / sizeof RIVALS[0]; i++)
+            ui_doc_text(d, is_form(RIVALS[i][0]) ? FONT_STYLE_GOLD : FONT_STYLE_RED, "%s  /  %s", BOONS[RIVALS[i][0]].name, BOONS[RIVALS[i][1]].name);
+        break;
+    case CX_PLUS:
+        ui_doc_gap(d);
+        for (int b = 0; b < BOON_COUNT; b++) if (BOONS[b].duo)
+            ui_doc_text(d, FONT_STYLE_WHITE, "%s, %s + %s: %s", BOONS[b].name, FAMILIES[BOONS[b].family].name, FAMILIES[BOONS[b].duo - 1].name, lc(BOONS[b].desc));
+        break;
+    case CX_MBD: case CX_HALFMOON: case CX_CLEAVE:
+        if (!s.active) { TowerSave t; tower_load(&t); s.forms = (t.unlocks >> FAM_COUNT) & ((1 << SKILL_COUNT) - 1); }   // (outside a climb: the B forms bought)
+        doc_skill(d, k - CX_MBD);
+        break;
+    case CX_AFFIXES:
+        for (int a = 0; a < AFX_COUNT; a++) {
+            if (best >= AFFIXES[a].floor) ui_doc_text(d, FONT_STYLE_WHITE, "%s: %s", AFFIXES[a].name, full_text(TXT_AFFIX + a));
+            else ui_doc_text(d, FONT_STYLE_GREY, "%s (met from floor %d): %s", AFFIXES[a].name, AFFIXES[a].floor, full_text(TXT_AFFIX + a));
+        }
+        break;
+    case CX_GOLD:
+        ui_doc_text(d, FONT_STYLE_WHITE, "A fallen boss: %d, and %d more a circle. An Elite: x1.5.", GOLD_FIGHT + GOLD_PER_CIRCLE, GOLD_PER_CIRCLE);
+        ui_doc_text(d, FONT_STYLE_WHITE, "Skip a draft: +%d. The Purse card: +%d, once no boon is left for you.", SKIP_GOLD, GOLD_CARD_GOLD);
+        ui_doc_text(d, FONT_STYLE_WHITE, "Prospector: +20%% a level, on every gain.");
+        break;
+    case CX_EMBERS:
+        ui_doc_text(d, FONT_STYLE_WHITE, "A fallen boss: 8 x its circle, and 3 more for each fight before it in the circle.");
+        ui_doc_text(d, FONT_STYLE_WHITE, "An Elite: x1.5. A circle cleared: +%d. Skip a draft: +%d.", CIRCLE_EMBERS, SKIP_EMBERS);
+        break;
+    case CX_OFFERINGS: {
+        for (int i = 0; i < OFF_COUNT; i++) {
+            bool open = best >= OFFERINGS[i].floor;
+            char r[16]; if (open) snprintf(r, sizeof r, "%d", OFFERINGS[i].price); else snprintf(r, sizeof r, "floor %d", OFFERINGS[i].floor);
+            ui_doc_row(d, open ? FONT_STYLE_WHITE : FONT_STYLE_GREY, r, "%s: %s", OFFERINGS[i].name, lc(OFFERINGS[i].brief));
+        }
+        const char *now = tower_offers_line();
+        ui_doc_gap(d);
+        if (now[0]) ui_doc_text(d, FONT_STYLE_GOLD, "%s: %s", s.active ? "This climb's" : "Set aside", now);
+        break; }
+    case CX_MILESTONES:
+        for (int i = 0; i < MS_COUNT; i++) {
+            bool got = best >= MILESTONES[i].floor;
+            char l[16]; snprintf(l, sizeof l, "Floor %d", MILESTONES[i].floor);
+            ui_doc_text(d, got ? FONT_STYLE_GOLD : FONT_STYLE_WHITE, "%s, %s: %s%s", l, MILESTONES[i].name, lc(MILESTONES[i].reward), got ? " (reached)" : "");
+        }
+        ui_doc_gap(d);
+        ui_doc_text(d, FONT_STYLE_GOLD, "Your best: floor %d.", best);
+        break;
+    case CX_PACTS:
+        ui_doc_gap(d);      // the blessings in gold, the curses in red
+        for (int b = 0; b < PB_COUNT; b++) ui_doc_text(d, FONT_STYLE_GOLD, "%s: %s", BLESSINGS[b].name, BLESSINGS[b].desc);
+        ui_doc_gap(d);
+        for (int c = 0; c < PC_COUNT; c++) ui_doc_text(d, FONT_STYLE_RED, "%s: %s", CURSES[c].name, CURSES[c].desc);
+        break;
+    case CX_NIGHTS:
+        for (int n = 1; n < NIGHT_COUNT; n++) {
+            ui_doc_text(d, FONT_STYLE_RED, "%s: %s. Embers x%.1f.", NIGHTS[n].name, lc(NIGHTS[n].desc), (double)NIGHTS[n].embers);
+        }
+        break;
+    }
+    (void)line;
+}
+
+// a paragraph a sentence a row (no gap between them): a page can then turn between two sentences, not only between paragraphs
+static void codex_para(UiDoc *d, int style, const char *t)
+{
+    char one[256];
+    while (*t) {
+        const char *e = strstr(t, ". ");
+        int n = e ? (int)(e - t) + 1 : (int)strlen(t);
+        if (n > (int)sizeof one - 1) n = sizeof one - 1;
+        memcpy(one, t, n); one[n] = 0;
+        ui_doc_text(d, style, "%s", one);
+        t += n; while (*t == ' ') t++;
+    }
+}
+// a page's rows from its text (and its table where the text has '@'); returns its title
+static const char *codex_doc(UiDoc *d, int k)
+{
+    ui_doc_clear(d);
+    const char *src = full_text(TXT_CODEX + k);
+    char seg[256];
+    bool gen = false;
+    while (*src) {
+        const char *e = strchr(src, '|');
+        int n = e ? (int)(e - src) : (int)strlen(src);
+        if (n > (int)sizeof seg - 1) n = sizeof seg - 1;
+        memcpy(seg, src, n); seg[n] = 0;
+        src += e ? n + 1 : n;
+        const char *t = seg + 1;
+        switch (seg[0]) {
+        case '#': ui_doc_gap(d); ui_doc_keep(d); ui_doc_text(d, FONT_STYLE_GOLD, "%s", t); break;
+        case '%': ui_doc_gap(d); codex_para(d, FONT_STYLE_GREY, t); break;
+        case '!': codex_para(d, FONT_STYLE_RED, t); break;
+        case '+': ui_doc_gap(d); codex_para(d, FONT_STYLE_WHITE, t); break;
+        case '~': ui_doc_break(d); if (*t) codex_para(d, FONT_STYLE_WHITE, t); break;
+        case '@': codex_gen(d, k); gen = true; break;
+        default:  if (seg[0]) codex_para(d, FONT_STYLE_WHITE, seg); break;
+        }
+    }
+    if (!gen) codex_gen(d, k);
+    return CODEX_TITLE[k];
+}
+void tower_codex_open(int k)
+{
+    if (!tower_codex_open_ok(k)) return;
+    UiPanel *p = ui_details();
+    UiDoc *d = ui_panel_doc(p);
+    text_load();
+    const char *t = codex_doc(d, k);
+    text_free();
+    ui_panel_open(p, t, FONT_STYLE_GOLD, false);
+    p->owner = UI_OWNER_MENU;
+#ifdef HLE_AUTOPLAY
+    debugf("[codex] open %d %s: %d pages, %d rows, %d of %d bytes\n", k, t, p->pg.pages, d->n, d->used, UI_DOC_TEXT);
+#endif
+}
+
 const char* tower_death_summary(void)
 {
     static char line[96];
     int boons = 0;
     for (int b = 0; b < BOON_COUNT; b++) boons += s.stacks[b];
     for (int b = 0; b < PB_COUNT; b++) boons += s.bless[b];
-    snprintf(line, sizeof line, "Floor %d   +%d Embers (%d)\n%d boons taken", s.floor, s.runEmbers, tower_embers(), boons);
+    snprintf(line, sizeof line, "Floor %d   +%d Embers (%d)\n%d boon%s taken   Seed %08lX", s.floor, s.runEmbers, tower_embers(), boons, boons == 1 ? "" : "s", (unsigned long)s.seed);
     return line;
 }
+uint32_t tower_seed(void) { return s.seed; }
 
 // ---- Shrine ----
 
@@ -2714,6 +3105,7 @@ float tower_mod_damage_dealt(void)
     float m = (1.0f + 0.08f * shrine(UPG_HONED_BLADE)) * (1.0f + 0.15f * (ee < 3 ? ee : 3) + 0.10f * (ee > 3 ? ee - 3 : 0));
     if (s.active) {
         m *= 1.0f + 0.10f * circles_cleared();
+        if (s.circle == 1 && tower_offer_active(OFF_WHETSTONE)) m *= OFFER_DAMAGE;
         m *= (1.0f + 0.08f * bl(PB_MIGHT)) * powf_int(0.95f, s.curse[PC_WEAKNESS]);
         if (character.health < character.maxHealth * 0.3f) m *= 1.0f + 0.15f * bl(PB_LAST_BREATH);
     }
@@ -2981,14 +3373,15 @@ float tower_mod_blow(float amount)
     return amount;
 }
 
-int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + 3 * tower_boon_stacks(BOON_DEEP_FLASK) + 2 * has_relic(RELIC_FLASK) - has_relic(RELIC_PARCHED) : 3; }   // Story and Bonus: 3
+int   tower_mod_max_potions(void) { return s.active ? START_POTIONS + shrine(UPG_FLASK_CAPACITY) + 3 * tower_boon_stacks(BOON_DEEP_FLASK) + 2 * has_relic(RELIC_FLASK) - has_relic(RELIC_PARCHED)
+                                                    + tower_offer_active(OFF_FLASK) + s.milestonePotion : 3; }   // Story and Bonus: 3
 bool  tower_mod_skill_allowed(int skill) { return character_skills_enabled() && (!s.active || knows(skill)); }
 float tower_mod_potion_heal(void)
 {
     return 0.45f * (1.0f + 0.08f * shrine(UPG_FLASK_POTENCY)) * (1.0f + 0.25f * tower_boon_stacks(BOON_KINDLED_FLASK))
            * (tower_boon_stacks(BOON_BLOOD_PACT) ? 0.75f : 1.0f);
 }
-float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH) - 20.0f * has_relic(RELIC_FRAIL) + (s.active ? 12.0f * bl(PB_VITALITY) + s.steelHp - s.altarHp : 0.0f); }
+float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 25.0f * tower_boon_stacks(BOON_VIGOR) + 15.0f * has_relic(RELIC_HEALTH) - 20.0f * has_relic(RELIC_FRAIL) + (s.active ? 12.0f * bl(PB_VITALITY) + s.steelHp - s.altarHp + OFFER_HP * tower_offer_active(OFF_OATH) : 0.0f); }
 float tower_mod_roll_cost(void) { return (tower_boon_stacks(BOON_FLEETFOOT) ? 0.6f : 1.0f) * (has_relic(RELIC_LEADEN) ? 1.25f : 1.0f); }
 float tower_mod_stamina_empty(void) { return 1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND); }   // the wait once the bar is empty: x1/1.4 a stack
 float tower_mod_stamina_regen(void) { return (1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND)) * (has_relic(RELIC_STAMINA) ? 1.2f : 1.0f); }
@@ -3074,6 +3467,7 @@ void tower_test_pick_vigor(void) { s.choices[0] = BOON_VIGOR; s.nChoices = 1; s.
 
 // Self-check of the slots, levels, a full bar, the packs, family weighting and the unlock bits
 // (HLE_TEST_TOWER); returns the failures
+static void test_unnotice(void) { if (ui_details()->open && ui_details()->owner == UI_OWNER_TOWER) ui_panel_close(ui_details()); }   // (a milestone's notice, in a self-check that doesn't look at it)
 static bool card_ok_full(int c) { return c >= BOON_COUNT || is_skill_card(c) || BOONS[c].up || BOONS[c].duo || s.stacks[c] > 0; }   // ("+" and duos take no new slot)
 // how often each boon is drafted, over n drafts
 static void draft_counts(int n, int counts[BOON_COUNT])
@@ -3514,6 +3908,10 @@ static int walk_circle(bool drafts)
         if (drafts) {
             bool el = s.elite;
             tower_floor_cleared();
+            if (ui_details()->open) {       // a milestone's notice over the draft: A closes it, the draft under it
+                test_press('A');
+                MCHECK(!ui_details()->open && s.draftOpen, "a milestone's notice (floor %d): A closes it, the draft under it", s.floor);
+            }
             int want = (int)((GOLD_FIGHT + GOLD_PER_CIRCLE * c) * (el ? ELITE_GOLD : 1.0f) + 0.5f);
             if (!s.stacks[BOON_PROSPECTOR]) MCHECK(s.lastFloorGold == want, "a fight's gold: 25 + 5 x circle %d%s = %d (%d)", c, el ? ", x1.5 an Elite" : "", want, s.lastFloorGold);
             s_walkFightGold += s.lastFloorGold;
@@ -3751,13 +4149,13 @@ int tower_test_shop(void)
     // gold from fights: 25 + 5 x circle, an Elite x1.5, Skip +15, the purse +40, Prospector +20% a level; lost with the run
     RUN4(51);
     s.map.row = 1; s.map.fights = 2;
-    tower_floor_cleared(); int g1 = s.lastFloorGold; s.draftOpen = false;
-    s.elite = true; tower_floor_cleared(); int ge = s.lastFloorGold; s.draftOpen = false; s.elite = false;
-    s.circle = 2; tower_floor_cleared(); int g2 = s.lastFloorGold; s.draftOpen = false;
-    s.elite = true; tower_floor_cleared(); int ge2 = s.lastFloorGold; s.draftOpen = false; s.elite = false; s.circle = 1;
+    tower_floor_cleared(); test_unnotice(); int g1 = s.lastFloorGold; s.draftOpen = false;
+    s.elite = true; tower_floor_cleared(); test_unnotice(); int ge = s.lastFloorGold; s.draftOpen = false; s.elite = false;
+    s.circle = 2; tower_floor_cleared(); test_unnotice(); int g2 = s.lastFloorGold; s.draftOpen = false;
+    s.elite = true; tower_floor_cleared(); test_unnotice(); int ge2 = s.lastFloorGold; s.draftOpen = false; s.elite = false; s.circle = 1;
     int before = s.gold; s.nChoices = 3; tower_draft_pick(3); int skip = s.gold - before;
     for (int i = 0; i < 3; i++) take_boon(BOON_PROSPECTOR);
-    tower_floor_cleared(); int gp = s.lastFloorGold; s.draftOpen = false;
+    tower_floor_cleared(); test_unnotice(); int gp = s.lastFloorGold; s.draftOpen = false;
     before = s.gold; s.nChoices = 3; tower_draft_pick(3); int skipP = s.gold - before;
     debugf("[shop] gold: a fight %d (circle 1), an Elite %d, circle 2 %d / %d, Skip +%d; Prospector Lv 3: a fight %d, Skip +%d; %d held\n", g1, ge, g2, ge2, skip, gp, skipP, s.gold);
     CHECK(g1 == 30 && ge == 45 && g2 == 35 && ge2 == 53 && skip == 15 && gp == 48 && skipP == 24, "gold by the numbers");
@@ -3930,7 +4328,7 @@ int tower_test_events(void)
       draft_counts(300, counts);
       for (int b = 0; b < BOON_COUNT; b++) { cards += counts[b]; if (BOONS[b].tier != TIER_LEGENDARY) other += counts[b]; }
       s.map.fights = 2; s.map.row = 2;
-      tower_floor_cleared(); s.draftOpen = false;
+      tower_floor_cleared(); test_unnotice(); s.draftOpen = false;
       debugf("[event] the jailer's fight: Elite %d, 300 drafts %d boon cards, %d not Legendary; gold %d\n", el, cards, other, s.lastFloorGold);
       CHECK(el && cards > 0 && !other && s.lastFloorGold == 45, "the freed Prisoner: the next Fight an Elite, an all-Legendary draft, x1.5 gold"); }
     s.map.type[3][1] = NODE_FIGHT; s.map.boss[3][1] = TOWER_FALLEN_KNIGHT + 1; s.map.sel = 1; map_enter();
@@ -4084,6 +4482,201 @@ int tower_test_affixes(void)
     #undef CHECK
     #undef RUN
     debugf("[affix] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
+    return fails;
+}
+
+// The Offerings, the milestones, the seed and the Codex (HLE_TEST_TOWER): pricing, the two-a-climb limit, taking one back,
+// 0 and 65535 Embers, the locks, each Offering's effect, their use as a climb starts and their return when it's quit before
+// its first Guardian falls (not after it, nor after a death), each milestone from the best floor and its notice, the seed on
+// the death line, and every Codex page inside its panel at the smallest, the default and a large overscan; returns the failures
+int tower_test_offerings(void)
+{
+    int fails = 0;
+    #define CHECK(c, ...) do { if (!(c)) { fails++; debugf("[offer] FAIL: " __VA_ARGS__); debugf("\n"); } } while (0)
+    TowerSave was, t; tower_load(&was);
+    bool skillsWere = character_skills_enabled();
+    character_set_skills_enabled(true);
+    tower_end_run();
+    #define SAVE(e, best, off) do { tower_load(&t); t.embers = (e); t.bestFloor = (best); t.offers = (off); t.relicEquipped = 0; save_controller_set_tower(&t); } while (0)
+    // pricing and the limit: the first at its price, the second 50 more, no third; taking one back returns what it cost
+    SAVE(1000, 0, 0);
+    int pW = tower_offer_price(OFF_WHETSTONE), pF = tower_offer_price(OFF_FLASK);
+    bool b1 = tower_offer_toggle(OFF_WHETSTONE);
+    int pF2 = tower_offer_price(OFF_FLASK), e1 = tower_embers();
+    bool b2 = tower_offer_toggle(OFF_FLASK), b3 = tower_offer_toggle(OFF_PURSE);
+    int e2 = tower_embers(), back = tower_offer_price(OFF_WHETSTONE);
+    CHECK(pW == 40 && pF == 70 && b1 && e1 == 960 && pF2 == 120 && b2 && !b3 && e2 == 840 && tower_offers_held() == 2 && back == 90,
+          "prices 40 and 70, the second +50 (%d), no third (%d), Embers 1000 -> %d -> %d, Whetstone back for %d", pF2, b3, e1, e2, back);
+    bool t1 = tower_offer_toggle(OFF_WHETSTONE);
+    int e3 = tower_embers(), pF1 = tower_offer_price(OFF_FLASK);
+    bool t2 = tower_offer_toggle(OFF_FLASK);
+    CHECK(t1 && e3 == 930 && pF1 == 70 && t2 && tower_embers() == 1000 && !tower_offers_held(), "taken back in either order: every Ember back (%d, then %d), the one left at its own price (%d)", e3, tower_embers(), pF1);
+    // the order doesn't matter: either way round, a pair costs both and 50
+    tower_offer_toggle(OFF_FLASK); tower_offer_toggle(OFF_WHETSTONE); int ea = tower_embers(); tower_offer_toggle(OFF_FLASK); tower_offer_toggle(OFF_WHETSTONE);
+    CHECK(ea == 840 && tower_embers() == 1000, "Flask then Whetstone: 160 too (%d)", 1000 - ea);
+    // 0 Embers, the exact price, 65535
+    SAVE(0, 0, 0);
+    CHECK(!tower_offer_toggle(OFF_CANDLE) && !tower_offers_held() && tower_embers() == 0, "0 Embers: nothing set aside");
+    SAVE(30, 0, 0);
+    CHECK(tower_offer_toggle(OFF_CANDLE) && tower_embers() == 0 && !tower_offer_toggle(OFF_WHETSTONE), "30 Embers: the Candle (30), then nothing (0 left)");
+    SAVE(65535, 0, 0);
+    tower_offer_toggle(OFF_OATH); tower_offer_toggle(OFF_HEARTH);
+    int eMax = tower_embers();
+    tower_offer_toggle(OFF_HEARTH); tower_offer_toggle(OFF_OATH);
+    CHECK(eMax == 65535 - 175 && tower_embers() == 65535, "65535 Embers: two (%d left), both back to 65535 (%d)", eMax, tower_embers());
+    // the locks: Kindling at best floor 20, the Candle with Skills off
+    SAVE(1000, 19, 0);
+    CHECK(tower_offer_lock(OFF_KINDLING)[0] && !tower_offer_toggle(OFF_KINDLING), "Kindling locked below floor 20 (%s)", tower_offer_lock(OFF_KINDLING));
+    SAVE(1000, 20, 0);
+    CHECK(!tower_offer_lock(OFF_KINDLING)[0] && tower_offer_toggle(OFF_KINDLING), "Kindling at floor 20");
+    character_set_skills_enabled(false);
+    CHECK(tower_offer_lock(OFF_CANDLE)[0] && !tower_offer_toggle(OFF_CANDLE), "the Candle locked with Skills off");
+    character_set_skills_enabled(true);
+    // used as the climb starts: each one's effect
+    SAVE(1000, 0, 0);
+    tower_begin_run(5); float dmg0 = tower_mod_damage_dealt(), hp0 = tower_mod_max_health(); int pot0 = tower_mod_max_potions(), gold0 = s.gold; tower_end_run();
+    SAVE(1000, 0, (OFF_FLASK + 1) | ((OFF_WHETSTONE + 1) << 4));
+    character.health = 100.0f;
+    tower_begin_run(5);
+    TowerSave mid; tower_load(&mid);
+    float dmg1 = tower_mod_damage_dealt(); int pot1 = tower_mod_max_potions();
+    s.circle = 2; float dmg2 = tower_mod_damage_dealt(); s.circle = 1;
+    CHECK(mid.offers == 0 && s.offers == ((1 << OFF_FLASK) | (1 << OFF_WHETSTONE)) && pot1 == pot0 + 1 && fabsf(dmg1 / dmg0 - 1.25f) < 1e-4f && fabsf(dmg2 / dmg0 - 1.10f) < 1e-4f,
+          "Flask + Whetstone used as the climb starts (save %02x): potions most %d -> %d, damage x%.3f in circle 1, x%.3f in circle 2 (its baseline only)", mid.offers, pot0, pot1, (double)(dmg1 / dmg0), (double)(dmg2 / dmg0));
+    // quit before the first Guardian falls: set aside again; a restart uses them again
+    tower_end_run(); tower_load(&mid);
+    CHECK(mid.offers == ((OFF_FLASK + 1) | ((OFF_WHETSTONE + 1) << 4)) && tower_embers() == 1000, "a climb quit before its first Guardian fell: set aside again (%02x), nothing charged twice", mid.offers);
+    tower_begin_run(6); character.health = 100.0f; tower_begin_run(7); tower_load(&mid);     // (a restart from the pause menu)
+    CHECK(s.offers == ((1 << OFF_FLASK) | (1 << OFF_WHETSTONE)) && mid.offers == 0, "a restart before it fell: the same Offerings again (%02x)", s.offers);
+    character.health = 0.0f; tower_end_run(); tower_load(&mid);
+    CHECK(mid.offers == 0, "a death on floor 1: spent (%02x)", mid.offers);
+    character.health = 100.0f;
+    SAVE(1000, 0, OFF_PURSE + 1);
+    tower_begin_run(8); tower_floor_cleared(); test_unnotice(); s.draftOpen = false; ui_panel_close(ui_details()); tower_end_run(); tower_load(&mid);
+    CHECK(mid.offers == 0, "quit after the first Guardian fell: spent (%02x)", mid.offers);
+    // Purse, Oath, Kindling (never Deep Flask), the Candle (two skill cards, the first draft only), Hearth (the first Rest only)
+    SAVE(1000, 20, (OFF_PURSE + 1) | ((OFF_OATH + 1) << 4));
+    tower_begin_run(9);
+    CHECK(s.gold == gold0 + OFFER_GOLD && fabsf(tower_mod_max_health() - hp0 - OFFER_HP) < 1e-4f, "Pilgrim's Purse +%d gold (%d), Hale Oath +%.0f max health (%.0f)", OFFER_GOLD, s.gold, (double)OFFER_HP, (double)tower_mod_max_health());
+    tower_end_run();
+    int kinds = 0, deep = 0, kseen[BOON_COUNT] = { 0 };
+    for (int k = 0; k < 200; k++) {
+        SAVE(1000, 20, OFF_KINDLING + 1); tower_begin_run(100 + k);
+        int g = s.slot[0] - 1;
+        if (g >= 0 && BOONS[g].tier == TIER_COMMON && s.stacks[g] == 1 && slots_used() == 1) { if (!kseen[g]++) kinds++; } else fails++;
+        deep += g == BOON_DEEP_FLASK;
+        tower_end_run();
+    }
+    CHECK(kinds >= 4 && !deep, "Kindling: a Common boon at Lv 1 in slot 1 each of 200 climbs (%d kinds), never Deep Flask (%d)", kinds, deep);
+    int two = 0, later = 0;
+    for (int k = 0; k < 200; k++) {
+        SAVE(1000, 0, OFF_CANDLE + 1); tower_begin_run(300 + k);
+        tower_draft_open(); int n = 0; for (int i = 0; i < s.nChoices; i++) n += is_skill_card((BoonId)s.choices[i]);
+        two += n == 2;
+        s.floor = 2; tower_draft_open(); n = 0; for (int i = 0; i < s.nChoices; i++) n += is_skill_card((BoonId)s.choices[i]);
+        later += n >= 2;
+        s.draftOpen = false; tower_end_run();
+    }
+    CHECK(two == 200 && later < 40, "the Candle: two skill cards in the first draft (%d of 200), not after (%d with two)", two, later);
+    SAVE(1000, 0, OFF_HEARTH + 1); tower_begin_run(10);
+    character.maxHealth = tower_mod_max_health(); character.health = 50.0f; character.healthPotions = 3;
+    rest_take(REST_POTIONS_ROW); float h1 = character.health;
+    character.health = 50.0f; rest_take(REST_POTIONS_ROW); float h2 = character.health;
+    CHECK(fabsf(h1 - 110.0f) < 0.01f && h2 == 50.0f, "Hearth Ember: the first Rest (its potions) heals 40%% too (50 -> %.0f), the second not (%.0f)", (double)h1, (double)h2);
+    tower_end_run();
+    SAVE(1000, 0, OFF_HEARTH + 1); tower_begin_run(10);
+    character.maxHealth = tower_mod_max_health(); character.health = 50.0f;
+    s.hearthUsed = false; rest_take(REST_HEAL_ROW);
+    CHECK(fabsf(character.health - 150.0f) < 0.01f, "Hearth Ember with the Rest's own heal: 40%% + 40%% (50 -> %.0f)", (double)character.health);
+    tower_end_run();
+    // the milestones: each from the best floor, its notice the floor it's first reached, its reward
+    static const int MS_AT[MS_COUNT] = { 10, 20, 30, 50, 75, 100 };
+    for (int i = 0; i < MS_COUNT; i++) {
+        SAVE(0, MS_AT[i] - 1, 0);
+        bool before = tower_milestone_reached(i);
+        tower_begin_run(20); s.floor = MS_AT[i]; character.health = 100.0f;
+        tower_floor_cleared();
+        int note = s.notice; bool open = ui_details()->open && ui_details()->owner == UI_OWNER_TOWER;
+        s.draftOpen = false; ui_panel_close(ui_details()); tower_end_run();
+        tower_begin_run(21); s.floor = MS_AT[i] + 1; tower_floor_cleared(); test_unnotice(); int again = s.notice; s.draftOpen = false; ui_panel_close(ui_details()); tower_end_run();
+        CHECK(!before && tower_milestone_reached(i) && note == i + 1 && open && !again, "floor %d: %s reached, its notice over the draft once (%d %d %d)", MS_AT[i], MILESTONES[i].name, note, open, again);
+    }
+    SAVE(0, 29, 0); tower_begin_run(22); int potA = tower_mod_max_potions(); tower_end_run();
+    SAVE(0, 30, 0); tower_begin_run(22); int potB = tower_mod_max_potions(); tower_end_run();
+    CHECK(potB == potA + 1, "floor 30: one more potion every climb (%d -> %d)", potA, potB);
+    SAVE(5000, 49, 0);
+    bool sig0 = tower_relic_owned(RELIC_SIGIL), buy = tower_relic_select(RELIC_SIGIL); int c0 = tower_relic_cost(RELIC_SIGIL);
+    SAVE(5000, 50, 0);
+    bool sig1 = tower_relic_owned(RELIC_SIGIL), wear = tower_relic_select(RELIC_SIGIL);
+    CHECK(!sig0 && !buy && c0 == -2 && sig1 && wear && tower_relic_equipped() == RELIC_SIGIL && tower_embers() == 5000, "the Climber's Sigil: not sold (%d), owned at floor 50, worn for nothing", c0);
+    { tower_begin_run(23); float hp = tower_mod_max_health(); tower_end_run(); CHECK(fabsf(hp - hp0 - 15.0f) < 1e-3f, "the Sigil worn: +15 max health (%.0f)", (double)hp); }
+    SAVE(0, 74, 0); bool h74 = tower_codex_open_ok(CX_HEART); SAVE(0, 75, 0);
+    CHECK(!h74 && tower_codex_open_ok(CX_HEART) && !tower_title_badge()[0], "the Codex's last page at floor 75");
+    SAVE(0, 100, 0); CHECK(tower_title_badge()[0], "the title at floor 100");
+    // Teal Cloak: the skin's own rule (save_controller) says the same floor
+    { const SaveData *sd = save_controller_get_slot_data(save_controller_get_active_slot());
+      SAVE(0, 9, 0); bool t9 = save_progress_skin_unlocked(sd, SKIN_TEAL_CLOAK); SAVE(0, 10, 0);
+      CHECK(!t9 && save_progress_skin_unlocked(sd, SKIN_TEAL_CLOAK) && MILESTONES[MS_TEAL].floor == 10, "floor 10's milestone is the Teal Cloak's own floor"); }
+    // the seed: on the death line and in Stats
+    SAVE(0, 0, 0);
+    tower_begin_run(0x1A2B3C4Du);
+    CHECK(tower_seed() == 0x1A2B3C4Du && strstr(tower_death_summary(), "Seed 1A2B3C4D"), "the seed on the death line: %s", tower_death_summary());
+    { UiDoc *d = malloc(sizeof *d); ui_doc_clear(d); tower_stats_doc(d); bool found = false;
+      for (int i = 0; i < d->n; i++) found |= strstr(d->text + d->row[i].l, "Seed 1A2B3C4D") != NULL;
+      CHECK(found, "the seed in Stats"); free(d); }
+    tower_end_run();
+    // the menus' one-line texts in their room: the Offerings screen's (240 px) head with the widest pair and each row's line,
+    // the Tower menu's (200) records at 255 and 65535 and its line of the pair set aside, a milestone notice's title
+    {
+        int wPair = 0, wBrief = 0; char l[96];
+        for (int a = 0; a < OFF_COUNT; a++) for (int b2 = 0; b2 < OFF_COUNT; b2++) if (a != b2) {
+            snprintf(l, sizeof l, "%s, %s", OFFERINGS[a].name, OFFERINGS[b2].name); int w = ui_text_width(l); if (w > wPair) wPair = w; }
+        for (int a = 0; a < OFF_COUNT; a++) { int w = ui_text_width(OFFERINGS[a].brief); if (w > wBrief) wBrief = w; }
+        int wTwo = ui_text_width("Two are set aside: take one back first"), wRec = ui_text_width("Best floor 255   Embers 65535");
+        snprintf(l, sizeof l, "%s, %s", OFFERINGS[OFF_CANDLE].name, OFFERINGS[OFF_PURSE].name); int wTower = ui_text_width(l);
+        int wRow = ui_text_width("Scholar's Candle") + 8 + ui_text_width("105");
+        CHECK(wPair <= 240 && wBrief <= 240 && wTwo <= 240 && wRow <= 224 && wRec <= 200 && wTower <= 200,
+              "one-line texts: Offerings head %d, briefs %d, the full line %d, a row %d (of 240 / 224); the Tower menu's records %d, pair %d (of 200)", wPair, wBrief, wTwo, wRow, wRec, wTower);
+        debugf("[offer] widths: Offerings head %d, briefs %d, full %d, row %d of 240; Tower menu records %d, pair %d of 200\n", wPair, wBrief, wTwo, wRow, wRec, wTower);
+    }
+    // every Codex page inside its panel: its rows and text within the page's room, its title on one line, its pages fewer than
+    // the panel's most (a page past the most would be cut), at the smallest overscan, the default and a large one
+    text_load();
+    int empty = 0;
+    for (int k = TXT_OFFER; k < TXT_COUNT; k++) empty += !full_text(k)[0];
+    CHECK(!empty, "tower_text.bin holds every Offering's and Codex page's text (%d missing)", empty);
+    text_free();
+    static const int8_t OS[3] = { -15, 0, 20 };
+    int8_t ox = uiOverscanX, oy = uiOverscanY;
+    for (int b = 0; b < 2; b++) {       // (a fresh save, then everything reached: the generated tables at their longest)
+        SAVE(65535, b ? 255 : 0, b ? ((OFF_CANDLE + 1) | ((OFF_PURSE + 1) << 4)) : 0);
+        for (int o = 0; o < 3; o++) {
+            uiOverscanX = uiOverscanY = OS[o];
+            int worst = 0, worstK = 0;
+            for (int k = 0; k < CX_COUNT; k++) {
+                if (!tower_codex_open_ok(k)) continue;
+                tower_codex_open(k);
+                UiPanel *p = ui_details(); UiDoc *d = p->doc;
+                int tw = SCREEN_WIDTH - 2 * (ui_safe_margin_x() > TITLE_SAFE_MARGIN_X ? ui_safe_margin_x() : TITLE_SAFE_MARGIN_X) - 12;
+                bool fit = d->n < UI_DOC_ROWS && d->used < UI_DOC_TEXT - 1 && p->pg.pages < UI_DOC_PAGES && ui_text_width(p->title) <= tw;
+                bool stray = false;
+                for (int i = 0; i < d->n; i++) stray |= strchr(d->text + d->row[i].l, '|') != NULL || !d->text[d->row[i].l];
+                CHECK(fit && !stray, "Codex %s (overscan %d, save %d): %d rows, %d bytes, %d pages, title %d px of %d%s", CODEX_TITLE[k], OS[o], b, d->n, d->used, p->pg.pages,
+                      ui_text_width(p->title), tw, stray ? ", a stray or empty row" : "");
+                if (p->pg.pages > worst) { worst = p->pg.pages; worstK = k; }
+                if (o == 1 && b == 1) debugf("[codex] %s: %d pages, %d rows, %d bytes\n", CODEX_TITLE[k], p->pg.pages, d->n, d->used);
+                ui_panel_close(p);
+            }
+            debugf("[offer] the Codex at overscan %d (save %d): the longest page %s, %d pages\n", OS[o], b, CODEX_TITLE[worstK], worst);
+        }
+    }
+    uiOverscanX = ox; uiOverscanY = oy;
+    save_controller_set_tower(&was);
+    character_set_skills_enabled(skillsWere);
+    character.maxHealth = tower_mod_max_health(); character.health = character.maxHealth;
+    #undef SAVE
+    #undef CHECK
+    debugf("[offer] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     return fails;
 }
 

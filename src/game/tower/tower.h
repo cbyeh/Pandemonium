@@ -87,7 +87,7 @@ const char* tower_death_summary(void);   // a line for the death screen
 #include "ui_pages.h"
 void tower_stats_doc(UiDoc *d);         // the run so far, for the pause menu's Stats pages
 void tower_details_card(int card);      // the Details panel (ui_details(), owner the menu) for a boon or skill card (a BoonId)
-enum { TOWER_SHRINE_UPGRADE, TOWER_SHRINE_RELIC, TOWER_SHRINE_UNLOCK, TOWER_SHRINE_NIGHTFARER };
+enum { TOWER_SHRINE_UPGRADE, TOWER_SHRINE_RELIC, TOWER_SHRINE_UNLOCK, TOWER_SHRINE_NIGHTFARER, TOWER_SHRINE_OFFERING };
 void tower_details_shrine(int kind, int i);     // the same for a Shrine entry (an UpgradeId, a relic id or -1, an unlock's index)
 // The Build page: the 3 skills, then the 5 boon slots (name, its level on the right, a font style); returns the rows
 #define TOWER_SLOTS 5
@@ -95,6 +95,34 @@ void tower_details_shrine(int kind, int i);     // the same for a Shrine entry (
 // card: each row's BoonId for its Details (-1 none); a locked rival is a row of its own
 #define TOWER_BUILD_ROWS (3 + 2 * TOWER_SLOTS + 12)     // (10 rival pairs: 10 locked at most)
 int tower_build_rows(char left[][40], char right[][12], int style[], int card[], int max);
+
+// ---- Offerings (Tower > Offerings): gifts for the next climb only, two at most, the second 50 Embers more; set aside
+// in the save (Embers paid at once), used when the climb starts (a climb quit before its first Guardian falls sets them aside again)
+int  tower_offer_count(void);
+const char *tower_offer_name(int i);
+const char *tower_offer_brief(int i);
+const char *tower_offer_lock(int i);    // why it can't be set aside ("" if it can)
+bool tower_offer_set(int i);            // set aside for the next climb
+int  tower_offers_held(void);
+int  tower_offer_price(int i);          // to set it aside now, or (set) what taking it back returns
+bool tower_offer_toggle(int i);         // set it aside, or take it back
+const char *tower_offers_line(void);    // "Spare Flask, Whetstone": set aside (this climb's in a climb)
+bool tower_offer_active(int i);         // this climb has it
+// ---- Floor milestones: lasting rewards from the best floor ----
+int  tower_milestone_count(void);
+int  tower_milestone_floor(int i);
+const char *tower_milestone_name(int i);
+const char *tower_milestone_reward(int i);
+bool tower_milestone_reached(int i);
+const char *tower_title_badge(void);    // the floor-100 title, "" before it
+int  tower_relic_floor(int id);         // a relic not sold: the floor that gives it (0: sold)
+// ---- The Codex: a page a topic, opened in the Details panel (owner the menu) ----
+int  tower_codex_count(void);
+const char *tower_codex_title(int i);
+int  tower_codex_floor(int i);          // a page found deeper (0: open from the start)
+bool tower_codex_open_ok(int i);
+void tower_codex_open(int i);
+uint32_t tower_seed(void);              // the run's seed
 
 // ---- Nights: from the second circle each circle has one (a trade-off, more Embers) ----
 const char* tower_night_name(void);     // "" for none

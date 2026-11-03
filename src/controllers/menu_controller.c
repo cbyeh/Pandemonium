@@ -124,6 +124,22 @@ static void run_pages_build(void)
     runPager.pages = (int8_t)(s_run->statsPages + s_run->buildPages);
     if (runPager.page >= runPager.pages) runPager.page = runPager.pages - 1;
 }
+// The Codex: its topics, paged as Stats is (the corners; Up/Down along the rows, Down past a page's last to the next;
+// A or R opens a topic in the Details panel). From the Tower menu or the pause menu (a climb's)
+static UiPager codexPager;
+static int codexRow = 0;
+static MenuState codexReturn = MENU_TOWER;
+static int codexReturnOption = 0;
+static int codex_per_page(void) { return (RUN_BODY_END - RUN_BODY) / ui_line_pitch() + 1; }
+static int codex_rows_on_page(void) { int n = tower_codex_count() - codexPager.page * codex_per_page(); return n < codex_per_page() ? n : codex_per_page(); }
+static void codex_open_menu(MenuState from, int option)
+{
+    codexReturn = from; codexReturnOption = option;
+    currentMenu = MENU_CODEX;
+    ui_pager_reset(&codexPager, (tower_codex_count() + codex_per_page() - 1) / codex_per_page());
+    codexRow = 0;
+}
+static bool main_row_hidden(int i) { return (i == MENU_MAIN_RUN || i == MENU_MAIN_CODEX) && !tower_active(); }    // (Tower runs only)
 static int run_rows_on_page(void)
 {
     int b = runPager.page - s_run->statsPages;
@@ -139,6 +155,7 @@ static const char* mainMenuOptions[MENU_MAIN_COUNT] = {
     "Restart",
     "Settings",
     "Controls",
+    "Codex",
     "Main Menu",
 };
 
@@ -179,6 +196,8 @@ static const char* videoMenuOptions[MENU_VIDEO_COUNT] = {
 static const char* towerMenuOptions[MENU_TOWER_COUNT] = {
     "Climb",
     "Shrine",
+    "Offerings",
+    "Codex",
     "Back",
 };
 
@@ -227,6 +246,8 @@ static int get_menu_option_count(MenuState menu)
         case MENU_SHRINE:    return MENU_SHRINE_COUNT;
         case MENU_RELICS:    return tower_relic_total() + 2;    // None, the relics, Back
         case MENU_UNLOCKS:   return tower_pack_count() + 1;     // the packs, Back
+        case MENU_OFFERINGS: return tower_offer_count() + 1;    // the Offerings, Back
+        case MENU_CODEX:     return 1;      // (its corners and rows: codexPager, codexRow)
         case MENU_SKINS:     return SKIN_COUNT + 1;
         case MENU_CONTROLS:  return 3;    // Layout, Camera speed, Back
         case MENU_RUN:       return 1;      // (its corners and rows: runPager, runRow)
@@ -439,6 +460,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             else if (selectedOption == MENU_SHRINE_NIGHTFARER) tower_details_shrine(TOWER_SHRINE_NIGHTFARER, 0);
         } else if (currentMenu == MENU_RELICS && selectedOption <= tower_relic_total()) tower_details_shrine(TOWER_SHRINE_RELIC, selectedOption - 1);
         else if (currentMenu == MENU_UNLOCKS && selectedOption < tower_pack_count()) tower_details_shrine(TOWER_SHRINE_UNLOCK, selectedOption);
+        else if (currentMenu == MENU_OFFERINGS && selectedOption < tower_offer_count()) tower_details_shrine(TOWER_SHRINE_OFFERING, selectedOption);
         if (dp->open) return;
     }
 
@@ -450,7 +472,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             if (selectedOption < 0) {
                 selectedOption = maxOptions - 1;
             }
-            if (currentMenu == MENU_MAIN && selectedOption == MENU_MAIN_RUN && !tower_active()) selectedOption--;   // Tower only
+            while (currentMenu == MENU_MAIN && main_row_hidden(selectedOption)) selectedOption--;   // Tower only
         }
 
         if (downJustPressed) {
@@ -458,7 +480,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             if (selectedOption >= maxOptions) {
                 selectedOption = 0;
             }
-            if (currentMenu == MENU_MAIN && selectedOption == MENU_MAIN_RUN && !tower_active()) selectedOption++;
+            while (currentMenu == MENU_MAIN && main_row_hidden(selectedOption)) selectedOption++;
         }
     }
 
@@ -506,6 +528,10 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                     parentSelectedOption = MENU_MAIN_CONTROLS;
                     currentMenu = MENU_CONTROLS;
                     selectedOption = 0;
+                    break;
+
+                case MENU_MAIN_CODEX:
+                    codex_open_menu(MENU_MAIN, MENU_MAIN_CODEX);
                     break;
 
                 case MENU_MAIN_QUIT:
@@ -845,6 +871,11 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
         } else if (aJustPressed && selectedOption == MENU_TOWER_SHRINE) {
             currentMenu = MENU_SHRINE;
             selectedOption = 0;
+        } else if (aJustPressed && selectedOption == MENU_TOWER_OFFERINGS) {
+            currentMenu = MENU_OFFERINGS;
+            selectedOption = 0;
+        } else if (aJustPressed && selectedOption == MENU_TOWER_CODEX) {
+            codex_open_menu(MENU_TOWER, MENU_TOWER_CODEX);
         } else if (bJustPressed || (aJustPressed && selectedOption == MENU_TOWER_BACK)) {
             currentMenu = MENU_TITLE;
             selectedOption = MENU_TITLE_TOWER;
@@ -880,6 +911,30 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             selectedOption = MENU_SHRINE_PACKS;
         } else if (aJustPressed && tower_pack_buy(selectedOption)) {
             save_controller_save_settings();
+        }
+    } else if (currentMenu == MENU_OFFERINGS) {
+        int back = tower_offer_count();
+        if (bJustPressed || (aJustPressed && selectedOption == back)) {
+            currentMenu = MENU_TOWER;
+            selectedOption = MENU_TOWER_OFFERINGS;
+        } else if (aJustPressed && tower_offer_toggle(selectedOption)) {      // set it aside, or take it back
+            save_controller_save_settings();
+        }
+    } else if (currentMenu == MENU_CODEX) {
+        // the corners (row -1) and the topics: Up/Down along them (Down past a page's last: the next page's first), A or R opens one;
+        // Left/Right go to the corners and pick one, A takes it; B back from anywhere
+        int rows = codex_rows_on_page(), per = codex_per_page();
+        if (bJustPressed) { currentMenu = codexReturn; selectedOption = codexReturnOption; return; }
+        if (downJustPressed) {
+            if (codexRow + 1 < rows) codexRow++;
+            else if (codexPager.page + 1 < codexPager.pages) { codexPager.page++; codexRow = 0; codexPager.sel = codexPager.page + 1 < codexPager.pages; }
+        } else if (upJustPressed) codexRow = codexRow >= 0 ? codexRow - 1 : -1;
+        else if (codexRow >= 0 && (leftJustPressed || rightJustPressed)) { codexRow = -1; codexPager.sel = rightJustPressed && codexPager.page + 1 < codexPager.pages; }
+        else if (codexRow >= 0 && (aJustPressed || rJustPressed)) tower_codex_open(codexPager.page * per + codexRow);
+        else if (codexRow < 0) {
+            int r = ui_pager_input(&codexPager, leftJustPressed, rightJustPressed, aJustPressed, false);
+            if (r == UI_PAGER_BACK) { currentMenu = codexReturn; selectedOption = codexReturnOption; }
+            else if (r == UI_PAGER_TURNED) codexRow = -1;     // (on the corners, as Stats: A again turns on)
         }
     } else if (currentMenu == MENU_SKINS) {
         if (bJustPressed || (aJustPressed && selectedOption == SKIN_COUNT)) {
@@ -1268,8 +1323,9 @@ void menu_controller_draw(void)
     if (currentMenu == MENU_SETTINGS || currentMenu == MENU_AUDIO || currentMenu == MENU_VIDEO) {
         dialogHeight = 230;
     } else if (currentMenu == MENU_CONTROLS || currentMenu == MENU_CREDITS || currentMenu == MENU_SHRINE || currentMenu == MENU_RUN ||
-               currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS) {
-        dialogHeight = 230;
+               currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS || currentMenu == MENU_OFFERINGS ||
+               currentMenu == MENU_CODEX || currentMenu == MENU_TOWER || (currentMenu == MENU_MAIN && tower_active())) {
+        dialogHeight = 230;     // (the Tower's menu: five rows and its records; a climb's pause menu: seven rows)
     }
 
     if (currentMenu == MENU_CONTROLS) {
@@ -1283,7 +1339,8 @@ void menu_controller_draw(void)
         currentMenu == MENU_TOWER
     ) {
         dialogWidth = 260;
-    } else if (currentMenu == MENU_SHRINE || currentMenu == MENU_RUN || currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS) {
+    } else if (currentMenu == MENU_SHRINE || currentMenu == MENU_RUN || currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS ||
+               currentMenu == MENU_OFFERINGS || currentMenu == MENU_CODEX) {
         dialogWidth = 300;
     }
 
@@ -1297,7 +1354,8 @@ void menu_controller_draw(void)
     draw_pause_menu_background(x, y, dialogWidth, dialogHeight);
 
     // the Tower's menus darker: their rows sit over the title's bright fire or the hall's light (the dialog's art doesn't show on Delta's renderer)
-    bool towerMenu = currentMenu == MENU_TOWER || currentMenu == MENU_SHRINE || currentMenu == MENU_RELICS || currentMenu == MENU_UNLOCKS || currentMenu == MENU_RUN;
+    bool towerMenu = currentMenu == MENU_TOWER || currentMenu == MENU_SHRINE || currentMenu == MENU_RELICS || currentMenu == MENU_UNLOCKS || currentMenu == MENU_RUN ||
+                     currentMenu == MENU_OFFERINGS || currentMenu == MENU_CODEX;
     if (towerMenu) { rdpq_mode_alphacompare(0); rdpq_mode_combiner(RDPQ_COMBINER_FLAT); }     // (a flat fill: the art's blit left a texture combiner)
     rdpq_set_prim_color(RGBA32(0, 0, 0, towerMenu ? 200 : 90));
     rdpq_fill_rectangle(x, y, x + dialogWidth, y + dialogHeight);
@@ -1336,7 +1394,7 @@ void menu_controller_draw(void)
         y += (lineHeight * 3) + titleYOffset;
 
         for (int i = 0; i < MENU_MAIN_COUNT; i++) {
-            if (i == MENU_MAIN_RUN && !tower_active()) continue;     // Tower runs only
+            if (main_row_hidden(i)) continue;     // Tower runs only
             if (i == selectedOption) {
                 draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, 90);
                 rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
@@ -1351,7 +1409,7 @@ void menu_controller_draw(void)
                 .wrap = WRAP_WORD,
             }, FONT_UNBALANCED, x, y, "%s", mainMenuOptions[i]);
 
-            y += lineHeight + 4;
+            y += lineHeight + (tower_active() ? 2 : 4);     // (a climb's seven rows: tighter, in its taller box)
         }
 
         rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
@@ -1422,16 +1480,18 @@ void menu_controller_draw(void)
     } else if (currentMenu == MENU_TOWER) {
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
                          FONT_UNBALANCED, x, y + titleYOffset, "TOWER");
-        y += (lineHeight * 2) + titleYOffset;
+        y += lineHeight * 2 + 4;     // (tight: its five rows and two records stay in the title-safe area)
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GREY },
                          FONT_UNBALANCED, x, y, "Boss after boss\nEver higher");
         y += lineHeight * 2 + 4;
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GOLD },
-                         FONT_UNBALANCED, x, y, "Best floor %d", tower_best_floor());
+                         FONT_UNBALANCED, x, y, "Best floor %d   Embers %d", tower_best_floor(), tower_embers());
         y += lineHeight;
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GOLD },
-                         FONT_UNBALANCED, x, y, "Embers %d", tower_embers());
-        y += lineHeight + 6;
+        // the floor-100 title; else what waits set aside for the next climb
+        const char *badge = tower_title_badge(), *offers = tower_offers_line();
+        if (badge[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_RED }, FONT_UNBALANCED, x, y, "%s", badge);
+        else if (offers[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y, "%s", offers);
+        y += lineHeight + 2;
         for (int i = 0; i < MENU_TOWER_COUNT; i++) {
             if (i == selectedOption) {
                 draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
@@ -1524,7 +1584,9 @@ void menu_controller_draw(void)
                 int r = i - 1;      // row 0: None
                 name = tower_relic_name(r);
                 if (tower_relic_equipped() == r) right = "equipped";
-                else if (r >= 0 && !tower_relic_owned(r)) {
+                else if (r >= 0 && !tower_relic_owned(r) && tower_relic_cost(r) == -2) {      // a milestone's, not sold
+                    snprintf(cost, sizeof cost, "floor %d", tower_relic_floor(r)); right = cost; grey = true;
+                } else if (r >= 0 && !tower_relic_owned(r)) {
                     snprintf(cost, sizeof cost, "%d", tower_relic_cost(r)); right = cost;
                     grey = tower_embers() < tower_relic_cost(r);       // can't afford it yet
                 }
@@ -1554,6 +1616,70 @@ void menu_controller_draw(void)
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
                          FONT_UNBALANCED, x, y + 6, "%s", desc);
         rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+    } else if (currentMenu == MENU_OFFERINGS) {
+        // the Offerings: name, its price now (or set, or why not), then Back; what's set aside under the title; the hovered one's line below
+        tower_menu_title(x, y + titleYOffset, contentW, contentH, "OFFERINGS");
+        rdpq_text_printf(&(rdpq_textparms_t){ .width = contentW, .height = contentH, .style_id = FONT_STYLE_GOLD },
+                         FONT_UNBALANCED, x + 4, y + titleYOffset, "Embers %d", tower_embers());
+        int rows = get_menu_option_count(currentMenu), held = tower_offers_held();
+        if (selectedOption < rows - 1)
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 4, .height = contentH, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y + titleYOffset, "R Details");
+        y += lineHeight + titleYOffset;
+        const char *line = tower_offers_line();
+        char head[64];
+        if (line[0]) snprintf(head, sizeof head, "%s", line);       // (the widest pair is 192 px of 240: no room for a label)
+        else snprintf(head, sizeof head, "For the next climb: two at most");
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .style_id = line[0] ? FONT_STYLE_GOLD : FONT_STYLE_GREY },
+                         FONT_UNBALANCED, x, y, "%s", head);
+        y += lineHeight + 2;
+        for (int i = 0; i < rows; i++) {
+            char right[16] = "";
+            bool grey = false, set = false;
+            const char *name = i == rows - 1 ? "Back" : tower_offer_name(i);
+            if (i < rows - 1) {
+                set = tower_offer_set(i);
+                const char *why = tower_offer_lock(i);
+                int c = tower_offer_price(i);
+                if (set) snprintf(right, sizeof right, "set");
+                else if (why[0]) { snprintf(right, sizeof right, "locked"); grey = true; }
+                else { snprintf(right, sizeof right, "%d", c); grey = held >= 2 || tower_embers() < c; }
+            }
+            if (i == selectedOption) {
+                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW - 8);
+                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+            } else rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
+            int style = set ? FONT_STYLE_GOLD : grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE;
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW - 16, .height = contentH, .style_id = style }, FONT_UNBALANCED, x + 8, y, "%s", name);
+            if (right[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 16, .height = contentH, .style_id = style }, FONT_UNBALANCED, x + 8, y, "%s", right);
+            y += lineHeight - 1;
+        }
+        // (one line: two would leave the title-safe area)
+        const char *desc = "";
+        if (selectedOption < rows - 1) {
+            const char *why = tower_offer_lock(selectedOption);
+            desc = why[0] ? why : !tower_offer_set(selectedOption) && held >= 2 ? "Two are set aside: take one back first" : tower_offer_brief(selectedOption);
+        }
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
+                         FONT_UNBALANCED, x, y + 6, "%s", desc);
+        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+    } else if (currentMenu == MENU_CODEX) {
+        // the topics, paged (ui_pages) on a dark box inside the title-safe area, as Stats
+        rdpq_sync_pipe(); rdpq_set_mode_standard(); rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY); rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+        rdpq_set_prim_color(RGBA32(24, 18, 14, 235));
+        rdpq_fill_rectangle(RUN_TX - 8, RUN_CY - 16, RUN_TX + RUN_TW + 8, RUN_BODY_END + 20);
+        ui_pager_draw(&codexPager, RUN_TX, RUN_CY, RUN_TW, "CODEX");
+        int pitch = ui_line_pitch(), first = codexPager.page * codex_per_page();
+        for (int k = 0; k < codex_rows_on_page(); k++) {
+            int i = first + k, ry = RUN_BODY + k * pitch;
+            bool open = tower_codex_open_ok(i);
+            if (k == codexRow) ui_select_box(RUN_TX - 4, ry - 12, RUN_TX + RUN_TW + 4, ry + 4);
+            rdpq_text_printf(&(rdpq_textparms_t){ .width = RUN_TW - UI_RIGHT_W, .style_id = open ? FONT_STYLE_WHITE : FONT_STYLE_GREY }, FONT_UNBALANCED, RUN_TX, ry, "%s", open ? tower_codex_title(i) : "???");
+            if (!open) {
+                char r[16]; snprintf(r, sizeof r, "floor %d", tower_codex_floor(i));
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, RUN_TX + RUN_TW - UI_RIGHT_W, ry, "%s", r);
+            }
+        }
+        ui_hint(RUN_TX + RUN_TW, RUN_BODY_END + 14, codexRow >= 0 ? "A or R: read" : "Down: a topic");
     } else if (currentMenu == MENU_AUDIO) {
         rdpq_text_printf(&(rdpq_textparms_t){
             .align = ALIGN_CENTER,

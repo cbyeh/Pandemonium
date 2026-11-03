@@ -1,4 +1,4 @@
-# The Tower's Details texts, one a line (src/game/tower/tower.c's TXT_ keys, in order): every BoonId, then the six affixes. No line breaks inside a text.
+# The Tower's long texts, one a line (src/game/tower/tower.c's TXT_ keys, in order): every BoonId, the six affixes, the seven Offerings, then the Codex's pages (segments split by '|': '#' a heading, '%' grey, '!' red, '+' after a gap, '~' a new page, '@' the page's table). No line breaks inside a text.
 Your damage +15% a level at Lv 1-3, then +10% a level at Lv 4-5 (+65% at Lv 5).
 Damage taken -15% a level at Lv 1-2, and -10% more at Lv 3 (about -35% in all).
 +3 to the run's most potions a level, and 3 potions now (15 at most).
@@ -71,3 +71,30 @@ below half health, blows +25%, shorter breathers.
 its stagger drains 2x, it rises in 2.5 s, shorter breathers.
 heals 25% of the health its blows take.
 slams and dives leave fire for 2-3 s.
+Start the next climb with one more potion, and its most potions one higher: a Shop sells one further.
++10 max health for the whole climb. A potion heals a share of max health, so each one heals a little more too.
+Start the next climb with 60 gold: a Mend, a potion or a Common boon at its first Shop.
++25% damage until the first circle is cleared, when its Guardian Unbound falls.
+The climb's first draft holds two skill cards: choose which skill to learn, or a level of the one you know. Nothing with Skills off.
+The climb's first Rest heals 40% of max health on top of whatever you take there.
+Start the next climb holding a random Common boon at Lv 1, in a slot (never Deep Flask). Release it at a Rest if it doesn't suit you.
+Each floor is one fight. Fall, and the climb ends: its gold and boons are lost, its Embers kept.|A circle is one map, from the Guardian to Guardian Unbound. Each circle the bosses grow stronger, and so do you, through the fifth.|#Your belt|A fallen boss gives a potion, even past your most, up to 15. Health isn't given back between floors.
+Seven rows, three lanes, from the bottom up. The Guardian opens a circle and Guardian Unbound ends it, after a Rest on every lane. Your path holds 4 to 6 fights.|#Moving|Left and Right pick a node. A shows its page, A again enters, B goes back. B on the map: the pause menu.|#Nodes|Fight: a Bonus boss.|!Elite: a stronger one, for a richer draft.|Event: a choice. Shop: spend gold. Rest: heal, Temper or potions.
+A Fight is a Bonus boss, met once a circle while any are left; only they come as Elites.|!Elites: x1.25 health and an affix, two from the fourth circle.|They pay a Rare-or-better draft and x1.5 gold and Embers; with two affixes, a duo if one is ready.
+#Rest|Heal 40%, Temper a level, or +2 potions. Then Release a boon if you wish, free.|#Shop|Each item once a visit:|@|#Events|A choice on the way; you can always walk on. None comes twice in a climb while others wait, and more wait deeper in.
+Five slots. A new boon takes one at Lv 1; the same card again is its next level.|Full, drafts offer only what you hold: levels, "+", duos, skills and pacts.|Release frees one: free at a Rest, 20 gold at a Shop.|%Skills and pacts take none.
+Every boon is of a family, named in its colour on the card. Hold two of a family and its boons come twice as often.|@
+Take one, and its rival is locked out for the climb, even if you release it. A skill's two forms are rivals too.|@
+#"+"|A boon at its most can rise once more: its "+". No slot.|#Duos|With a maxed boon of each of two families, their duo can come. It merges both into one slot (both keep working) and opens the other.|%It goes only as a whole, and needs both families' packs.|@
+Learned only in the climb. The Learn card is Lv 1, the same card again the next level, up to Lv 4. Then a draft offers its two forms: take one, lose the other.|Until one is known, every draft leads with a Learn card; then one in three holds a skill card.|%Each skill's second form is bought at the Shrine.
+@
+@
+@
+Named on the map and over the health bar; the boss's body, timing and sound tell the rest.|@
+For this climb only, lost when it ends.|@
+Banked as each boss falls, and kept for good.|@|#The Shrine|Upgrades for every climb. Relics: one worn a climb. Unlocks: new boons and the skills' second forms.|%Offerings and Milestones: their own pages.
+Gifts for the next climb only, from the Tower's menu: two at most, the second 50 Embers more. Prices never rise.|Used as the climb starts. Quit before its first Guardian falls and they wait for the next climb; fall, and they're spent.|@
+Your best floor earns these, for good.|@
+A blessing bound to a curse, for the climb. No slot: they stack without end. Every Shop holds one, free: the curse is the price.|@
+From the second circle, each circle has a night: a burden, and more Embers.|@
+The Demon King raised the Tower from his throne's own stone.|Every knight who fell in it still keeps its halls: hollow armour, made whole each time someone climbs.|The bosses are never slain. The Tower lets them sleep, and wakes them stronger.|%You have climbed further than any knight before you.

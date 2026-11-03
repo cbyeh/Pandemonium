@@ -471,8 +471,10 @@ bool save_controller_increment_run_count(void) {
 }
 
 // _pad[7..8] embers, [9..10] five 3-bit levels, [11] best floor, [12] weapons owned, [13] weapon, [15] Bonus bosses beaten,
-// [16..18] relics found before 1.0, [19] flags, [22] relics owned, [23] relic equipped, [24] and [25] bit 0 the unlocks
-// ([24..27] were never written before 1.1: old saves read zeros, nothing bought; [25]'s other bits and [26..27] stay free)
+// [16..18] relics found before 1.0, [19] flags, [22] relics owned, [23] relic equipped, [24] and [25] bit 0 the unlocks,
+// [26] the Offerings set aside for the next climb (two 4-bit ids + 1, 0 none: bought, Embers already paid)
+// ([24..27] were never written before 1.1, and 1.0 never touches them: old saves read zeros, nothing bought or set aside;
+// [25] bits 1-7 and [27] stay free. The floor milestones come from the best floor: no bits)
 void save_controller_get_tower(TowerSave *out)
 {
     memset(out, 0, sizeof(*out));
@@ -489,6 +491,7 @@ void save_controller_get_tower(TowerSave *out)
     out->relicsOwned = p[22];
     out->relicEquipped = p[23];
     out->unlocks = (uint16_t)(p[24] | ((p[25] & 1) << 8));
+    out->offers = p[26];
 }
 
 bool save_controller_set_tower(const TowerSave *in)
@@ -509,6 +512,7 @@ bool save_controller_set_tower(const TowerSave *in)
     p[23] = in->relicEquipped;
     p[24] = in->unlocks & 0xFF;
     p[25] = (uint8_t)((p[25] & ~1) | ((in->unlocks >> 8) & 1));
+    p[26] = in->offers;
     d->checksum = compute_slot_checksum(d);
     extern double nowS;
     s_last_dirty_time_s = nowS;

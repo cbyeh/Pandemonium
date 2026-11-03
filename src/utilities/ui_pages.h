@@ -21,7 +21,7 @@
 //     UiPanel *p = ui_details(); UiDoc *d = ui_panel_doc(p); ui_doc_clear(d); ...rows...; ui_panel_open(p, "Rally", FONT_STYLE_BLUE, false);
 //     each frame: if (p->open) { ui_panel_input(p, l, r, a, b, rPress); ui_panel_draw(p); }
 
-#define UI_DOC_ROWS  48
+#define UI_DOC_ROWS  64          // (the Codex's longest page: a sentence a row)
 #define UI_DOC_TEXT  3072
 #define UI_DOC_PAGES 10
 #define UI_RIGHT_W   64          // the right part's column

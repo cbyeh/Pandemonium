@@ -142,6 +142,10 @@ versioned: pandemonium.z64
 
 # The Tower's screens and the menus run outside the fight's hot loop: built for size (-Os after -O2: 23 KB less code, more heap at the Tower's low point)
 $(OBJDIR)/game/tower/tower.o $(OBJDIR)/controllers/menu_controller.o $(OBJDIR)/utilities/ui_pages.o: N64_CFLAGS += -Os
+# Code that never runs in a fight (the story's cutscenes and ending, the opening credits, the title, the save), for size too: the Codex's,
+# the Offerings' and the milestones' code (+15 KB) paid for, so the Tower's low point stays over 450 KB at 4 MB
+$(OBJDIR)/scenes/guardian/guardian_ending.o $(OBJDIR)/scenes/guardian/guardian_cutscene_phase1.o $(OBJDIR)/scenes/guardian/guardian_cutscene_phase2.o \
+$(OBJDIR)/scenes/opening_credits/opening_credits_scene.o $(OBJDIR)/scenes/title/title_scene.o $(OBJDIR)/utilities/save_controller.o: N64_CFLAGS += -Os
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(dir $@)

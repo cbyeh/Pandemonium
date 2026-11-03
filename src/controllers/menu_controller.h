@@ -22,6 +22,8 @@ typedef enum {
     MENU_RELICS,        // Shrine > Relics: every relic, bought and equipped here
     MENU_SKINS,         // Settings > Skin: every skin, worn from here
     MENU_UNLOCKS,       // Shrine > Unlocks: the families' new boons (Boon Packs) and the skills' B forms, bought here
+    MENU_OFFERINGS,     // Tower > Offerings: gifts for the next climb, set aside here
+    MENU_CODEX,         // Tower > Codex and the pause menu's (in a climb): a page a topic, paged (ui_pages)
 } MenuState;
 
 typedef enum {
@@ -30,6 +32,7 @@ typedef enum {
     MENU_MAIN_RESTART,
     MENU_MAIN_SETTINGS,
     MENU_MAIN_CONTROLS,
+    MENU_MAIN_CODEX,    // Tower runs only (after Controls: the rows above keep their places)
     MENU_MAIN_QUIT,
     MENU_MAIN_COUNT
 } MainMenuOption;
@@ -91,6 +94,8 @@ typedef enum {
 typedef enum {
     MENU_TOWER_CLIMB,
     MENU_TOWER_SHRINE,
+    MENU_TOWER_OFFERINGS,
+    MENU_TOWER_CODEX,
     MENU_TOWER_BACK,
     MENU_TOWER_COUNT
 } TowerMenuOption;
