@@ -28,7 +28,7 @@
 
 typedef struct {
     char text[UI_DOC_TEXT]; int used;
-    struct { int16_t l, r; uint8_t style, gap, brk, keep; } row[UI_DOC_ROWS];
+    struct { int16_t l, r; uint8_t style, gap, brk, keep, cont; } row[UI_DOC_ROWS];     // cont: split off the row before it by a layout
     int n;
     uint8_t start[UI_DOC_PAGES + 1];    // the first row of each page (start[pages] = n)
     int pages;

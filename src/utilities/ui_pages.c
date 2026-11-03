@@ -69,7 +69,7 @@ void ui_doc_row(UiDoc *d, int style, const char *right, const char *fmt, ...)
     int l = doc_put(d, buf), r = right && right[0] ? doc_put(d, right) : -1;
     if (l < 0) return;
     d->row[d->n].l = (int16_t)l; d->row[d->n].r = (int16_t)r; d->row[d->n].style = (uint8_t)style;
-    d->row[d->n].gap = d->pendingGap; d->row[d->n].brk = d->pendingBreak; d->row[d->n].keep = d->pendingKeep;
+    d->row[d->n].gap = d->pendingGap; d->row[d->n].brk = d->pendingBreak; d->row[d->n].keep = d->pendingKeep; d->row[d->n].cont = 0;
     d->pendingGap = d->pendingBreak = d->pendingKeep = false;
     d->n++;
 }
@@ -79,13 +79,49 @@ void ui_doc_keep(UiDoc *d) { d->pendingKeep = true; }
 
 static int row_w(const UiDoc *d, int i, int w) { return d->row[i].r >= 0 ? w - UI_RIGHT_W - 4 : w; }
 
+// A row of sentences that doesn't fit the room left: split after the last sentence that does (the rest a row of
+// its own after it, which turns the page), so a long paragraph fills the page instead of leaving it half empty
+static void split_to_fit(UiDoc *d, int i, int w, int room)
+{
+    if (d->n >= UI_DOC_ROWS || d->row[i].r >= 0 || d->row[i].keep) return;
+    char *t = d->text + d->row[i].l;
+    int pitch = ui_line_pitch(), cut = -1;
+    for (char *c = strstr(t, ". "); c; c = strstr(c + 1, ". ")) {
+        char keep = c[1]; c[1] = 0;
+        bool fits = lines_in(t, row_w(d, i, w)) * pitch <= room;
+        c[1] = keep;
+        if (!fits) break;
+        cut = (int)(c + 1 - t);
+    }
+    if (cut < 0) return;
+    t[cut] = 0;     // (the space after the period: the rest starts past it)
+    memmove(&d->row[i + 2], &d->row[i + 1], (d->n - i - 1) * sizeof d->row[0]);
+    d->row[i + 1] = d->row[i];
+    d->row[i + 1].l = (int16_t)(d->row[i].l + cut + 1);
+    d->row[i + 1].gap = d->row[i + 1].brk = d->row[i + 1].keep = 0; d->row[i + 1].cont = 1;
+    d->n++;
+}
+static void rejoin(UiDoc *d)     // the rows a layout split, whole again (a layout at another size splits them its own way)
+{
+    for (int i = d->n - 1; i > 0; i--) if (d->row[i].cont) {
+        d->text[d->row[i].l - 1] = ' ';
+        memmove(&d->row[i], &d->row[i + 1], (d->n - i - 1) * sizeof d->row[0]);
+        d->n--;
+    }
+}
+
 // pages that fit h: a row's lines (word-wrapped to its width) x the pitch, a gap half a line
 int ui_doc_layout(UiDoc *d, int w, int h)
 {
     int pitch = ui_line_pitch(), used = 0;
+    rejoin(d);
     d->pages = 1; d->start[0] = 0;
     for (int i = 0; i < d->n; i++) {
         int rh = lines_in(d->text + d->row[i].l, row_w(d, i, w)) * pitch, gap = d->row[i].gap ? pitch / 2 : 0;
+        if (!d->row[i].brk && used + gap + rh > h) {
+            int room = i > d->start[d->pages - 1] ? h - used - gap : h;
+            if (room >= pitch) { split_to_fit(d, i, w, room); rh = lines_in(d->text + d->row[i].l, row_w(d, i, w)) * pitch; }
+        }
         if (d->row[i].keep && i + 1 < d->n) rh += lines_in(d->text + d->row[i + 1].l, row_w(d, i + 1, w)) * pitch;     // (with the row after it)
         if (i > d->start[d->pages - 1] && (d->row[i].brk || used + gap + rh > h) && d->pages < UI_DOC_PAGES) {
             d->start[d->pages++] = (uint8_t)i;
