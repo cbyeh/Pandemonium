@@ -57,7 +57,7 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_VIGOR]         = { "Vigor",         "+25 max health",               5, TIER_COMMON, FAM_IRON },
     [BOON_LAST_STAND]    = { "Last Stand",    "+40% damage below 30% health", 2, TIER_RARE, FAM_BLOOD },
     [BOON_UNBROKEN]      = { "Unbroken",      "Survive one killing blow a floor", 1, TIER_LEGENDARY, FAM_IRON },
-    [BOON_PHANTOM_STEP]  = { "Phantom Step",  "Easier dodges, each heals 2%", 1, TIER_RARE, FAM_SHADOW },
+    [BOON_PHANTOM_STEP]  = { "Phantom Step",  "Easier dodges heal 2%", 1, TIER_RARE, FAM_SHADOW },
     [BOON_RIPOSTE]       = { "Riposte",       "Perfect dodge: +50% damage", 1, TIER_RARE, FAM_SHADOW },
     [BOON_CRUSHING_BLOWS]= { "Crushing Blows","Staggers last 50% longer",     1, TIER_RARE, FAM_IRON },
     [BOON_EXECUTIONER]   = { "Executioner",   "Staggered bosses take +60%",   1, TIER_LEGENDARY, FAM_IRON },
@@ -109,7 +109,7 @@ static const BoonDef BOONS[BOON_COUNT] = {
     // Duos (section 8): Legendary, offered with a maxed boon of each family slotted; merged into one slot
     [BOON_CRIMSON_STORM]   = { "Crimson Storm",   "Bolts heal, or +25%", 1, TIER_LEGENDARY, FAM_BLOOD, DUO(FAM_STORM) },
     [BOON_THUNDERSTEP]     = { "Thunderstep",     "2 bolts each perfect dodge", 1, TIER_LEGENDARY, FAM_STORM, DUO(FAM_SHADOW) },
-    [BOON_BLOOD_MOON_RITE] = { "Blood Moon Rite", "Casts: -3% health, +40%", 1, TIER_LEGENDARY, FAM_BLOOD, DUO(FAM_MOON) },
+    [BOON_BLOOD_MOON_RITE] = { "Blood Moon Rite", "Casts: +40%, -3% health", 1, TIER_LEGENDARY, FAM_BLOOD, DUO(FAM_MOON) },
     [BOON_IRON_TIDE]       = { "Iron Tide",       "Staggers: skills ready", 1, TIER_LEGENDARY, FAM_IRON, DUO(FAM_MOON) },
     [BOON_SHADES_MERCY]    = { "Shade's Mercy",   "Perfects: Rally at 60%", 1, TIER_LEGENDARY, FAM_SHADOW, DUO(FAM_BLOOD) },
     [BOON_ANVIL_OF_STORMS] = { "Anvil of Storms", "Lightning x2 on staggers", 1, TIER_LEGENDARY, FAM_IRON, DUO(FAM_STORM) },
@@ -1389,6 +1389,30 @@ static const color_t FRAME[4][2] = {
 static const int NAME_STYLE[3] = { FONT_STYLE_WHITE, FONT_STYLE_BLUE, FONT_STYLE_GOLD };
 
 #define DRAFT_CARD_H 136
+// The draft's and the Shop's three cards, frames and all, inside the 7.5% title-safe area (a CRT hides the edges);
+// a card's name, its text and its foot lines take these widths (the self-check in tower_test_map holds them to it)
+#define CARD_W      84
+#define CARD_GAP    6
+#define CARD_NAME_W (CARD_W - 4)
+#define CARD_TEXT_W (CARD_W - 4)
+#define CARD_FOOT_W (CARD_W - 2)
+_Static_assert((SCREEN_WIDTH - (3 * CARD_W + 2 * CARD_GAP)) / 2 - 2 >= TITLE_SAFE_MARGIN_X, "three cards and their frames inside the 7.5% area");
+// On a card, a wrapped name's or text's lines are 13 apart (the font's 17 left no room in a card this narrow; its
+// glyphs are 9 tall), the text 15 under the name's last line; the foot lines 12 apart, a wrapped one's too
+#define CARD_PITCH  13
+#define CARD_GAP_Y  15
+#define FOOT_PITCH  12
+// A word too wide for its card (Thunderclap+, a duo's Storm+Shadow) is set a pixel tighter between glyphs (libdragon
+// would cut it with an ellipsis); card_lines is what a card's text takes, so drawn
+static int card_cs(const char *str, int w) { return ui_text_lines(str, w) == UI_TOO_WIDE ? -1 : 0; }
+static int card_lines(const char *str, int w) { return ui_text_lines_cs(str, w, card_cs(str, w)); }
+static int card_text(int x, int y, int w, int pitch, int style, const char *str)
+{
+    return rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .wrap = WRAP_WORD, .style_id = style, .line_spacing = pitch - ui_line_pitch(), .char_spacing = card_cs(str, w) },
+                            FONT_UNBALANCED, x, y, "%s", str).nlines;
+}
+// the y of a card's text (from the card's top): under its name's last line
+static int card_desc_y(int nameLines) { return 27 + CARD_PITCH * ((nameLines > 1 ? nameLines : 1) - 1) + CARD_GAP_Y; }
 static void tower_draft_draw(void)
 {
     if (!s.draftOpen) return;
@@ -1409,7 +1433,7 @@ static void tower_draft_draw(void)
     else snprintf(line, sizeof line, "Choose a Boon   Next: floor %d", s.floor + 1);
     text_style(0, T + 35, SCREEN_WIDTH, ALIGN_CENTER, s.circleCleared ? FONT_STYLE_RED : FONT_STYLE_WHITE, line);
 
-    const int cw = 96, ch = DRAFT_CARD_H, gap = 6, y0 = T + 42;     // (tall enough for a rival or a duo's two boons, or a form's rival, under the text)
+    const int cw = CARD_W, ch = DRAFT_CARD_H, gap = CARD_GAP, y0 = T + 42;     // (tall enough for a rival or a duo's two boons, or a form's rival, under the text)
     int x0 = (SCREEN_WIDTH - (cw * s.nChoices + gap * (s.nChoices - 1))) / 2;
     for (int i = 0; i < s.nChoices; i++) {
         int x = x0 + i * (cw + gap), card = s.choices[i];
@@ -1427,35 +1451,36 @@ static void tower_draft_draw(void)
             // the curse in a band of its own at the bottom (a line holds about 11 characters)
             flat_mode();
             rdpq_set_prim_color(on ? RGBA32(110, 16, 22, 240) : RGBA32(70, 12, 16, 230));
-            rdpq_fill_rectangle(x, y0 + 60, x + cw, y0 + ch);
-            text_style(x + 4, y0 + 14, cw - 8, ALIGN_CENTER, FONT_STYLE_GOLD, BLESSINGS[b].name);
-            text(x + 6, y0 + 30, cw - 12, ALIGN_CENTER, BLESSINGS[b].desc);
-            text_style(x + 4, y0 + 74, cw - 8, ALIGN_CENTER, FONT_STYLE_RED, CURSES[c].name);
-            text_style(x + 6, y0 + 92, cw - 12, ALIGN_CENTER, FONT_STYLE_WHITE, CURSES[c].desc);
+            rdpq_fill_rectangle(x, y0 + 62, x + cw, y0 + ch);
+            // (each name on a line as wide as the foot's, each text up to three lines)
+            card_text(x + 1, y0 + 14, CARD_FOOT_W, CARD_PITCH, FONT_STYLE_GOLD, BLESSINGS[b].name);
+            card_text(x + 2, y0 + 30, CARD_TEXT_W, CARD_PITCH, FONT_STYLE_WHITE, BLESSINGS[b].desc);
+            card_text(x + 1, y0 + 76, CARD_FOOT_W, CARD_PITCH, FONT_STYLE_RED, CURSES[c].name);
+            card_text(x + 2, y0 + 92, CARD_TEXT_W, CARD_PITCH, FONT_STYLE_WHITE, CURSES[c].desc);
             continue;
         }
         if (card == GOLD_CARD) {    // a complete build's purse
-            text_style(x + 4, y0 + 27, cw - 8, ALIGN_CENTER, FONT_STYLE_GOLD, "Purse");
+            text_style(x + 2, y0 + 27, CARD_NAME_W, ALIGN_CENTER, FONT_STYLE_GOLD, "Purse");
             snprintf(line, sizeof line, "+%d gold", GOLD_CARD_GOLD);
-            text(x + 6, y0 + 48, cw - 12, ALIGN_CENTER, line);
-            text_style(x - 1, y0 + ch - 3, cw + 2, ALIGN_CENTER, FONT_STYLE_GREY, "No slot");
+            text(x + 2, y0 + card_desc_y(1), CARD_TEXT_W, ALIGN_CENTER, line);
+            text_style(x + 1, y0 + ch - 3, CARD_FOOT_W, ALIGN_CENTER, FONT_STYLE_GREY, "No slot");
             continue;
         }
         const BoonDef *bd = &BOONS[card];
         // the family's tag over the name, in its colour (a duo's two families, gold)
         if (bd->duo) {
             snprintf(line, sizeof line, "%s+%s", FAMILIES[bd->family].name, FAMILIES[bd->duo - 1].name);
-            text_style(x + 2, y0 + 12, cw - 4, ALIGN_CENTER, FONT_STYLE_GOLD, line);
-        } else if (is_form(card)) text_style(x + 4, y0 + 12, cw - 8, ALIGN_CENTER, FONT_STYLE_GOLD, "Lv 5 form");     // (in place of "Skill")
-        else text_style(x + 4, y0 + 12, cw - 8, ALIGN_CENTER, FAMILIES[bd->family].style, FAMILIES[bd->family].name);
-        int nameLines = text_style(x + 4, y0 + 27, cw - 8, ALIGN_CENTER, NAME_STYLE[tier], bd->name);
+            card_text(x + 2, y0 + 12, CARD_NAME_W, CARD_PITCH, FONT_STYLE_GOLD, line);
+        } else if (is_form(card)) card_text(x + 2, y0 + 12, CARD_NAME_W, CARD_PITCH, FONT_STYLE_GOLD, "Lv 5 form");     // (in place of "Skill")
+        else card_text(x + 2, y0 + 12, CARD_NAME_W, CARD_PITCH, FAMILIES[bd->family].style, FAMILIES[bd->family].name);
+        int nameLines = card_text(x + 2, y0 + 27, CARD_NAME_W, CARD_PITCH, NAME_STYLE[tier], bd->name);
         const char *desc = bd->desc;    // a Learn card names the skill's button in the layout; a level what it adds
         if (is_learn(card) && s.stacks[card]) desc = SKILL_LV_DESC[card - BOON_LEARN_MOONBLADE][s.stacks[card] - 1];
         else if (is_learn(card)) {
             snprintf(line, sizeof line, "Learn it: %s", joypad_skill_button(card - BOON_LEARN_MOONBLADE));
             desc = line;
         }
-        text(x + 6, y0 + 31 + 17 * (nameLines > 1 ? nameLines : 1), cw - 12, ALIGN_CENTER, desc);     // under the name: 4 lines below one, 3 below two
+        card_text(x + 2, y0 + card_desc_y(nameLines), CARD_TEXT_W, CARD_PITCH, FONT_STYLE_WHITE, desc);     // under the name
         // the bottom lines, up from the card's foot: the slot line (what taking it does to the bar; a
         // duo's, the two boons it merges), and over it the rival it locks out
         char bottom[3][40]; int bstyle[3] = { FONT_STYLE_GREY, FONT_STYLE_GREY, FONT_STYLE_GREY }, nb = 1;
@@ -1480,12 +1505,11 @@ static void tower_draft_draw(void)
             if (r >= 0) { rival_names(card, bottom[1], 40); snprintf(bottom[2], 40, "Locks out"); bstyle[1] = bstyle[2] = FONT_STYLE_RED; nb = 3; }
             if (is_form(card)) { snprintf(bottom[0], 40, "%s", BOONS[r].name); snprintf(bottom[1], 40, "Locks out"); bstyle[0] = FONT_STYLE_RED; nb = 2; }    // (its tag says the form)
         }
-        // up from the foot, 12 apart; a long name (a form's) wraps, its lines 17 apart
-        for (int k = 0, y = y0 + ch - 3; k < nb; k++, y -= 12) {
-            int n = (int)strlen(bottom[k]), lines = 1;
-            if (n > 12) { rdpq_paragraph_t *p = rdpq_paragraph_build(&(rdpq_textparms_t){ .width = cw + 2, .wrap = WRAP_WORD }, FONT_UNBALANCED, bottom[k], &n); lines = p->nlines; rdpq_paragraph_free(p); }
-            y -= 17 * (lines - 1);
-            text_style(x - 1, y, cw + 2, ALIGN_CENTER, bstyle[k], bottom[k]);
+        // up from the foot, 12 apart; a long name (a form's) wraps, its lines 12 apart too
+        for (int k = 0, y = y0 + ch - 3; k < nb; k++, y -= FOOT_PITCH) {
+            int lines = card_lines(bottom[k], CARD_FOOT_W);
+            y -= FOOT_PITCH * (lines - 1);
+            card_text(x + 1, y, CARD_FOOT_W, FOOT_PITCH, bstyle[k], bottom[k]);
         }
     }
     // Skip, under the cards
@@ -2519,7 +2543,7 @@ static void shop_draw(void)
     snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d/%d", (double)character.health, (double)character.maxHealth, character.healthPotions, tower_mod_max_potions());
     text_style(0, T + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
     // the three boon cards, as the draft's (shorter: the price at the foot)
-    const int cw = 96, ch = 100, gap = 6, y0 = T + 28, x0 = (SCREEN_WIDTH - (3 * cw + 2 * gap)) / 2;     // (room for 3 lines of text over the price)
+    const int cw = CARD_W, ch = 100, gap = CARD_GAP, y0 = T + 28, x0 = (SCREEN_WIDTH - (3 * cw + 2 * gap)) / 2;     // (room for 3 lines of text over the price)
     for (int i = 0; i < 3; i++) {
         int x = x0 + i * (cw + gap), card = s.shop.card[i];
         bool on = i == s.shop.sel, sold = (s.shop.sold >> i) & 1;
@@ -2528,12 +2552,12 @@ static void shop_draw(void)
         rdpq_fill_rectangle(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2);
         rdpq_set_prim_color(on ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
         rdpq_fill_rectangle(x, y0, x + cw, y0 + ch);
-        if (card < 0) { text_style(x + 4, y0 + 46, cw - 8, ALIGN_CENTER, FONT_STYLE_GREY, "No new boon fits"); continue; }
+        if (card < 0) { card_text(x + 2, y0 + 46, CARD_NAME_W, CARD_PITCH, FONT_STYLE_GREY, "No new boon fits"); continue; }
         const BoonDef *bd = &BOONS[card];
         if (bd->duo) snprintf(line, sizeof line, "%s+%s", FAMILIES[bd->family].name, FAMILIES[bd->duo - 1].name);
-        text_style(x + 2, y0 + 12, cw - 4, ALIGN_CENTER, bd->duo ? FONT_STYLE_GOLD : FAMILIES[bd->family].style, bd->duo ? line : FAMILIES[bd->family].name);
-        int nl = text_style(x + 4, y0 + 27, cw - 8, ALIGN_CENTER, sold ? FONT_STYLE_GREY : NAME_STYLE[bd->tier], bd->name);
-        text_style(x + 6, y0 + 31 + 17 * (nl > 1 ? nl : 1), cw - 12, ALIGN_CENTER, sold ? FONT_STYLE_GREY : FONT_STYLE_WHITE, bd->desc);
+        card_text(x + 2, y0 + 12, CARD_NAME_W, CARD_PITCH, bd->duo ? FONT_STYLE_GOLD : FAMILIES[bd->family].style, bd->duo ? line : FAMILIES[bd->family].name);
+        int nl = card_text(x + 2, y0 + 27, CARD_NAME_W, CARD_PITCH, sold ? FONT_STYLE_GREY : NAME_STYLE[bd->tier], bd->name);
+        card_text(x + 2, y0 + card_desc_y(nl), CARD_TEXT_W, CARD_PITCH, sold ? FONT_STYLE_GREY : FONT_STYLE_WHITE, bd->desc);
         if (sold) snprintf(line, sizeof line, "Sold");
         else snprintf(line, sizeof line, "%d gold", shop_price(i));
         text_style(x, y0 + ch - 3, cw, ALIGN_CENTER, !shop_block(i)[0] ? FONT_STYLE_GOLD : FONT_STYLE_GREY, line);
@@ -4039,19 +4063,39 @@ int tower_test_map(void)
         }
         s.packs = (1 << FAM_COUNT) - 1;
         for (int b = 0; b < BOON_COUNT; b++) { details_card(b); cards++; if (dp->pg.pages > most) { most = dp->pg.pages; mostCard = b; } }
+        { char tl[200]; int m = 0; tl[0] = 0;
+          for (int b = 0; b < BOON_COUNT; b++) if (card_cs(BOONS[b].name, CARD_NAME_W)) m += snprintf(tl + m, sizeof tl - m, "%s, ", BOONS[b].name);
+          for (int b = 0; b < BOON_COUNT; b++) if (BOONS[b].duo) { char t[40]; snprintf(t, sizeof t, "%s+%s", FAMILIES[BOONS[b].family].name, FAMILIES[BOONS[b].duo - 1].name); if (card_cs(t, CARD_NAME_W)) m += snprintf(tl + m, sizeof tl - m, "%s, ", t); }
+          debugf("[map] cards %d wide inside the 7.5%% area (frames %d-%d); set a pixel tighter: %s\n", CARD_W, (SCREEN_WIDTH - (3 * CARD_W + 2 * CARD_GAP)) / 2 - 2, (SCREEN_WIDTH + (3 * CARD_W + 2 * CARD_GAP)) / 2 + 2, tl); }
         // every card's text fits its card: the draft's (name, text, then its bottom lines up from the foot) and the Shop's
         // (name, text, then the price): the lines as drawn (tower_draft_draw, shop_draw)
         for (int b = 0; b < BOON_COUNT; b++) for (int lv = 0; lv < (is_learn(b) ? SKILL_LV_MAX : 1); lv++) {
             const BoonDef *bd = &BOONS[b];
             const char *desc = is_learn(b) ? (lv ? SKILL_LV_DESC[b - BOON_LEARN_MOONBLADE][lv - 1] : "Learn it: C-right") : bd->desc;
-            int nl = ui_text_lines(bd->name, 88), dl = ui_text_lines(desc, 84), descEnd = 31 + 17 * (nl > 1 ? nl : 1) + 17 * (dl - 1);
+            int nl = card_lines(bd->name, CARD_NAME_W), dl = card_lines(desc, CARD_TEXT_W), descEnd = card_desc_y(nl) + CARD_PITCH * (dl - 1);
             int nb = 1, extra = 0;
-            if (bd->duo) nb = 3;
-            else if (is_form(b)) { nb = 2; extra = ui_text_lines(BOONS[rival_of(b)].name, 98) - 1; }
-            else if (rival_of(b) >= 0) { char rn[48]; rival_names(b, rn, sizeof rn); nb = 3; extra = ui_text_lines(rn, 98) - 1; }
-            int topBottom = DRAFT_CARD_H - 3 - 12 * (nb - 1) - 17 * extra;
-            if (descEnd + 16 > topBottom && cardBad++ < 30) debugf("[map] FAIL: draft card %s%s: its text ends at %d, its bottom lines start at %d\n", bd->name, lv ? " (a level)" : "", descEnd, topBottom);
+            if (bd->duo) {      // its two boons' lines: each family's longest name (as the gallery draws it)
+                nb = 3;
+                for (int f = 0; f < 2; f++) { const char *ln = ""; int fam = f ? bd->duo - 1 : bd->family;
+                    for (int k = 0; k < BOON_COUNT; k++) if (takes_slot(k) && !BOONS[k].duo && BOONS[k].family == fam && strlen(BOONS[k].name) > strlen(ln)) ln = BOONS[k].name;
+                    extra += card_lines(ln, CARD_FOOT_W) - 1; }
+            } else if (is_form(b)) { nb = 2; extra = card_lines(BOONS[rival_of(b)].name, CARD_FOOT_W) - 1; }
+            else if (rival_of(b) >= 0) { char rn[48]; rival_names(b, rn, sizeof rn); nb = 3; extra = card_lines(rn, CARD_FOOT_W) - 1; }
+            int topBottom = DRAFT_CARD_H - 3 - FOOT_PITCH * (nb - 1) - FOOT_PITCH * extra;
+            if (descEnd + CARD_GAP_Y > topBottom && cardBad++ < 30) debugf("[map] FAIL: draft card %s%s: its text ends at %d, its bottom lines start at %d\n", bd->name, lv ? " (a level)" : "", descEnd, topBottom);
             if (!is_skill_card(b) && !bd->up && descEnd + 15 > 100 - 3 && cardBad++ < 30) debugf("[map] FAIL: shop card %s: its text ends at %d, the price at 97\n", bd->name, descEnd);
+            // its tag over the name on one line (a duo's two families, a form's "Lv 5 form")
+            char tag[40]; snprintf(tag, sizeof tag, "%s%s%s", FAMILIES[bd->family].name, bd->duo ? "+" : "", bd->duo ? FAMILIES[bd->duo - 1].name : "");
+            if (card_lines(is_form(b) ? "Lv 5 form" : tag, CARD_NAME_W) > 1 && cardBad++ < 30) debugf("[map] FAIL: card %s: its tag %s is too wide\n", bd->name, tag);
+        }
+        // a pact's card: the blessing's name on a line and its text on three (the curse's band starts under them), the
+        // curse's name on a line and its text on three; the foot lines and the Shop's services on one line each
+        for (int pb = 0; pb < PB_COUNT; pb++) if ((card_lines(BLESSINGS[pb].name, CARD_FOOT_W) > 1 || card_lines(BLESSINGS[pb].desc, CARD_TEXT_W) > 3) && cardBad++ < 30) debugf("[map] FAIL: blessing %s's card text\n", BLESSINGS[pb].name);
+        for (int pc = 0; pc < PC_COUNT; pc++) if ((card_lines(CURSES[pc].name, CARD_FOOT_W) > 1 || card_lines(CURSES[pc].desc, CARD_TEXT_W) > 3) && cardBad++ < 30) debugf("[map] FAIL: curse %s's card text\n", CURSES[pc].name);
+        {
+            static const char *const ONE[] = { "+ (top level)", "Skill: no slot", "Lv 4 -> 5", "New: slot 5/5", "Merges:", "Locks out", "No slot", "Sold", "99999 gold",
+                                               "A level  999", "A \"+\"  999", "Pact  999", "Potion  999", "Mend  999", "Release  999", "Release: sold", "A \"+\": sold" };
+            for (unsigned k = 0; k < sizeof ONE / sizeof ONE[0]; k++) if (ui_text_lines(ONE[k], k >= 7 ? CARD_W : CARD_FOOT_W) > 1 && cardBad++ < 30) debugf("[map] FAIL: \"%s\" is wider than its card\n", ONE[k]);
         }
         // every one-line text inside its room: the map's lines and the screens' rows, with 5-digit gold, floor 123, Ascension 19
         {

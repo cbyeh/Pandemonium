@@ -34,17 +34,24 @@ int ui_text_width(const char *s)
     return w;
 }
 
-static int lines_in(const char *s, int w);
-int ui_text_lines(const char *s, int w) { return lines_in(s, w); }
-static int lines_in(const char *s, int w)
+static int lines_cs(const char *s, int w, int cs)
 {
     int n = (int)strlen(s);
     if (!n) return 1;
-    rdpq_paragraph_t *p = rdpq_paragraph_build(&(rdpq_textparms_t){ .width = w, .wrap = WRAP_WORD }, FONT_UNBALANCED, s, &n);
-    int k = p->nlines;
-    rdpq_paragraph_free(p);
+    int n0 = n;
+    rdpq_paragraph_t *p = rdpq_paragraph_build(&(rdpq_textparms_t){ .width = w, .wrap = WRAP_WORD, .char_spacing = cs }, FONT_UNBALANCED, s, &n);
+    rdpq_paragraph_t *q = rdpq_paragraph_build(&(rdpq_textparms_t){ .char_spacing = cs }, FONT_UNBALANCED, s, &n0);
+    // a word wider than w: libdragon cuts it with an ellipsis (and its glyphs can overrun rdpq_text_printf's stack
+    // buffer: a crash). Counted as far too many lines, so every fit check fails it
+    bool cut = p->nchars != q->nchars;
+    for (int i = 0; !cut && i < p->nchars; i++) cut = p->chars[i].glyph != q->chars[i].glyph;     // (a wrap only moves glyphs)
+    int k = cut ? UI_TOO_WIDE : p->nlines;
+    rdpq_paragraph_free(p); rdpq_paragraph_free(q);
     return k < 1 ? 1 : k;
 }
+static int lines_in(const char *s, int w) { return lines_cs(s, w, 0); }
+int ui_text_lines(const char *s, int w) { return lines_in(s, w); }
+int ui_text_lines_cs(const char *s, int w, int cs) { return lines_cs(s, w, cs); }
 
 // ---- UiDoc ----
 

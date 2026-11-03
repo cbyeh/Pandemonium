@@ -45,7 +45,9 @@ int  ui_doc_layout(UiDoc *d, int w, int h);     // returns the pages (1 at least
 void ui_doc_draw(const UiDoc *d, int page, int x, int y, int w);     // y: the first line's baseline
 int  ui_line_pitch(void);               // the font's line pitch (FONT_UNBALANCED)
 int  ui_text_width(const char *s);      // one line's width in pixels
-int  ui_text_lines(const char *s, int w);   // its lines, word-wrapped to w
+#define UI_TOO_WIDE 99
+int  ui_text_lines(const char *s, int w);   // its lines, word-wrapped to w (UI_TOO_WIDE if a word is wider than w)
+int  ui_text_lines_cs(const char *s, int w, int cs);     // the same with cs px between glyphs (-1: set tight)
 
 typedef struct { int8_t page, pages, sel; } UiPager;   // sel: 0 the left corner, 1 the right
 enum { UI_PAGER_NONE, UI_PAGER_TURNED, UI_PAGER_BACK };
