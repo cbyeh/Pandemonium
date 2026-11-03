@@ -130,6 +130,9 @@ int main(void)
     rdpq_font_style(font1, FONT_STYLE_RED, &(rdpq_fontstyle_t){ .color = RGBA32(235, 110, 85, 255) });
     rdpq_font_style(font1, FONT_STYLE_TEAL, &(rdpq_fontstyle_t){ .color = RGBA32(130, 225, 210, 255) });
     rdpq_font_style(font1, FONT_STYLE_VIOLET, &(rdpq_fontstyle_t){ .color = RGBA32(190, 145, 255, 255) });
+    rdpq_font_t *fontSmall = rdpq_font_load("rom:/fonts/optimus_princeps_semibold.font64");   // Optimus Princeps SemiBold, small, outlined
+    rdpq_text_register_font(FONT_SMALL, fontSmall);
+    rdpq_font_style(fontSmall, FONT_STYLE_RED, &(rdpq_fontstyle_t){ .color = RGBA32(235, 110, 85, 255), .outline_color = RGBA32(0, 0, 0, 255) });
 
     game_time_init();
     joypad_utility_init();

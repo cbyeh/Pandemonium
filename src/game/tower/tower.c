@@ -558,7 +558,11 @@ static bool map_reachable(int r, int l)
 }
 
 #ifdef HLE_ELITE_FORCE      // test aid: every Elite this affix (1-6, AFX_ + 1; 0 none), and the Bonus bosses outside a run too (the dummy)
+#ifdef HLE_ELITE_MASK       // (several at once, a bit each: the name bar's widest tags)
+int hle_elite_force = HLE_ELITE_MASK;
+#else
 int hle_elite_force = HLE_ELITE_FORCE ? 1 << (HLE_ELITE_FORCE - 1) : 0;    // (HLE_ELITE_SWEEP steps it)
+#endif
 #endif
 // An Elite's affixes (section 11): one in circles 1-3, two from circle 4, of the unlocked ones (by the best
 // floor); never Smouldering on Shadowborne (it has its own fire)

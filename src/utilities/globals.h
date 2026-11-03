@@ -28,6 +28,7 @@
 
 enum {
     FONT_UNBALANCED = 2,
+    FONT_SMALL = 3,           // Optimus Princeps SemiBold, small and outlined (red only): an Elite's affixes
 };
 
 // FONT_UNBALANCED's styles: the text colour comes from these, not the prim colour

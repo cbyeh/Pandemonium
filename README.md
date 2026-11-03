@@ -181,6 +181,7 @@ Sound effects: Gomo Sounds (gomosounds.com)
 | Shadowforge Convergence | Shadowborne's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
 | Veil of Eternal Nightfall | The Shackled Sun's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
 | Whispers of the Abyss | The Fallen Warrior's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
+| Optimus Princeps | The Elites' names | Manfred Klein | [dafont](https://www.dafont.com/optimusprinceps.font) |
 
 ## Licensing
 

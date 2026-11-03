@@ -261,6 +261,9 @@ static int boss_ui_health_name_height(void)
     return boss_ui_scaled_int((float)s_bossHealthBarNameSurf.height * BOSS_UI_NAME_SCALE);
 }
 
+#define BOSS_UI_AFFIX_LINE 5      // how much higher an Elite's bar sits: its affix line under it stays inside the safe area
+#define BOSS_UI_AFFIX_BASE 3      // the affix line's baseline under the bar: its letters as far below the bar as the name's are above
+
 static BossUiHealthLayout boss_ui_make_health_layout(void)
 {
     BossUiHealthLayout layout = {0};
@@ -273,6 +276,7 @@ static BossUiHealthLayout boss_ui_make_health_layout(void)
     // Anchor the decorative frame to the bottom safe area.
     // video_layout owns this safe/overdraw margin.
     layout.frameY = SCREEN_HEIGHT - ui_safe_margin_y() - layout.frameH;
+    if (tower_affix_tag()[0]) layout.frameY -= BOSS_UI_AFFIX_LINE;     // an Elite's affixes go under it, inside the safe area
 
     // The actual health fill width is independent from the frame width.
     // This lets the decorative overlay be tuned without shrinking/stretching HP.
@@ -600,14 +604,15 @@ void boss_ui_draw_health_bar(const char *name, float ratio, float flash)
         s_frameLayout = layout;
     }
     rspq_block_run(s_frameBlock);
-    // An Elite's affixes before its name ("Swift Shackled Sun"; section 11), right up to the plate
+    // An Elite's affixes on their own line under the bar, centred (left of the plate, two of them or the
+    // Sun's long plate ran off the screen); the bar sits a line higher for them
     const char *tag = tower_affix_tag();
     if (tag[0] && s_bossUiIntro > 0.99f) {
         rdpq_set_mode_standard();
         rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
         rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = layout.nameX - 4, .style_id = FONT_STYLE_RED }, FONT_UNBALANCED,
-                         0, layout.nameY + boss_ui_health_name_height() / 2 + 4, "%s", tag);
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = SCREEN_WIDTH, .style_id = FONT_STYLE_RED }, FONT_SMALL,
+                         0, layout.frameY + layout.frameH + BOSS_UI_AFFIX_BASE, "%s", tag);
     }
 }
 

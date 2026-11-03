@@ -157,6 +157,10 @@ $(FILESYSTEMDIR)/%.sprite: $(ASSDIR)/%.png
 # alone: the game colours it (8 bits a texel, 30 KB in RAM, not RGBA32's 122)
 $(FILESYSTEMDIR)/fx/fire_flat.sprite: MKSPRITE_FLAGS += -f I8
 
+# Optimus Princeps SemiBold (Manfred Klein, free): small, outlined (an Elite's affixes under its name bar)
+$(FILESYSTEMDIR)/fonts/optimus_princeps_semibold.font64: MKFONT_FLAGS += -s $(OPTIMUS_SIZE) --outline 1
+OPTIMUS_SIZE ?= 10     # (11 and up touched the bar's end scrolls with the widest pair, Relentless Smouldering)
+
 $(FILESYSTEMDIR)/%.font64: $(ASSDIR)/%.ttf
 	@mkdir -p $(dir $@)
 	@echo "    [FONT] $@"
