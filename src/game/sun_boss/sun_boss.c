@@ -22,6 +22,11 @@
 #include "fx/floor_fire.h"
 #include "../../scenes/guardian/guardian_scene_sfx.h"
 #include "../../scenes/guardian/guardian_scene_bounds.h"
+#ifdef HLE_LOG_HITGAP     // test aid: [hg] / [hgw] (hle/autoplay.c)
+extern void hle_hg_vol(const char *, const float *, const float *, float), hle_hg_begin(void), hle_hg_seg(const char *, const float *, const float *, float);
+extern void hle_hg_hit(const char *), hle_hg_fixed(const char *, bool), hle_hg_m(const char *, const float *, bool), hle_hg_ring2(const char *, const float *, float, float, float, float);
+extern float hle_hg_r(int);
+#endif
 
 // ---- Tuning ----
 #define SUN_R          14.0f           // world radius of the eye
@@ -493,6 +498,10 @@ static void dive_update(Boss *b, float dt)
             b->pos[1] = s.groundY + REST_H;
             float dx, dz;
             // A shockwave along the floor: wide, but jumping over it (Moon Blade Dance) avoids it
+#ifdef HLE_LOG_HITGAP
+            { bool in = to_player(b, &dx, &dz) < 34.0f && character.pos[1] - s.groundY < 6.0f; hle_hg_fixed("Sun dive (landing, 34 round)", in);
+              if (in) { hle_hg_begin(); hle_hg_seg("ball", b->pos, b->pos, SUN_R); hle_hg_hit("Sun dive (landing, 34 round)"); } }
+#endif
             if (to_player(b, &dx, &dz) < 34.0f && character.pos[1] - s.groundY < 6.0f) character_apply_damage(hurt(20.0f));
             boss_ground_crush_spawn(b->pos[0], s.groundY + 0.25f, b->pos[2]);
             floor_fire_slam(b->pos[0], s.groundY, b->pos[2], SUN_R + 6.0f);     // (a Smouldering Elite's: round where it lands)
@@ -560,6 +569,12 @@ static void flare_tick(float dt)
     if (hit || (!s.flareHit && s.flareAge <= FLARE_LIVE && s.flareAge + dt > FLARE_LIVE))
         debugf("[hitvol] flare age %.2f: ring drawn %.1f-%.1f, the player's body %.1f-%.1f from its centre, %.0f up: %s\n", (double)s.flareAge,
                (double)(R - band), (double)R, (double)(d - rr), (double)(d + rr), (double)(character.pos[1] - s.groundY), hit ? "HIT" : "missed");
+#endif
+#ifdef HLE_LOG_HITGAP
+    if (!s.flareHit && s.flareAge <= FLARE_LIVE && low) { float m[5];
+        for (int v = 0; v < 5; v++) { float r = hle_hg_r(v); m[v] = fmaxf(d - r - R, (R - band) - (d + r)); }
+        hle_hg_m("Sun Flare (ring)", m, false);
+        if (hit) { hle_hg_begin(); hle_hg_ring2("ring", s.flarePos, R - band, R, s.flarePos[1] - 6.0f, s.flarePos[1] + 12.0f); hle_hg_hit("Sun Flare (ring)"); } }
 #endif
     if (hit) { s.flareHit = true; character_apply_damage(hurt(16.0f)); }
     if (s.flareAge > 0.55f) s.flareAge = -1.0f;
@@ -632,6 +647,10 @@ static void ram_update(Boss *b, float dt)
                 debugf("[hitvol] ram t %.2f: the eye's centre %.1f from the body's axis (eye drawn %.1f + body %.0f = %.1f): %s\n", (double)s.t, (double)best,
                        (double)drawn, (double)character.capsuleCollider.radius, (double)(drawn + character.capsuleCollider.radius), hit ? "HIT" : "miss");
         }
+#endif
+#ifdef HLE_LOG_HITGAP
+        if (!s.hitDone) { hle_hg_vol("Sun ram", was, b->pos, SUN_R);
+            if (hit) { hle_hg_begin(); hle_hg_seg("ball", b->pos, b->pos, SUN_R * (1.0f + 0.04f * sinf(s.life * 5.0f))); hle_hg_hit("Sun ram"); } }
 #endif
         if (hit) { s.hitDone = true; character_apply_damage(hurt(20.0f)); }
         if (k >= 1.0f || blocked) { s.step = 2; s.t = 0.0f; b->capsuleCollider.radius = SUN_R + 4.0f;
@@ -847,6 +866,24 @@ static bool chain_hits_player(const float now[NN][3], const float was[NN][3], fl
     return was && now[NN - 1][1] - s.groundY <= maxH && seg_dist_xz(was[NN - 1], now[NN - 1], px, pz) < R;     // grazed by the tip on its way
 }
 
+#ifdef HLE_LOG_HITGAP     // test aid: each blow's reach for the hurtboxes tried, and what was drawn when it landed
+static void hg_chain(const char *name, const float now[NN][3], const float was[NN][3], float maxH, bool hit)     // chain_hits_player's reach, and the links as drawn
+{
+    float px = character.pos[0], pz = character.pos[2], g = 1e9f; bool swept = false;
+    for (int i = 0; i < NN - 1; i++) {
+        if (fminf(now[i][1], now[i + 1][1]) - s.groundY > maxH) continue;
+        g = fminf(g, seg_dist_xz(now[i], now[i + 1], px, pz) - LINK_HALF_W);
+        if (was && (in_tri_xz(was[i], was[i + 1], now[i + 1], px, pz) || in_tri_xz(was[i], now[i + 1], now[i], px, pz))) swept = true;
+    }
+    if (was && now[NN - 1][1] - s.groundY <= maxH) g = fminf(g, seg_dist_xz(was[NN - 1], now[NN - 1], px, pz) - LINK_HALF_W);
+    float m[5]; for (int v = 0; v < 5; v++) m[v] = swept ? -1.0f : g - hle_hg_r(v);
+    hle_hg_m(name, m, swept);
+    if (!hit) return;
+    hle_hg_begin();
+    for (int i = 0; i < NN - 1; i++) { hle_hg_seg("chain", now[i], now[i + 1], LINK_HALF_W); if (was) hle_hg_seg("chain (last frame)", was[i], was[i + 1], LINK_HALF_W); }
+    hle_hg_hit(name);
+}
+#endif
 static int nearest_chain(const Boss *b, float dx, float dz)
 {
     // the chain whose root faces the player most (the eye always does, so a side one)
@@ -901,6 +938,9 @@ static void lash_update(Boss *b, float dt)
         float now[NN][3];
         chain_drawn(b, c, now);
         if (s.step == 1 && s.t <= dt) memcpy(was, now, sizeof(was));
+#ifdef HLE_LOG_HITGAP
+        if (character.pos[1] - s.groundY < 8.0f) hg_chain("Sun Shackle Lash (chain)", (const float (*)[3])now, (const float (*)[3])was, 20.0f, chain_hits_player((const float (*)[3])now, (const float (*)[3])was, 20.0f));
+#endif
         if (character.pos[1] - s.groundY < 8.0f && chain_hits_player((const float (*)[3])now, (const float (*)[3])was, 20.0f)) {
             s.chainHit = true;
             character_apply_damage(hurt(16.0f));
@@ -1008,6 +1048,9 @@ static void sweep_update(Boss *b, float dt)
         chain_drawn(b, c, now);
         if (s.t <= dt) memcpy(was, now, sizeof(was));
         bool hit = !s.hitDone && character.pos[1] - s.groundY < 6.0f && chain_hits_player((const float (*)[3])now, (const float (*)[3])was, 1e9f);
+#ifdef HLE_LOG_HITGAP
+        if (!s.hitDone && character.pos[1] - s.groundY < 6.0f) hg_chain("Sun Shackle Sweep (chain)", (const float (*)[3])now, (const float (*)[3])was, 1e9f, hit);
+#endif
 #ifdef HLE_LOG_HITVOL
         { float pa = atan2f(dx, dz), dist = sqrtf(dx * dx + dz * dz);
           float r0 = remainderf(pa - a0, 2.0f * T3D_PI), r1 = remainderf(pa - a, 2.0f * T3D_PI);
@@ -1608,6 +1651,6 @@ void sun_boss_draw(Boss* b)
 #undef SPROF
 }
 
-#ifdef HLE_SHOW_HURTBOX
+#if defined(HLE_SHOW_HURTBOX) || defined(HLE_LOG_HITGAP)
 int hle_sun_state(void) { return s.state; }     // test aid: its move, for [hbb]
 #endif

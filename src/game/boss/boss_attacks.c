@@ -80,8 +80,16 @@ static inline void boss_spawn_ground_crushed_toward_player(Boss *boss, float for
     boss_ground_crush_spawn(cx, boss->pos[1] + 0.25f, cz);
 }
 
+#ifdef HLE_LOG_HITGAP     // test aid: what was drawn as each blow landed, and the reach of the balls that don't use the player's capsule
+extern void hle_hg_ghit(void), hle_hg_fixed(const char *, bool);
+extern const char *hle_hg_gsphere; extern int hle_hg_gsphereAt, hle_hg_frame;
+static void hg_ball(Boss *b, const char *const nm[2], bool inside) { const char *n = nm[b->phaseIndex == 2]; hle_hg_fixed(n, inside); hle_hg_gsphere = n; hle_hg_gsphereAt = hle_hg_frame; }
+#endif
 static inline void boss_attacks_on_player_hit(float damage)
 {
+#ifdef HLE_LOG_HITGAP
+    hle_hg_ghit();
+#endif
     if (damage <= 25.0f) return;
 
     // Fixed, noticeable impulse (units are world-space and applied in camera right/up).
@@ -345,6 +353,9 @@ static void boss_attacks_handle_power_jump(Boss* boss, float dt)
             float dx = character.pos[0] - boss->pos[0];
             float dz = character.pos[2] - boss->pos[2];
             float dist = sqrtf(dx*dx + dz*dz);
+#ifdef HLE_LOG_HITGAP
+            hg_ball(boss, (const char *const[2]){ "G power jump (landing, 70 round)", "U power jump (landing, 70 round)" }, dist <= IMPACT_RADIUS);
+#endif
 
             // Sphere radius is now 70
             if (dist <= IMPACT_RADIUS) {
@@ -790,6 +801,9 @@ static void boss_attacks_handle_stomp(Boss* boss, float dt)
         float dist = sqrtf(px*px + pz*pz);
 
         const float radius = 70.0f; // tight radius
+#ifdef HLE_LOG_HITGAP
+        hg_ball(boss, (const char *const[2]){ "G stomp (70 round)", "U stomp (70 round)" }, dist <= radius);
+#endif
         if (dist <= radius) {
             // float damage = 40.0f * (1.0f - (dist / radius)); falloff
             // if (damage < 6.0f) damage = 6.0f; minimum chip
@@ -903,6 +917,9 @@ static void boss_attacks_handle_flip_attack(Boss* boss, float dt)
         float dzs = character.pos[2] - cz;
         float dist = sqrtf(dxs*dxs + dzs*dzs);
 
+#ifdef HLE_LOG_HITGAP
+        hg_ball(boss, (const char *const[2]){ "G flip (burst, 20 round 40 behind)", "U flip (burst, 20 round 40 behind)" }, dist <= SPHERE_RADIUS);
+#endif
         if (dist <= SPHERE_RADIUS) {
             character_apply_damage(sphereDamage);
             boss_attacks_on_player_hit(sphereDamage);

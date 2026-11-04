@@ -433,6 +433,10 @@ void collision_update(void)
             charCapB.v,
             charRadius
         );
+#ifdef HLE_LOG_HITGAP     // test aid: the blade's reach for the what-ifs
+        { extern void hle_hg_vol(const char *, const float *, const float *, float); extern const char *hle_hg_gname(const Boss *);
+          if (boss->phaseIndex <= 2) hle_hg_vol(hle_hg_gname(boss), bossWeaponCapA.v, bossWeaponCapB.v, bossWeaponRadius); }
+#endif
     }
 
     // ------------------------------------------------------------

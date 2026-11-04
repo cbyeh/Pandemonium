@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#ifdef HLE_LOG_HITVOL
+#if defined(HLE_LOG_HITVOL) || defined(HLE_LOG_HITGAP)
 #include <t3d/t3dmodel.h>
 #include <t3d/t3dskeleton.h>
 #endif
@@ -286,6 +286,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
     static int frame;
     frame++;
+#ifdef HLE_LOG_HITGAP
+    { extern int hle_hg_frame; extern void hle_hg_tick(void); hle_hg_frame = frame; hle_hg_tick(); }
+#endif
 #ifdef HLE_SHOW_HURTBOX
     { extern int hle_hb_frame; hle_hb_frame = frame; }
 #endif
@@ -3218,7 +3221,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     if (frame > 2600 && frame % 45 == 0) { pressed->b = 1; in->btn.b = 1; }   // attack
 }
 #endif
-#ifdef HLE_LOG_HITVOL
+#if defined(HLE_LOG_HITVOL) || defined(HLE_LOG_HITGAP)
 #include <t3d/t3dmodel.h>
 #include <t3d/t3dskeleton.h>
 #include "utilities/game_math.h"
@@ -3396,5 +3399,296 @@ bool hle_silhouette(const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M
         }
     }
     return true;
+}
+#endif
+#ifdef HLE_LOG_HITGAP
+// Test aid: each blow on the player, the gap between what was drawn when it landed (a blade, fist,
+// body, fire, beam...) and the player's drawn body (every skinned vertex, the sword left out),
+// against the same thing's gap to the player's hit capsule, and what a smaller capsule would change.
+// [hg] each blow as it lands; [hgw] each blow's live window as it ends: whether it landed and, for the
+// hurtboxes tried (v0 as it is, 8 round; r6; r5; r6 and r5 with the top lowered while rolling or down),
+// whether its volume reached it. A volume that doesn't use the player's capsule (a distance from his
+// middle) is "fixed": every hurtbox gives the same answer
+#include "character.h"
+#include "game/boss/boss.h"
+extern T3DModel *characterModel;
+extern float hle_pt_seg(const float q[3], const float a[3], const float b[3]);
+extern int hle_mesh_points(const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M, int which, float (*out)[3], int max);
+extern bool hle_points_blade(const float (*p)[3], int n, float a[3], float b[3], float *hw);
+int hle_hg_frame;
+#ifndef HLE_HG_LOW_TOP
+#define HLE_HG_LOW_TOP 14.0f    // the capsule's top over the floor while rolling or down, in the what-ifs
+#endif
+enum { HG_NP = 800, HG_NV = 5, HG_SLOTS = 96 };
+static float hgP[HG_NP][3]; static int hgN, hgAt = -1;
+static float hgMesh, hgCap; static const char *hgWhat;
+static const char *hgPartN[6]; static float hgPartG[6]; static int hgParts;     // each drawn part's own gap
+static void hg_part(const char *what, float g) { for (int i = 0; i < hgParts; i++) if (hgPartN[i] == what) { hgPartG[i] = fminf(hgPartG[i], g); return; } if (hgParts < 6) { hgPartN[hgParts] = what; hgPartG[hgParts++] = g; } }
+static void hg_player(void)
+{
+    if (hgAt == hle_hg_frame) return;
+    hgAt = hle_hg_frame;
+    hgN = hle_mesh_points(characterModel, character.skeleton, character.modelMat, 0, hgP, HG_NP);
+    static int said;     // how far apart its vertices are (a gap between two meshes' vertices reads up to about half of each mesh's spacing over the surfaces' own)
+    if (said++ == 600) {
+        static float nn[HG_NP]; int m = 0;
+        for (int i = 0; i < hgN; i++) { float b2 = 1e18f; for (int j = 0; j < hgN; j++) if (j != i) { float dx = hgP[i][0]-hgP[j][0], dy = hgP[i][1]-hgP[j][1], dz = hgP[i][2]-hgP[j][2], d2 = dx*dx+dy*dy+dz*dz; if (d2 > 1e-4f && d2 < b2) b2 = d2; } nn[m++] = sqrtf(b2); }
+        for (int i = 1; i < m; i++) { float v = nn[i]; int j = i - 1; while (j >= 0 && nn[j] > v) { nn[j + 1] = nn[j]; j--; } nn[j + 1] = v; }
+        debugf("[hgmesh] the player: %d vertices, nearest neighbour p50 %.1f p90 %.1f max %.1f\n", hgN, (double)nn[m / 2], (double)nn[m * 9 / 10], (double)nn[m - 1]);
+    }
+}
+static float hg_segseg(const float p1[3], const float q1[3], const float p2[3], const float q2[3])     // between two segments
+{
+    float d1[3], d2[3], r[3];
+    for (int i = 0; i < 3; i++) { d1[i] = q1[i] - p1[i]; d2[i] = q2[i] - p2[i]; r[i] = p1[i] - p2[i]; }
+    float a = d1[0]*d1[0] + d1[1]*d1[1] + d1[2]*d1[2], e = d2[0]*d2[0] + d2[1]*d2[1] + d2[2]*d2[2], f = d2[0]*r[0] + d2[1]*r[1] + d2[2]*r[2];
+    float s = 0.0f, t = 0.0f;
+    if (a < 1e-6f && e < 1e-6f) { } 
+    else if (a < 1e-6f) t = fminf(1.0f, fmaxf(0.0f, f / e));
+    else {
+        float c = d1[0]*r[0] + d1[1]*r[1] + d1[2]*r[2];
+        if (e < 1e-6f) s = fminf(1.0f, fmaxf(0.0f, -c / a));
+        else {
+            float b = d1[0]*d2[0] + d1[1]*d2[1] + d1[2]*d2[2], den = a * e - b * b;
+            s = den > 1e-6f ? fminf(1.0f, fmaxf(0.0f, (b * f - c * e) / den)) : 0.0f;
+            t = (b * s + f) / e;
+            if (t < 0.0f) { t = 0.0f; s = fminf(1.0f, fmaxf(0.0f, -c / a)); }
+            else if (t > 1.0f) { t = 1.0f; s = fminf(1.0f, fmaxf(0.0f, (b - c) / a)); }
+        }
+    }
+    float x[3]; for (int i = 0; i < 3; i++) x[i] = p1[i] + d1[i] * s - (p2[i] + d2[i] * t);
+    return sqrtf(x[0]*x[0] + x[1]*x[1] + x[2]*x[2]);
+}
+static bool hg_low(void) { CharacterState st = character_get_state(); return st == CHAR_STATE_ROLLING || st == CHAR_STATE_KNOCKDOWN; }
+// The player's capsule: v 0 as the game has it; 1/2 radius 6/5 with the same top (20); 3/4 those with
+// the top at HLE_HG_LOW_TOP while rolling or down
+static float hg_axis(int v, float a[3], float b[3])
+{
+    const float *p = character.pos;
+    if (v == 0) {
+        for (int i = 0; i < 3; i++) { a[i] = p[i] + character.capsuleCollider.localCapA.v[i]; b[i] = p[i] + character.capsuleCollider.localCapB.v[i]; }
+        return character.capsuleCollider.radius;
+    }
+    float r = (v == 1 || v == 3) ? 6.0f : 5.0f, top = (v >= 3 && hg_low()) ? HLE_HG_LOW_TOP : 20.0f;
+    a[0] = b[0] = p[0]; a[2] = b[2] = p[2];
+    b[1] = p[1] + top - r; a[1] = fminf(p[1] + 4.0f, b[1]);
+    return r;
+}
+typedef struct { const char *name; const void *key; int last, hits; float m[HG_NV], mesh, cap, top; int st; bool fixed; } HgWin;
+static const void *hgKey;
+void hle_hg_key(const void *k) { hgKey = k; }     // the next call's blow is this one (an effect among several of one name)
+static HgWin hgW[HG_SLOTS];
+static void hg_flush(HgWin *w)
+{
+    Boss *bb = boss_get_instance();
+    debugf("[hgw] boss %d %s | %s | reach", bb ? bb->phaseIndex : 0, w->name, w->hits ? "LANDED" : "missed");
+    for (int v = 0; v < HG_NV; v++) debugf(" %.1f", (double)w->m[v]);
+    debugf(" | hurtboxes it reaches:");
+    for (int v = 0; v < HG_NV; v++) debugf(" %d", w->m[v] <= 0.0f);
+    if (w->hits) debugf(" | drawn gap %.1f, to the capsule %.1f, player state %d top %.1f", (double)w->mesh, (double)w->cap, w->st, (double)w->top);
+    debugf("%s\n", w->fixed ? " | fixed" : "");
+    w->name = NULL;
+}
+void hle_hg_tick(void)     // a window not seen for 4 frames is over
+{
+#ifdef HLE_HG_POSE     // the drawn body's top and reach off the axis, every 6th frame out of the normal stance (rolls, knockdowns)
+    if (hle_hg_frame % 6 == 0 && character.skeleton && character_get_state() != CHAR_STATE_NORMAL) {
+        hg_player(); float top = -1e9f, out = 0.0f;
+        for (int i = 0; i < hgN; i++) { float dx = hgP[i][0] - character.pos[0], dz = hgP[i][2] - character.pos[2]; top = fmaxf(top, hgP[i][1] - character.pos[1]); out = fmaxf(out, sqrtf(dx * dx + dz * dz)); }
+        debugf("[pose] f%d st %d top %.1f out %.1f\n", hle_hg_frame, character_get_state(), (double)top, (double)out);
+    }
+#endif
+    for (int i = 0; i < HG_SLOTS; i++) if (hgW[i].name && hle_hg_frame - hgW[i].last > 4) hg_flush(&hgW[i]);
+}
+static HgWin *hg_win(const char *name)
+{
+    HgWin *free = NULL; const void *key = hgKey; hgKey = NULL;
+    for (int i = 0; i < HG_SLOTS; i++) { if (hgW[i].name == name && hgW[i].key == key) return &hgW[i]; if (!hgW[i].name && !free) free = &hgW[i]; }
+    if (!free) return NULL;
+    memset(free, 0, sizeof *free);
+    free->name = name; free->key = key;
+    for (int v = 0; v < HG_NV; v++) free->m[v] = 1e9f;
+    return free;
+}
+// A blow's volume this frame: the capsule a-b (a ball when a == b), radius r, tested against the player's capsule
+void hle_hg_vol(const char *name, const float a[3], const float b[3], float r)
+{
+    HgWin *w = hg_win(name); if (!w) return;
+    w->last = hle_hg_frame;
+    for (int v = 0; v < HG_NV; v++) { float pa[3], pb[3], pr = hg_axis(v, pa, pb); w->m[v] = fminf(w->m[v], hg_segseg(a, b, pa, pb) - r - pr); }
+}
+// A blow whose volume is a distance from the player's middle (or a floor area): inside or not, any capsule
+void hle_hg_fixed(const char *name, bool inside)
+{
+    HgWin *w = hg_win(name); if (!w) return;
+    w->last = hle_hg_frame; w->fixed = true;
+    for (int v = 0; v < HG_NV; v++) w->m[v] = fminf(w->m[v], inside ? -1.0f : 1.0f);
+}
+// What is drawn as the blow lands, added up from its parts: segments (balls when a == b) of radius r,
+void hle_hg_begin(void) { hg_player(); hgMesh = hgCap = 1e9f; hgWhat = ""; hgParts = 0; }
+void hle_hg_seg(const char *what, const float a[3], const float b[3], float r)
+{
+    float pa[3], pb[3], pr = hg_axis(0, pa, pb), g = 1e9f;
+    for (int i = 0; i < hgN; i++) g = fminf(g, hle_pt_seg(hgP[i], a, b));
+    g -= r;
+    hg_part(what, g);
+    if (g < hgMesh) { hgMesh = g; hgWhat = what; }
+    hgCap = fminf(hgCap, hg_segseg(a, b, pa, pb) - r - pr);
+}
+// a skinned mesh's vertices (which 0: the body; 1: the swords), as points: the nearest pair
+void hle_hg_mesh(const char *what, const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M, int which)
+{
+    enum { NB = 1400 };
+    static float q[NB][3];
+    int n = hle_mesh_points(m, sk, M, which, q, NB);
+    { static int said[2]; if (said[which & 1]++ == 3) {
+        static float nn[NB]; int c = 0;
+        for (int i = 0; i < n; i++) { float b2 = 1e18f; for (int j = 0; j < n; j++) if (j != i) { float dx = q[i][0]-q[j][0], dy = q[i][1]-q[j][1], dz = q[i][2]-q[j][2], d2 = dx*dx+dy*dy+dz*dz; if (d2 > 1e-4f && d2 < b2) b2 = d2; } nn[c++] = sqrtf(b2); }
+        for (int i = 1; i < c; i++) { float v = nn[i]; int j = i - 1; while (j >= 0 && nn[j] > v) { nn[j + 1] = nn[j]; j--; } nn[j + 1] = v; }
+        if (c) debugf("[hgmesh] %s (%s): %d vertices, nearest neighbour p50 %.1f p90 %.1f max %.1f\n", what, which ? "swords" : "body", c, (double)nn[c / 2], (double)nn[c * 9 / 10], (double)nn[c - 1]); } }
+    float pa[3], pb[3], pr = hg_axis(0, pa, pb), g2 = 1e18f, c = 1e9f, out = 0.0f;
+    for (int j = 0; j < hgN; j++) out = fmaxf(out, hle_pt_seg(hgP[j], pa, pb));     // the player's drawn body reaches this far off his axis
+    for (int i = 0; i < n; i++) {
+        float da = hle_pt_seg(q[i], pa, pb);
+        c = fminf(c, da - pr);
+        if (da - out > 0.0f && (da - out) * (da - out) >= g2) continue;     // (no nearer than that to any of his vertices)
+        for (int j = 0; j < hgN; j++) {
+            float dx = q[i][0] - hgP[j][0], dy = q[i][1] - hgP[j][1], dz = q[i][2] - hgP[j][2], d2 = dx*dx + dy*dy + dz*dz;
+            if (d2 < g2) g2 = d2;
+        }
+    }
+    float g = sqrtf(g2);
+    hg_part(what, g);
+    if (g < hgMesh) { hgMesh = g; hgWhat = what; }
+    hgCap = fminf(hgCap, c);
+}
+// a gap worked out by the caller (Shadowborne's drawn shapes): to the mesh, to the capsule
+void hle_hg_gaps(const char *what, float mesh, float cap) { hg_part(what, mesh); if (mesh < hgMesh) { hgMesh = mesh; hgWhat = what; } hgCap = fminf(hgCap, cap); }
+float hle_hg_mesh_seg(const float a[3], const float b[3])     // the player's drawn body from a segment
+{
+    hg_player();
+    float g = 1e9f;
+    for (int i = 0; i < hgN; i++) g = fminf(g, hle_pt_seg(hgP[i], a, b));
+    return g;
+}
+void hle_hg_hit(const char *name)
+{
+    float top = -1e9f;
+    for (int i = 0; i < hgN; i++) top = fmaxf(top, hgP[i][1] - character.pos[1]);
+    Boss *bb = boss_get_instance();
+    debugf("[hg] boss %d %s | drawn %s gap %.1f | to the capsule %.1f | player state %d top %.1f | f%d | parts", bb ? bb->phaseIndex : 0, name, hgWhat, (double)hgMesh, (double)hgCap, character_get_state(), (double)top, hle_hg_frame);
+    for (int i = 0; i < hgParts; i++) debugf(" %s %.1f", hgPartN[i], (double)hgPartG[i]);
+    debugf("\n");
+    HgWin *w = hg_win(name); if (!w) return;
+    if (!w->last) { w->last = hle_hg_frame; }
+    if (!w->hits) { w->mesh = hgMesh; w->cap = hgCap; w->st = character_get_state(); w->top = top; }
+    w->hits++;
+}
+#endif
+#ifdef HLE_LOG_HITGAP
+static const char *const hgG[2][20] = {
+    { "G 0", "G 1", "G 2", "G 3", "G 4", "G 5", "G 6", "G lunge (blade)", "G power jump (blade)", "G combo (blade)", "G combo starter (blade)", "G tracking slam (blade)", "G flip (blade)", "G lunge starter (blade)", "G stomp (blade)", "G attack1 (blade)", "G 16", "G 17", "G 18", "G 19" },
+    { "U 0", "U 1", "U 2", "U 3", "U 4", "U 5", "U 6", "U lunge (blade)", "U power jump (blade)", "U combo (blade)", "U combo starter (blade)", "U tracking slam (blade)", "U flip (blade)", "U lunge starter (blade)", "U stomp (blade)", "U attack1 (blade)", "U barrage (blade)", "U sweep (blade)", "U 18", "U 19" } };
+const char *hle_hg_gname(const Boss *b) { return hgG[b->phaseIndex == 2][(unsigned)b->state < 20 ? b->state : 19]; }
+const char *hle_hg_gsphere; int hle_hg_gsphereAt;     // this frame's ball (power jump, stomp, flip burst), if that's what landed
+void hle_hg_ghit(void)      // the Guardian or Unbound landed a blow: the blade and the body as drawn
+{
+    Boss *b = boss_get_instance(); if (!b) return;
+    hle_hg_begin();
+    hle_hg_mesh("blade", b->model, b->skeleton, b->modelMat, 1);
+    hle_hg_mesh("body", b->model, b->skeleton, b->modelMat, 0);
+    hle_hg_hit(hle_hg_gsphere && hle_hg_gsphereAt == hle_hg_frame ? hle_hg_gsphere : hle_hg_gname(b));
+}
+#endif
+#ifdef HLE_LOG_HITGAP
+#include "utilities/simple_collision_utility.h"
+static float hg_obb_d(const SCU_OBB *o, const float q[3], bool xz)     // a point's distance from a box turned by yaw about y
+{
+    float c = cosf(o->yaw), s = sinf(o->yaw), dx = q[0] - o->center[0], dy = q[1] - o->center[1], dz = q[2] - o->center[2];
+    float lx = dx * c + dz * s, lz = -dx * s + dz * c;     // (either turn: the box is symmetric)
+    float ex = fmaxf(0.0f, fabsf(lx) - o->half[0]), ey = xz ? 0.0f : fmaxf(0.0f, fabsf(dy) - o->half[1]), ez = fmaxf(0.0f, fabsf(lz) - o->half[2]);
+    return sqrtf(ex * ex + ey * ey + ez * ez);
+}
+void hle_hg_obb_vol(const char *name, const SCU_OBB *o)     // a box on the floor tested in xz against the player's radius
+{
+    HgWin *w = hg_win(name); if (!w) return;
+    w->last = hle_hg_frame;
+    for (int v = 0; v < HG_NV; v++) { float pa[3], pb[3], pr = hg_axis(v, pa, pb); w->m[v] = fminf(w->m[v], hg_obb_d(o, pa, true) - pr); }
+}
+void hle_hg_obb(const char *what, const SCU_OBB *o)     // a box as drawn
+{
+    float pa[3], pb[3], pr = hg_axis(0, pa, pb), g = 1e9f, c = 1e9f;
+    for (int i = 0; i < hgN; i++) g = fminf(g, hg_obb_d(o, hgP[i], false));
+    for (int k = 0; k <= 8; k++) { float q[3]; for (int i = 0; i < 3; i++) q[i] = pa[i] + (pb[i] - pa[i]) * k / 8.0f; c = fminf(c, hg_obb_d(o, q, false) - pr); }
+    hg_part(what, g);
+    if (g < hgMesh) { hgMesh = g; hgWhat = what; }
+    hgCap = fminf(hgCap, c);
+}
+#endif
+#ifdef HLE_LOG_HITGAP
+void hle_hg_vol_xz(const char *name, const float c[3], float R)     // a wave on the floor: the player's middle within R + his radius of c
+{
+    HgWin *w = hg_win(name); if (!w) return;
+    w->last = hle_hg_frame;
+    for (int v = 0; v < HG_NV; v++) { float pa[3], pb[3], pr = hg_axis(v, pa, pb), dx = pa[0] - c[0], dz = pa[2] - c[2]; w->m[v] = fminf(w->m[v], sqrtf(dx * dx + dz * dz) - R - pr); }
+}
+void hle_hg_ring(const char *what, const float c[3], float R, float yLo, float yHi)     // a ring on the floor as drawn: out to R, from yLo to yHi
+{
+    float pa[3], pb[3], pr = hg_axis(0, pa, pb), g = 1e9f;
+    for (int i = 0; i < hgN; i++) {
+        float dx = hgP[i][0] - c[0], dz = hgP[i][2] - c[2], ex = sqrtf(dx * dx + dz * dz) - R, ey = hgP[i][1] > yHi ? hgP[i][1] - yHi : hgP[i][1] < yLo ? yLo - hgP[i][1] : 0.0f;
+        g = fminf(g, ex > 0.0f ? sqrtf(ex * ex + ey * ey) : ey > 0.0f ? ey : ex);
+    }
+    float dx = pa[0] - c[0], dz = pa[2] - c[2], cap = sqrtf(dx * dx + dz * dz) - R - pr;
+    hg_part(what, g);
+    if (g < hgMesh) { hgMesh = g; hgWhat = what; }
+    hgCap = fminf(hgCap, cap);
+}
+int hle_hg_boss_state(void)
+{
+    extern int hle_fk_state(void), hle_sun_state(void), hle_dg_state(void);
+    Boss *b = boss_get_instance(); if (!b) return -1;
+    return b->phaseIndex == 3 ? hle_fk_state() : b->phaseIndex == 4 ? hle_sun_state() : b->phaseIndex == 5 ? hle_dg_state() : (int)b->state;
+}
+const char *hle_hg_fxname(int shape, bool arc, int st)     // a hostile effect, by its boss, its shape and the boss's move when it was cast
+{
+    static const char *const S[7] = { "X", "blade", "crescent", "ember", "beam", "shot", "wave" };
+    static const char *const B[6] = { "?", "G", "U", "FW", "Sun", "SB" };
+    static char buf[6][7][32][28];
+    Boss *b = boss_get_instance(); int p = b && b->phaseIndex >= 1 && b->phaseIndex <= 5 ? b->phaseIndex : 0;
+    int k = arc ? 6 : (shape >= 0 && shape < 6 ? shape : 5), m = st >= 0 && st < 32 ? st : 31;
+    if (!buf[p][k][m][0]) snprintf(buf[p][k][m], sizeof buf[p][k][m], "%s %s (move %d)", B[p], S[k], st);
+    return buf[p][k][m];
+}
+#endif
+#ifdef HLE_LOG_HITGAP
+void hle_hg_sbvol(const char *name, float ax)     // Shadowborne's own test: what is drawn within 6 (PLAYER_R) of an axis 4..16 over the feet; ax its distance
+{
+    static const float R[HG_NV] = { 6.0f, 6.0f, 5.0f, 6.0f, 5.0f };
+    HgWin *w = hg_win(name); if (!w) return;
+    w->last = hle_hg_frame;
+    for (int v = 0; v < HG_NV; v++) w->m[v] = fminf(w->m[v], ax - R[v]);
+}
+int hle_hg_player_pts(const float (**p)[3]) { hg_player(); *p = (const float (*)[3])hgP; return hgN; }
+float hle_hg_r(int v) { float a[3], b[3]; return hg_axis(v, a, b); }
+void hle_hg_m(const char *name, const float m[HG_NV], bool fixed)     // a reach worked out by the caller for each hurtbox
+{
+    HgWin *w = hg_win(name); if (!w) return;
+    w->last = hle_hg_frame; w->fixed = w->fixed || fixed;
+    for (int v = 0; v < HG_NV; v++) w->m[v] = fminf(w->m[v], m[v]);
+}
+#endif
+#ifdef HLE_LOG_HITGAP
+void hle_hg_ring2(const char *what, const float c[3], float Rin, float Rout, float yLo, float yHi)     // a band Rin..Rout round c as drawn, yLo..yHi
+{
+    float pa[3], pb[3], pr = hg_axis(0, pa, pb), g = 1e9f;
+    for (int i = 0; i < hgN; i++) {
+        float dx = hgP[i][0] - c[0], dz = hgP[i][2] - c[2], d = sqrtf(dx * dx + dz * dz), ex = fmaxf(Rin - d, d - Rout), ey = hgP[i][1] > yHi ? hgP[i][1] - yHi : hgP[i][1] < yLo ? yLo - hgP[i][1] : 0.0f;
+        g = fminf(g, ex > 0.0f ? sqrtf(ex * ex + ey * ey) : ey > 0.0f ? ey : ex);
+    }
+    float dx = pa[0] - c[0], dz = pa[2] - c[2], d = sqrtf(dx * dx + dz * dz);
+    hg_part(what, g);
+    if (g < hgMesh) { hgMesh = g; hgWhat = what; }
+    hgCap = fminf(hgCap, fmaxf(d - pr - Rout, Rin - (d + pr)));
 }
 #endif

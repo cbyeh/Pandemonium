@@ -15,6 +15,12 @@
 #include "utilities/general_utility.h"
 #include "character/character.h"
 #include "utilities/simple_collision_utility.h"
+#ifdef HLE_LOG_HITGAP     // test aid: each hostile effect's reach, and what was drawn when it landed
+extern void hle_hg_vol(const char *, const float *, const float *, float), hle_hg_vol_xz(const char *, const float *, float), hle_hg_begin(void);
+extern void hle_hg_seg(const char *, const float *, const float *, float), hle_hg_ring(const char *, const float *, float, float, float), hle_hg_hit(const char *);
+extern const char *hle_hg_fxname(int shape, bool arc, int st);
+extern void hle_hg_key(const void *);
+#endif
 
 static void dir_basis(const float v[3], float d[3], float s[3], float u[3]);
 
@@ -40,6 +46,9 @@ typedef struct {
     float scale;            // a wave's size (hit and drawn), 1 by default
     float delay;            // charging where it was spawned: still, harmless and growing until then
     float homing;           // turn rate toward the player (an orb), 0 once it has committed
+#ifdef HLE_LOG_HITGAP
+    int8_t hgSt;            // test aid: its boss's move when it was cast
+#endif
 } SkillFx;
 
 static bool s_spawnHostile;     // palette/target for effects spawned now
@@ -77,6 +86,9 @@ static SkillFx* fx_alloc(FxType type)
             s_fx[i].type = type;
             s_fx[i].hostile = s_spawnHostile;
             s_fx[i].warn = s_spawnWarn;
+#ifdef HLE_LOG_HITGAP
+            { extern int hle_hg_boss_state(void); s_fx[i].hgSt = (int8_t)hle_hg_boss_state(); }
+#endif
             return &s_fx[i];
         }
     }
@@ -119,6 +131,21 @@ bool skill_fx_fire_trail_touches(const float p[3], float r)
     return false;
 }
 
+#ifdef HLE_LOG_HITGAP
+float skill_fx_fire_trail_gap(const float p[3])     // test aid: how far out of the burning band a point is, in xz (< 0 inside)
+{
+    float g = 1e9f;
+    for (int i = 0; i + 1 < s_fireN; i++) {
+        const FirePt *a = &s_fire[i], *b = &s_fire[i + 1];
+        if (a->id != b->id || s_fireT - a->born >= a->burn) continue;
+        float ex = b->x - a->x, ez = b->z - a->z, l2 = ex * ex + ez * ez;
+        float u = l2 > 1e-6f ? fmaxf(0.0f, fminf(1.0f, ((p[0] - a->x) * ex + (p[2] - a->z) * ez) / l2)) : 0.0f;
+        float dx = p[0] - (a->x + ex * u), dz = p[2] - (a->z + ez * u);
+        g = fminf(g, sqrtf(dx * dx + dz * dz) - FIRE_BAND);
+    }
+    return g;
+}
+#endif
 void skill_fx_spawn_arc(const float pos[3], float yaw, float radius, float damage)
 {
     SkillFx *f = fx_alloc(FX_ARC);
@@ -333,6 +360,9 @@ static void update_arc_hit(SkillFx *f, Boss *b)
         float dx = character.pos[0] - f->pos[0], dz = character.pos[2] - f->pos[2];
         float dist = sqrtf(dx*dx + dz*dz);
         float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
+#ifdef HLE_LOG_HITGAP
+        if (character.pos[1] <= f->pos[1] + 2.0f) { hle_hg_key(f); hle_hg_vol_xz(hle_hg_fxname(0, true, f->hgSt), f->pos, arc_radius(f)); }
+#endif
         if (dist - character.capsuleCollider.radius > arc_radius(f)) return;
         float rr = character.capsuleCollider.radius;     // only as far round as it's drawn (with the body's width)
         if (dist > rr && acosf(fmaxf(-1.0f, fminf(1.0f, (dx*fx + dz*fz) / dist))) > f->half + asinf(rr / dist)) return;
@@ -342,6 +372,9 @@ static void update_arc_hit(SkillFx *f, Boss *b)
                (double)(dist - character.capsuleCollider.radius), (double)arc_radius(f), (double)f->age, (double)(character.pos[1] - f->pos[1]));
 #endif
         f->hitsLeft = 0;
+#ifdef HLE_LOG_HITGAP
+        hle_hg_begin(); hle_hg_ring("ring", f->pos, arc_radius(f), f->pos[1] - 6.0f, f->pos[1] + 12.0f); hle_hg_key(f); hle_hg_hit(hle_hg_fxname(0, true, f->hgSt));
+#endif
 #ifdef HLE_LOG_MOVES     // test aid: a hostile wave's hit (the [hit] after it is this one)
         debugf("[fxhit] wave\n");
 #endif
@@ -404,6 +437,10 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
                 pa[m] = character.pos[m] + character.capsuleCollider.localCapA.v[m];
                 pb[m] = character.pos[m] + character.capsuleCollider.localCapB.v[m];
             }
+#ifdef HLE_LOG_HITGAP
+            hle_hg_key(f); hle_hg_vol(hle_hg_fxname(f->shape, false, f->hgSt), ea, eb, SLASH_R * f->scale);
+            if (scu_capsule_vs_capsule_f(ea, eb, SLASH_R * f->scale, pa, pb, character.capsuleCollider.radius)) { hle_hg_begin(); hle_hg_seg("beam", ea, eb, 3.7f * f->scale); }
+#endif
             if (!scu_capsule_vs_capsule_f(ea, eb, SLASH_R * f->scale, pa, pb, character.capsuleCollider.radius)) return;
         } else if (f->shape == SKILL_WAVE_CRESCENT) {
             // A crescent is one long thin blade (draw_xwave): hit along it, not with a ball round its
@@ -418,6 +455,10 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
                 pb[m] = character.pos[m] + character.capsuleCollider.localCapB.v[m];
             }
             bool hit = scu_capsule_vs_capsule_f(a, b, k, pa, pb, character.capsuleCollider.radius);
+#ifdef HLE_LOG_HITGAP
+            hle_hg_key(f); hle_hg_vol(hle_hg_fxname(f->shape, false, f->hgSt), a, b, k);
+            if (hit) { hle_hg_begin(); hle_hg_seg("crescent", a, b, k); }
+#endif
 #ifdef HLE_LOG_HITVOL     // test aid: the old ball (14) against the blade
             static int said;
             if (hit != sphere_hits_player(c, r) && said++ < 60) { float q[3] = { character.pos[0] - f->pos[0], character.pos[1] + 8.0f - f->pos[1], character.pos[2] - f->pos[2] };
@@ -427,6 +468,10 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
             if (!hit) return;
         } else {
             bool hit = sphere_hits_player(c, r);
+#ifdef HLE_LOG_HITGAP
+            hle_hg_key(f); hle_hg_vol(hle_hg_fxname(f->shape, false, f->hgSt), c, c, r);
+            if (hit) { hle_hg_begin(); hle_hg_seg(f->shape == SKILL_WAVE_ORB ? "flame" : "shot", c, c, f->shape == SKILL_WAVE_ORB ? 7.2f * f->scale : r); }
+#endif
 #ifdef HLE_LOG_HITVOL     // test aid: an ember's centre against the player's body (its axis), near it
             if (f->shape == SKILL_WAVE_ORB) {
                 float a[3], b2[3], q[3];
@@ -446,6 +491,9 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
 #endif
 #ifdef HLE_LOG_MOVES     // test aid: a hostile shot's hit (the [hit] after it is this one)
         debugf("[fxhit] shape %d\n", f->shape);
+#endif
+#ifdef HLE_LOG_HITGAP
+        hle_hg_key(f); hle_hg_hit(hle_hg_fxname(f->shape, false, f->hgSt));
 #endif
         character_apply_damage(f->damage);
     } else {

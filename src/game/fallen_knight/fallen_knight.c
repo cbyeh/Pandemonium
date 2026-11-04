@@ -559,6 +559,13 @@ static void pop_sample(float dt, float yaw)
 }
 #endif
 
+#ifdef HLE_LOG_HITGAP     // test aid: each blow's reach and what was drawn when it landed
+extern void hle_hg_vol(const char *, const float *, const float *, float), hle_hg_begin(void), hle_hg_seg(const char *, const float *, const float *, float);
+extern void hle_hg_hit(const char *), hle_hg_fixed(const char *, bool), hle_hg_m(const char *, const float *, bool), hle_hg_mesh(const char *, const T3DModel *, const T3DSkeleton *, const T3DMat4FP *, int);
+extern float hle_hg_r(int), hle_hg_mesh_seg(const float *, const float *), skill_fx_fire_trail_gap(const float *);
+extern int hle_hg_player_pts(const float (**p)[3]);
+extern T3DModel *characterModel;
+#endif
 static bool sword_segment(float base[3], float tip[3])
 {
     if (s.swordBone < 0) return false;
@@ -592,6 +599,10 @@ static void melee_check(Boss *b, float t0, float t1, float damage)
     float pa[3] = { p[0] + a->v[0], p[1] + a->v[1], p[2] + a->v[2] };
     float pb[3] = { p[0] + c->v[0], p[1] + c->v[1], p[2] + c->v[2] };
     bool hit = scu_capsule_vs_capsule_f(base, tip, 2.0f, pa, pb, character.capsuleCollider.radius);     // the blade's width
+#ifdef HLE_LOG_HITGAP
+    hle_hg_vol(ANIM_NAMES[s.anim], base, tip, 2.0f);
+    if (hit) { hle_hg_begin(); hle_hg_seg("blade", base, tip, 2.0f); hle_hg_mesh("body", characterModel, &s.skel, s.mat, 0); hle_hg_hit(ANIM_NAMES[s.anim]); }
+#endif
 #ifdef HLE_FK_HITLOG
     {   float lo = 0.0f, hi = 120.0f;       // the gap between the blade's surface and the player's capsule
         for (int i = 0; i < 14; i++) { float m = (lo + hi) * 0.5f; if (scu_capsule_vs_capsule_f(base, tip, m, pa, pb, character.capsuleCollider.radius)) hi = m; else lo = m; }
@@ -1552,6 +1563,13 @@ static void trislam_update(Boss *b, float dt)
                 float ex = c[0] - a[0], ez = c[1] - a[1], l = sqrtf(ex * ex + ez * ez);
                 in = (ex * (pz - a[1]) - ez * (px - a[0])) / l <= 6.0f;     // the corners go clockwise: inside is negative
             }
+#ifdef HLE_LOG_HITGAP
+            hle_hg_fixed("FW Triangle Slam (the area)", in && character.pos[1] - s.groundY < 6.0f);
+            if (in && character.pos[1] - s.groundY < 6.0f) { hle_hg_begin();
+                for (int i = 0; i < 3; i++) for (int k = 0; k < 2; k++) { float p[3]; tri_point(i, k * 0.5f, p);
+                    hle_hg_seg("blades", (float[3]){ p[0], s.groundY, p[2] }, (float[3]){ p[0], s.groundY + 28.0f, p[2] }, 4.0f); }
+                hle_hg_hit("FW Triangle Slam (the area)"); }
+#endif
             if (in && character.pos[1] - s.groundY < 6.0f) character_apply_damage(20.0f);
             screen_shake_set_shake_mag(10.0f);
             sfx_at(SCENE1_SFX_SLAM_BOSS, 1.0f, (s.tri[0][0] + s.tri[1][0] + s.tri[2][0]) / 3.0f,
@@ -1734,7 +1752,17 @@ static void fire_light(const Boss *b, float x, float z)
 static void fire_update(float dt)
 {
     if (s.fireHitT > 0.0f) { s.fireHitT -= dt; return; }
+#ifdef HLE_LOG_HITGAP
+    if (character.pos[1] - s.groundY <= 6.0f) { float g = skill_fx_fire_trail_gap(character.pos), m[5];
+        for (int v = 0; v < 5; v++) m[v] = g - hle_hg_r(v);
+        if (g < 1e8f) hle_hg_m("FW fire trail", m, false); }
+#endif
     if (character.pos[1] - s.groundY > 6.0f || !skill_fx_fire_trail_touches(character.pos, character.capsuleCollider.radius)) return;
+#ifdef HLE_LOG_HITGAP
+    { const float (*P)[3]; int n = hle_hg_player_pts(&P); float g = 1e9f;
+      for (int i = 0; i < n; i++) if (P[i][1] - s.groundY < 12.0f) g = fminf(g, skill_fx_fire_trail_gap(P[i]));
+      extern void hle_hg_gaps(const char *, float, float); hle_hg_begin(); hle_hg_gaps("flames", g, skill_fx_fire_trail_gap(character.pos) - character.capsuleCollider.radius); hle_hg_hit("FW fire trail"); }
+#endif
     character_apply_damage(FK_FELT(8.0f));
     s.fireHitT = 1.0f;
     sfx_at(SCENE1_SFX_FIRE, 0.6f, character.pos[0], character.pos[2]);
@@ -2402,6 +2430,6 @@ void fallen_knight_draw(Boss* b)
     floor_fire_draw();
 }
 
-#ifdef HLE_SHOW_HURTBOX
+#if defined(HLE_SHOW_HURTBOX) || defined(HLE_LOG_HITGAP)
 int hle_fk_state(void) { return s.state; }     // test aid: its move, for [hbb]
 #endif

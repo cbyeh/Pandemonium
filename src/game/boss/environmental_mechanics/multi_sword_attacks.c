@@ -410,6 +410,11 @@ static inline void step_toward_xz(MsaSword *s, float tx, float tz, float max_ste
 // ============================================================
 // CHARACTER CAPSULE HELPERS
 // ============================================================
+#ifdef HLE_LOG_HITGAP     // test aid: the swords' reach and what was drawn when one landed
+extern void hle_hg_vol(const char *, const float *, const float *, float), hle_hg_begin(void), hle_hg_seg(const char *, const float *, const float *, float), hle_hg_hit(const char *);
+extern void hle_hg_obb_vol(const char *, const SCU_OBB *), hle_hg_obb(const char *, const SCU_OBB *);
+static SCU_OBB hgBox; static bool hgBoxSet;
+#endif
 static void getCharacterCapsuleWorld(float outA[3], float outB[3], float *outR) {
     outA[0] = character.pos[0] + character.capsuleCollider.localCapA.v[0];
     outA[1] = character.pos[1] + character.capsuleCollider.localCapA.v[1];
@@ -496,8 +501,14 @@ static bool msa_wall_hit_or_block_capsule(
 
             float push[3] = {0}, nrm[3] = {0};
 
+#ifdef HLE_LOG_HITGAP
+            hle_hg_obb_vol("U sword wall", &o);
+#endif
             if (scu_capsule_vs_obb_push_xz_f(capA, capB, r, &o, push, nrm)) {
                 anyHit = true;
+#ifdef HLE_LOG_HITGAP
+                if (!hgBoxSet) { hgBox = o; hgBoxSet = true; }
+#endif
 
 #if MSA_WALLS_BLOCKING
                 character.pos[0] += push[0];
@@ -936,6 +947,12 @@ void msa_update(float dt) {
                 float ca[3], cb[3], cr;
                 getCharacterCapsuleWorld(ca, cb, &cr);
                 bool hit = scu_capsule_vs_capsule_f(ba, bb, AERIAL_BLADE_R, ca, cb, cr);
+#ifdef HLE_LOG_HITGAP
+                { const char *nm = gGlowSwordShape ? "U thrown sword (lands)" : "U aerial sword (lands)";
+                  hle_hg_vol(nm, ba, bb, AERIAL_BLADE_R);
+                  if (hit && gHitCd <= 0.0f) { float g0[3] = { tx - n[0] * 20.0f, ty - n[1] * 20.0f, tz - n[2] * 20.0f };
+                      hle_hg_begin(); hle_hg_seg("blade", ba, bb, 2.2f); hle_hg_seg("guard", g0, g0, 7.5f); hle_hg_hit(nm); } }
+#endif
 #ifdef HLE_LOG_HITVOL
                 { float pdx = character.pos[0] - tx, pdy = character.pos[1] - ty, pdz = character.pos[2] - tz;
                   bool old = pdx*pdx + pdy*pdy + pdz*pdz <= 32.0f * 32.0f;
@@ -1236,6 +1253,9 @@ void msa_update(float dt) {
     }
 #endif
     bool hitBody = false;
+#ifdef HLE_LOG_HITGAP
+    hgBoxSet = false;
+#endif
 
 #if MSA_DO_BODY_COLLISION
     for (int i = 0; i < gCount; i++) {
@@ -1246,6 +1266,10 @@ void msa_update(float dt) {
         swordBodyObb(s, &o);
         float push[3], nrm[3];
         bool hit = scu_capsule_vs_obb_push_xz_f(charA, charB, charR, &o, push, nrm);
+#ifdef HLE_LOG_HITGAP
+        hle_hg_obb_vol("U ground sword", &o);
+        if (hit && !hgBoxSet) { hgBox = o; hgBoxSet = true; }
+#endif
 #ifdef HLE_LOG_HITVOL     // test aid: where the square box round the sword (before) and the sword itself disagree
         { float mn[3] = { s->pos[0] - 9.0f, gFloorY, s->pos[2] - 9.0f }, mx[3] = { s->pos[0] + 9.0f, gFloorY + 20.0f, s->pos[2] + 9.0f };
           bool old = scu_capsule_vs_rect_f(charA, charB, charR, mn, mx);
@@ -1298,12 +1322,18 @@ void msa_update(float dt) {
             debugf("[msa] body hit (phase %d)\n", gPhase);
 #endif
             character_apply_damage(DMG_BODY);
+#ifdef HLE_LOG_HITGAP
+            if (hgBoxSet) { hle_hg_begin(); hle_hg_obb("sword", &hgBox); hle_hg_hit("U ground sword"); }
+#endif
             gHitCd = BODY_HIT_GRACE;
         } else if (hitWall) {
 #ifdef HLE_TEST_UNBOUND
             debugf("[msa] wall hit\n");
 #endif
             character_apply_damage(DMG_WALL);
+#ifdef HLE_LOG_HITGAP
+            if (hgBoxSet) { hle_hg_begin(); hle_hg_obb("wall", &hgBox); hle_hg_hit("U sword wall"); }
+#endif
             gHitCd = WALL_HIT_COOLDOWN;
         }
     }
