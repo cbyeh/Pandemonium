@@ -46,9 +46,6 @@ static MenuAction pendingAction = MENU_ACTION_NONE;
 static MenuState settingsHubReturnMenu = MENU_MAIN;
 static int       settingsHubReturnSelectedOption = 0;
 
-// Pause menu background
-static sprite_t *pauseMenuBg = NULL;
-static surface_t pauseMenuBgSurf = {0};
 
 // Controls menu icons (prefer black-outline set for readability on bright backgrounds)
 static sprite_t *iconA = NULL;
@@ -298,6 +295,8 @@ static void draw_overscan_corner_markers(void)
     rdpq_fill_rectangle(right - len, bottom - t, right, bottom);
     rdpq_fill_rectangle(right - t, bottom - len, right, bottom);
 
+    // its words on the menus' box (a fight's boss title showed through them)
+    ui_box(left + 20, top + 4, right - 20, top + 42);
     rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
     const int textY = top + 18;
 
@@ -311,13 +310,15 @@ static void draw_overscan_corner_markers(void)
         .align = ALIGN_CENTER,
         .width = SCREEN_WIDTH,
         .wrap = WRAP_WORD,
-    }, FONT_UNBALANCED, 0, textY + 16, "D-PAD: adjust   A: save   B: cancel");
+    }, FONT_UNBALANCED, 0, textY + 16, "Fit the corners to the screen");
 
     rdpq_text_printf(&(rdpq_textparms_t){
         .align = ALIGN_CENTER,
         .width = SCREEN_WIDTH,
         .wrap = WRAP_WORD,
     }, FONT_UNBALANCED, 0, textY + 34, "X: %d   Y: %d", (int)uiOverscanX, (int)uiOverscanY);
+    // what A and B do there, as words (no button letters: A takes, B goes back)
+    rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = SCREEN_WIDTH, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, 0, bottom - 8, "Enter: save   Back: cancel");
 }
 
 void menu_controller_init(void)
@@ -351,10 +352,6 @@ void menu_controller_init(void)
     lastStickLeft = false;
     lastStickRight = false;
 
-    pauseMenuBg = sprite_load_shared("rom:/dialog_vertical.ia8.sprite");     // (the dialog box's too)
-    if (pauseMenuBg) {
-        pauseMenuBgSurf = sprite_get_pixels(pauseMenuBg);
-    }
 
     iconA = sprite_load_shared("rom:/buttons/A.sprite");
     // (the Controls page's other icons load with it: controls_icons)
@@ -968,89 +965,6 @@ void menu_controller_update_title(void)
     );
 }
 
-static void draw_pause_menu_background(int x, int y, int dialogWidth, int dialogHeight)
-{
-    if (!pauseMenuBg || pauseMenuBgSurf.width <= 0 || pauseMenuBgSurf.height <= 0) {
-        rdpq_set_prim_color(RGBA32(40, 35, 30, 180));
-        rdpq_fill_rectangle(x, y, x + dialogWidth, y + dialogHeight);
-        return;
-    }
-
-    int imgW = pauseMenuBgSurf.width;
-    int imgH = pauseMenuBgSurf.height;
-
-    const float maxScaleX = (float)dialogWidth / (float)imgW;
-    const float maxScaleY = (float)dialogHeight / (float)imgH;
-    const float fitScale = (maxScaleX < maxScaleY) ? maxScaleX : maxScaleY;
-
-    const float heightShrink = 0.98f;
-    const float baseScale = fitScale * heightShrink;
-
-    const float extraXStretch = 1.15f;
-    float scaleX = baseScale * extraXStretch;
-    if (scaleX > maxScaleX) scaleX = maxScaleX;
-
-    const float scaleY = baseScale;
-
-    const int drawW = (int)(imgW * scaleX);
-    const int drawH = (int)(imgH * scaleY);
-    const int drawX = x + (dialogWidth - drawW) / 2;
-    const int drawY = y + (dialogHeight - drawH) / 2;
-
-    rdpq_mode_alphacompare(1);
-    rdpq_tex_blit(&pauseMenuBgSurf, drawX, drawY, &(rdpq_blitparms_t){
-        .scale_x = scaleX,
-        .scale_y = scaleY,
-    });
-}
-
-static void draw_menu_selection_highlight(int x, int y, int w, int h)
-{
-    const int padX = 6;
-    const int padY = 2;
-    const int x0 = x - padX;
-    const int y0 = y - padY;
-    const int x1 = x + w + padX;
-    const int y1 = y + h + padY;
-
-    rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
-    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 140));
-    rdpq_fill_rectangle(x0, y0, x1, y1);
-
-    rdpq_set_prim_color(RGBA32(255, 255, 255, 70));
-    rdpq_fill_rectangle(x0, y0, x1, y0 + 1);
-    rdpq_fill_rectangle(x0, y1 - 1, x1, y1);
-    rdpq_fill_rectangle(x0, y0, x0 + 1, y1);
-    rdpq_fill_rectangle(x1 - 1, y0, x1, y1);
-}
-
-static void draw_menu_selection_highlight_baseline(int x, int baselineY, int w, int h)
-{
-    const int padX = 6;
-    const int padY = 2;
-    const int x0 = x - padX;
-    const int y0 = (baselineY - h) - padY + 2;
-    const int x1 = x + w + padX;
-    const int y1 = baselineY + padY + 4;
-
-    rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
-    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 140));
-    rdpq_fill_rectangle(x0, y0, x1, y1);
-}
-
-static void draw_menu_selection_highlight_centered(int contentX, int y, int contentW, int lineH, int maxW)
-{
-    int w = maxW;
-    if (w > contentW) w = contentW;
-
-    int x = contentX + (contentW - w) / 2;
-    draw_menu_selection_highlight(x, y, w, lineH);
-}
-
 // Beaten (the story cleared, a Bonus boss slain on this save): gold text and a small
 // gold diamond after it
 static void draw_menu_line(int x, int y, int w, int h, rdpq_align_t align, const char *text, bool beaten)
@@ -1072,13 +986,49 @@ static void draw_menu_line(int x, int y, int w, int h, rdpq_align_t align, const
     for (int r = 0; r < 7; r++) rdpq_fill_rectangle(mx + 3 - ROW[r] / 2, my - 3 + r, mx + 3 - ROW[r] / 2 + ROW[r], my - 2 + r);
 }
 
-// The Shrine's title row: Embers left (5 digits), the title centred unless that would touch them (then just right of them)
-static void tower_menu_title(int x, int y, int w, int h, const char *title)
+// The standard box (ui_pages.h: THE MENU STANDARD) over the title-safe rect, its title on the top row
+static UiRect menu_box(const char *title)
+{
+    UiRect r = ui_safe_rect();
+    ui_box(r.x0, r.y0, r.x1, r.y1);
+    if (title) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = r.x1 - r.x0 }, FONT_UNBALANCED, r.x0, r.y0 + UI_TITLE_DY, "%s", title);
+    return r;
+}
+#define MB_X(r)     ((r).x0 + 8)
+#define MB_W(r)     ((r).x1 - (r).x0 - 16)
+#define MB_BODY(r)  ((r).y0 + UI_TITLE_DY + 24)          // the first row's baseline
+#define MB_FOOT(r)  ((r).y1 - UI_FOOT_DY)                 // the footer's
+#define MB_HELP(r)  (MB_FOOT(r) - 15)                     // a row's line of help, over the footer
+#define ROW_W       176                                   // a centred list's cursor
+// a list's row: centred (right NULL), or a name left and its state right; y its baseline
+static void menu_row(UiRect r, int y, bool sel, int style, const char *left, const char *right)
+{
+    int x = MB_X(r), w = MB_W(r);
+    if (!right) {
+        if (sel) ui_select_box(x + (w - ROW_W) / 2, y - 12, x + (w + ROW_W) / 2, y + 4);
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = style }, FONT_UNBALANCED, x, y, "%s", left);
+        return;
+    }
+    if (sel) ui_select_box(x - 4, y - 12, x + w + 4, y + 4);
+    rdpq_text_printf(&(rdpq_textparms_t){ .width = w - UI_RIGHT_W, .style_id = style }, FONT_UNBALANCED, x, y, "%s", left);
+    if (right[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W + 40, .style_id = style }, FONT_UNBALANCED, x + w - UI_RIGHT_W - 40, y, "%s", right);
+}
+// a row's line of help over the footer (one line: the box ends under it)
+static void menu_help(UiRect r, int style, const char *s)
+{
+    if (s && s[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = MB_W(r), .style_id = style }, FONT_UNBALANCED, MB_X(r), MB_HELP(r), "%s", s);
+}
+static void menu_details_hint(UiRect r) { ui_hint(r.x1 - 8, MB_FOOT(r), UI_DETAILS_HINT); }
+
+// The Tower lists' title row: Embers left (gold), the title centred unless that would touch them (then just right of them)
+static void tower_menu_title(UiRect r, const char *title)
 {
     char e[24]; snprintf(e, sizeof e, "Embers %d", tower_embers());
-    int tw = ui_text_width(title), tx = x + (w - tw) / 2, after = x + 4 + ui_text_width(e) + 10;
+    int y = r.y0 + UI_TITLE_DY, x = MB_X(r), w = MB_W(r);
+    rdpq_text_printf(&(rdpq_textparms_t){ .style_id = FONT_STYLE_GOLD }, FONT_UNBALANCED, x, y, "%s", e);
+    int tw = ui_text_width(title), tx = x + (w - tw) / 2, after = x + ui_text_width(e) + 10;
     if (tx < after) tx = after;
-    rdpq_text_printf(&(rdpq_textparms_t){ .width = tw + 8, .height = h }, FONT_UNBALANCED, tx, y, "%s", title);
+    rdpq_text_printf(&(rdpq_textparms_t){ .width = tw + 8 }, FONT_UNBALANCED, tx, y, "%s", title);
 }
 
 static void draw_icon_line(sprite_t *icon, int x, int rowBaselineY, int lineH, int w, const char *text)
@@ -1126,6 +1076,8 @@ void menu_controller_draw(void)
     if (!menuActive) {
         return;
     }
+    // Details (R) alone over the scene: the menus' black is translucent, the menu's rows would show through it
+    if (ui_details()->open && ui_details()->owner == UI_OWNER_MENU) { ui_panel_draw(ui_details()); return; }
 
     if (currentMenu == MENU_TITLE) {
         rdpq_sync_pipe();
@@ -1149,7 +1101,7 @@ void menu_controller_draw(void)
 
         for (int i = 0; i < MENU_TITLE_COUNT; i++) {
             if (i == selectedOption) {
-                draw_menu_selection_highlight_baseline(menuX, y, (menuW * 3) / 4, lineHeight);
+                ui_select_box(menuX - 6, y - lineHeight + 2, menuX + (menuW * 3) / 4 + 6, y + 6);
                 rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
             } else {
                 rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
@@ -1164,365 +1116,64 @@ void menu_controller_draw(void)
         return;
     }
 
-    if (currentMenu == MENU_LOAD_GAME) {
-        rdpq_sync_pipe();
-        rdpq_set_mode_standard();
-        rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-
-        const int dialogMarginX = 0;
-        int dialogWidth = SCREEN_WIDTH - (dialogMarginX * 2);
-        int dialogHeight = 230;
-
-        dialogWidth = 260;
-
-        int dialogX = (SCREEN_WIDTH - dialogWidth) / 2;
-        int dialogY = (SCREEN_HEIGHT - dialogHeight) / 2;
-
-        draw_pause_menu_background(dialogX, dialogY, dialogWidth, dialogHeight);
-
-        rdpq_set_prim_color(RGBA32(0, 0, 0, 90));
-        rdpq_fill_rectangle(dialogX, dialogY, dialogX + dialogWidth, dialogY + dialogHeight);
-
-        rdpq_set_prim_color(RGBA32(180, 160, 120, 255));
-        rdpq_fill_rectangle(dialogX, dialogY, dialogX + dialogWidth, dialogY + 3);
-        rdpq_fill_rectangle(dialogX, dialogY + dialogHeight - 3, dialogX + dialogWidth, dialogY + dialogHeight);
-        rdpq_fill_rectangle(dialogX, dialogY, dialogX + 3, dialogY + dialogHeight);
-        rdpq_fill_rectangle(dialogX + dialogWidth - 3, dialogY, dialogX + dialogWidth, dialogY + dialogHeight);
-
-        rdpq_set_prim_color(RGBA32(220, 200, 160, 255));
-        rdpq_fill_rectangle(dialogX + 3, dialogY + 3, dialogX + dialogWidth - 3, dialogY + 4);
-        rdpq_fill_rectangle(dialogX + 3, dialogY + 3, dialogX + 4, dialogY + dialogHeight - 3);
-
-        const int paddingX = 15;
-        const int paddingY = 20;
-        const int contentX = dialogX + paddingX;
-        const int contentY = dialogY + paddingY;
-        const int contentW = dialogWidth - (paddingX * 2);
-        const int titleYOffset = 8;
-
-        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = contentW,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, contentX, contentY + titleYOffset, "LOAD GAME");
-
-        int boxY = contentY + 34;
-        const int boxHeight = 44;
-        const int boxSpacing = 5;
-        const int slotInnerPadX = 8;
-        const int slotWidth = contentW;
-        const int boxLeft = contentX + (contentW - slotWidth) / 2;
-        const int boxRight = boxLeft + slotWidth;
-        const int boxWidth = boxRight - boxLeft;
-
-        for (int slot = 0; slot < 3; slot++) {
-            const SaveData *saveData = save_controller_get_slot_data(slot);
-            int lastPlayedSlot = save_controller_get_last_played_slot();
-            bool isLastPlayed = slot == lastPlayedSlot;
-            bool isSelected = slot == selectedOption;
-
-            if (isSelected) {
-                rdpq_sync_pipe();
-                rdpq_set_mode_standard();
-                rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-                rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
-                rdpq_set_prim_color(RGBA32(0, 0, 0, 100));
-                rdpq_fill_rectangle(boxLeft, boxY, boxRight, boxY + boxHeight);
-            }
-
-            rdpq_sync_pipe();
-            rdpq_set_mode_standard();
-            rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-            rdpq_set_prim_color(RGBA32(40, 35, 30, 200));
-            rdpq_fill_rectangle(boxLeft, boxY, boxRight, boxY + boxHeight);
-
-            rdpq_sync_pipe();
-            rdpq_set_mode_standard();
-            rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-            rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
-
-            if (isSelected) {
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-            } else if (isLastPlayed) {
-                rdpq_set_prim_color(RGBA32(255, 255, 0, 255));
-            } else {
-                rdpq_set_prim_color(RGBA32(180, 160, 120, 255));
-            }
-
-            rdpq_fill_rectangle(boxLeft, boxY, boxRight, boxY + 1);
-            rdpq_fill_rectangle(boxLeft, boxY + boxHeight - 1, boxRight, boxY + boxHeight);
-            rdpq_fill_rectangle(boxLeft, boxY, boxLeft + 1, boxY + boxHeight);
-            rdpq_fill_rectangle(boxRight - 1, boxY, boxRight, boxY + boxHeight);
-
-            rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-            rdpq_text_printf(&(rdpq_textparms_t){
-                .align = ALIGN_CENTER,
-                .width = boxWidth - (slotInnerPadX * 2),
-                .wrap = WRAP_WORD,
-            }, FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 11, "%s", loadGameMenuOptions[slot]);
-
-            // used once played or set up (a skin or a setting changed stamps it, even before a fight)
-            bool used = saveData && (saveData->last_played_timestamp > 0 || saveData->run_count > 0 || saveData->best_boss_time_ms > 0 ||
-                                     save_progress_tower_best_floor(saveData) > 0 || save_progress_bonus_mask(saveData));
-            if (used) {
-                // The slot's progress: the story, the Tower, the Bonus bosses, the skins
-                char l1[48], l2[48], story[16] = "-";
-                uint32_t ms = saveData->best_boss_time_ms;
-                if (ms) snprintf(story, sizeof story, "%lu:%02lu", (unsigned long)(ms / 60000), (unsigned long)(ms / 1000 % 60));
-                int bm = save_progress_bonus_mask(saveData);
-                snprintf(l1, sizeof l1, "Story %s   Tower %d", story, save_progress_tower_best_floor(saveData));
-                snprintf(l2, sizeof l2, "Bonus %d/3   Skins %d/%d", (bm & 1) + ((bm >> 1) & 1) + ((bm >> 2) & 1),
-                         save_progress_skins_unlocked(saveData), SAVE_SKINS_TO_EARN);
-                rdpq_set_prim_color(RGBA32(200, 200, 200, 255));
-                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = boxWidth - (slotInnerPadX * 2) },
-                                 FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 24, "%s", l1);
-                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = boxWidth - (slotInnerPadX * 2) },
-                                 FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 36, "%s", l2);
-            } else {
-                rdpq_set_prim_color(RGBA32(150, 150, 150, 255));
-
-                rdpq_text_printf(&(rdpq_textparms_t){
-                    .align = ALIGN_CENTER,
-                    .width = boxWidth - (slotInnerPadX * 2),
-                    .wrap = WRAP_WORD,
-                }, FONT_UNBALANCED, boxLeft + slotInnerPadX, boxY + 28, "Empty");
-            }
-
-            boxY += boxHeight + boxSpacing;
-        }
-
-        int backY = boxY + 8;
-        if (selectedOption == MENU_LOAD_GAME_BACK) {
-            const int highlightH = 16;
-            const int highlightY = backY - (highlightH / 2) - 2;
-            draw_menu_selection_highlight_centered(contentX, highlightY, contentW, highlightH, 103);
-            rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-        } else {
-            rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
-        }
-
-        const int backButtonWidth = contentW / 2;
-        const int backButtonX = contentX + (contentW - backButtonWidth) / 2;
-
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = backButtonWidth,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, backButtonX, backY, "%s", loadGameMenuOptions[MENU_LOAD_GAME_BACK]);
-
-        return;
-    }
-
     if (currentMenu == MENU_VIDEO && overscanCalibrating) {
         draw_overscan_corner_markers();
         return;
     }
 
-    const int dialogMarginX = 0;
-    int dialogWidth = SCREEN_WIDTH - (dialogMarginX * 2);
-    int dialogHeight = 200;
-
-    if (currentMenu == MENU_SETTINGS || currentMenu == MENU_AUDIO || currentMenu == MENU_VIDEO) {
-        dialogHeight = 230;
-    } else if (currentMenu == MENU_CONTROLS || currentMenu == MENU_CREDITS || currentMenu == MENU_SHRINE || currentMenu == MENU_RUN ||
-               currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS || currentMenu == MENU_OFFERINGS ||
-               currentMenu == MENU_CODEX || currentMenu == MENU_TOWER || (currentMenu == MENU_MAIN && tower_active())) {
-        dialogHeight = 230;     // (the Tower's menu: five rows and its records; a climb's pause menu: seven rows)
-    }
-
-    if (currentMenu == MENU_CONTROLS) {
-        dialogWidth = 320;
-    } else if (
-        currentMenu == MENU_SETTINGS ||
-        currentMenu == MENU_AUDIO ||
-        currentMenu == MENU_VIDEO ||
-        currentMenu == MENU_CREDITS ||
-        currentMenu == MENU_BONUS ||
-        currentMenu == MENU_TOWER
-    ) {
-        dialogWidth = 260;
-    } else if (currentMenu == MENU_SHRINE || currentMenu == MENU_RUN || currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS ||
-               currentMenu == MENU_OFFERINGS || currentMenu == MENU_CODEX) {
-        dialogWidth = 300;
-    }
-
-    if (currentMenu == MENU_RUN || currentMenu == MENU_CODEX) {     // (framing their box: 300 x 230 at the 7.5% area, as the others)
-        dialogWidth = SCREEN_WIDTH - 2 * (RUN_TX - 20);
-        dialogHeight = SCREEN_HEIGHT - 2 * (RUN_CY - 29);
-    }
-
-    rdpq_sync_pipe();
-    rdpq_set_mode_standard();
-    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-
-    int x = (SCREEN_WIDTH - dialogWidth) / 2;
-    int y = (SCREEN_HEIGHT - dialogHeight) / 2;
-
-    draw_pause_menu_background(x, y, dialogWidth, dialogHeight);
-
-    // the Tower's menus darker: their rows sit over the title's bright fire or the hall's light (the dialog's art doesn't show on Delta's renderer)
-    bool towerMenu = currentMenu == MENU_TOWER || currentMenu == MENU_SHRINE || currentMenu == MENU_RELICS || currentMenu == MENU_UNLOCKS || currentMenu == MENU_RUN ||
-                     currentMenu == MENU_OFFERINGS || currentMenu == MENU_CODEX;
-    if (towerMenu) { rdpq_mode_alphacompare(0); rdpq_mode_combiner(RDPQ_COMBINER_FLAT); }     // (a flat fill: the art's blit left a texture combiner)
-    rdpq_set_prim_color(RGBA32(0, 0, 0, towerMenu ? 200 : 90));
-    rdpq_fill_rectangle(x, y, x + dialogWidth, y + dialogHeight);
-
-    rdpq_set_prim_color(RGBA32(180, 160, 120, 255));
-    rdpq_fill_rectangle(x, y, x + dialogWidth, y + 3);
-    rdpq_fill_rectangle(x, y + dialogHeight - 3, x + dialogWidth, y + dialogHeight);
-    rdpq_fill_rectangle(x, y, x + 3, y + dialogHeight);
-    rdpq_fill_rectangle(x + dialogWidth - 3, y, x + dialogWidth, y + dialogHeight);
-
-    rdpq_set_prim_color(RGBA32(220, 200, 160, 255));
-    rdpq_fill_rectangle(x + 3, y + 3, x + dialogWidth - 3, y + 4);
-    rdpq_fill_rectangle(x + 3, y + 3, x + 4, y + dialogHeight - 3);
-
-    const int paddingX = 30;
-    const int paddingY = 20;
-    const int contentX = x + paddingX;
-    const int contentY = y + paddingY;
-    const int contentW = dialogWidth - (paddingX * 2);
-    const int contentH = dialogHeight - (paddingY * 2);
-
-    x = contentX;
-    y = contentY;
-
-    int lineHeight = 16;
-    const int titleYOffset = 8;
+    static const char *const TITLE[] = {
+        [MENU_MAIN] = "PAUSE MENU", [MENU_SETTINGS] = "SETTINGS", [MENU_AUDIO] = "AUDIO", [MENU_VIDEO] = "VIDEO", [MENU_CONTROLS] = "CONTROLS",
+        [MENU_CREDITS] = "CREDITS", [MENU_LOAD_GAME] = "LOAD GAME", [MENU_BONUS] = "BONUS", [MENU_TOWER] = "TOWER", [MENU_SKINS] = "SKINS",
+    };
+    bool tower = currentMenu == MENU_SHRINE || currentMenu == MENU_RELICS || currentMenu == MENU_UNLOCKS || currentMenu == MENU_OFFERINGS;
+    bool pager = currentMenu == MENU_RUN || currentMenu == MENU_CODEX;
+    UiRect r = menu_box(tower || pager ? NULL : TITLE[currentMenu]);
+    const int x = MB_X(r), w = MB_W(r), P = 16;
+    int y = MB_BODY(r);
 
     if (currentMenu == MENU_MAIN) {
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = contentW,
-            .height = contentH,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, x, y + titleYOffset, "PAUSE MENU");
-
-        y += (lineHeight * 3) + titleYOffset;
-
         for (int i = 0; i < MENU_MAIN_COUNT; i++) {
             if (main_row_hidden(i)) continue;     // Tower runs only
-            if (i == selectedOption) {
-                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, 90);
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-            } else {
-                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
-            }
-
-            rdpq_text_printf(&(rdpq_textparms_t){
-                .align = ALIGN_CENTER,
-                .width = contentW,
-                .height = contentH,
-                .wrap = WRAP_WORD,
-            }, FONT_UNBALANCED, x, y, "%s", mainMenuOptions[i]);
-
-            y += lineHeight + (tower_active() ? 2 : 4);     // (a climb's seven rows: tighter, in its taller box)
+            menu_row(r, y, i == selectedOption, FONT_STYLE_WHITE, mainMenuOptions[i], NULL);
+            y += tower_active() ? P + 2 : P + 4;
         }
-
-        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
     } else if (currentMenu == MENU_SETTINGS) {
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = contentW,
-            .height = contentH,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, x, y + titleYOffset, "SETTINGS");
-
-        y += (lineHeight * 3) + titleYOffset;
-
+        y += 8;
         for (int i = 0; i < MENU_SETTINGS_COUNT; i++) {
             char optionText[64];
             bool locked = i == MENU_SETTINGS_SKILLS && settingsHubReturnMenu != MENU_TITLE;
             const char *arg = locked ? (character_skills_enabled() ? "ON (title only)" : "OFF (title only)")
                                      : (character_skills_enabled() ? "ON" : "OFF");
             if (i == MENU_SETTINGS_SKIN) arg = character_skin_name(character_skin_get());
-            snprintf(optionText, sizeof(optionText), settingsMenuOptions[i] ? settingsMenuOptions[i] : "", arg);
-
-            if (i == selectedOption) {
-                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-            } else {
-                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
-            }
-            rdpq_text_printf(&(rdpq_textparms_t){
-                .align = ALIGN_CENTER,
-                .width = contentW,
-                .height = contentH,
-                .wrap = WRAP_WORD,
-                .style_id = locked ? FONT_STYLE_GREY : FONT_STYLE_WHITE,   // greyed out
-            }, FONT_UNBALANCED, x, y, "%s", optionText);
-
-            y += lineHeight + 2;
+            snprintf(optionText, sizeof(optionText), settingsMenuOptions[i], arg);
+            menu_row(r, y, i == selectedOption, locked ? FONT_STYLE_GREY : FONT_STYLE_WHITE, optionText, NULL);
+            y += P + 4;
         }
-
-        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
     } else if (currentMenu == MENU_BONUS) {
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = contentW,
-            .height = contentH,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, x, y + titleYOffset, "BONUS");
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .style_id = FONT_STYLE_GREY },
-                         FONT_UNBALANCED, x, y + titleYOffset + lineHeight + 2, "Test your might");
-
-        y += (lineHeight * 3) + titleYOffset;
-
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y, "Test your might");
+        y += 2 * P + 4;
+        const SaveData *sd = save_controller_get_slot_data(save_controller_get_active_slot());
         for (int i = 0; i < MENU_BONUS_COUNT; i++) {
-            if (i == selectedOption) {
-                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-            } else {
-                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
-            }
-
-            const SaveData *sd = save_controller_get_slot_data(save_controller_get_active_slot());
             bool beaten = i < 3 && (save_progress_bonus_mask(sd) & (1 << i));
-            draw_menu_line(x, y, contentW, contentH, ALIGN_CENTER, bonusMenuOptions[i], beaten);
-
-            y += lineHeight + 2;
+            if (i == selectedOption) ui_select_box(x + (w - ROW_W) / 2, y - 12, x + (w + ROW_W) / 2, y + 4);
+            draw_menu_line(x, y, w, 0, ALIGN_CENTER, bonusMenuOptions[i], beaten);
+            y += P + 4;
         }
-
-        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
     } else if (currentMenu == MENU_TOWER) {
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
-                         FONT_UNBALANCED, x, y + titleYOffset, "TOWER");
-        y += lineHeight * 2 + 4;     // (tight: its five rows and two records stay in the title-safe area)
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GREY },
-                         FONT_UNBALANCED, x, y, "Boss after boss\nEver higher");
-        y += lineHeight * 2 + 4;
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GOLD },
-                         FONT_UNBALANCED, x, y, "Best floor %d   Embers %d", tower_best_floor(), tower_embers());
-        y += lineHeight;
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y - 4, "Boss after boss\nEver higher");
+        y += 2 * P + 2;
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GOLD }, FONT_UNBALANCED, x, y, "Best floor %d   Embers %d", tower_best_floor(), tower_embers());
+        y += P;
         // the floor-100 title; else what waits set aside for the next climb
         const char *badge = tower_title_badge(), *offers = tower_offers_line();
-        if (badge[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_RED }, FONT_UNBALANCED, x, y, "%s", badge);
-        else if (offers[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y, "%s", offers);
-        y += lineHeight + 2;
-        for (int i = 0; i < MENU_TOWER_COUNT; i++) {
-            if (i == selectedOption) {
-                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-            } else {
-                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
-            }
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
-                             FONT_UNBALANCED, x, y, "%s", towerMenuOptions[i]);
-            y += lineHeight + 2;
-        }
-        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+        if (badge[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_RED }, FONT_UNBALANCED, x, y, "%s", badge);
+        else if (offers[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y, "%s", offers);
+        y += P + 8;
+        for (int i = 0; i < MENU_TOWER_COUNT; i++, y += P + 2) menu_row(r, y, i == selectedOption, FONT_STYLE_WHITE, towerMenuOptions[i], NULL);
     } else if (currentMenu == MENU_SHRINE) {
-        tower_menu_title(x, y + titleYOffset, contentW, contentH, "SHRINE");
-        // Embers on the title's row, left (the rows and the description below need the room); R's hint right
-        rdpq_text_printf(&(rdpq_textparms_t){ .width = contentW, .height = contentH, .style_id = FONT_STYLE_GOLD },
-                         FONT_UNBALANCED, x + 4, y + titleYOffset, "Embers %d", tower_embers());
-        if (selectedOption != MENU_SHRINE_PACKS && selectedOption < MENU_SHRINE_COUNT - 1)
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 4, .height = contentH, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y + titleYOffset, "R Details");
-        y += lineHeight + titleYOffset + 4;     // (its description under the nine rows stays in the title-safe area: it was at 224)
-        for (int i = 0; i < MENU_SHRINE_COUNT; i++) {
-            char name[40], right[24];
-            right[0] = 0;
+        tower_menu_title(r, "SHRINE");
+        for (int i = 0; i < MENU_SHRINE_COUNT; i++, y += P) {
+            char name[40], right[24] = "";
             if (i < MENU_SHRINE_UPGRADES) {
                 int c = tower_upgrade_cost((UpgradeId)i);
                 snprintf(name, sizeof name, "%s %d/%d", tower_upgrade_name((UpgradeId)i), tower_upgrade_level((UpgradeId)i), UPG_MAX_LEVEL);
@@ -1538,48 +1189,25 @@ void menu_controller_draw(void)
                 for (int k = 0; k < tower_pack_count(); k++) own += tower_pack_owned(k);
                 snprintf(name, sizeof name, "Unlocks");      // the Boon Packs, then the skills' B forms
                 snprintf(right, sizeof right, "%d/%d", own, tower_pack_count());
-            } else {
-                snprintf(name, sizeof name, "Back");
-            }
-            if (i == selectedOption) {
-                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW - 8);
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-            } else {
-                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
-            }
-            // A text box from y, as the highlight expects (a bare y would be the baseline: a line low).
-            // Bought (the Nightfarer) or maxed: greyed out
+            } else snprintf(name, sizeof name, "Back");
+            // bought (the Nightfarer) or maxed: greyed out
             bool done = (i == MENU_SHRINE_NIGHTFARER && tower_nightfarer_cost() < 0) || (i < MENU_SHRINE_UPGRADES && tower_upgrade_cost((UpgradeId)i) < 0);
-            int style = done ? FONT_STYLE_GREY : FONT_STYLE_WHITE;
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW - 16, .height = contentH, .style_id = style },
-                             FONT_UNBALANCED, x + 8, y, "%s", name);
-            if (right[0])
-                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 16, .height = contentH, .style_id = style },
-                                 FONT_UNBALANCED, x + 8, y, "%s", right);
-            y += lineHeight + 1;
+            menu_row(r, y, i == selectedOption, done ? FONT_STYLE_GREY : FONT_STYLE_WHITE, name, right);
         }
-        // What the selected one does
+        // what the selected one does
         const char *desc = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_desc((UpgradeId)selectedOption)
                          : selectedOption == MENU_SHRINE_RELIC ? "Choose the relic you climb with"
                          : selectedOption == MENU_SHRINE_NIGHTFARER ? "A tracker's winged helm and blue coat"
                          : selectedOption == MENU_SHRINE_PACKS ? "New boons and skill forms"
                          : "Skills are learned in the climb";
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
-                         FONT_UNBALANCED, x, y + 6, "%s", desc);
-        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+        menu_help(r, FONT_STYLE_GREY, desc);
+        if (selectedOption != MENU_SHRINE_PACKS && selectedOption < MENU_SHRINE_COUNT - 1) menu_details_hint(r);
     } else if (currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS) {
-        // A list to scroll: name on the left, its state on the right, what the hovered one does below
+        // a list: name on the left, its state on the right, what the hovered one does below
         bool relics = currentMenu == MENU_RELICS, packs = currentMenu == MENU_UNLOCKS;
-        if (relics || packs) tower_menu_title(x, y + titleYOffset, contentW, contentH, relics ? "RELICS" : "UNLOCKS");
-        else rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH }, FONT_UNBALANCED, x, y + titleYOffset, "SKINS");
-        if (relics || packs)
-            rdpq_text_printf(&(rdpq_textparms_t){ .width = contentW, .height = contentH, .style_id = FONT_STYLE_GOLD },
-                             FONT_UNBALANCED, x + 4, y + titleYOffset, "Embers %d", tower_embers());
-        if ((relics || packs) && selectedOption < get_menu_option_count(currentMenu) - 1)
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 4, .height = contentH, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y + titleYOffset, "R Details");
-        y += (packs || relics ? lineHeight : lineHeight * 2) + titleYOffset;     // (the Unlocks' ten rows: tighter, so what it holds fits under them; a relic's two effects can take two lines)
+        if (relics || packs) tower_menu_title(r, relics ? "RELICS" : "UNLOCKS");
         int rows = get_menu_option_count(currentMenu);
-        for (int i = 0; i < rows; i++) {
+        for (int i = 0; i < rows; i++, y += packs ? P - 2 : P) {
             const char *name, *right = "";
             char cost[12];
             bool grey = false;
@@ -1589,58 +1217,37 @@ void menu_controller_draw(void)
                 if (tower_pack_owned(i)) right = "owned";
                 else { snprintf(cost, sizeof cost, "%d", tower_pack_cost(i)); right = cost; grey = tower_embers() < tower_pack_cost(i); }
             } else if (relics) {
-                int r = i - 1;      // row 0: None
-                name = tower_relic_name(r);
-                if (tower_relic_equipped() == r) right = "equipped";
-                else if (r >= 0 && !tower_relic_owned(r) && tower_relic_cost(r) == -2) {      // a milestone's, not sold
-                    snprintf(cost, sizeof cost, "floor %d", tower_relic_floor(r)); right = cost; grey = true;
-                } else if (r >= 0 && !tower_relic_owned(r)) {
-                    snprintf(cost, sizeof cost, "%d", tower_relic_cost(r)); right = cost;
-                    grey = tower_embers() < tower_relic_cost(r);       // can't afford it yet
+                int k = i - 1;      // row 0: None
+                name = tower_relic_name(k);
+                if (tower_relic_equipped() == k) right = "equipped";
+                else if (k >= 0 && !tower_relic_owned(k) && tower_relic_cost(k) == -2) {      // a milestone's, not sold
+                    snprintf(cost, sizeof cost, "floor %d", tower_relic_floor(k)); right = cost; grey = true;
+                } else if (k >= 0 && !tower_relic_owned(k)) {
+                    snprintf(cost, sizeof cost, "%d", tower_relic_cost(k)); right = cost;
+                    grey = tower_embers() < tower_relic_cost(k);       // can't afford it yet
                 }
             } else {
                 name = character_skin_name(i);
                 if (!save_controller_skin_unlocked(i)) { right = "locked"; grey = true; }
                 else if (character_skin_get() == i) right = "worn";
             }
-            if (i == selectedOption) {
-                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW - 8);
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-            } else {
-                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
-            }
-            int style = grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE;
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW - 16, .height = contentH, .style_id = style },
-                             FONT_UNBALANCED, x + 8, y, "%s", name);
-            if (right[0])
-                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 16, .height = contentH, .style_id = style },
-                                 FONT_UNBALANCED, x + 8, y, "%s", right);
-            y += lineHeight + (packs ? -1 : 1);
+            menu_row(r, y, i == selectedOption, grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE, name, right);
         }
         const char *desc = selectedOption == rows - 1 ? ""
                          : packs ? tower_pack_brief(selectedOption)
                          : relics ? (selectedOption == 0 ? "Climb without a relic" : tower_relic_desc(selectedOption - 1))
                          : save_controller_skin_unlocked(selectedOption) ? "" : skin_lock_hint(selectedOption);
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = FONT_STYLE_GREY },
-                         FONT_UNBALANCED, x, y + 6, "%s", desc);
-        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+        menu_help(r, FONT_STYLE_GREY, desc);
+        if ((relics || packs) && selectedOption < rows - 1) menu_details_hint(r);
     } else if (currentMenu == MENU_OFFERINGS) {
-        // the Offerings: name, its price now (or set, or why not), then Back; what's set aside under the title; the hovered one's line below
-        tower_menu_title(x, y + titleYOffset, contentW, contentH, "OFFERINGS");
-        rdpq_text_printf(&(rdpq_textparms_t){ .width = contentW, .height = contentH, .style_id = FONT_STYLE_GOLD },
-                         FONT_UNBALANCED, x + 4, y + titleYOffset, "Embers %d", tower_embers());
+        // the Offerings: name, its price now (or set, or why not), then Back; what's set aside over them; the hovered one's line below
+        tower_menu_title(r, "OFFERINGS");
         int rows = get_menu_option_count(currentMenu), held = tower_offers_held();
-        if (selectedOption < rows - 1)
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 4, .height = contentH, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y + titleYOffset, "R Details");
-        y += lineHeight + titleYOffset;
         const char *line = tower_offers_line();
-        char head[64];
-        if (line[0]) snprintf(head, sizeof head, "%s", line);       // (the widest pair is 192 px of 240: no room for a label)
-        else snprintf(head, sizeof head, "For the next climb: two at most");
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .style_id = line[0] ? FONT_STYLE_GOLD : FONT_STYLE_GREY },
-                         FONT_UNBALANCED, x, y, "%s", head);
-        y += lineHeight + 2;
-        for (int i = 0; i < rows; i++) {
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = line[0] ? FONT_STYLE_GOLD : FONT_STYLE_GREY },
+                         FONT_UNBALANCED, x, y - 4, "%s", line[0] ? line : "For the next climb: two at most");
+        y += P;
+        for (int i = 0; i < rows; i++, y += P - 1) {
             char right[16] = "";
             bool grey = false, set = false;
             const char *name = i == rows - 1 ? "Back" : tower_offer_name(i);
@@ -1652,27 +1259,14 @@ void menu_controller_draw(void)
                 else if (why[0]) { snprintf(right, sizeof right, "locked"); grey = true; }
                 else { snprintf(right, sizeof right, "%d", c); grey = held >= 2 || tower_embers() < c; }
             }
-            if (i == selectedOption) {
-                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW - 8);
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-            } else rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
-            int style = set ? FONT_STYLE_GOLD : grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE;
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_LEFT, .width = contentW - 16, .height = contentH, .style_id = style }, FONT_UNBALANCED, x + 8, y, "%s", name);
-            if (right[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = contentW - 16, .height = contentH, .style_id = style }, FONT_UNBALANCED, x + 8, y, "%s", right);
-            y += lineHeight - 1;
+            menu_row(r, y, i == selectedOption, set ? FONT_STYLE_GOLD : grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE, name, right);
         }
-        // (one line: two would leave the title-safe area)
-        // (why A can't set it aside in red, as the Shop's refusals; else what it does)
-        const char *desc = "", *why = selectedOption < rows - 1 ? tower_offer_why(selectedOption) : "";
-        if (selectedOption < rows - 1) desc = why[0] ? why : tower_offer_brief(selectedOption);
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH, .wrap = WRAP_WORD, .style_id = why[0] ? FONT_STYLE_RED : FONT_STYLE_GREY },
-                         FONT_UNBALANCED, x, y + 6, "%s", desc);
-        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+        // why A can't set it aside in red, as the Shop's refusals; else what it does
+        const char *why = selectedOption < rows - 1 ? tower_offer_why(selectedOption) : "";
+        menu_help(r, why[0] ? FONT_STYLE_RED : FONT_STYLE_GREY, selectedOption < rows - 1 ? (why[0] ? why : tower_offer_brief(selectedOption)) : "");
+        if (selectedOption < rows - 1) menu_details_hint(r);
     } else if (currentMenu == MENU_CODEX) {
-        // the topics, paged (ui_pages) on a dark box inside the title-safe area, as Stats
-        rdpq_sync_pipe(); rdpq_set_mode_standard(); rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY); rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
-        rdpq_set_prim_color(RGBA32(24, 18, 14, 235));
-        rdpq_fill_rectangle(RUN_TX - 8, RUN_CY - 16, RUN_TX + RUN_TW + 8, RUN_BODY_END + 20);
+        // the topics, paged (ui_pages), the corners on the title row
         ui_pager_draw(&codexPager, RUN_TX, RUN_CY, RUN_TW, "CODEX");
         int pitch = ui_line_pitch(), first = codexPager.page * codex_per_page();
         for (int k = 0; k < codex_rows_on_page(); k++) {
@@ -1681,156 +1275,59 @@ void menu_controller_draw(void)
             if (k == codexRow) ui_select_box(RUN_TX - 4, ry - 12, RUN_TX + RUN_TW + 4, ry + 4);
             rdpq_text_printf(&(rdpq_textparms_t){ .width = RUN_TW - UI_RIGHT_W, .style_id = open ? FONT_STYLE_WHITE : FONT_STYLE_GREY }, FONT_UNBALANCED, RUN_TX, ry, "%s", open ? tower_codex_title(i) : "???");
             if (!open) {
-                char r[16]; snprintf(r, sizeof r, "floor %d", tower_codex_floor(i));
-                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, RUN_TX + RUN_TW - UI_RIGHT_W, ry, "%s", r);
+                char fl[16]; snprintf(fl, sizeof fl, "floor %d", tower_codex_floor(i));
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, RUN_TX + RUN_TW - UI_RIGHT_W, ry, "%s", fl);
             }
         }
-        ui_hint(RUN_TX + RUN_TW, RUN_BODY_END + 14, codexRow >= 0 ? "A or R: read" : "Down: a topic");
+        if (codexRow >= 0 && tower_codex_open_ok(first + codexRow)) menu_details_hint(r);
     } else if (currentMenu == MENU_AUDIO) {
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = contentW,
-            .height = contentH,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, x, y + titleYOffset, "AUDIO");
-
-        y += (lineHeight * 3) + titleYOffset;
-
-        for (int i = 0; i < MENU_AUDIO_COUNT; i++) {
+        y += 8;
+        for (int i = 0; i < MENU_AUDIO_COUNT; i++, y += P + 2) {
             char optionText[64];
-            const char *fmt = audioMenuOptions[i] ? audioMenuOptions[i] : "";
-
-            if (i == MENU_AUDIO_MASTER_VOLUME) {
-                snprintf(optionText, sizeof(optionText), fmt, audio_get_master_volume());
-            } else if (i == MENU_AUDIO_MUSIC_VOLUME) {
-                snprintf(optionText, sizeof(optionText), fmt, audio_get_music_volume());
-            } else if (i == MENU_AUDIO_SFX_VOLUME) {
-                snprintf(optionText, sizeof(optionText), fmt, audio_get_sfx_volume());
-            } else if (i == MENU_AUDIO_MUTE_TOGGLE) {
-                snprintf(optionText, sizeof(optionText), fmt, audio_is_muted() ? "ON" : "OFF");
-            } else if (i == MENU_AUDIO_STEREO_MODE) {
-                snprintf(optionText, sizeof(optionText), fmt, audio_get_stereo_mode() ? "Stereo" : "Mono");
-            } else if (i == MENU_AUDIO_RUMBLE_TOGGLE) {
-                bool rumbleEnabled = joypad_is_rumble_enabled();
-                bool rumbleAvailable = joypad_is_connected(JOYPAD_PORT_1) && joypad_get_rumble_supported(JOYPAD_PORT_1);
-
-                if (!rumbleAvailable) {
-                    snprintf(optionText, sizeof(optionText), rumbleEnabled ? "Rumble: ON (No Pak)" : "Rumble: OFF (No Pak)");
-                } else {
-                    snprintf(optionText, sizeof(optionText), fmt, rumbleEnabled ? "ON" : "OFF");
-                }
-            } else {
-                snprintf(optionText, sizeof(optionText), "%s", fmt);
-            }
-
-            if (i == selectedOption) {
-                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-            } else {
-                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
-            }
-
-            rdpq_text_printf(&(rdpq_textparms_t){
-                .align = ALIGN_CENTER,
-                .width = contentW,
-                .height = contentH,
-                .wrap = WRAP_WORD,
-            }, FONT_UNBALANCED, x, y, "%s", optionText);
-
-            y += lineHeight + 2;
+            const char *fmt = audioMenuOptions[i];
+            if (i == MENU_AUDIO_MASTER_VOLUME) snprintf(optionText, sizeof optionText, fmt, audio_get_master_volume());
+            else if (i == MENU_AUDIO_MUSIC_VOLUME) snprintf(optionText, sizeof optionText, fmt, audio_get_music_volume());
+            else if (i == MENU_AUDIO_SFX_VOLUME) snprintf(optionText, sizeof optionText, fmt, audio_get_sfx_volume());
+            else if (i == MENU_AUDIO_MUTE_TOGGLE) snprintf(optionText, sizeof optionText, fmt, audio_is_muted() ? "ON" : "OFF");
+            else if (i == MENU_AUDIO_STEREO_MODE) snprintf(optionText, sizeof optionText, fmt, audio_get_stereo_mode() ? "Stereo" : "Mono");
+            else if (i == MENU_AUDIO_RUMBLE_TOGGLE) {
+                bool on = joypad_is_rumble_enabled();
+                if (!(joypad_is_connected(JOYPAD_PORT_1) && joypad_get_rumble_supported(JOYPAD_PORT_1))) snprintf(optionText, sizeof optionText, on ? "Rumble: ON (No Pak)" : "Rumble: OFF (No Pak)");
+                else snprintf(optionText, sizeof optionText, fmt, on ? "ON" : "OFF");
+            } else snprintf(optionText, sizeof optionText, "%s", fmt);
+            menu_row(r, y, i == selectedOption, FONT_STYLE_WHITE, optionText, NULL);
         }
-
-        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
     } else if (currentMenu == MENU_VIDEO) {
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = contentW,
-            .height = contentH,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, x, y + titleYOffset, "VIDEO");
-
-        y += (lineHeight * 3) + titleYOffset;
-
-        for (int i = 0; i < MENU_VIDEO_COUNT; i++) {
+        y += 8;
+        for (int i = 0; i < MENU_VIDEO_COUNT; i++, y += P + 2) {
             char optionText[64];
-            const char *fmt = videoMenuOptions[i] ? videoMenuOptions[i] : "";
-
-            if (i == MENU_VIDEO_ASPECT) {
-                snprintf(optionText, sizeof(optionText), fmt, hdAspect ? "16:9" : "4:3");
-            } else if (i == MENU_VIDEO_UI_OVERSCAN_CALIBRATE) {
-                snprintf(optionText, sizeof(optionText), "%s", "Calibrate Overscan");
-            } else {
-                snprintf(optionText, sizeof(optionText), "%s", fmt);
-            }
-
-            if (i == selectedOption) {
-                draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW / 2);
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-            } else {
-                rdpq_set_prim_color(RGBA32(220, 220, 220, 255));
-            }
-
-            rdpq_text_printf(&(rdpq_textparms_t){
-                .align = ALIGN_CENTER,
-                .width = contentW,
-                .height = contentH,
-                .wrap = WRAP_WORD,
-            }, FONT_UNBALANCED, x, y, "%s", optionText);
-
-            y += lineHeight + 2;
+            if (i == MENU_VIDEO_ASPECT) snprintf(optionText, sizeof optionText, videoMenuOptions[i], hdAspect ? "16:9" : "4:3");
+            else snprintf(optionText, sizeof optionText, "%s", videoMenuOptions[i]);
+            menu_row(r, y, i == selectedOption, FONT_STYLE_WHITE, optionText, NULL);
         }
-
-        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
     } else if (currentMenu == MENU_CONTROLS) {
         controls_icons(true);
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = contentW,
-            .height = contentH,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, x, y + titleYOffset, "CONTROLS");
-
-        y += lineHeight + 4 + titleYOffset;     // (tighter than the other menus: the Back row under the button list fits)
-
-        // The two settings (Left/Right or A to change), then what each button does in that layout
-        for (int i = 0; i < 2; i++) {
+        // the two settings (Left/Right or A to change), then what each button does in that layout, then Back
+        for (int i = 0; i < 2; i++, y += P) {
             char line[40];
             if (i == 0) snprintf(line, sizeof line, "Layout: %s", joypad_layout_name(joypad_get_layout()));
             else snprintf(line, sizeof line, "Camera speed: %d", camera_get_speed());
-            if (i == selectedOption) draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW - 20);
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH },
-                             FONT_UNBALANCED, x, y, "%s", line);
-            y += lineHeight + 2;
+            menu_row(r, y, i == selectedOption, FONT_STYLE_WHITE, line, NULL);
         }
-        y += lineHeight + 4;
-
-        const int listW = 150;
-        const int listX = x + (contentW - listW) / 2 + 12;
+        y += 6;
+        const int lh = 14, listW = 150, listX = x + (w - listW) / 2 + 12;
         int lay = joypad_get_layout();
-        const int step = lineHeight;
-
-        draw_icon_line(iconStick, listX, y, lineHeight, listW, "Move");
-        y += step;
-        draw_icon_line(iconA, listX, y, lineHeight, listW, lay == LAYOUT_SWAPPED ? "Attack" : "Dodge / Interact");
-        y += step;
-        draw_icon_line(iconB, listX, y, lineHeight, listW, lay == LAYOUT_SWAPPED ? "Dodge / Interact" : "Attack");
-        y += step;
-        draw_icon_line(iconZ, listX, y, lineHeight, listW, "Target");
-        y += step;
-        draw_icon_line(iconStart, listX, y, lineHeight, listW, "Pause Menu");
-        y += step;
-        draw_icon_line(iconCLeft, listX, y, lineHeight, listW, lay == LAYOUT_SKILLS_ON_C ? "Skills / Potion" : "Move Camera");
-        y += step;
-        draw_icon_line(iconDpad, listX, y, lineHeight, listW, lay == LAYOUT_SKILLS_ON_C ? "Move Camera" : "Skills / Potion");
-        y += 6;     // (the list's y is its baseline; the Back row's, its top)
-        if (selectedOption == 2) draw_menu_selection_highlight_centered(x, y, contentW, lineHeight, contentW - 20);
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = contentW, .height = contentH }, FONT_UNBALANCED, x, y, "Back");
+        draw_icon_line(iconStick, listX, y += lh, lh, listW, "Move");
+        draw_icon_line(iconA, listX, y += lh, lh, listW, lay == LAYOUT_SWAPPED ? "Attack" : "Dodge / Interact");
+        draw_icon_line(iconB, listX, y += lh, lh, listW, lay == LAYOUT_SWAPPED ? "Dodge / Interact" : "Attack");
+        draw_icon_line(iconZ, listX, y += lh, lh, listW, "Target");
+        draw_icon_line(iconStart, listX, y += lh, lh, listW, "Pause Menu");
+        draw_icon_line(iconCLeft, listX, y += lh, lh, listW, lay == LAYOUT_SKILLS_ON_C ? "Skills / Potion" : "Move Camera");
+        draw_icon_line(iconDpad, listX, y += lh, lh, listW, lay == LAYOUT_SKILLS_ON_C ? "Move Camera" : "Skills / Potion");
+        menu_row(r, y + P + 4, selectedOption == 2, FONT_STYLE_WHITE, "Back", NULL);
     } else if (currentMenu == MENU_RUN) {
-        // Stats then Build, paged (ui_pages), inside the title-safe area, on a dark box (the dialog's art lets the hall's light through)
+        // Stats then Build, paged (ui_pages), the corners on the title row
         run_pages_build();
-        rdpq_sync_pipe(); rdpq_set_mode_standard(); rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY); rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
-        rdpq_set_prim_color(RGBA32(24, 18, 14, 235));
-        rdpq_fill_rectangle(RUN_TX - 8, RUN_CY - 16, RUN_TX + RUN_TW + 8, RUN_BODY_END + 20);
         bool build = runPager.page >= s_run->statsPages;
         ui_pager_draw(&runPager, RUN_TX, RUN_CY, RUN_TW, build ? "BUILD" : "STATS");
         if (!build) ui_doc_draw(s_statsDoc, runPager.page, RUN_TX, RUN_BODY, RUN_TW);
@@ -1845,53 +1342,46 @@ void menu_controller_draw(void)
                 if (s_run->right[i][0])
                     rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W, .style_id = s_run->style[i] }, FONT_UNBALANCED, RUN_TX + RUN_TW - UI_RIGHT_W, ry, "%s", s_run->right[i]);
             }
-            ui_hint(RUN_TX + RUN_TW, RUN_BODY_END + 14, runRow >= 0 ? "A or R: Details" : "Down: a row");
+            if (runRow >= 0 && s_run->card[first + runRow] >= 0) menu_details_hint(r);
         }
     } else if (currentMenu == MENU_CREDITS) {
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = contentW,
-            .height = contentH,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, x, y + titleYOffset, "CREDITS");
-
-        y += (lineHeight * 3) + titleYOffset;
-
-        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = contentW,
-            .height = contentH,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, x, y, "FROMSCRATCH");
-
-        y += lineHeight + 8;
-
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = contentW,
-            .height = contentH,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, x, y, "BoxingBruin");
-
-        y += lineHeight + 6;
-
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = contentW,
-            .height = contentH,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, x, y, "HelloNewman");
-
-        y += lineHeight + 6;
-
-        rdpq_text_printf(&(rdpq_textparms_t){
-            .align = ALIGN_CENTER,
-            .width = contentW,
-            .height = contentH,
-            .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, x, y, "Aethrone");
+        static const char *const NAMES[] = { "FROMSCRATCH", "BoxingBruin", "HelloNewman", "Aethrone" };
+        y += 8;
+        for (int i = 0; i < 4; i++, y += P + (i == 1 ? 8 : 4))
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = i ? FONT_STYLE_WHITE : FONT_STYLE_GOLD }, FONT_UNBALANCED, x, y, "%s", NAMES[i]);
+        menu_row(r, y + 12, true, FONT_STYLE_WHITE, "Back", NULL);
+    } else if (currentMenu == MENU_LOAD_GAME) {
+        int boxY = r.y0 + UI_TITLE_DY + 10;
+        const int boxH = 40, gap = 4, bl = x, br = x + w;
+        for (int slot = 0; slot < 3; slot++, boxY += boxH + gap) {
+            const SaveData *saveData = save_controller_get_slot_data(slot);
+            bool isSelected = slot == selectedOption, isLastPlayed = slot == save_controller_get_last_played_slot();
+            // each slot a card: the cursor's frame white (as the selection box's), the last played gold, the others the box's
+            rdpq_sync_pipe(); rdpq_set_mode_standard(); rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY); rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+            if (isSelected) { rdpq_set_prim_color(RGBA32(0, 0, 0, 140)); rdpq_fill_rectangle(bl, boxY, br, boxY + boxH); }     // (the selection box's black)
+            rdpq_set_prim_color(isSelected ? RGBA32(255, 255, 255, 255) : isLastPlayed ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
+            rdpq_fill_rectangle(bl, boxY, br, boxY + 1);
+            rdpq_fill_rectangle(bl, boxY + boxH - 1, br, boxY + boxH);
+            rdpq_fill_rectangle(bl, boxY, bl + 1, boxY + boxH);
+            rdpq_fill_rectangle(br - 1, boxY, br, boxY + boxH);
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = isLastPlayed ? FONT_STYLE_GOLD : FONT_STYLE_WHITE }, FONT_UNBALANCED, bl, boxY + 12, "%s", loadGameMenuOptions[slot]);
+            // used once played or set up (a skin or a setting changed stamps it, even before a fight)
+            bool used = saveData && (saveData->last_played_timestamp > 0 || saveData->run_count > 0 || saveData->best_boss_time_ms > 0 ||
+                                     save_progress_tower_best_floor(saveData) > 0 || save_progress_bonus_mask(saveData));
+            if (used) {
+                // the slot's progress: the story, the Tower, the Bonus bosses, the skins
+                char l1[48], l2[48], story[16] = "-";
+                uint32_t ms = saveData->best_boss_time_ms;
+                if (ms) snprintf(story, sizeof story, "%lu:%02lu", (unsigned long)(ms / 60000), (unsigned long)(ms / 1000 % 60));
+                int bm = save_progress_bonus_mask(saveData);
+                snprintf(l1, sizeof l1, "Story %s   Tower %d", story, save_progress_tower_best_floor(saveData));
+                snprintf(l2, sizeof l2, "Bonus %d/3   Skins %d/%d", (bm & 1) + ((bm >> 1) & 1) + ((bm >> 2) & 1),
+                         save_progress_skins_unlocked(saveData), SAVE_SKINS_TO_EARN);
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, bl, boxY + 24, "%s", l1);
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, bl, boxY + 35, "%s", l2);
+            } else rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, bl, boxY + 29, "Empty");
+        }
+        menu_row(r, boxY + 14, selectedOption == MENU_LOAD_GAME_BACK, FONT_STYLE_WHITE, loadGameMenuOptions[MENU_LOAD_GAME_BACK], NULL);
     }
     if (ui_details()->open && ui_details()->owner == UI_OWNER_MENU) ui_panel_draw(ui_details());     // Details (R), over the menu
 }
@@ -1900,11 +1390,6 @@ void menu_controller_free(void)
 {
     gpu_wait();
 
-    if (pauseMenuBg) {
-        sprite_free_shared(pauseMenuBg);
-        pauseMenuBg = NULL;
-        surface_free(&pauseMenuBgSurf);
-    }
 
     if (iconA) {
         sprite_free_shared(iconA);

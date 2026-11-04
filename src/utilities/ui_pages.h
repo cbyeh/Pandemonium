@@ -55,10 +55,34 @@ void ui_pager_reset(UiPager *p, int pages);     // page 0, the cursor on Next (B
 int  ui_pager_input(UiPager *p, bool left, bool right, bool a, bool b);
 void ui_pager_draw(const UiPager *p, int x, int y, int w, const char *title);     // the corners, the title and "2/3" between; y: the row's baseline
 
+// THE MENU STANDARD (one look and one way to move in every menu and screen, 2026-11-03):
+//   the box: ui_box over the title-safe rect (ui_safe_rect: the overscan setting's, never wider than the fixed
+//   7.5% one): main's translucent black, no frame (main's art and gold frame never drew: its combiner was left
+//   textured; on Delta not even the art), the hall or the title seen through it, at one shade, UI_SHADE: a little
+//   darker than main's 90, so the text stays legible over the title's fire, the Sun and the hall's light. The
+//   Tower's full-screen screens (the draft, the map, the Shop) are shaded the same, their cards and buttons too. Its title: uppercase, white, centred on the row UI_TITLE_DY under the box's top (a pager's
+//   corners on that row too). Rows: a list's cursor is ui_select_box; a row of buttons (Enter | Back, the Shop's,
+//   Skip) is ui_button. Colours: white, grey (can't be chosen, or a hint), gold (owned, money, set), red
+//   (why not), the families' own. The footer: the box's last row (UI_FOOT_DY over its bottom), "Details (R)"
+//   right-aligned in grey where R has more to read; a row's line of help over it, centred grey.
+//   Input: D-pad and stick move, A takes the row, B goes back a level (the Tower's draft ignores B: it's the
+//   sword in the Classic layout), every screen has a Back row (or Leave, Keep them all, Continue, Resume, a
+//   pager's Back corner) A alone reaches; Left/Right turn ui_pages' pages; R opens Details. No button letters in
+//   any prompt: "Enter", "Back", "Close", "Continue" (R in parentheses: "Details (R)").
+#define UI_TITLE_DY 16
+#define UI_SHADE    150     // the menus' black (its alpha), everywhere
+#define UI_FOOT_DY  6
+typedef struct { int x0, y0, x1, y1; } UiRect;
+UiRect ui_safe_rect(void);
+void ui_box(int x0, int y0, int x1, int y1);
+void ui_frame(int x0, int y0, int x1, int y1, int t);     // a frame t px wide in the colour set (a translucent fill inside shows no colour through)
 // the menus' selection box (black 140 under a 1 px white 70 frame)
 void ui_select_box(int x0, int y0, int x1, int y1);
-// a small grey hint ("R Details") ending at x (right-aligned), y its baseline
+// a framed button (gold when it's under the cursor, grey text when it can't be taken); y its top, h its height
+void ui_button(int x, int y, int w, int h, bool on, bool ok, const char *label);
+// a small grey hint ("Details (R)") ending at x (right-aligned), y its baseline
 void ui_hint(int xRight, int y, const char *s);
+#define UI_DETAILS_HINT "Details (R)"
 
 typedef struct {
     bool open, confirm;                 // confirm: Enter and Back buttons under the page (the map's)

@@ -7,6 +7,7 @@
 #include "dialog_controller.h"
 #include "../utilities/game_time.h"
 #include "../utilities/globals.h"
+#include "../utilities/ui_pages.h"
 
 #define MAX_TEXT_LENGTH 256
 #define SLOW_SPEED 0.2f
@@ -146,28 +147,6 @@ void dialog_controller_skip(void)
 
 void dialog_controller_init(void)
 {
-    if (!dialogBox) {
-        dialogBox = sprite_load("rom:/dialog.ia8.sprite");
-
-        if (dialogBox) {
-            dialogBoxSurf = sprite_get_pixels(dialogBox);
-        } else {
-            dialogBoxSurf = (surface_t){0};
-            debugf("[DIALOG] failed to load rom:/dialog.ia8.sprite\n");
-        }
-    }
-
-    if (!dialogVerticalBox) {
-        dialogVerticalBox = sprite_load_shared("rom:/dialog_vertical.ia8.sprite");     // (the pause menu's too)
-
-        if (dialogVerticalBox) {
-            dialogVerticalBoxSurf = sprite_get_pixels(dialogVerticalBox);
-        } else {
-            dialogVerticalBoxSurf = (surface_t){0};
-            debugf("[DIALOG] failed to load rom:/dialog_vertical.ia8.sprite\n");
-        }
-    }
-
     // Font is already registered in main.c, so we don't load it here.
     dialog_controller_reset();
 }
@@ -177,32 +156,12 @@ void dialog_controller_draw_dialog(bool isVertical, int x, int y, int width, int
     int paddingX = 20;
     int paddingY = 10;
 
-    surface_t *boxSurf = &dialogBoxSurf;
+    if (isVertical) paddingY = 20;
 
-    if (isVertical) {
-        paddingY = 20;
-        boxSurf = &dialogVerticalBoxSurf;
-    }
-
-    if (!boxSurf->buffer || boxSurf->width <= 0 || boxSurf->height <= 0) {
-        return;
-    }
-
-    int src_w = boxSurf->width;
-    int src_h = boxSurf->height;
-
-    const float sx = (src_w > 0) ? ((float)width  / (float)src_w) : 1.0f;
-    const float sy = (src_h > 0) ? ((float)height / (float)src_h) : 1.0f;
-
-    rdpq_sync_pipe();
-    rdpq_set_mode_standard();
-    rdpq_mode_alphacompare(1);
-    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
-
-    rdpq_tex_blit(boxSurf, x, y, &(rdpq_blitparms_t){
-        .scale_x = sx,
-        .scale_y = sy,
-    });
+    // the menus' box (ui_pages.h: THE MENU STANDARD): flat fills, the same on every renderer (the dialog art never showed on
+    // Delta's); the sprites aren't loaded any more
+    ui_box(x, y, x + width, y + height);
+    rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
 
     int src_index = 0;
     int dst_index = 0;

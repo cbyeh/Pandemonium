@@ -23,6 +23,7 @@
 #include "globals.h"
 #include "../../utilities/video_layout.h"
 #include "../../utilities/button_prompt_utility.h"
+#include "../../utilities/ui_pages.h"
 
 #include "../../managers/cutscene_manager.h"
 #include "../../managers/cutscene_manager_internal.h"
@@ -2192,7 +2193,7 @@ void scene_draw_cutscene(T3DViewport *viewport)
                 int height = 70;
                 int width = 220;
                 int x = (SCREEN_WIDTH - width) / 2;
-                int y = 240 - height - 10;
+                int y = ui_safe_rect().y1 - height;     // (inside the title-safe area: it reached 230)
 
                 dialog_controller_draw(false, x, y, width, height);
             }
@@ -2565,7 +2566,7 @@ void scene_draw(T3DViewport *viewport)
     if (s_towerDraft && !isDead) tower_between_draw();
 
     // The boss's name title as the fight starts (1.8 s, then its bar grows)
-    if (!cutsceneActive && !isEndScreen && bossTitleFade > 0.0f && g_boss && !s_towerDraft) {   // (not over the Tower's map)
+    if (!cutsceneActive && !isEndScreen && bossTitleFade > 0.0f && g_boss && !s_towerDraft && !menu_controller_is_pause_menu_active()) {   // (not over the Tower's map, nor under the pause menu's title)
         rdpq_sync_pipe();
         rdpq_set_mode_standard();
         rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
@@ -2620,30 +2621,11 @@ void scene_draw(T3DViewport *viewport)
             }
 
             // Delay restart prompt so rapid gameplay A-mashing doesn't instantly restart.
+            // The menus' one row under the cursor (ui_pages.h: THE MENU STANDARD): no button letter, A takes it
             if (deathRestartLockoutTimer >= DEATH_RESTART_LOCKOUT_S) {
-                const char *label = "Restart";
-                const int gap = 6;
-                const int y = (SCREEN_HEIGHT / 2) + (s_tower ? 40 : 20);    // below the Tower's two summary lines
-
-                // Source sprite is 64×64; scale down to match other UI button sizes.
-                const float kTargetPx = 20.0f;
-                int buttonW = button_prompt_a_icon_width(kTargetPx);
-                int buttonH = button_prompt_a_icon_height(kTargetPx);
-                int x0 = (SCREEN_WIDTH / 2) - 44;
-
-                if (button_prompt_has_a_button()) {
-                    int buttonX = x0;
-                    int buttonY = y - (buttonH / 2) - 6;
-                    button_prompt_draw_a_icon(buttonX, buttonY, kTargetPx);
-                }
-
-                // Text baseline aligned to match other UI codepaths (roughly icon vertical center)
-                int textX = x0 + buttonW + gap;
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-                rdpq_text_printf(&(rdpq_textparms_t){
-                    .align = ALIGN_LEFT,
-                    .width = SCREEN_WIDTH - textX,
-                }, FONT_UNBALANCED, textX, y, "%s", label);
+                const int y = (SCREEN_HEIGHT / 2) + (s_tower ? 40 : 20), w = 120, x0 = (SCREEN_WIDTH - w) / 2;    // below the Tower's two summary lines
+                ui_select_box(x0, y - 12, x0 + w, y + 4);
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w }, FONT_UNBALANCED, x0, y, "%s", "Restart");
             }
 
             scene_draw_video_preroll_fade();
@@ -2727,7 +2709,7 @@ void scene_draw(T3DViewport *viewport)
     // bottom positioning
     if(cutsceneDialogActive)
     {
-        int y = 240 - height - 10;
+        int y = ui_safe_rect().y1 - height;     // (inside the title-safe area: it reached 230)
         dialog_controller_draw(false, x, y, width, height);
     }
 

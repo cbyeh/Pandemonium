@@ -899,7 +899,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (t >= 20 && sq[sub]) { PR(a); sub++; t0 = frame; return; }
             if (!sq[sub]) {
                 if (boss && boss->mode == BOSS_MODE_COMBAT && !scene_is_cutscene_active() && scene_get_game_state() == GAME_STATE_PLAYING && !(game == 2 && tower_between_open())) {
-                    if (t > 30) { PR(start); phase = 3; t0 = frame; vi = 0; lvl = 0; sub = 0; debugf("[menus] %s fight, paused (frame %d)\n", GAME[game], frame); }
+                    if (t > 30 && frame % 1500 == 0) { PR(start); phase = 3; t0 = frame; vi = 0; lvl = 0; sub = 0; debugf("[menus] %s fight, paused (frame %d)\n", GAME[game], frame); }
                 } else { t0 = frame; if (frame % 20 == 0) PR(a); }
                 if (character.health < character.maxHealth) character.health = character.maxHealth;
             }
@@ -938,14 +938,14 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 at[lvl++] = want; PR(a); return;
             }
             CHECK(m == v->menu, "%s: menu %d (want %d), row %d, Back row %d", v->name, m, v->menu, row, back);
-            debugf("[menus] at %s (frame %d)\n", v->name, frame);
+            debugf("[menus] at %s%s%s (frame %d)\n", phase == 3 && game < 2 ? GAME[game] : "", phase == 3 && game < 2 ? " " : "", v->name, frame);
             sub = v->r ? 1 : 3; return;
         }
         static bool seen;
         if (sub == 1) { PR(r); sub = 2; seen = false; return; }           // Details
         if (sub == 2) {
             UiPanel *dp = ui_details();
-            if (!seen) { seen = true; CHECK(dp->open && dp->owner == UI_OWNER_MENU, "%s: R opens Details", v->name); debugf("[menus] at %s Details (frame %d)\n", v->name, frame); if (!dp->open) { sub = 3; return; } }
+            if (!seen) { seen = true; CHECK(dp->open && dp->owner == UI_OWNER_MENU, "%s: R opens Details", v->name); debugf("[menus] at %s Details (frame %d)\n", v->name, frame); if (!dp->open) sub = 3; return; }
             if (!dp->open) { CHECK(m == v->menu, "%s: Details closed by %s, the menu as it was (%d)", v->name, aOnly ? "its Back corner" : "B", m); sub = 3; return; }
             if (!aOnly) { PR(b); return; }
             if (dp->pg.sel != 0) { MOVE('L'); return; }      // its Back corner

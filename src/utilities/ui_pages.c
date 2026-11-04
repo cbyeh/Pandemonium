@@ -211,6 +211,40 @@ void ui_select_box(int x0, int y0, int x1, int y1)
     rdpq_fill_rectangle(x1 - 1, y0, x1, y1);
 }
 
+UiRect ui_safe_rect(void)
+{
+    int mx = ui_safe_margin_x(), my = ui_safe_margin_y();
+    if (mx < TITLE_SAFE_MARGIN_X) mx = TITLE_SAFE_MARGIN_X;
+    if (my < TITLE_SAFE_MARGIN_Y) my = TITLE_SAFE_MARGIN_Y;
+    return (UiRect){ mx, my, SCREEN_WIDTH - mx, SCREEN_HEIGHT - my };
+}
+
+void ui_box(int x0, int y0, int x1, int y1)
+{
+    flat();
+    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));       // main's translucent black, no frame (the scene through it)
+    rdpq_fill_rectangle(x0, y0, x1, y1);
+}
+
+void ui_frame(int x0, int y0, int x1, int y1, int t)
+{
+    rdpq_fill_rectangle(x0, y0, x1, y0 + t);
+    rdpq_fill_rectangle(x0, y1 - t, x1, y1);
+    rdpq_fill_rectangle(x0, y0 + t, x0 + t, y1 - t);
+    rdpq_fill_rectangle(x1 - t, y0 + t, x1, y1 - t);
+}
+
+void ui_button(int x, int y, int w, int h, bool on, bool ok, const char *label)
+{
+    flat();
+    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));
+    rdpq_fill_rectangle(x, y, x + w, y + h);
+    rdpq_set_prim_color(on ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
+    ui_frame(x - 2, y - 2, x + w + 2, y + h + 2, 2);
+    rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = !ok ? FONT_STYLE_GREY : on ? FONT_STYLE_GOLD : FONT_STYLE_WHITE },
+                     FONT_UNBALANCED, x, y + h - 3, "%s", label);
+}
+
 void ui_hint(int xRight, int y, const char *s)
 {
     rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = 120, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, xRight - 120, y, "%s", s);
@@ -230,17 +264,15 @@ void ui_panel_close(UiPanel *p) { p->open = false; free(p->doc); p->doc = NULL; 
 typedef struct { int x0, y0, x1, y1, tx, tw, corners, title, body, bodyEnd, foot; } PanelBox;
 static PanelBox panel_box(const UiPanel *p)
 {
-    // the title-safe area (never wider than the fixed 7.5% one: the default overscan shows more, a larger one less)
-    int mx = ui_safe_margin_x(), my = ui_safe_margin_y();
-    if (mx < TITLE_SAFE_MARGIN_X) mx = TITLE_SAFE_MARGIN_X;
-    if (my < TITLE_SAFE_MARGIN_Y) my = TITLE_SAFE_MARGIN_Y;
-    PanelBox b = { mx, my, SCREEN_WIDTH - mx, SCREEN_HEIGHT - my };
+    // the menus' box: the title-safe area (never wider than the fixed 7.5% one: the default overscan shows more, a larger one less)
+    UiRect r = ui_safe_rect();
+    PanelBox b = { r.x0, r.y0, r.x1, r.y1 };
     int pitch = ui_line_pitch();
     b.tx = b.x0 + 6; b.tw = b.x1 - b.x0 - 12;
-    b.corners = b.y0 + 14;
+    b.corners = b.y0 + UI_TITLE_DY;
     b.title = p->confirm ? b.corners + 6 : b.corners + pitch + 2;     // (a confirm has no corners: its title on their row)
     b.body = b.title + lines_in(p->title, b.tw) * pitch + 4;     // (a long title wraps: the page starts under it)
-    b.foot = b.y1 - 6;
+    b.foot = b.y1 - UI_FOOT_DY;
     b.bodyEnd = p->confirm ? b.foot - 22 : b.foot - pitch;      // the last baseline a body line may take
     return b;
 }
@@ -282,10 +314,7 @@ void ui_panel_draw(const UiPanel *p)
     flat();
     rdpq_set_prim_color(RGBA32(0, 0, 0, 120));      // the screen under it dimmed
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    rdpq_set_prim_color(RGBA32(180, 160, 120, 255));    // the pause menu's frame
-    rdpq_fill_rectangle(b.x0, b.y0, b.x1, b.y1);
-    rdpq_set_prim_color(RGBA32(24, 18, 14, 250));
-    rdpq_fill_rectangle(b.x0 + 2, b.y0 + 2, b.x1 - 2, b.y1 - 2);
+    ui_box(b.x0, b.y0, b.x1, b.y1);
     if (!p->confirm) ui_pager_draw(&p->pg, b.tx, b.corners, b.tw, NULL);
     else if (p->pg.pages > 1) {     // (a confirm's pages: Up/Down)
         char n[24]; snprintf(n, sizeof n, "Up/Down %d/%d", p->pg.page + 1, p->pg.pages);
@@ -295,16 +324,6 @@ void ui_panel_draw(const UiPanel *p)
     if (p->doc) ui_doc_draw(p->doc, p->pg.page, b.tx, b.body, b.tw);
     if (p->confirm) {
         const int bw = 90, gap = 16, bx = b.tx + (b.tw - 2 * bw - gap) / 2, by = b.foot - 15;
-        for (int i = 0; i < 2; i++) {
-            int x = bx + i * (bw + gap);
-            bool on = p->button == i;
-            flat();
-            rdpq_set_prim_color(on ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
-            rdpq_fill_rectangle(x - 2, by - 2, x + bw + 2, by + 16);
-            rdpq_set_prim_color(on ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
-            rdpq_fill_rectangle(x, by, x + bw, by + 14);
-            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = bw, .style_id = on ? FONT_STYLE_GOLD : FONT_STYLE_WHITE },
-                             FONT_UNBALANCED, x, by + 11, "%s", i ? "Back (B)" : "Enter (A)");
-        }
-    } else ui_hint(b.tx + b.tw, b.foot, "R or B: close");
+        for (int i = 0; i < 2; i++) ui_button(bx + i * (bw + gap), by, bw, 14, p->button == i, true, i ? "Back" : "Enter");
+    } else ui_hint(b.tx + b.tw, b.foot, "Close (R)");
 }

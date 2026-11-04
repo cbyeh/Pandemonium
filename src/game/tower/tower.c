@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <libdragon.h>
 #include <stdio.h>
 #include <string.h>
@@ -1426,7 +1427,7 @@ static void tower_draft_draw(void)
 {
     if (!s.draftOpen) return;
     flat_mode();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 170));
+    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));     // the menus' black (ui_pages.h)
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
     char line[80];
@@ -1450,10 +1451,10 @@ static void tower_draft_draw(void)
         int tier = pact ? 3 : card == GOLD_CARD ? TIER_LEGENDARY : card_tier(card);
         flat_mode();
         bool on = i == s.sel;
-        rdpq_set_prim_color(FRAME[tier][on]);
-        rdpq_fill_rectangle(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2);
-        rdpq_set_prim_color(on ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
+        rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));     // (the menus' black: the frame shows the one under the cursor)
         rdpq_fill_rectangle(x, y0, x + cw, y0 + ch);
+        rdpq_set_prim_color(FRAME[tier][on]);
+        ui_frame(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2, 2);
         if (pact) {
             int b = (card - BOON_COUNT) / PC_COUNT, c = (card - BOON_COUNT) % PC_COUNT;
             // the blessing (a line of name, two of text), then its curse (name, two of text)
@@ -1526,12 +1527,12 @@ static void tower_draft_draw(void)
     bool skip = s.sel == s.nChoices;
     const int bw = 160, bh = 16, by = y0 + ch + 4;
     const int bx = SAFE_X1 - 68 - bw < (SCREEN_WIDTH - bw) / 2 - 16 ? SAFE_X1 - 68 - bw : (SCREEN_WIDTH - bw) / 2 - 16;     // (left of centre, the R hint beside it at any overscan)
-    if (s.sel < s.nChoices) ui_hint(SAFE_X1, by + 12, "R Details");     // (beside Skip)
+    if (s.sel < s.nChoices) ui_hint(SAFE_X1, by + 12, UI_DETAILS_HINT);     // (beside Skip)
     flat_mode();
-    rdpq_set_prim_color(skip ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
-    rdpq_fill_rectangle(bx - 2, by - 2, bx + bw + 2, by + bh + 2);
-    rdpq_set_prim_color(skip ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
+    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));
     rdpq_fill_rectangle(bx, by, bx + bw, by + bh);
+    rdpq_set_prim_color(skip ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
+    ui_frame(bx - 2, by - 2, bx + bw + 2, by + bh + 2, 2);
     snprintf(line, sizeof line, "Skip: +%d Embers, +%d gold", SKIP_EMBERS, gold_with(SKIP_GOLD));
     text_style(bx, by + 12, bw, ALIGN_CENTER, skip ? FONT_STYLE_GOLD : FONT_STYLE_GREY, line);
 }
@@ -1709,7 +1710,7 @@ static void list_open(int scr)
 {
     s.scr = (uint8_t)scr;
     s.listN = s.listSel = 0;
-    if (scr == SCR_REST) for (int i = 0; i < REST_ROWS; i++) s.list[s.listN++] = (int8_t)i;
+    if (scr == SCR_REST) { for (int i = 0; i < REST_ROWS; i++) s.list[s.listN++] = (int8_t)i; s.list[s.listN++] = -1; }     // then Back (the map, as B)
     else if (scr == SCR_TEMPER) { s.listN = (int8_t)temper_targets(s.list, LIST_MAX - 1); s.list[s.listN++] = -1; }     // then Back
     else if (scr == SCR_SHOP_LEVEL) { s.listN = (int8_t)level_targets(s.list, LIST_MAX - 1); s.list[s.listN++] = -1; }
     else if (scr == SCR_SHOP_PLUS) { s.listN = (int8_t)plus_targets(s.list, LIST_MAX - 1); s.list[s.listN++] = -1; }
@@ -2231,8 +2232,9 @@ static bool details_cursor_impl(bool open)
         if (s.eventDone) return false;
         if (open) { event_label(s.list[s.listSel], t, sizeof t); doc_event_choice(d, s.list[s.listSel]); }
     } else if (s.scr == SCR_REST) {
-        if (!open) return true;
         int v = s.list[s.listSel];
+        if (v < 0) return false;
+        if (!open) return true;
         if (v == REST_HEAL_ROW) { snprintf(t, sizeof t, "Heal 40%%"); ui_doc_text(d, FONT_STYLE_WHITE, "Heal 40%% of max health: +%.0f now (%.0f/%.0f).", (double)fminf(REST_HEAL * character.maxHealth, character.maxHealth - character.health), (double)character.health, (double)character.maxHealth); }
         else if (v == REST_TEMPER_ROW) { snprintf(t, sizeof t, "Temper"); ui_doc_text(d, FONT_STYLE_WHITE, "+1 level on a slotted boon below its max, a maxed boon's \"+\", or a known skill's next level below Lv 4. Never a new boon, a duo or a skill's form. You choose from:"); doc_targets(d, tg, temper_targets(tg, LIST_MAX)); }
         else { snprintf(t, sizeof t, "+2 potions"); ui_doc_text(d, FONT_STYLE_WHITE, "+2 potions (%d now), up to %d: past the run's most, as a fight's.", character.healthPotions, POTION_CAP); }
@@ -2280,6 +2282,7 @@ bool tower_take_pause_request(void) { bool r = s_pauseReq; s_pauseReq = false; r
 // its Leave (or Continue), a Rest's first screen returns to the map with the Rest still to choose, Temper
 // back to the Rest, Release keeps every boon, a Shop's list back to its shelf. The draft ignores B (its
 // cards come up under a fight's mashed attack: B is the sword in the Classic layout). R: Details
+static int list_per_page(void);
 bool tower_between_update(bool left, bool right, bool up, bool down, bool confirm, bool back, bool details)
 {
     UiPanel *dp = ui_details();
@@ -2339,9 +2342,14 @@ bool tower_between_update(bool left, bool right, bool up, bool down, bool confir
         }
         return false;
     }
-    // a list (a Rest's screens, the Shop's, an Event's): Up/Down along the rows (past any that can't be chosen), A takes one
+    // a list (a Rest's screens, the Shop's, an Event's): Up/Down along the rows (past any that can't be chosen), Left/Right
+    // a page of them (a long one is drawn a page at a time), A takes one
     int d = down - up;
     for (int i = s.listSel + d; d && i >= 0 && i < s.listN; i += d) if (row_ok(i)) { s.listSel = (int8_t)i; break; }
+    if ((left || right) && s.listN > list_per_page()) {
+        int per = list_per_page(), k = (s.listSel / per + (right ? 1 : -1)) * per;
+        if (k >= 0 && k < s.listN) { while (k < s.listN - 1 && !row_ok(k)) k++; s.listSel = (int8_t)k; }
+    }
     if (!confirm || !row_ok(s.listSel)) return false;
     int v = s.list[s.listSel];
     if (s.scr == SCR_EVENT) {
@@ -2360,7 +2368,8 @@ bool tower_between_update(bool left, bool right, bool up, bool down, bool confir
         }
         s.scr = SCR_SHOP;
     } else if (s.scr == SCR_REST) {
-        if (v == REST_TEMPER_ROW) list_open(SCR_TEMPER);
+        if (v < 0) map_unenter();
+        else if (v == REST_TEMPER_ROW) list_open(SCR_TEMPER);
         else { rest_take(v); release_open(); }
     } else if (s.scr == SCR_TEMPER) {
         if (v < 0) list_open(SCR_REST);
@@ -2397,23 +2406,12 @@ static void line_up(int x0, int y0, int x1, int y1)
         rdpq_fill_rectangle(xa, y0 - i - 1, xb + 1, y0 - i);
     }
 }
-// the menus' selection box (menu_controller.c)
-static void select_box(int x0, int y0, int x1, int y1)
-{
-    flat_mode();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 140));
-    rdpq_fill_rectangle(x0, y0, x1, y1);
-    rdpq_set_prim_color(RGBA32(255, 255, 255, 70));
-    rdpq_fill_rectangle(x0, y0, x1, y0 + 1);
-    rdpq_fill_rectangle(x0, y1 - 1, x1, y1);
-    rdpq_fill_rectangle(x0, y0, x0 + 1, y1);
-    rdpq_fill_rectangle(x1 - 1, y0, x1, y1);
-}
+#define select_box ui_select_box     // (the menus' selection box)
 
 static void map_draw(void)
 {
     flat_mode();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 200));     // (darker than the draft's: the hall's boss stands behind the nodes)
+    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));     // the menus' black (ui_pages.h)
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     // the links: the path taken and the way on bright, the rest dim (the rows behind dimmer)
     for (int r = 0; r < MAP_ROWS - 1; r++) for (int a = 0; a < MAP_LANES; a++) for (int b = 0; b < MAP_LANES; b++) {
@@ -2467,39 +2465,63 @@ static void map_draw(void)
         else if (t == NODE_EVENT) snprintf(line, sizeof line, "Event: a choice on the way");
         else snprintf(line, sizeof line, "%s", boss);
         text_style(0, map_bot() - 12, SCREEN_WIDTH, ALIGN_CENTER, t == NODE_ELITE || jailer ? FONT_STYLE_RED : FONT_STYLE_WHITE, line);
-        text_style(0, map_bot(), SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, "A Choose    R Details    B Menu");
+        if (details_for_cursor(false)) ui_hint(SAFE_X1, map_bot(), UI_DETAILS_HINT);     // (A takes the node, B the pause menu: no button letters)
     }
+}
+
+// A list screen (a Rest's, Temper, Release, the Shop's lists, an Event): the menus' box over the title-safe area
+// (ui_pages.h: THE MENU STANDARD), its title on the top row, a line or two under it, the rows (a page at a time
+// when they don't fit: Up/Down past a page's end, Left/Right a page; "1/2" in the footer), "Details (R)" in the footer
+static UiRect list_box(const char *title, bool gold)
+{
+    UiRect r = ui_safe_rect();
+    ui_box(r.x0, r.y0, r.x1, r.y1);
+    char t[48]; int n = 0;
+    for (; title[n] && n < (int)sizeof t - 1; n++) t[n] = (char)toupper((unsigned char)title[n]);
+    t[n] = 0;
+    text(r.x0, r.y0 + UI_TITLE_DY, r.x1 - r.x0, ALIGN_CENTER, t);
+    if (gold) { char g[24]; snprintf(g, sizeof g, "Gold %d", s.gold); text_style(r.x0 + 8, r.y0 + UI_TITLE_DY, 120, ALIGN_LEFT, FONT_STYLE_GOLD, g); }
+    return r;
+}
+#define LIST_PITCH 15
+static int list_first_y(void) { return ui_safe_rect().y0 + 62; }        // the first row's baseline (under the title and two lines)
+static int list_per_page(void)      // the rows that fit over the footer's help line
+{
+    UiRect r = ui_safe_rect();
+    int n = (r.y1 - UI_FOOT_DY - 15 - 12 - list_first_y()) / LIST_PITCH + 1;
+    return n < 3 ? 3 : n;
+}
+static void list_footer(UiRect r)
+{
+    int per = list_per_page();
+    if (s.listN > per) { char p[16]; snprintf(p, sizeof p, "%d/%d", s.listSel / per + 1, (s.listN + per - 1) / per); text_style(r.x0 + 8, r.y1 - UI_FOOT_DY, 60, ALIGN_LEFT, FONT_STYLE_GREY, p); }
+    if (details_for_cursor(false)) ui_hint(r.x1 - 8, r.y1 - UI_FOOT_DY, UI_DETAILS_HINT);
 }
 
 static void rest_draw(void)
 {
-    flat_mode();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 205));     // (dark enough to read over the hall's light)
-    rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    static const char *const HEAD[] = { [SCR_REST] = "Rest: choose one", [SCR_TEMPER] = "Temper: +1 level", [SCR_RELEASE] = "Release a boon? Free, with its levels",
-                                        [SCR_SHOP_LEVEL] = "A level: 70 gold", [SCR_SHOP_PLUS] = "A \"+\": 150 gold", [SCR_SHOP_RELEASE] = "Release a boon: 20 gold, with its levels" };
-    const int T = fit_my(66 + 15 * s.listN + 16);      // (the rows under three lines, and the Rest's last line)
-    text_style(0, T + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, HEAD[s.scr]);
-    static const char *const BACK[] = { [SCR_REST] = "B Map", [SCR_TEMPER] = "B Back", [SCR_RELEASE] = "B Keep all", [SCR_SHOP_LEVEL] = "B Back", [SCR_SHOP_PLUS] = "B Back", [SCR_SHOP_RELEASE] = "B Back" };
-    text_style(SAFE_X0, T + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, BACK[s.scr]);
-    if (details_for_cursor(false)) ui_hint(SAFE_X1, T + 10, "R Details");
-    char line[80];
+    static const char *const TITLE[] = { [SCR_REST] = "Rest", [SCR_TEMPER] = "Temper", [SCR_RELEASE] = "Release a boon?", [SCR_SHOP_LEVEL] = "A level", [SCR_SHOP_PLUS] = "A \"+\"", [SCR_SHOP_RELEASE] = "Release" };
+    static const char *const HEAD[] = { [SCR_REST] = "Choose one", [SCR_TEMPER] = "+1 level", [SCR_RELEASE] = "Free, with its levels",
+                                        [SCR_SHOP_LEVEL] = "70 gold", [SCR_SHOP_PLUS] = "150 gold", [SCR_SHOP_RELEASE] = "20 gold: a boon, with its levels" };
     bool shopList = s.scr >= SCR_SHOP_LEVEL, boonRows = s.scr == SCR_TEMPER || s.scr == SCR_SHOP_LEVEL || s.scr == SCR_SHOP_PLUS;
-    if (shopList) snprintf(line, sizeof line, "Gold %d", s.gold);
-    else snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d", (double)character.health, (double)character.maxHealth, character.healthPotions);
-    text_style(0, T + 38, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
-    const int x = 50, w = SCREEN_WIDTH - 100, y0 = T + 66, pitch = 15;
-    for (int i = 0; i < s.listN; i++) {
-        int v = s.list[i], y = y0 + pitch * i, style = row_ok(i) ? FONT_STYLE_WHITE : FONT_STYLE_GREY;
+    UiRect r = list_box(TITLE[s.scr], shopList);
+    const int T = r.y0;
+    text_style(0, T + 34, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, HEAD[s.scr]);
+    char line[80];
+    snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d", (double)character.health, (double)character.maxHealth, character.healthPotions);
+    text_style(0, T + 47, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
+    const int x = r.x0 + 26, w = r.x1 - r.x0 - 52, y0 = list_first_y(), per = list_per_page(), first = s.listSel / per * per;
+    for (int i = first; i < s.listN && i < first + per; i++) {
+        int v = s.list[i], y = y0 + LIST_PITCH * (i - first), style = row_ok(i) ? FONT_STYLE_WHITE : FONT_STYLE_GREY;
         if (i == s.listSel) select_box(x - 6, y - 11, x + w + 6, y + 3);
-        if (s.scr == SCR_REST) {
+        if (v < 0) snprintf(line, sizeof line, s.scr == SCR_RELEASE ? "Keep them all" : "Back");
+        else if (s.scr == SCR_REST) {
             int p = character.healthPotions, pm = POTION_CAP;
             if (v == REST_HEAL_ROW) snprintf(line, sizeof line, "Heal 40%%: +%.0f health", (double)fminf(REST_HEAL * character.maxHealth, character.maxHealth - character.health));
             else if (v == REST_TEMPER_ROW) snprintf(line, sizeof line, row_ok(i) ? "Temper: +1 level on a boon or skill" : "Temper: nothing to raise");
             else if (p < pm) snprintf(line, sizeof line, "+2 potions (%d -> %d)", p, p + REST_POTIONS < pm ? p + REST_POTIONS : pm);
             else snprintf(line, sizeof line, "+2 potions: full");
-        } else if (v < 0) snprintf(line, sizeof line, s.scr == SCR_RELEASE ? "Keep them all" : "Back");
-        else if (boonRows) {
+        } else if (boonRows) {
             const BoonDef *bd = &BOONS[v];
             if (bd->up) snprintf(line, sizeof line, "%s (top level)", bd->name);
             else snprintf(line, sizeof line, "%s   Lv %d -> %d", bd->name, s.stacks[v], s.stacks[v] + 1);
@@ -2512,7 +2534,8 @@ static void rest_draw(void)
         }
         text_style(x, y, w, ALIGN_CENTER, style, line);
     }
-    if (s.scr == SCR_REST && slots_used()) text_style(0, y0 + pitch * s.listN + 12, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, "Then, free: Release a boon if you wish");
+    if (s.scr == SCR_REST && slots_used()) text_style(0, r.y1 - UI_FOOT_DY - 15, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, "Then, free: Release a boon if you wish");
+    list_footer(r);
 }
 
 #ifdef HLE_AUTOPLAY     // test aids: where the map and a Rest's screens stand (HLE_MAP_WALK)
@@ -2527,28 +2550,18 @@ bool tower_event_done(void) { return s.eventDone; }
 void tower_test_set_gold(int g) { s.gold = g; }
 #endif
 
-// a framed button (the draft's Skip)
-static void button(int x, int y, int w, int h, bool on, bool ok, const char *label)
-{
-    flat_mode();
-    rdpq_set_prim_color(on ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
-    rdpq_fill_rectangle(x - 2, y - 2, x + w + 2, y + h + 2);
-    rdpq_set_prim_color(on ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
-    rdpq_fill_rectangle(x, y, x + w, y + h);
-    text_style(x, y + 12, w, ALIGN_CENTER, !ok ? FONT_STYLE_GREY : on ? FONT_STYLE_GOLD : FONT_STYLE_WHITE, label);
-}
+#define button ui_button     // a framed button (the draft's Skip, the Shop's)
 
 static void shop_draw(void)
 {
     flat_mode();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 205));     // (dark enough to read over the hall's light)
+    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));     // the menus' black (ui_pages.h)
     rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     char line[96];
     const int T = fit_my(204);      // (the header, the shelf, Leave and the line under it: 204 px)
-    snprintf(line, sizeof line, "Shop   Gold %d", s.gold);
-    text_style(0, T + 10, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
-    text_style(SAFE_X0, T + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, "B Leave");
-    if (details_for_cursor(false)) ui_hint(SAFE_X1, T + 10, "R Details");
+    text(0, T + 10, SCREEN_WIDTH, ALIGN_CENTER, "SHOP");      // the menus' title row: its money left (as the Shrine's Embers)
+    snprintf(line, sizeof line, "Gold %d", s.gold);
+    text_style(SAFE_X0, T + 10, 120, ALIGN_LEFT, FONT_STYLE_GOLD, line);
     snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d (max %d)", (double)character.health, (double)character.maxHealth, character.healthPotions, tower_mod_max_potions());
     text_style(0, T + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
     // the three boon cards, as the draft's (shorter: the price at the foot)
@@ -2557,10 +2570,10 @@ static void shop_draw(void)
         int x = x0 + i * (cw + gap), card = s.shop.card[i];
         bool on = i == s.shop.sel, sold = (s.shop.sold >> i) & 1;
         flat_mode();
-        rdpq_set_prim_color(FRAME[card >= 0 ? BOONS[card].tier : 0][on]);
-        rdpq_fill_rectangle(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2);
-        rdpq_set_prim_color(on ? RGBA32(60, 30, 20, 240) : RGBA32(30, 22, 18, 230));
+        rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));     // (the menus' black: the frame shows the one under the cursor)
         rdpq_fill_rectangle(x, y0, x + cw, y0 + ch);
+        rdpq_set_prim_color(FRAME[card >= 0 ? BOONS[card].tier : 0][on]);
+        ui_frame(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2, 2);
         if (card < 0) { card_text(x + 2, y0 + 46, CARD_NAME_W, CARD_PITCH, FONT_STYLE_GREY, "No new boon fits"); continue; }
         const BoonDef *bd = &BOONS[card];
         if (bd->duo) snprintf(line, sizeof line, "%s+%s", FAMILIES[bd->family].name, FAMILIES[bd->duo - 1].name);
@@ -2583,6 +2596,7 @@ static void shop_draw(void)
     }
     const int bw = 132, by = y0 + ch + 7 + 38;
     button((SCREEN_WIDTH - bw) / 2, by, bw, 15, s.shop.sel == SHOP_LEAVE, true, "Leave");
+    if (details_for_cursor(false)) ui_hint(SAFE_X1, by + 12, UI_DETAILS_HINT);     // (beside Leave, as the draft's beside Skip)
     // what the selected one does, and why it can't be bought
     int i = s.shop.sel, b = (s.shop.pact - BOON_COUNT) / PC_COUNT, c = (s.shop.pact - BOON_COUNT) % PC_COUNT;
     line[0] = 0;
@@ -2629,39 +2643,33 @@ static void event_label(int i, char *out, int n)
 
 static void event_draw(void)
 {
-    flat_mode();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 205));     // (dark enough to read over the hall's light)
-    rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    const int lh = 16, tw = SCREEN_WIDTH - 72;      // the font's line pitch, the text's width
+    UiRect r = list_box(EVENTS[s.event].name, false);
+    const int lh = 16, tx = r.x0 + 10, tw = r.x1 - r.x0 - 20;      // the font's line pitch, the text's width
     char line[96];
-    if (s.event == EV_BRAZIER && !s.eventDone)     // the blessing's own words (a full pact's stack)
+    int y = r.y0 + 36;
+    y += lh * text_style(tx, y, tw, ALIGN_CENTER, FONT_STYLE_WHITE, EVENTS[s.event].text);
+    if (s.event == EV_BRAZIER && !s.eventDone) {    // the blessing's own words (a full pact's stack)
         snprintf(line, sizeof line, "%s: %s at a full stack", BLESSINGS[s.eventPick].name, BLESSINGS[s.eventPick].desc);
-    // its height (the text, the blessing's line or the result, the rows, the bottom line), so it moves in only as far as it fits
-    int h = 42 + lh * ui_text_lines(EVENTS[s.event].text, tw) + 12 + 15 * s.listN + 6;
-    if (s.event == EV_BRAZIER && !s.eventDone) h += lh * ui_text_lines(line, tw);
-    if (s.eventDone) h += lh * ui_text_lines(s.eventResult, tw) + 8;
-    const int T = fit_my(h);
-    text_style(0, T + 24, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, EVENTS[s.event].name);
-    text_style(SAFE_X0, T + 10, 100, ALIGN_LEFT, FONT_STYLE_GREY, s.eventDone ? "B Continue" : "B Leave");
-    if (details_for_cursor(false)) ui_hint(SAFE_X1, T + 10, "R Details");
-    int y = T + 42 + lh * text_style(36, T + 42, tw, ALIGN_CENTER, FONT_STYLE_WHITE, EVENTS[s.event].text);
-    if (s.event == EV_BRAZIER && !s.eventDone) {
-        y += lh * text_style(36, y, SCREEN_WIDTH - 72, ALIGN_CENTER, FONT_STYLE_GREY, line);
+        y += lh * text_style(tx, y, tw, ALIGN_CENTER, FONT_STYLE_GREY, line);
     }
-    if (s.eventDone) y += lh * text_style(36, y + 4, SCREEN_WIDTH - 72, ALIGN_CENTER, FONT_STYLE_GOLD, s.eventResult) + 4;
-    const int x = 50, w = SCREEN_WIDTH - 100, pitch = 15;
-    y += 12;
-    for (int i = 0; i < s.listN; i++, y += pitch) {
+    if (s.eventDone) y += lh * text_style(tx, y + 4, tw, ALIGN_CENTER, FONT_STYLE_GOLD, s.eventResult) + 4;
+    const int x = r.x0 + 26, w = r.x1 - r.x0 - 52;
+    y += 10;
+    for (int i = 0; i < s.listN; i++, y += LIST_PITCH) {
         if (i == s.listSel) select_box(x - 6, y - 11, x + w + 6, y + 3);
         event_label(s.list[i], line, sizeof line);
         text_style(x, y, w, ALIGN_CENTER, row_ok(i) ? FONT_STYLE_WHITE : FONT_STYLE_GREY, line);
     }
     snprintf(line, sizeof line, "Gold %d   Health %.0f/%.0f   Potions %d", s.gold, (double)character.health, (double)character.maxHealth, character.healthPotions);
-    text_style(0, y + 6 > SCREEN_HEIGHT - T - 4 ? y + 6 : SCREEN_HEIGHT - T - 4, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);     // (never over the rows)
+    int fy = r.y1 - UI_FOOT_DY - 15;
+    text_style(0, y + 4 > fy ? y + 4 : fy, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);     // (never over the rows)
+    list_footer(r);
 }
 
 void tower_between_draw(void)
 {
+    // Details (R) or the map's confirm alone over the hall (the screen's lines would show through the translucent black)
+    if (ui_details()->open && ui_details()->owner == UI_OWNER_TOWER) { ui_panel_draw(ui_details()); return; }
     if (s.draftOpen) tower_draft_draw();
     else if (s.scr == SCR_MAP || s.scr == SCR_CONFIRM) map_draw();
     else if (s.scr == SCR_SHOP) shop_draw();
@@ -3935,9 +3943,12 @@ static int walk_circle(bool drafts)
             if (t == NODE_SHOP) { test_press('B'); s_walkShops++; MCHECK(s.gold == g, "B leaves a Shop, nothing bought"); }
             else if (t == NODE_EVENT) { test_press('A'); s_walkEventGold += s.gold - g; test_press('A'); s_walkEvents++; }   // its first choice, then Continue
             else {
-                if (s_walkRestBack++ % 2 == 0) {    // a Rest's B: the map, the Rest still to choose; then in again
-                    test_press('B');
-                    MCHECK(s.scr == SCR_MAP && s.map.row == row0 && map_reachable(row0 + 1, s.map.sel) && s.map.type[row0 + 1][s.map.sel] == NODE_REST, "a Rest's B: the map, its node to choose again");
+                int how = s_walkRestBack++ % 4;
+                if (how == 0 || how == 2) {    // a Rest's B, or its Back row (A alone): the map, the Rest still to choose; then in again
+                    if (how == 0) test_press('B');
+                    else { for (int i = 0; i < REST_ROWS; i++) test_press('D');
+                           MCHECK(s.list[s.listSel] == -1 && s.listSel == s.listN - 1, "a Rest's last row: Back (row %d of %d)", s.listSel, s.listN); test_press('A'); }
+                    MCHECK(s.scr == SCR_MAP && s.map.row == row0 && map_reachable(row0 + 1, s.map.sel) && s.map.type[row0 + 1][s.map.sel] == NODE_REST, "a Rest's %s: the map, its node to choose again", how ? "Back row" : "B");
                     test_press('A'); test_press('A');
                     MCHECK(s.scr == SCR_REST, "and A, A: the Rest again (%d)", s.scr);
                 }
@@ -4046,6 +4057,7 @@ int tower_test_map(void)
     }
     debugf("[map] 80 circles walked: %d with 4 fights, %d with 5, %d with 6; %d Shops and %d Events entered; fights' gold %d a circle (circles 1-2), events' %d in all\n",
            hist[4], hist[5], hist[6], s_walkShops, s_walkEvents, s_walkFightGold / 80, s_walkEventGold);
+    debugf("[map] Rests walked %d: left by B %d, by the Back row %d\n", s_walkRestBack, (s_walkRestBack + 3) / 4, (s_walkRestBack + 1) / 4);
     save_controller_set_tower(&was);
     // 2b. every node's confirm page fits one page: each Elite with every pair of affixes on each Bonus boss (and as
     // the jailer), each boss node under each night; and every card's Details page count (they page)
