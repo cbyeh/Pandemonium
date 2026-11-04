@@ -3748,3 +3748,7 @@ void dragon_boss_draw(Boss* b)
 #endif
     rdpq_mode_pop();
 }
+
+#ifdef HLE_SHOW_HURTBOX
+int hle_dg_state(void) { return s.state; }     // test aid: its move, for [hbb]
+#endif

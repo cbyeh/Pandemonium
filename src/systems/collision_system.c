@@ -3,6 +3,7 @@
 #include <t3d/t3d.h>
 #include <t3d/t3dskeleton.h>
 #include <math.h>
+#include <string.h>
 
 #include "character.h"
 #include "game/boss/boss.h"
@@ -93,24 +94,43 @@ static inline bool circle_vs_circle_push_xz(
 #ifdef HLE_LOG_HITVOL
 bool hle_limb_only;     // test aid: this frame's sword contact came from the limbs alone
 #endif
-static bool guardian_body_hit(const Boss *boss, const float a[3], const float b[3], float r)
+static const struct { const char *from, *to; float r; } LIMBS[] = {
+    { "Waist", "Head", 7.0f },
+    { "Waist", "LowerLeg-Left", 5.0f }, { "LowerLeg-Left", "Foot-Left", 4.0f },
+    { "Waist", "LowerLeg-Right", 5.0f }, { "LowerLeg-Right", "Foot-Right", 4.0f },
+};
+enum { N_LIMBS = sizeof(LIMBS) / sizeof(LIMBS[0]) };
+static int limb_bones(const Boss *boss, int bone[][2])     // the limbs' bones, or 0 when they don't count
 {
-    static const struct { const char *from, *to; float r; } LIMBS[] = {
-        { "Waist", "Head", 7.0f },
-        { "Waist", "LowerLeg-Left", 5.0f }, { "LowerLeg-Left", "Foot-Left", 4.0f },
-        { "Waist", "LowerLeg-Right", 5.0f }, { "LowerLeg-Right", "Foot-Right", 4.0f },
-    };
-    enum { N = sizeof(LIMBS) / sizeof(LIMBS[0]) };
     static const void *skel;
-    static int bone[N][2];
-    if (boss->phaseIndex > 2 || boss->mode != BOSS_MODE_COMBAT || !boss->skeleton) return false;
+    static int b[N_LIMBS][2];
+    if (boss->phaseIndex > 2 || boss->mode != BOSS_MODE_COMBAT || !boss->skeleton) return 0;
     if (skel != boss->skeleton) {
         skel = boss->skeleton;
-        for (int i = 0; i < N; i++) {
-            bone[i][0] = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, LIMBS[i].from);
-            bone[i][1] = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, LIMBS[i].to);
+        for (int i = 0; i < N_LIMBS; i++) {
+            b[i][0] = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, LIMBS[i].from);
+            b[i][1] = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, LIMBS[i].to);
         }
     }
+    memcpy(bone, b, sizeof(b));
+    return N_LIMBS;
+}
+#ifdef HLE_SHOW_HURTBOX
+int hle_guardian_limbs(T3DVec3 p[][2], float r[])     // test aid: the limb capsules as the sword meets them
+{
+    Boss *boss = boss_get_instance();
+    int bone[N_LIMBS][2], n = 0;
+    if (!boss || !limb_bones(boss, bone)) return 0;
+    for (int i = 0; i < N_LIMBS; i++)
+        if (boss_get_bone_world_pos(boss, bone[i][0], &p[n][0]) && boss_get_bone_world_pos(boss, bone[i][1], &p[n][1])) r[n++] = LIMBS[i].r;
+    return n;
+}
+#endif
+static bool guardian_body_hit(const Boss *boss, const float a[3], const float b[3], float r)
+{
+    enum { N = N_LIMBS };
+    int bone[N][2];
+    if (!limb_bones(boss, bone)) return false;
     for (int i = 0; i < N; i++) {
         T3DVec3 p, q;
         if (!boss_get_bone_world_pos(boss, bone[i][0], &p) || !boss_get_bone_world_pos(boss, bone[i][1], &q)) continue;

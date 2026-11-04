@@ -1596,3 +1596,7 @@ void sun_boss_draw(Boss* b)
 #endif
 #undef SPROF
 }
+
+#ifdef HLE_SHOW_HURTBOX
+int hle_sun_state(void) { return s.state; }     // test aid: its move, for [hbb]
+#endif

@@ -140,6 +140,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
     static int frame;
     frame++;
+#ifdef HLE_SHOW_HURTBOX
+    { extern int hle_hb_frame; hle_hb_frame = frame; }
+#endif
 #ifdef HLE_TEST_DIRTY_HEAP  // test aid: freed heap left full of garbage (finds memory used before it is set)
     if (frame == 400 || frame == 900) {
         void *p[64]; int n = 0;
@@ -1181,7 +1184,21 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         return;
     }
 #endif
-#ifdef HLE_SHOW_HURTBOX
+#if defined(HLE_SHOW_HURTBOX) && defined(HLE_TEST_DUMMY)    // with the bosses: their capsules each frame ([hbb], over the player's floor)
+    {
+        Boss *bb = boss_get_instance();
+        if (bb && bb->mode == BOSS_MODE_COMBAT) {
+            const CapsuleCollider *c = &bb->capsuleCollider;
+            float g = character.pos[1], *p = bb->pos;
+            extern int hle_fk_state(void), hle_sun_state(void), hle_dg_state(void);
+            int st = bb->phaseIndex == 3 ? hle_fk_state() : bb->phaseIndex == 4 ? hle_sun_state() : bb->phaseIndex == 5 ? hle_dg_state() : (int)bb->state;
+            debugf("[hbb] f%d boss %d st %d at %.0f up | A %.1f %.1f %.1f B %.1f %.1f %.1f (over the floor; x z off its centre, along its facing / side) r %.1f\n", frame, bb->phaseIndex, st, (double)(p[1] - g),
+                   (double)(c->localCapA.v[0] * -sinf(bb->rot[1]) + c->localCapA.v[2] * cosf(bb->rot[1])), (double)(c->localCapA.v[0] * cosf(bb->rot[1]) + c->localCapA.v[2] * sinf(bb->rot[1])), (double)(p[1] + c->localCapA.v[1] - g),
+                   (double)(c->localCapB.v[0] * -sinf(bb->rot[1]) + c->localCapB.v[2] * cosf(bb->rot[1])), (double)(c->localCapB.v[0] * cosf(bb->rot[1]) + c->localCapB.v[2] * sinf(bb->rot[1])), (double)(p[1] + c->localCapB.v[1] - g), (double)c->radius);
+        }
+    }
+#endif
+#if defined(HLE_SHOW_HURTBOX) && !defined(HLE_TEST_DUMMY)
     // The hit capsules drawn (with HLE_TEST_FREEZE_BOSS, HLE_LOG_MOVE_MS for [hb]'s vi): four 12 s rounds, the knight then the
     // Black Swordsman, each seen from the side then the front: idle (wide, then close), a swing at
     // 2 s, a roll at 4 s, knocked down at 6 s. [hb] logs the capsule and the bones over the floor
@@ -1552,9 +1569,16 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (boss) {
                 cameraLockOnActive = false;
                 float a = boss->rot[1] + HLE_DUMMY_CAM_YAW;
-                customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * HLE_DUMMY_CAM_DIST, boss->pos[1] + 30.0f, boss->pos[2] + cosf(a) * HLE_DUMMY_CAM_DIST }};
-                customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + 35.0f, boss->pos[2] }};
-                camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+#ifdef HLE_DUMMY_CAM_ALT    // the front and the side by turns, this many frames each (side: +1.57), both views of one moment
+                if (frame / HLE_DUMMY_CAM_ALT & 1) a += 1.5708f;
+#endif
+#ifndef HLE_DUMMY_CAM_H     // the camera's height and where it looks, over the boss's origin
+#define HLE_DUMMY_CAM_H 30.0f
+#define HLE_DUMMY_CAM_LOOK 35.0f
+#endif
+                customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * HLE_DUMMY_CAM_DIST, boss->pos[1] + HLE_DUMMY_CAM_H, boss->pos[2] + cosf(a) * HLE_DUMMY_CAM_DIST }};
+                customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + HLE_DUMMY_CAM_LOOK, boss->pos[2] }};
+                camera_mode_smooth(CAMERA_CUSTOM, 0.01f);     // (10 ms: a cut)
                 if (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE && frame % 20 == 0) debugf("[cam] f%d aerial, y %.0f\n", frame, (double)boss->pos[1]);
             }
 #endif
