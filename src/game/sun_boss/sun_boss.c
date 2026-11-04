@@ -156,6 +156,9 @@ static void move_toward(Boss *b, float x, float z, float speed, float dt)
 }
 
 static void enter(SbState st) {
+#ifdef HLE_HUMAN_BOT     // test aid: the human-like bot learns each move's timing from its start
+    { extern void hb_move(int, int); hb_move(SUN_BOSS_PHASE, st); }
+#endif
 #ifdef HLE_LOG_MOVES     // test aid: each move as it starts (the hits after it are its: [hit])
     debugf("[move] %d\n", st);
 #endif
@@ -1257,7 +1260,7 @@ void sun_boss_update(Boss* b, float dt)
     b->striking = s.state == SB_DIVE || ((s.state == SB_GLARE || s.state == SB_CORONA || s.state == SB_LASH || s.state == SB_SWEEP
                                           || s.state == SB_SPIRAL || s.state == SB_EMBER || s.state == SB_FLARE || s.state == SB_RAM
                                           || s.state == SB_ECLIPSE) && s.step > 0);
-#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT)
+#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT) || defined(HLE_HUMAN_BOT)
     { extern void hle_open_tick(bool, float); hle_open_tick((s.state == SB_HOVER || s.state == SB_REST), dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {

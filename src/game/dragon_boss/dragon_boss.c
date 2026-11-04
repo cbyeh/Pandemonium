@@ -242,6 +242,9 @@ uint32_t dragon_vi_frame(void) { return vi_n; }
 #endif
 static void enter(DgState st)
 {
+#ifdef HLE_HUMAN_BOT     // test aid: the human-like bot learns each move's timing from its start
+    { extern void hb_move(int, int); hb_move(DRAGON_BOSS_PHASE, st); }
+#endif
 #ifdef HLE_LOG_MOVES     // test aid: each move as it starts (the hits after it are its: [hit])
     debugf("[move] %d\n", st);
 #endif
@@ -871,6 +874,9 @@ static void hazards_update(float dt)
         // the rain from the air: a heavier hit, then a breath before the next (one standing under
         // a pass took ~60 at 9 every 0.4 s)
         bool rain = s.state == DG_FLY;
+#ifdef HLE_HUMAN_BOT
+        { extern int hb_src; if (!stream && !rain) hb_src = 2; }   // test aid: a lingering flame's tick
+#endif
         character_apply_damage(stream ? 20.0f : rain ? 12.0f : f->ember ? 5.0f : 9.0f);
         s.fireCd = rain ? 1.2f : f->ember ? 0.5f : 0.4f;      // (a fireball's patch: 5 every 0.5 s)
         if (stream) s.hitDone = true;
@@ -3208,7 +3214,7 @@ void dragon_boss_update(Boss* b, float dt)
     b->striking = s.state == DG_FLY || s.state == DG_TAIL || (s.state == DG_CLAW && s.step != 0 && s.step != 2) ||
                   ((s.state == DG_BITE || s.state == DG_BREATH || s.state == DG_CHARGE || s.state == DG_WHIP || s.state == DG_NOVA || s.state == DG_BEAM ||
                     s.state == DG_TRIPLE || s.state == DG_SNIPE || s.state == DG_SKYBEAM || s.state == DG_SWEEP || s.state == DG_CONE || s.state == DG_HOVER || s.state == DG_SWIPE || s.state == DG_STOMP) && s.step > 0);
-#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT)
+#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT) || defined(HLE_HUMAN_BOT)
     { extern void hle_open_tick(bool, float); hle_open_tick((s.state == DG_IDLE || s.state == DG_TURN || s.state == DG_DOWN), dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {
