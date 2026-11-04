@@ -11,6 +11,9 @@
 
 #include <math.h> // for isfinite
 
+#ifdef HLE_SHOW_HURTBOX
+static uint8_t s_hbAlpha = 170;
+#endif
 uint16_t DEBUG_COLORS[6] = {
     0xf800, // Red     (#ff0000)
     0x0fe0, // Green   (#08ff00)
@@ -22,6 +25,19 @@ uint16_t DEBUG_COLORS[6] = {
 
 static void debug_draw_line(int px0, int py0, int px1, int py1, uint16_t color)
 {
+#ifdef HLE_SHOW_HURTBOX     // test aid: lines as RDP quads (2 px wide, translucent), so HLE plugins show them too
+    {
+        float dx = px1 - px0, dy = py1 - py0, l = sqrtf(dx * dx + dy * dy);
+        if (l < 0.5f || abs(px0) > 2000 || abs(py0) > 2000 || abs(px1) > 2000 || abs(py1) > 2000) return;
+        float nx = -dy / l, ny = dx / l;
+        float a[2] = { px0 + nx, py0 + ny }, b[2] = { px1 + nx, py1 + ny }, c[2] = { px1 - nx, py1 - ny }, d[2] = { px0 - nx, py0 - ny };
+        color_t col = color_from_packed16(color); col.a = s_hbAlpha;
+        rdpq_set_prim_color(col);
+        rdpq_triangle(&TRIFMT_FILL, a, b, c);
+        rdpq_triangle(&TRIFMT_FILL, a, c, d);
+        return;
+    }
+#endif
     uint16_t *fb = offscreenBuffer.buffer;
     if (!fb) return;
 
@@ -291,3 +307,64 @@ void debug_draw_capsule_vs_aabb_list(
         debug_draw_cross(vp, &mid, capRadius, capColor);
     }
 }
+
+#ifdef HLE_SHOW_HURTBOX
+#include "character.h"
+#include "game/boss/boss.h"
+#include "camera_controller.h"
+// A vertical capsule seen from the test camera (customCamPos): its outline in the plane through
+// the axis facing the camera (convex: B's top half circle, A's bottom half), filled translucent,
+// then stroked, plus a ring round each end of the axis
+static void hb_capsule(T3DViewport *vp, const T3DVec3 *a, const T3DVec3 *b, float r, color_t col)
+{
+    float nx = a->v[0] - customCamPos.v[0], nz = a->v[2] - customCamPos.v[2], l = sqrtf(nx * nx + nz * nz) + 1e-6f;
+    float sx = -nz / l, sz = nx / l;     // across the view, horizontal
+    enum { H = 12, N = 2 * H + 2 };
+    T3DVec3 sp[N]; float cx = 0.0f, cy = 0.0f;
+    for (int i = 0; i < N; i++) {
+        const T3DVec3 *c = i <= H ? b : a;
+        float t = T3D_PI * (float)i / H;     // 0..pi over B, pi..2pi under A
+        if (i > H) t = T3D_PI * (float)(i - 1) / H;
+        T3DVec3 w = {{ c->v[0] + r * cosf(t) * sx, c->v[1] + r * sinf(t), c->v[2] + r * cosf(t) * sz }};
+        t3d_viewport_calc_viewspace_pos(vp, &sp[i], &w);
+        if (sp[i].v[2] <= 0.0f || sp[i].v[2] >= 1.0f) return;
+        cx += sp[i].v[0] / N; cy += sp[i].v[1] / N;
+    }
+    color_t f = col; f.a = 60;
+    rdpq_set_prim_color(f);
+    for (int i = 0; i < N; i++) {
+        float p0[2] = { cx, cy }, p1[2] = { sp[i].v[0], sp[i].v[1] }, p2[2] = { sp[(i + 1) % N].v[0], sp[(i + 1) % N].v[1] };
+        rdpq_triangle(&TRIFMT_FILL, p0, p1, p2);
+    }
+    uint16_t c16 = color_to_packed16(col);
+    s_hbAlpha = 230;
+    for (int i = 0; i < N; i++) debug_draw_line_vec3(&sp[i], &sp[(i + 1) % N], c16);
+    s_hbAlpha = 140;
+    T3DVec3 up = {{ 0, 1, 0 }};
+    debug_draw_circle(vp, a, r, &up, c16);
+    debug_draw_circle(vp, b, r, &up, c16);
+    { T3DVec3 p0, p1; t3d_viewport_calc_viewspace_pos(vp, &p0, a); t3d_viewport_calc_viewspace_pos(vp, &p1, b); debug_draw_line_vec3(&p0, &p1, c16); }
+}
+
+// Test aid: the player's hit capsule (green) and the boss's (magenta) over the frame, as the hit
+// checks build them (pos + local ends, no scale)
+void hle_hurtbox_draw(T3DViewport *vp)
+{
+    rdpq_sync_pipe();
+    rdpq_set_mode_standard();
+    rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+    Boss *boss = boss_get_instance();
+    if (boss) {
+        const CapsuleCollider *k = &boss->capsuleCollider;
+        T3DVec3 ba = {{ boss->pos[0] + k->localCapA.v[0], boss->pos[1] + k->localCapA.v[1], boss->pos[2] + k->localCapA.v[2] }};
+        T3DVec3 bb = {{ boss->pos[0] + k->localCapB.v[0], boss->pos[1] + k->localCapB.v[1], boss->pos[2] + k->localCapB.v[2] }};
+        hb_capsule(vp, &ba, &bb, k->radius, RGBA32(255, 40, 220, 255));
+    }
+    const CapsuleCollider *c = &character.capsuleCollider;
+    T3DVec3 a = {{ character.pos[0] + c->localCapA.v[0], character.pos[1] + c->localCapA.v[1], character.pos[2] + c->localCapA.v[2] }};
+    T3DVec3 b = {{ character.pos[0] + c->localCapB.v[0], character.pos[1] + c->localCapB.v[1], character.pos[2] + c->localCapB.v[2] }};
+    hb_capsule(vp, &a, &b, c->radius, RGBA32(40, 255, 60, 255));
+    rdpq_sync_pipe();
+}
+#endif

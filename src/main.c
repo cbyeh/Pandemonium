@@ -378,6 +378,9 @@ int main(void)
         rspq_queue_switch(NULL);
         g_drawQueue = NULL;
         rspq_queue_run(drawQueue[dq]);
+#ifdef HLE_SHOW_HURTBOX     // test aid: the hit capsules over the fight
+        if (isGuardian) { extern void hle_hurtbox_draw(T3DViewport *vp); hle_hurtbox_draw(&viewport); }
+#endif
         drawDone[dq] = rspq_syncpoint_new();
 #ifdef HLE_PROF_WAITEND   // test aid: the frame's GPU time with the CPU idle
         { static uint32_t acc, n; rspq_flush(); uint32_t t = TICKS_READ();

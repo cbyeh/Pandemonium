@@ -15,7 +15,7 @@
 #ifdef HLE_TEST_TOWER     // the Unbroken check hits the player
 #include "character.h"
 #endif
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_OOB) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE)
+#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_OOB) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE) || defined(HLE_SHOW_HURTBOX)
 #include "camera_controller.h"
 #include "joypad_utility.h"
 #include "character_skin.h"
@@ -26,6 +26,9 @@
 #include "controllers/menu_controller.h"
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #include "scenes/guardian/guardian_scene_bounds.h"
+#ifdef HLE_SHOW_HURTBOX
+#include "utilities/game_math.h"
+#endif
 #endif
 #if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH)
 #include "utilities/save_controller.h"
@@ -1175,6 +1178,77 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         customCamPos = (T3DVec3){{ boss->pos[0] + 60.0f, boss->pos[1] + 30.0f, boss->pos[2] + 70.0f }};
         customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + 22.0f, boss->pos[2] }};
         camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+        return;
+    }
+#endif
+#ifdef HLE_SHOW_HURTBOX
+    // The hit capsules drawn (with HLE_TEST_FREEZE_BOSS, HLE_LOG_MOVE_MS for [hb]'s vi): four 12 s rounds, the knight then the
+    // Black Swordsman, each seen from the side then the front: idle (wide, then close), a swing at
+    // 2 s, a roll at 4 s, knocked down at 6 s. [hb] logs the capsule and the bones over the floor
+    {
+        extern float deltaTime;
+        static int start = -1;
+        static float tm = -0.001f;     // below 0: the first round's 0 s step fires
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) { start = frame; debugf("[hb] start f%d ms %lu\n", frame, (unsigned long)get_ticks_ms()); }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        float prev = tm;
+        tm += deltaTime;
+        int round = (int)(tm / 12.0f);
+        float r = tm - round * 12.0f, pr = prev - round * 12.0f;
+#define AT(x) (pr < (x) && r >= (x))
+        bool front = round & 1;
+        static float floorY;
+        cameraLockOnActive = false;
+        if (round >= 4) return;
+        if (AT(0.0f) || AT(3.6f) || AT(5.6f)) {     // back on the spot, facing the boss (-x)
+            if (AT(0.0f)) { character_skin_set(round < 2 ? SKIN_KNIGHT : SKIN_BLACK_SWORDSMAN); floorY = character.pos[1]; }
+            character.pos[0] = boss->pos[0] + 70.0f; character.pos[2] = boss->pos[2] + 10.0f; character.rot[1] = 1.5708f;
+            character.health = character.maxHealth; character.stamina = character.maxStamina;
+            character_skin_reset_cloth();
+            debugf("[hb] f%d round %d %s skin %d\n", frame, round, front ? "front" : "side", character_skin_get());
+        }
+        if (AT(2.0f)) { pressed->b = 1; in->btn.b = 1; debugf("[hb] f%d swing\n", frame); }
+        if (r >= 4.0f && r < 4.2f) { in->stick_y = 80; if (AT(4.0f)) { pressed->a = 1; in->btn.a = 1; debugf("[hb] f%d roll\n", frame); } }
+        if (AT(6.0f)) { character_apply_damage(25.0f); debugf("[hb] f%d knocked down\n", frame); }
+        {   // the capsule and the drawn body's bones, over the floor
+            static const char *NB[] = { "Head", "Hand-Left", "Hand-Right", "Foot-Left", "Foot-Right", "Waist" };
+            static int bone[6] = { -2 };
+            T3DSkeleton *sk = (T3DSkeleton*)character.skeleton;
+            if (bone[0] == -2) for (int i = 0; i < 6; i++) bone[i] = t3d_skeleton_find_bone(sk, NB[i]);
+            if (frame % 3 == 0 && sk && character.modelMat) {
+                const CapsuleCollider *c = &character.capsuleCollider;
+                char buf[200]; int n = 0;
+                for (int i = 0; i < 6; i++) {
+                    if (bone[i] < 0) continue;
+                    float m[3], w[3];
+                    mat4fp_mul_point_f32_row3_colbasis(&sk->boneMatricesFP[bone[i]], (float[3]){ 0, 0, 0 }, m);
+                    mat4fp_mul_point_f32_row3_colbasis((const T3DMat4FP*)character.modelMat, m, w);
+                    float dx = w[0] - character.pos[0], dz = w[2] - character.pos[2];
+                    n += snprintf(buf + n, sizeof buf - n, " %s y%.1f out%.1f", NB[i], (double)(w[1] - floorY), (double)sqrtf(dx * dx + dz * dz));
+                }
+                extern uint32_t dragon_vi_frame(void);     // HLE_LOG_MOVE_MS: Mupen's frame (shot) number
+                debugf("[hb] vi %lu f%d t %.2f st %d skin %d pos y%.1f | capsule y %.1f..%.1f r %.1f |%s\n", (unsigned long)dragon_vi_frame(), frame, (double)r, character_get_state(), character_skin_get(),
+                       (double)(character.pos[1] - floorY), (double)(character.pos[1] + c->localCapA.v[1] - c->radius - floorY), (double)(character.pos[1] + c->localCapB.v[1] + c->radius - floorY), (double)c->radius, buf);
+            }
+        }
+        // the camera: wide on both (side rounds, the first second), else close on the knight
+        float *p = character.pos;
+        if (!front && r < 1.0f) {
+            customCamPos = (T3DVec3){{ p[0] - 35.0f, floorY + 30.0f, p[2] + 160.0f }};
+            customCamTarget = (T3DVec3){{ p[0] - 35.0f, floorY + 25.0f, p[2] }};
+        } else if (!front) {
+            customCamPos = (T3DVec3){{ p[0], floorY + 11.0f, p[2] + 42.0f }};
+            customCamTarget = (T3DVec3){{ p[0], floorY + 9.0f, p[2] }};
+        } else {
+            customCamPos = (T3DVec3){{ p[0] - 42.0f, floorY + 11.0f, p[2] }};
+            customCamTarget = (T3DVec3){{ p[0], floorY + 9.0f, p[2] }};
+        }
+        camera_mode(CAMERA_CUSTOM);
+#undef AT
         return;
     }
 #endif
