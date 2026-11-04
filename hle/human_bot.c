@@ -42,6 +42,7 @@ extern const char *tower_affix_tag(void);
 #define HB_KEYS (8 * 64)
 #define HB_SLOTS 6
 
+float hb_dealt;             // all the player's damage to bosses (boss.c), for the bench's windows
 int hb_src;                 // set by a hazard just before it deals its tick (1 Smouldering's floor fire, 2 Shadowborne's flames)
 int hb_plan, hb_runs;       // the run's build plan (tower.c reads it), runs so far
 uint32_t hb_seed;           // the next run's seed (tower.c)
@@ -133,7 +134,7 @@ bool hb_blow(float amount, bool invuln)
     int src = hb_src; hb_src = 0;
     if (!F.on) return false;
     float now = gameTime;
-    if (src) { s_fleeUntil = now + 0.7f; if (!invuln) { F.hazard++; F.landed += amount * boss_hp_loss_scale() * tower_mod_damage_taken(); F.lastKey = -src; F.lastAmt = amount; strcpy(F.lastWhy, src == 1 ? "fire" : "flames"); } return false; }
+    if (src) { s_fleeUntil = now + 1.5f; if (!invuln) { F.hazard++; F.landed += amount * boss_hp_loss_scale() * tower_mod_damage_taken(); F.lastKey = -src; F.lastAmt = amount; strcpy(F.lastWhy, src == 1 ? "fire" : "flames"); } return false; }
     if (!F.on || amount < 5.0f) return false;
     learn(now);
     if (invuln) { if (character_get_state() == CHAR_STATE_ROLLING) F.dodged++;
@@ -308,9 +309,11 @@ void hb_fight(joypad_inputs_t *in, joypad_buttons_t *pressed, Boss *boss)
     if (hle_open_now) { if (s_openSince < 0.0f) { s_openSince = now; s_reactAt = now + HB_REACT + 0.05f * gauss(); } F.openT += dt; }
     else s_openSince = -1.0f;
     float openAge = s_openSince >= 0.0f ? now - s_openSince : -1.0f;
-    // a potion: low, nothing coming, in an opening or out of reach (Berserker's are blocked by the game)
-    float potAt = HB_POTION_AT + (tower_circle() >= 5 ? 0.1f : 0.0f);
-    if (character.health < potAt * character.maxHealth && character.healthPotions > 0 && st == CHAR_STATE_NORMAL && soon > 0.6f && (hle_open_now || d > 55.0f) && s_k % 6 == 0) {
+    // a potion: low, nothing coming, in an opening or out of reach (Berserker's are blocked by the game); with plenty held a human
+    // drinks sooner, and tops up as a fight starts
+    float potAt = HB_POTION_AT + (tower_circle() >= 5 ? 0.1f : 0.0f) + (character.healthPotions >= 4 ? 0.15f : 0.0f);
+    if (now - F.t0 < 3.0f && character.healthPotions >= 2) potAt = fmaxf(potAt, 0.70f);
+    if (character.health < potAt * character.maxHealth && character.healthPotions > 0 && st == CHAR_STATE_NORMAL && soon > 0.6f && (hle_open_now || d > 55.0f || now - F.t0 < 3.0f) && s_k % 6 == 0) {
         int p0 = character.healthPotions;
         pressed->d_left = 1; in->btn.d_left = 1;
         (void)p0; F.potions++;
