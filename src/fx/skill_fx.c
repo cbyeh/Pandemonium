@@ -633,6 +633,7 @@ static void draw_arc(const SkillFx *f)
 #endif
     float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
     float rx = fz, rz = -fx;
+    bool sun = !f->hostile && s_skillPalette;
     // Layer 0: flat crescent on the slash plane; layer 1: a blade-wall standing on its
     // outer edge, so the slash also reads from a low camera
     for (int layer = 0; layer < 2; layer++) {
@@ -646,14 +647,14 @@ static void draw_arc(const SkillFx *f)
                 float w = 16.0f * taper;
                 outer[i][1] = f->pos[1];
                 inner[i][0] = f->pos[0] + dx * (R - w); inner[i][1] = f->pos[1]; inner[i][2] = f->pos[2] + dz * (R - w);
-                co[i] = rgba(110, 210, 255, a);
-                ci[i] = rgba(40, 120, 255, 0.0f);
+                co[i] = rgba(sun ? 40 : 110, 210, 255, a);     // Sunforged: deep amber where it meets the floor (gold reads as the tan floor)
+                ci[i] = rgba(sun ? 245 : 40, 120, 255, 0.0f);   // fading in to white
             } else {
                 float h = 12.0f * taper;
                 outer[i][1] = f->pos[1] + h;
                 inner[i][0] = outer[i][0]; inner[i][1] = f->pos[1] - h * 0.5f; inner[i][2] = outer[i][2];
                 co[i] = rgba(240, 252, 255, 0.0f);
-                ci[i] = rgba(200, 240, 255, a);
+                ci[i] = rgba(sun ? 40 : 200, 240, 255, a);
             }
         }
         build_ribbon(outer, inner, co, ci, N);
