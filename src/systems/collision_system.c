@@ -33,10 +33,6 @@ bool bodyHitboxCollision = false;
 T3DVec3 bossWeaponCapA;
 T3DVec3 bossWeaponCapB;
 float bossWeaponRadius = 1.0f;
-// The Guardian's (and Unbound's) drawn blade as its outline: both edges, its middle, the flared
-// point's edges, each half the blade's thickness round (bossWeaponRadius; world, this frame)
-#define BOSS_BLADE_SEGS 6
-float bossBladeSeg[BOSS_BLADE_SEGS][2][3];
 
 bool bossWeaponCollision = false;
 
@@ -330,7 +326,7 @@ void collision_init(void)
 
     Boss *boss = NULL;
     if (update_boss_capsule_world(&boss)) {
-        bossWeaponRadius = 0.8f;     // half the blade's thickness (1.6)
+        bossWeaponRadius = 5.0f;
     }
 
     charWeaponRadius = 2.0f;
@@ -425,26 +421,37 @@ void collision_update(void)
         const T3DMat4FP *B = &sk->boneMatricesFP[boss->handRightBoneIndex];
         const T3DMat4FP *M = (const T3DMat4FP*)boss->modelMat;
 
-        // The drawn blade (z_sword1 and its decal in the hand's space, model units: 16 to a world unit):
-        // past the guard 4-4.7 wide and 1.6 thick, then a point that flares to 10.6 across. Was a
-        // segment 640 along the hand's -X, 5 round: up to 5 past the drawn blade (the user's call)
-        static const float BLADE[BOSS_BLADE_SEGS][2][3] = {
-            { { -112.0f, 34.0f, -24.0f }, { -751.0f, 15.0f, -80.0f } },     // its middle, guard to point
-            { { -111.0f,  1.0f, -21.0f }, { -595.0f, -22.0f, -63.0f } },    // its edges
-            { { -113.0f, 66.0f, -27.0f }, { -599.0f, 52.0f, -70.0f } },
-            { { -595.0f, -22.0f, -63.0f }, { -781.0f, -74.0f, -76.0f } },   // the point's
-            { { -599.0f, 52.0f, -70.0f }, { -724.0f, 95.0f, -85.0f } },
-            { { -724.0f, 95.0f, -85.0f }, { -781.0f, -74.0f, -76.0f } } };
-        bossWeaponCollision = false;
-        for (int i = 0; i < BOSS_BLADE_SEGS; i++) {
-            for (int e = 0; e < 2; e++) { float m[3]; mat4fp_mul_point_f32_row3_colbasis(B, BLADE[i][e], m); mat4fp_mul_point_f32_row3_colbasis(M, m, bossBladeSeg[i][e]); }
-            bossWeaponCollision |= scu_capsule_vs_capsule_f(bossBladeSeg[i][0], bossBladeSeg[i][1], bossWeaponRadius, charCapA.v, charCapB.v, charRadius);
-        }
-        bossWeaponCapA = (T3DVec3){{ bossBladeSeg[0][0][0], bossBladeSeg[0][0][1], bossBladeSeg[0][0][2] }};
-        bossWeaponCapB = (T3DVec3){{ bossBladeSeg[0][1][0], bossBladeSeg[0][1][1], bossBladeSeg[0][1][2] }};
+        const float p0_local[3] = { 0.0f, 0.0f, 0.0f };
+
+        const float len = 640.0f;
+        const float p1_local[3] = { -len, 0.0f, 0.0f };
+
+        float p0_model[3];
+        float p1_model[3];
+
+        mat4fp_mul_point_f32_row3_colbasis(B, p0_local, p0_model);
+        mat4fp_mul_point_f32_row3_colbasis(B, p1_local, p1_model);
+
+        float p0_world[3];
+        float p1_world[3];
+
+        mat4fp_mul_point_f32_row3_colbasis(M, p0_model, p0_world);
+        mat4fp_mul_point_f32_row3_colbasis(M, p1_model, p1_world);
+
+        bossWeaponCapA = (T3DVec3){{ p0_world[0], p0_world[1], p0_world[2] }};
+        bossWeaponCapB = (T3DVec3){{ p1_world[0], p1_world[1], p1_world[2] }};
+
+        bossWeaponCollision = scu_capsule_vs_capsule_f(
+            bossWeaponCapA.v,
+            bossWeaponCapB.v,
+            bossWeaponRadius,
+            charCapA.v,
+            charCapB.v,
+            charRadius
+        );
 #ifdef HLE_LOG_HITGAP     // test aid: the blade's reach for the what-ifs
         { extern void hle_hg_vol(const char *, const float *, const float *, float); extern const char *hle_hg_gname(const Boss *);
-          if (boss->phaseIndex <= 2) for (int i = 0; i < BOSS_BLADE_SEGS; i++) hle_hg_vol(hle_hg_gname(boss), bossBladeSeg[i][0], bossBladeSeg[i][1], bossWeaponRadius); }
+          if (boss->phaseIndex <= 2) hle_hg_vol(hle_hg_gname(boss), bossWeaponCapA.v, bossWeaponCapB.v, bossWeaponRadius); }
 #endif
     }
 
@@ -587,10 +594,6 @@ void collision_draw(T3DViewport *viewport)
             bossWeaponRadius,
             DEBUG_COLORS[5]
         );
-        for (int i = 1; i < BOSS_BLADE_SEGS; i++) {
-            T3DVec3 a = {{ bossBladeSeg[i][0][0], bossBladeSeg[i][0][1], bossBladeSeg[i][0][2] }}, b = {{ bossBladeSeg[i][1][0], bossBladeSeg[i][1][1], bossBladeSeg[i][1][2] }};
-            debug_draw_capsule(viewport, &a, &b, bossWeaponRadius, DEBUG_COLORS[5]);
-        }
     }
 
     if (boss->sphereAttackColliderActive) {
