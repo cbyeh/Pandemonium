@@ -98,6 +98,8 @@ int tower_build_rows(char left[][40], char right[][12], int style[], int card[],
 // a Build row's icons drawn at x, y (its baseline) across w: returns its text's indent; *noRight: its pips replace the right text
 int tower_build_row_marks(int i, int x, int y, int w, bool *noRight);
 void tower_icons_free(void);            // the emblems' strip (loaded when first drawn)
+void tower_list_icons_free(void);       // the 12 px list icons (and, outside the screens between fights, the portraits and forms)
+bool tower_list_icon(const char *name, int x, int y);     // a list row's 12 px icon by its name at x, y (its top left); false: none
 void tower_hud_skill_marks(int skill, int x, int y);   // a D-pad skill key's level pips and form badge (a climb's), at its centre
 
 // ---- Offerings (Tower > Offerings): gifts for the next climb only, two at most, the second 50 Embers more; set aside

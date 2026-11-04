@@ -141,6 +141,30 @@ static void character_ui_load_sprite(sprite_t **sprite, surface_t *surface, cons
 static rspq_block_t *s_keysBlock;     // the D-pad keys as last drawn (character_ui_draw_c_buttons)
 static unsigned s_keysLook = ~0u;
 
+// A skill's icon is its Lv 5 form's once the climb has one (assets/ui/skills/form_*.rgba16.png, tools/forms.py): that
+// sprite then stands in for the skill's own (no more held), loaded when it's first wanted
+static int8_t s_skillForm[3];       // the form whose icon is loaded (0: the skill's own)
+static void character_ui_sync_skill_icons(void)
+{
+    static const char *const BASE[3] = { "rom:/ui/skills/skill_moonblade.rgba16.sprite", "rom:/ui/skills/skill_halfmoon.rgba16.sprite", "rom:/ui/skills/skill_cleave.rgba16.sprite" };
+    static const char *const FORM[3][2] = {
+        { "rom:/ui/skills/form_full_moon_dance.rgba16.sprite", "rom:/ui/skills/form_shattering_dance.rgba16.sprite" },
+        { "rom:/ui/skills/form_twin_moon.rgba16.sprite", "rom:/ui/skills/form_full_moon.rgba16.sprite" },
+        { "rom:/ui/skills/form_crescent_storm.rgba16.sprite", "rom:/ui/skills/form_long_cleave.rgba16.sprite" },
+    };
+    sprite_t **spr[3] = { &s_skillMoonBladeSprite, &s_skillHalfmoonSprite, &s_skillCleaveSprite };
+    surface_t *surf[3] = { &s_skillMoonBladeSurf, &s_skillHalfmoonSurf, &s_skillCleaveSurf };
+    for (int i = 0; i < 3; i++) {
+        int f = tower_active() ? tower_skill_form(i) : 0;
+        if (!*spr[i] || f == s_skillForm[i]) continue;      // (not loaded: the scene's UI is down)
+        gpu_wait();     // (in the frame's draw: the queue so far run first; the keys' block draws the old one)
+        if (s_keysBlock) { rspq_block_free(s_keysBlock); s_keysBlock = NULL; }
+        sprite_free(*spr[i]); *spr[i] = NULL;
+        character_ui_load_sprite(spr[i], surf[i], f ? FORM[i][f - 1] : BASE[i]);
+        s_skillForm[i] = (int8_t)f;
+    }
+}
+
 static void character_ui_free_sprite(sprite_t **sprite, surface_t *surface)
 {
     if (!sprite || !surface) return;
@@ -166,6 +190,8 @@ void character_ui_init(void)
     character_ui_load_sprite(&s_skillMoonBladeSprite, &s_skillMoonBladeSurf, "rom:/ui/skills/skill_moonblade.rgba16.sprite");
     character_ui_load_sprite(&s_skillHalfmoonSprite, &s_skillHalfmoonSurf, "rom:/ui/skills/skill_halfmoon.rgba16.sprite");
     character_ui_load_sprite(&s_skillCleaveSprite, &s_skillCleaveSurf, "rom:/ui/skills/skill_cleave.rgba16.sprite");
+    s_skillForm[0] = s_skillForm[1] = s_skillForm[2] = 0;
+    character_ui_sync_skill_icons();        // (a climb's forms: their icons instead)
 
     // Health potion bottle icon.
     character_ui_load_sprite(&s_healthBottleSprite, &s_healthBottleSurf, "rom:/healthBottle.ia8.sprite");
@@ -379,6 +405,7 @@ static void character_ui_draw_icon(sprite_t *sprite, const surface_t *surf, int 
 // a skill's HUD icon (0 Moon Blade Dance, 1 Halfmoon Slash, 2 Crescent Cleave) px wide at its centre x, y (the Build rows': a fight's sprites)
 void character_ui_draw_skill_icon(int skill, int x, int y, int px)
 {
+    character_ui_sync_skill_icons();        // (its form's once taken)
     sprite_t *spr[3] = { s_skillMoonBladeSprite, s_skillHalfmoonSprite, s_skillCleaveSprite };
     const surface_t *surf[3] = { &s_skillMoonBladeSurf, &s_skillHalfmoonSurf, &s_skillCleaveSurf };
     if (skill < 0 || skill > 2 || !spr[skill]) return;
@@ -421,6 +448,7 @@ void character_ui_draw_c_buttons(void)
     // This should be called by scene after the 3D/world pass, with the rest of
     // the 2D UI.
     if (!s_keySprite) return;
+    character_ui_sync_skill_icons();        // (a form taken: its icon on the key; the block is recorded again)
 
     // Target on-screen key size. Source sprites are 64x64.
     const int keyPx = 20;

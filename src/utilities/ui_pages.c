@@ -122,8 +122,9 @@ int ui_text_lines_cs(const char *s, int w, int cs) { return lines_cs(s, w, cs); 
 // ---- UiDoc ----
 
 void ui_doc_clear(UiDoc *d) { d->used = 0; d->n = 0; d->pages = 1; d->tallest = 0; d->start[0] = 0; d->start[1] = 0; d->pendingGap = d->pendingBreak = d->pendingKeep = false; d->pendingIcon = 0; }
-int (*ui_icon_hook)(uint8_t icon, int x, int y, bool draw);
-static int icon_w(uint8_t icon) { return icon && ui_icon_hook ? ui_icon_hook(icon, 0, 0, false) : 0; }
+int (*ui_icon_hook)(uint16_t icon, int x, int y, bool draw, int *h);
+static int icon_w(uint16_t icon) { return icon && ui_icon_hook ? ui_icon_hook(icon, 0, 0, false, NULL) : 0; }
+static int icon_h(uint16_t icon) { int h = 0; if (icon && ui_icon_hook) ui_icon_hook(icon, 0, 0, false, &h); return h; }    // (0: a line's)
 
 static int doc_put(UiDoc *d, const char *s)
 {
@@ -152,7 +153,7 @@ void ui_doc_row(UiDoc *d, int style, const char *right, const char *fmt, ...)
 void ui_doc_gap(UiDoc *d) { if (d->n) d->pendingGap = true; }
 void ui_doc_break(UiDoc *d) { if (d->n) d->pendingBreak = true; }
 void ui_doc_keep(UiDoc *d) { d->pendingKeep = true; }
-void ui_doc_icon(UiDoc *d, uint8_t icon) { d->pendingIcon = icon; }
+void ui_doc_icon(UiDoc *d, uint16_t icon) { d->pendingIcon = icon; }
 
 static int row_w(const UiDoc *d, int i, int w) { return (d->row[i].r >= 0 ? w - UI_RIGHT_W - 4 : w) - icon_w(d->row[i].icon); }     // (a split row keeps its icon's indent)
 
@@ -195,6 +196,7 @@ int ui_doc_layout(UiDoc *d, int w, int h)
     d->pages = 1; d->start[0] = 0;
     for (int i = 0; i < d->n; i++) {
         int rh = lines_in(d->text + d->row[i].l, row_w(d, i, w)) * pitch, gap = d->row[i].gap ? pitch / 2 : 0;
+        if (!d->row[i].cont && icon_h(d->row[i].icon) > rh) rh = icon_h(d->row[i].icon);     // (a portrait's row: as tall as it)
         if (!d->row[i].brk && used + gap + rh > h) {
             int room = i > d->start[d->pages - 1] ? h - used - gap : h;
             if (room >= pitch) { split_to_fit(d, i, w, room); rh = lines_in(d->text + d->row[i].l, row_w(d, i, w)) * pitch; }
@@ -220,13 +222,15 @@ void ui_doc_draw(const UiDoc *d, int page, int x, int y, int w)
     for (int i = d->start[page]; i < d->start[page + 1]; i++) {
         if (d->row[i].gap && i > d->start[page]) y += pitch / 2;
         int in = icon_w(d->row[i].icon);
-        if (in && !d->row[i].cont) ui_icon_hook(d->row[i].icon, x, y, true);
+        if (in && !d->row[i].cont) ui_icon_hook(d->row[i].icon, x, y, true, NULL);
         int k = rdpq_text_printf(&(rdpq_textparms_t){ .width = row_w(d, i, w), .wrap = WRAP_WORD, .style_id = d->row[i].style },
                                  FONT_UNBALANCED, x + in, y, "%s", d->text + d->row[i].l).nlines;
         if (d->row[i].r >= 0)
             rdpq_text_printf(&(rdpq_textparms_t){ .width = UI_RIGHT_W, .align = ALIGN_RIGHT, .style_id = d->row[i].style },
                              FONT_UNBALANCED, x + w - UI_RIGHT_W, y, "%s", d->text + d->row[i].r);
-        y += (k < 1 ? 1 : k) * pitch;
+        int rh = (k < 1 ? 1 : k) * pitch;
+        if (in && !d->row[i].cont && icon_h(d->row[i].icon) > rh) rh = icon_h(d->row[i].icon);
+        y += rh;
     }
 }
 

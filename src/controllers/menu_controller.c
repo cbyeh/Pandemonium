@@ -992,10 +992,13 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
     }
 }
 
+// the lists with 12 px icons (their sprites held while one is open)
+static bool list_icons_menu(int m) { return m == MENU_CODEX || m == MENU_SHRINE || m == MENU_RELICS || m == MENU_UNLOCKS || m == MENU_OFFERINGS; }
 void menu_controller_update(void)
 {
     if (currentMenu != MENU_CONTROLS || !menuActive) controls_icons(false);
     if (!tower_active() && (currentMenu != MENU_CODEX || !menuActive)) tower_icons_free();     // (the emblems: a climb's, or the Codex's)
+    if (!menuActive || !list_icons_menu(currentMenu)) tower_list_icons_free();
     menu_controller_update_for_state(
         scene_get_game_state(),
         scene_is_cutscene_active()
@@ -1006,6 +1009,7 @@ void menu_controller_update_title(void)
 {
     if (currentMenu != MENU_CONTROLS || !menuActive) controls_icons(false);
     if (!tower_active() && (currentMenu != MENU_CODEX || !menuActive)) tower_icons_free();     // (the emblems: a climb's, or the Codex's)
+    if (!menuActive || !list_icons_menu(currentMenu)) tower_list_icons_free();
     menu_controller_update_for_state(
         GAME_STATE_TITLE,
         false
@@ -1060,6 +1064,16 @@ static void row_fit(int x, int w, int y, const char *label)
     if (lw > s_rowMax) s_rowMax = lw;
     if (lw < ROW_MIN - 24) lw = ROW_MIN - 24;
     ui_track(cx - lw / 2 - 12, y - 12, cx + lw / 2 + 12, y + 4);
+}
+// a list row with its 12 px icon at its left (the Tower's lists: tower_list_icon by the name icon; NULL none), its text after it
+static void menu_row_icon(UiRect r, int y, bool sel, int style, const char *left, const char *right, const char *icon)
+{
+    int x = MB_X(r), w = MB_W(r);
+    if (sel) ui_select_box(x - 4, y - 12, x + w + 4, y + 4);
+    if (icon && !ui_measuring()) tower_list_icon(icon, x, y - 10);     // (2 px clear of the box above and below)
+    const int in = 16;      // (every row's text, None and Back too, in one column after the icons)
+    rdpq_text_printf(&(rdpq_textparms_t){ .width = w - UI_RIGHT_W - in, .style_id = style }, FONT_UNBALANCED, x + in, y, "%s", left);
+    if (right && right[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W + 40, .style_id = style }, FONT_UNBALANCED, x + w - UI_RIGHT_W - 40, y, "%s", right);
 }
 // a list's row: centred (right NULL), or a name left and its state right; y its baseline
 static void menu_row(UiRect r, int y, bool sel, int style, const char *left, const char *right)
@@ -1302,7 +1316,8 @@ static void menu_body(UiRect r0)
             } else snprintf(name, sizeof name, "Back");
             // bought (the Nightfarer) or maxed: greyed out
             bool done = (i == MENU_SHRINE_NIGHTFARER && tower_nightfarer_cost() < 0) || (i < MENU_SHRINE_UPGRADES && tower_upgrade_cost((UpgradeId)i) < 0);
-            menu_row(r, y, i == selectedOption, done ? FONT_STYLE_GREY : FONT_STYLE_WHITE, name, right);
+            menu_row_icon(r, y, i == selectedOption, done ? FONT_STYLE_GREY : FONT_STYLE_WHITE, name, right,
+                          i < MENU_SHRINE_UPGRADES ? tower_upgrade_name((UpgradeId)i) : i == MENU_SHRINE_COUNT - 1 ? NULL : name);
         }
         // what the selected one does
         const char *desc = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_desc((UpgradeId)selectedOption)
@@ -1348,7 +1363,8 @@ static void menu_body(UiRect r0)
                 if (!save_controller_skin_unlocked(i)) { right = "locked"; grey = true; }
                 else if (character_skin_get() == i) right = "worn";
             }
-            menu_row(r, y, i == selectedOption, grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE, name, right);
+            if (relics || packs) menu_row_icon(r, y, i == selectedOption, grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE, name, right, i == rows - 1 || (relics && i == 0) ? NULL : name);
+            else menu_row(r, y, i == selectedOption, grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE, name, right);
         }
         const char *desc = selectedOption == rows - 1 ? ""
                          : packs ? tower_pack_brief(selectedOption)
@@ -1379,7 +1395,7 @@ static void menu_body(UiRect r0)
                 else if (why[0]) { snprintf(right, sizeof right, "locked"); grey = true; }
                 else { snprintf(right, sizeof right, "%d", c); grey = held >= 2 || tower_embers() < c; }
             }
-            menu_row(r, y, i == selectedOption, set ? FONT_STYLE_GOLD : grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE, name, right);
+            menu_row_icon(r, y, i == selectedOption, set ? FONT_STYLE_GOLD : grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE, name, right, i == rows - 1 ? NULL : name);
         }
         // why A can't set it aside in red, as the Shop's refusals; else what it does
         const char *why = selectedOption < rows - 1 ? tower_offer_why(selectedOption) : "";
@@ -1392,7 +1408,8 @@ static void menu_body(UiRect r0)
             int i = first + k, ry = RUN_BODY + k * pitch;
             bool open = tower_codex_open_ok(i);
             if (k == codexRow) ui_select_box(RUN_TX - 4, ry - 12, RUN_TX + RUN_TW + 4, ry + 4);
-            rdpq_text_printf(&(rdpq_textparms_t){ .width = RUN_TW - UI_RIGHT_W, .style_id = open ? FONT_STYLE_WHITE : FONT_STYLE_GREY }, FONT_UNBALANCED, RUN_TX, ry, "%s", open ? tower_codex_title(i) : "???");
+            if (open && !ui_measuring()) tower_list_icon(tower_codex_title(i), RUN_TX, ry - 10);     // (its 12 px icon; "???" none)
+            rdpq_text_printf(&(rdpq_textparms_t){ .width = RUN_TW - UI_RIGHT_W - 16, .style_id = open ? FONT_STYLE_WHITE : FONT_STYLE_GREY }, FONT_UNBALANCED, RUN_TX + 16, ry, "%s", open ? tower_codex_title(i) : "???");
             if (!open) {
                 char fl[16]; snprintf(fl, sizeof fl, "floor %d", tower_codex_floor(i));
                 rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, RUN_TX + RUN_TW - UI_RIGHT_W, ry, "%s", fl);
