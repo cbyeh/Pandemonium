@@ -2577,8 +2577,8 @@ void scene_draw(T3DViewport *viewport)
         int barTop = 35;
         int barLeft = (SCREEN_WIDTH - barWidth) / 2;
         // held inside the title-safe area until the bar grows (it slid off the top: cut after 0.4 s), under the
-        // player's bars (they end 20 under the margin) or in the Tower its Floor, Ascension and night lines
-        { int top = ui_safe_margin_y() + (s_tower ? 36 : 24); if (top > barTop) barTop = top; }
+        // player's bars (they end 20 under the margin) or in the Tower its slot strip (to 45) and its Floor, Ascension and night lines
+        { int top = ui_safe_margin_y() + (s_tower ? 48 : 24); if (top > barTop) barTop = top; }     // (a climb's: under its slot strip too)
         int currentBarTop = barTop;
         int currentTextY = barTop + 15;
 

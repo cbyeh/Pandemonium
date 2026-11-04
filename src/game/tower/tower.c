@@ -2836,24 +2836,37 @@ static bool boon_live(BoonId b)
     default:                 return true;
     }
 }
-// The fight's slot strip: the 5 slots' emblems down the left edge, between the player's bars and the D-pad (clear of the
-// boss's title and bar), each with its levels' pips beside it, lit while its effect works, dim while it waits; a
-// duo's emblem gold, an empty slot nothing. 1 KB of icons, a blit and a few fills a slot
+// The fight's slot strip (Vampire Survivors' bar): the 5 slots as frames in a row right under the player's bars, empty
+// ones a dim outline from the run's start; a held boon's frame its rarity's (rarity_frame: colour and studs), its emblem
+// in it and its levels' pips under it; a duo's the link in a gold frame (the slot it freed empty again); lit while its
+// effect works (Berserker, Last Stand, Red Thirst, the windows after a roll, a perfect dodge, a potion or a cast, a
+// bleed, a stagger, Unbroken/Vanish ready, Rally's pool), dim while it waits. 1 KB of icons, a blit and a few fills a slot
+#define STRIP_SLOT 18       // a slot's frame (the 16 px emblem and its 1 px frame)
+#define STRIP_GAP  3
 static void hud_strip(void)
 {
-    if (!slots_used() || !ticons()) return;
-    const int x = ui_safe_margin_x(), y0 = ui_safe_margin_y() + 24;
-    const int dpadTop = SCREEN_HEIGHT - ui_safe_margin_y() - 26 - 36 - 10 - 4;     // (character_ui's diamond: its up key's top)
-    int pitch = (dpadTop - y0) / TOWER_SLOTS;
-    pitch = pitch > 18 ? 18 : pitch < 12 ? 12 : pitch;
-    for (int i = 0, n = 0; i < TOWER_SLOTS; i++) {
-        if (!s.slot[i]) continue;
+    if (!ticons()) return;
+    extern int character_ui_bar_slide(void);
+    const int x0 = ui_safe_margin_x(), y = ui_safe_margin_y() + 23 - character_ui_bar_slide();      // (the stamina bar ends 20 under the margin; it slides in with the bars)
+    for (int i = 0; i < TOWER_SLOTS; i++) {
+        int x = x0 + i * (STRIP_SLOT + STRIP_GAP);
+        if (!s.slot[i]) {       // empty: a dim outline
+            fill_mode();
+            rdpq_set_prim_color(RGBA32(150, 150, 150, 110));
+            ui_frame(x, y, x + STRIP_SLOT, y + STRIP_SLOT, 1);
+            continue;
+        }
         BoonId b = (BoonId)(s.slot[i] - 1);
-        int y = y0 + pitch * n++;
         bool lit = boon_live(b);
-        if (BOONS[b].duo) { icon_mode(); icon_blit(BOONS[b].family, x, y, 16, 16, dim(GOLD_RGB, lit ? 100 : 40)); continue; }
-        emblem(BOONS[b].family, x, y, lit ? 100 : 40);
-        if (BOONS[b].maxStacks > 1) pips(x + 18, y + 7, s.stacks[b], 0, BOONS[b].maxStacks, dim(FAM_RGB[BOONS[b].family], lit ? 100 : 60), 3);
+        int k = lit ? 100 : 45;
+        fill_mode();
+        rdpq_set_prim_color(RGBA32(0, 0, 0, 120));      // (the emblem stays legible over the hall's light)
+        rdpq_fill_rectangle(x + 1, y + 1, x + STRIP_SLOT - 1, y + STRIP_SLOT - 1);
+        rarity_frame(x, y, x + STRIP_SLOT, y + STRIP_SLOT, BOONS[b].tier, lit, 1);
+        if (BOONS[b].duo) { icon_mode(); icon_blit(ICON_LINK, x + 3, y + 7, 12, 5, dim(GOLD_RGB, k)); continue; }
+        emblem(BOONS[b].family, x + 1, y + 1, k);
+        int max = BOONS[b].maxStacks;
+        if (max > 1) pips(x + (STRIP_SLOT - (max * 3 - 1)) / 2, y + STRIP_SLOT + 2, s.stacks[b], 0, max, dim(FAM_RGB[BOONS[b].family], lit ? 100 : 70), 2);
     }
 }
 // A D-pad skill key's marks (a climb's): its level's 4 pips along the key's foot, white; a form's badge in its top right too

@@ -195,6 +195,7 @@ void character_ui_reset(void)
     character_ui_reset_bar_trail(&s_playerStaminaBarState, 1.0f);
 }
 
+int character_ui_bar_slide(void) { return (int)((1.0f - s_playerUiIntro) * 40.0f); }     // how far the bars sit over their place (the intro's slide)
 void character_ui_set_intro(float progress)
 {
     s_playerUiIntro = character_ui_clampf(progress, 0.0f, 1.0f);
