@@ -1752,7 +1752,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifndef HLE_DRAFT_HOLD
 #define HLE_DRAFT_HOLD 100      // frames the draft stays up (longer: for a screenshot; past its 0.75 s input delay)
 #endif
+#ifdef HLE_HUMAN_BOT    // (again every 40 frames: a milestone's notice over the draft takes the first A)
+                    if (k >= HLE_DRAFT_HOLD && (k - HLE_DRAFT_HOLD) % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
+#else
                     if (k == HLE_DRAFT_HOLD) { pressed->a = 1; in->btn.a = 1; }
+#endif
                 }
             }
 #elif defined(HLE_RUN_MASH)  // dodge (A) every 15 frames from the kill on, as a player rolling about after a fight: does a card get taken unseen?
