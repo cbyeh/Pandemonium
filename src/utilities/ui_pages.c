@@ -289,11 +289,13 @@ UiRect ui_safe_rect(void)
     return (UiRect){ mx, my, SCREEN_WIDTH - mx, SCREEN_HEIGHT - my };
 }
 
-// The box: a rounded rectangle of translucent black (the user's pick: radius 4, crisp anti-aliased corners, no rim, alpha
-// UI_SHADE): one 4x4 I4 corner (assets/ui/box_corner.i4.png, tools/tower_icons.py: its coverage the alpha) mirrored to the
-// four corners, the rest three flat fills. A small texture renders the same on Delta's, Mupen's and Ares' renderers
+// The box (the user's pick, 2026-11-03): rounded corners with a soft rim (main's dialog art's anti-aliased edge) in
+// translucent black, UI_SHADE: a 9-slice of one 16x16 I4 corner (assets/ui/box_corner.i4.png, tools/tower_icons.py: its
+// coverage the alpha, its last column the top edge's profile, its last row the left's), mirrored to the four corners, the
+// edges its last row/column stretched, the middle a flat fill. A small texture renders the same on Delta's, Mupen's and
+// Ares' renderers (the 70x135 dialog sprite never showed on Delta's)
 static sprite_t *s_corner;
-#define UI_R 4
+#define CORNER 16
 void ui_box_exact(int x0, int y0, int x1, int y1)
 {
     if (s_measuring) return;
@@ -304,19 +306,29 @@ void ui_box_exact(int x0, int y0, int x1, int y1)
     if (y1 > SCREEN_HEIGHT) y1 = SCREEN_HEIGHT;
     s_lastBox = (UiRect){ x0, y0, x1, y1 };
     if (!s_corner) s_corner = sprite_load("rom:/ui/box_corner.i4.sprite");
-    flat();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));
-    if (x1 - x0 < 2 * UI_R || y1 - y0 < 2 * UI_R || !s_corner) { rdpq_fill_rectangle(x0, y0, x1, y1); return; }
-    rdpq_fill_rectangle(x0 + UI_R, y0, x1 - UI_R, y0 + UI_R);
-    rdpq_fill_rectangle(x0, y0 + UI_R, x1, y1 - UI_R);
-    rdpq_fill_rectangle(x0 + UI_R, y1 - UI_R, x1 - UI_R, y1);
+    if (x1 - x0 < 2 * CORNER || y1 - y0 < 2 * CORNER || !s_corner) {     // (too small for the corners: a plain fill)
+        flat();
+        rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));
+        rdpq_fill_rectangle(x0, y0, x1, y1);
+        return;
+    }
     rdpq_sync_pipe();
     rdpq_set_mode_standard();
     rdpq_mode_combiner(RDPQ_COMBINER1((0, 0, 0, PRIM), (TEX0, 0, PRIM, 0)));     // black, its alpha the texel's x the shade
     rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
     rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));
-    for (int k = 0; k < 4; k++)
-        rdpq_sprite_blit(s_corner, k & 1 ? x1 - UI_R : x0, k & 2 ? y1 - UI_R : y0, &(rdpq_blitparms_t){ .flip_x = k & 1, .flip_y = k & 2 });
+    const int ex = x1 - x0 - 2 * CORNER, ey = y1 - y0 - 2 * CORNER;     // the edges' lengths
+    for (int k = 0; k < 4; k++) {
+        bool fx = k & 1, fy = k & 2;
+        int cx = fx ? x1 - CORNER : x0, cy = fy ? y1 - CORNER : y0;
+        rdpq_sprite_blit(s_corner, cx, cy, &(rdpq_blitparms_t){ .flip_x = fx, .flip_y = fy });
+        // the top/bottom edge (the corner's last column, stretched) and the left/right (its last row), each once
+        if (!fx && ex > 0) rdpq_sprite_blit(s_corner, x0 + CORNER, cy, &(rdpq_blitparms_t){ .s0 = CORNER - 1, .width = 1, .flip_y = fy, .scale_x = (float)ex });
+        if (!fy && ey > 0) rdpq_sprite_blit(s_corner, cx, y0 + CORNER, &(rdpq_blitparms_t){ .t0 = CORNER - 1, .height = 1, .flip_x = fx, .scale_y = (float)ey });
+    }
+    flat();
+    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));
+    if (ex > 0 && ey > 0) rdpq_fill_rectangle(x0 + CORNER, y0 + CORNER, x1 - CORNER, y1 - CORNER);
 }
 // a box UI_PAD past the rect asked for (its layout rect), clamped to the screen
 void ui_box(int x0, int y0, int x1, int y1) { ui_box_exact(x0 - UI_PAD, y0 - UI_PAD, x1 + UI_PAD, y1 + UI_PAD); }

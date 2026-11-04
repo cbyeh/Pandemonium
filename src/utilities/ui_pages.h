@@ -62,10 +62,10 @@ int  ui_pager_input(UiPager *p, bool left, bool right, bool a, bool b);
 void ui_pager_draw(const UiPager *p, int x, int y, int w, const char *title);     // the corners, the title and "2/3" between; y: the row's baseline
 
 // THE MENU STANDARD (one look and one way to move in every menu and screen, 2026-11-03):
-//   the box: one rounded rectangle for every UI (the user's pick, 2026-11-03: radius 4, crisp anti-aliased corners, no
-//   rim, no border), translucent black at one shade, UI_SHADE (180: the scene still shows through, the text legible over
-//   the title's fire, the Sun and the hall's light), drawn from one 4x4 I4 corner (it renders on Delta's renderer as on
-//   Mupen's and Ares'). Three widths: UI_NARROW for the short centred menus (pause, settings, audio, video, controls,
+//   the box: one box for every UI (the user's pick, 2026-11-03, the "hybrid"): rounded corners with a soft rim, a
+//   9-slice of one 16x16 I4 corner (it renders on Delta's renderer as on Mupen's and Ares'), translucent black at one
+//   shade, UI_SHADE (180: the scene still shows through, the text legible over the title's fire, the Sun and the
+//   hall's light), no border. Three widths: UI_NARROW for the short centred menus (pause, settings, audio, video, controls,
 //   Bonus, Tower, credits), the safe rect's (UI_WIDE) for the lists, Details, the paged screens and the Tower's list
 //   screens, the screen's for the full screens; its height fits its content with one padding, UI_EVEN (ui_fit: measured
 //   in a first pass, then drawn), centred in the title-safe rect (ui_safe_rect: the overscan setting's, never wider than
