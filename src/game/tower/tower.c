@@ -2852,12 +2852,13 @@ static bool boon_live(BoonId b)
     }
 }
 // The fight's slot strip (Vampire Survivors' bar): the 5 slots as frames in a row right under the player's bars, empty
-// ones a dim outline from the run's start; a held boon's frame its rarity's (rarity_frame: colour and studs), its emblem
-// in it and its levels' pips under it; a duo's the link in a gold frame (the slot it freed empty again); lit while its
+// ones a dim outline from the run's start; a held boon's frame its rarity's (rarity_frame: colour and studs) on its
+// emblem's edge, its levels' pips under it; a duo's its two families' emblems half and half, left and right, a gold line
+// between (the slot it freed empty again). 16 px, frame and all: no larger than a D-pad key (17.8 px with its rim); lit while its
 // effect works (Berserker, Last Stand, Red Thirst, the windows after a roll, a perfect dodge, a potion or a cast, a
 // bleed, a stagger, Unbroken/Vanish ready, Rally's pool), dim while it waits. 1 KB of icons, a blit and a few fills a slot
-#define STRIP_SLOT 18       // a slot's frame (the 16 px emblem and its 1 px frame)
-#define STRIP_GAP  3
+#define STRIP_SLOT 16       // a slot, its 1 px frame on the emblem's edge (the emblems' outer pixels are mostly clear)
+#define STRIP_GAP  4
 static void hud_strip(void)
 {
 #ifdef HLE_NO_STRIP     // test aid: the strip's cost (not drawn)
@@ -2892,9 +2893,21 @@ static void hud_strip(void)
         fill_mode();
         rdpq_set_prim_color(RGBA32(0, 0, 0, 120));      // (the emblem stays legible over the hall's light)
         rdpq_fill_rectangle(x + 1, y + 1, x + STRIP_SLOT - 1, y + STRIP_SLOT - 1);
+        if (BOONS[b].duo) {     // its first family's emblem's left half, its second's right half
+            int fa = BOONS[b].family, fb = BOONS[b].duo - 1;
+            icon_mode();
+            rdpq_set_prim_color(dim(FAM_RGB[fa], k));
+            rdpq_sprite_blit(s_ticons, x, y, &(rdpq_blitparms_t){ .t0 = 16 * fa, .width = 8, .height = 16 });
+            rdpq_set_prim_color(dim(FAM_RGB[fb], k));
+            rdpq_sprite_blit(s_ticons, x + 8, y, &(rdpq_blitparms_t){ .s0 = 8, .t0 = 16 * fb, .width = 8, .height = 16 });
+            fill_mode();
+            rdpq_set_prim_color(dim(GOLD_RGB, k));
+            rdpq_fill_rectangle(x + 8, y + 2, x + 9, y + STRIP_SLOT - 2);
+            rarity_frame(x, y, x + STRIP_SLOT, y + STRIP_SLOT, BOONS[b].tier, lit, 1);
+            continue;
+        }
+        emblem(BOONS[b].family, x, y, k);
         rarity_frame(x, y, x + STRIP_SLOT, y + STRIP_SLOT, BOONS[b].tier, lit, 1);
-        if (BOONS[b].duo) { icon_mode(); icon_blit(ICON_LINK, x + 3, y + 7, 12, 5, dim(GOLD_RGB, k)); continue; }
-        emblem(BOONS[b].family, x + 1, y + 1, k);
         int max = BOONS[b].maxStacks;
         if (max > 1) pips(x + (STRIP_SLOT - (max * 3 - 1)) / 2, y + STRIP_SLOT + 2, s.stacks[b], 0, max, dim(FAM_RGB[BOONS[b].family], lit ? 100 : 70), 2);
     }
