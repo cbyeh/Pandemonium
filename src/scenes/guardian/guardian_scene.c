@@ -2605,9 +2605,10 @@ void scene_draw(T3DViewport *viewport)
             // Full-screen overlay with prompt to restart
             rdpq_set_prim_color(RGBA32(0, 0, 0, 140));
             rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-            if (s_tower) {      // a band under the Tower's summary: it stays legible over the Sun or a fire
-                rdpq_set_prim_color(RGBA32(0, 0, 0, 150));
-                rdpq_fill_rectangle(0, SCREEN_HEIGHT / 2 - 28, SCREEN_WIDTH, SCREEN_HEIGHT / 2 + 48);
+            if (s_tower) {      // the menus' box under the Tower's summary: it stays legible over the Sun or a fire
+                UiRect sr = ui_safe_rect();
+                ui_box_exact(sr.x0 - UI_PAD, SCREEN_HEIGHT / 2 - 28, sr.x1 + UI_PAD, SCREEN_HEIGHT / 2 + 48);
+                rdpq_sync_pipe(); rdpq_set_mode_standard(); rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY); rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
             }
             rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
 

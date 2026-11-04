@@ -2592,11 +2592,12 @@ static void map_draw(void)
 // A list screen (a Rest's, Temper, Release, the Shop's lists, an Event): the menus' box over the title-safe area
 // (ui_pages.h: THE MENU STANDARD), its title on the top row, a line or two under it, the rows (a page at a time
 // when they don't fit: Up/Down past a page's end, Left/Right a page; "1/2" in the footer), "Details (R)" in the footer
-static UiRect s_listR;      // the list screen's rect this pass (tower_between_draw: the safe rect measured, then fit to its content)
+static UiRect s_listR, s_listBox;      // the list screen's rect and box this pass (tower_between_draw: the safe rect measured, then fit)
+static bool s_listFit;
 static UiRect list_box(const char *title, bool gold)
 {
     UiRect r = s_listR;
-    ui_box(r.x0, r.y0, r.x1, r.y1);
+    if (s_listFit) ui_box_exact(s_listBox.x0, s_listBox.y0, s_listBox.x1, s_listBox.y1); else ui_box(r.x0, r.y0, r.x1, r.y1);
     char t[48]; int n = 0;
     for (; title[n] && n < (int)sizeof t - 1; n++) t[n] = (char)toupper((unsigned char)title[n]);
     t[n] = 0;
@@ -2800,10 +2801,11 @@ void tower_between_draw(void)
     else if (s.scr == SCR_SHOP) shop_draw();
     else if (s.scr) {       // a list screen: its box fit to its content (ui_fit), measured first
         void (*draw)(void) = s.scr == SCR_EVENT ? event_draw : rest_draw;
-        s_listR = ui_safe_rect();
+        s_listR = ui_safe_rect(); s_listFit = false;
         ui_measure_begin(); draw(); ui_measure_end();
-        s_listR = ui_fit(s_listR);
+        s_listR = ui_fit(s_listR, UI_WIDE, &s_listBox); s_listFit = true;
         draw();
+        s_listFit = false;
     }
     if (ui_details()->open && ui_details()->owner == UI_OWNER_TOWER) ui_panel_draw(ui_details());     // Details (R) or the map's confirm, over it
 }

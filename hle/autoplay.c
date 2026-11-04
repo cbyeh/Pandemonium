@@ -874,7 +874,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         static const Visit PAUSE[] = {
             { "Pause", "", MENU_MAIN, false }, { "Pause Settings", "3", MENU_SETTINGS, false }, { "Pause Audio", "30", MENU_AUDIO, false },
             { "Pause Video", "31", MENU_VIDEO, false }, { "Pause Overscan", "311", 100, false }, { "Pause Settings Controls", "32", MENU_CONTROLS, false },
-            { "Pause Skins", "34", MENU_SKINS, false }, { "Pause Controls", "4", MENU_CONTROLS, false }, { NULL, NULL, 0, false } };
+            { "Pause Controls", "4", MENU_CONTROLS, false }, { NULL, NULL, 0, false } };     // (no Skins: the pause Settings hide them)
         static const Visit TPAUSE[] = {
             { "Tower Pause", "", MENU_MAIN, false }, { "Stats", "1", MENU_RUN, false }, { "Tower Pause Codex", "5", MENU_CODEX, false },
             { "Tower Pause Settings", "3", MENU_SETTINGS, false }, { "Tower Pause Controls", "4", MENU_CONTROLS, false }, { NULL, NULL, 0, false } };
@@ -883,12 +883,13 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         static int at[8];       // the row taken at each level of the path
         #define PR(f) do { pressed->f = 1; in->btn.f = 1; } while (0)
         #define CHECK(c, ...) do { if (c) pass++; else fail++; debugf("[menus] %s: ", (c) ? "PASS" : "FAIL"); debugf(__VA_ARGS__); debugf(" (frame %d)\n", frame); } while (0)
-        // the box fits its content (ui_fit): all it laid out at least 12 inside its box (clear of the rounded corners), and
-        // (paged screens aside, whose pages fill the safe rect) at most 24 at any side: one even padding, not stretched
+        // the box fits its content (ui_fit): all it laid out at least 10 inside its box (the padding, 14, clear of the rounded
+        // corners), and (paged screens aside, whose pages fill the safe rect) at most 20 over and under it: as tall as its
+        // content (its width one of the fixed three)
         #define BOXCHECK(nm, paged) do { UiRect b_ = ui_last_box(), c_ = ui_tracked(false), f_ = ui_tracked(true); \
             if (f_.x1 > f_.x0 || f_.y1 > f_.y0) { if (f_.x0 < c_.x0) c_.x0 = f_.x0; if (f_.y0 < c_.y0) c_.y0 = f_.y0; if (f_.x1 > c_.x1) c_.x1 = f_.x1; if (f_.y1 > c_.y1) c_.y1 = f_.y1; } \
             int gl_ = c_.x0 - b_.x0, gt_ = c_.y0 - b_.y0, gr_ = b_.x1 - c_.x1, gb_ = b_.y1 - c_.y1; \
-            bool in_ = gl_ >= 12 && gt_ >= 12 && gr_ >= 12 && gb_ >= 12, snug_ = (paged) || (gl_ <= 24 && gt_ <= 24 && gr_ <= 24 && gb_ <= 24); \
+            bool in_ = gl_ >= 10 && gt_ >= 10 && gr_ >= 10 && gb_ >= 10, snug_ = (paged) || (gt_ <= 20 && gb_ <= 20); \
             CHECK(in_ && snug_, "%s: its box %d,%d-%d,%d, its content %d,%d-%d,%d: gaps left %d top %d right %d bottom %d%s", nm, \
                   b_.x0, b_.y0, b_.x1, b_.y1, c_.x0, c_.y0, c_.x1, c_.y1, gl_, gt_, gr_, gb_, (paged) ? " (paged)" : ""); } while (0)
         bool stick = HLE_NAV_MODE & 1, aOnly = HLE_NAV_MODE >= 2;

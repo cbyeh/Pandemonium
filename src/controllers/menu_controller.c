@@ -143,6 +143,9 @@ static void codex_open_menu(MenuState from, int option)
     codexRow = 0;
 }
 static bool main_row_hidden(int i) { return (i == MENU_MAIN_RUN || i == MENU_MAIN_CODEX) && !tower_active(); }    // (Tower runs only)
+// Settings from a pause menu: no Skills or Skin rows (the user's call: they're the title's; Sunforged's toggle with the skins)
+static bool settings_row_hidden(int i) { return (i == MENU_SETTINGS_SKILLS || i == MENU_SETTINGS_SKIN) && settingsHubReturnMenu != MENU_TITLE; }
+static bool row_hidden(int i) { return currentMenu == MENU_MAIN ? main_row_hidden(i) : currentMenu == MENU_SETTINGS && settings_row_hidden(i); }
 static int run_rows_on_page(void)
 {
     int b = runPager.page - s_run->statsPages;
@@ -475,7 +478,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             if (selectedOption < 0) {
                 selectedOption = maxOptions - 1;
             }
-            while (currentMenu == MENU_MAIN && main_row_hidden(selectedOption)) selectedOption--;   // Tower only
+            while (row_hidden(selectedOption)) selectedOption--;   // (the Tower's rows, the pause Settings' skins)
         }
 
         if (downJustPressed) {
@@ -483,7 +486,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             if (selectedOption >= maxOptions) {
                 selectedOption = 0;
             }
-            while (currentMenu == MENU_MAIN && main_row_hidden(selectedOption)) selectedOption++;
+            while (row_hidden(selectedOption)) selectedOption++;
         }
     }
 
@@ -1003,9 +1006,11 @@ static void draw_menu_line(int x, int y, int w, int h, rdpq_align_t align, const
 }
 
 // The standard box (ui_pages.h: THE MENU STANDARD) over r (fit to its content: menu_controller_draw), its title on the top row
+static bool s_fitOn; static UiRect s_fitBox;     // the box ui_fit gave this frame (else the box UI_PAD round r)
 static UiRect menu_box(UiRect r, const char *title)
 {
-    ui_box(r.x0, r.y0, r.x1, r.y1);
+    if (s_fitOn) ui_box_exact(s_fitBox.x0, s_fitBox.y0, s_fitBox.x1, s_fitBox.y1);
+    else ui_box(r.x0, r.y0, r.x1, r.y1);
     if (title) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = r.x1 - r.x0 }, FONT_UNBALANCED, r.x0, r.y0 + UI_TITLE_DY, "%s", title);
     return r;
 }
@@ -1174,11 +1179,16 @@ void menu_controller_draw(void)
     if (currentMenu != MENU_RUN && currentMenu != MENU_CODEX) {
         s_rowMax = 0;
         ui_measure_begin(); menu_body(r); ui_measure_end();
-        r = ui_fit(r);
+        // three widths (the user's call): the short centred menus narrow, the lists wide; as tall as their content
+        bool narrow = currentMenu == MENU_MAIN || currentMenu == MENU_SETTINGS || currentMenu == MENU_AUDIO || currentMenu == MENU_VIDEO
+                   || currentMenu == MENU_CONTROLS || currentMenu == MENU_BONUS || currentMenu == MENU_TOWER || currentMenu == MENU_CREDITS;
+        r = ui_fit(r, narrow ? UI_NARROW : UI_WIDE, &s_fitBox); s_fitOn = true;
         s_rowW = s_rowMax ? s_rowMax + 24 : 176;
         if (s_rowW < ROW_MIN) s_rowW = ROW_MIN;
+        s_rowW = UI_NARROW - 2 * UI_EVEN;       // (a narrow box's cursor its width less the padding)
     }
     menu_body(r);
+    s_fitOn = false;
     if (ui_details()->open && ui_details()->owner == UI_OWNER_MENU) ui_panel_draw(ui_details());     // Details (R), over the menu
 }
 
@@ -1203,6 +1213,7 @@ static void menu_body(UiRect r0)
     } else if (currentMenu == MENU_SETTINGS) {
         y += 8;
         for (int i = 0; i < MENU_SETTINGS_COUNT; i++) {
+            if (settings_row_hidden(i)) continue;     // (from a pause menu)
             char optionText[64];
             bool locked = i == MENU_SETTINGS_SKILLS && settingsHubReturnMenu != MENU_TITLE;
             const char *arg = locked ? (character_skills_enabled() ? "ON (title only)" : "OFF (title only)")
