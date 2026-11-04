@@ -51,6 +51,7 @@ int hb_skill_pref = -1;     // the plan's skill (0-2, -1 none: the sword); tower
 
 typedef struct { float mean, m2; int n; } Slot;
 static Slot tab[HB_KEYS][HB_SLOTS];
+static float keyLanded[HB_KEYS]; static uint16_t keyHits[HB_KEYS], keyAvoid[HB_KEYS];     // a fight's blows by move ([hbkeys])
 static int starts[HB_KEYS];     // how often each move has started (a hit it's known for must come at least a quarter of the time)
 #if __has_include("hb_table.h")
 #include "hb_table.h"       // { key, slot, mean, sd, n } rows learned by earlier runs
@@ -137,7 +138,7 @@ bool hb_blow(float amount, bool invuln)
     if (src) { s_fleeUntil = now + 1.5f; if (!invuln) { F.hazard++; F.landed += amount * boss_hp_loss_scale() * tower_mod_damage_taken(); F.lastKey = -src; F.lastAmt = amount; strcpy(F.lastWhy, src == 1 ? "fire" : "flames"); } return false; }
     if (!F.on || amount < 5.0f) return false;
     learn(now);
-    if (invuln) { if (character_get_state() == CHAR_STATE_ROLLING) F.dodged++;
+    if (invuln) { if (character_get_state() == CHAR_STATE_ROLLING) { F.dodged++; keyAvoid[recKey[0]]++; }
 #ifdef HB_LOG_BLOWS
         debugf("[hbblow] t %.2f amt %.0f key %d (%.2f s in) DODGED st %d\n", (double)now, (double)amount, recKey[0], (double)(now - recT[0]), character_get_state());
 #endif
@@ -154,7 +155,7 @@ bool hb_blow(float amount, bool invuln)
         else why = p->st == 2 ? "lapse" : p->st == 3 ? "blocked" : p->st == 1 ? "timing" : "late";
     }
     if ((!strcmp(why, "unknown") || !strcmp(why, "blocked") || !strcmp(why, "fast")) && frand() < HB_REFLEX) {
-        F.reflex++;
+        F.reflex++; keyAvoid[recKey[0]]++;
 #ifdef HB_LOG_BLOWS
         debugf("[hbblow] t %.2f amt %.0f key %d (%.2f s in) REFLEX (%s)\n", (double)now, (double)amount, recKey[0], (double)(now - recT[0]), why);
 #endif
@@ -162,6 +163,7 @@ bool hb_blow(float amount, bool invuln)
     }
     F.blows++; F.lastAmt = amount; F.lastKey = recKey[0];
     F.landed += amount * boss_hp_loss_scale() * tower_mod_damage_taken();
+    keyLanded[recKey[0]] += amount * boss_hp_loss_scale() * tower_mod_damage_taken(); keyHits[recKey[0]]++;
     if (character_get_state() == CHAR_STATE_SKILL || F.inCast || gameTime - F.castEnd < 0.5f) { F.castBlows++; F.castLanded += amount * boss_hp_loss_scale() * tower_mod_damage_taken(); }
     if (!strcmp(why, "fast")) F.fast++; else if (!strcmp(why, "lapse")) F.lapse++; else if (!strcmp(why, "timing") || !strcmp(why, "late")) F.timing++;
     else if (!strcmp(why, "blocked")) F.blocked++; else F.unknown++;
@@ -202,6 +204,18 @@ void hb_fight_end(const char *how, Boss *boss)
     debugf("[hbfight2] floor %d blows %d dodged %d reflex %d hazard %d | fast %d lapse %d timing %d blocked %d unknown %d | rolls %d swings %d casts %d broken %d cancelled %d castblows %d castlanded %.1f | open %.0f%%\n",
            F.floor, F.blows, F.dodged, F.reflex, F.hazard, F.fast, F.lapse, F.timing, F.blocked, F.unknown,
            F.rolls, F.swings, F.casts, F.castBroken, F.castCancel, F.castBlows, (double)F.castLanded, (double)(dur > 0 ? F.openT * 100.0f / dur : 0));
+    {   // the moves that landed the most this fight: key (phase x 64 + state), damage, blows landed, blows avoided
+        char line[200]; int n = snprintf(line, sizeof line, "[hbkeys] floor %d", F.floor);
+        for (int t = 0; t < 6; t++) {
+            int best = -1; for (int k = 0; k < HB_KEYS; k++) if (keyHits[k] + keyAvoid[k] && (best < 0 || keyLanded[k] > keyLanded[best])) best = k;
+            if (best < 0) break;
+            n += snprintf(line + n, sizeof line - n, " %d:%.0f/%d/%d", best, (double)keyLanded[best], keyHits[best], keyAvoid[best]);
+            keyLanded[best] = -1.0f; keyHits[best] = keyAvoid[best] = 0;
+            if (n > 170) break;
+        }
+        debugf("%s\n", line);
+        memset(keyLanded, 0, sizeof keyLanded); memset(keyHits, 0, sizeof keyHits); memset(keyAvoid, 0, sizeof keyAvoid);
+    }
 }
 
 // the learned table, for hle/hb_table.h
