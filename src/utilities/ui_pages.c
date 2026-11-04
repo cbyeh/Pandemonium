@@ -12,6 +12,9 @@
 // ---- Tracking what's laid out, measuring a screen, fitting its box (ui_pages.h) ----
 
 static bool s_measuring, s_foot;
+#ifdef HLE_AUTOPLAY
+int ui_test_r_drawn;
+#endif
 static UiRect s_trk[2]; static bool s_trkAny[2];
 static UiRect s_lastBox;
 void ui_track(int x0, int y0, int x1, int y1)
@@ -59,6 +62,9 @@ rdpq_textmetrics_t ui_textf(const rdpq_textparms_t *parms, uint8_t font, float x
     if (n <= 0) return (rdpq_textmetrics_t){ 0 };
     if (n > (int)sizeof buf - 1) n = sizeof buf - 1;
     int len = n;
+#ifdef HLE_AUTOPLAY
+    if (!s_measuring && strstr(buf, "(R)")) ui_test_r_drawn++;     // (the paged menus' self-check: no "(R)" in them)
+#endif
     rdpq_paragraph_t *p = rdpq_paragraph_build(parms, font, buf, &len);     // (on the heap: a word cut with an ellipsis can't overrun it)
     ui_track((int)(x + p->bbox.x0), (int)(y + p->bbox.y0), (int)(x + p->bbox.x1 + 0.99f), (int)(y + p->bbox.y1 + 0.99f));
     if (!s_measuring) rdpq_paragraph_render(p, x, y);
@@ -224,39 +230,34 @@ void ui_doc_draw(const UiDoc *d, int page, int x, int y, int w)
     }
 }
 
-// ---- UiPager: the title row's corners ----
+// ---- UiPager: Left/Right turn the pages; the corners show which way there are more ----
 
-static bool has_right(const UiPager *p) { return p->page < p->pages - 1; }
-void ui_pager_reset(UiPager *p, int pages) { p->page = 0; p->pages = (int8_t)(pages < 1 ? 1 : pages); p->sel = p->pages > 1; }
+void ui_pager_reset(UiPager *p, int pages) { p->page = 0; p->pages = (int8_t)(pages < 1 ? 1 : pages); }
 
 int ui_pager_input(UiPager *p, bool left, bool right, bool a, bool b)
 {
-    if (b) return UI_PAGER_BACK;
-    if (left) p->sel = 0;
-    else if (right && has_right(p)) p->sel = 1;
-    if (!a) return UI_PAGER_NONE;
-    if (p->sel == 0 && p->page == 0) return UI_PAGER_BACK;     // page 0's left corner: Back
-    p->page += p->sel ? 1 : -1;
-    // on along the way it went: Next while there's a next (else Prev), Prev while there's a previous (else Next)
-    p->sel = p->sel ? has_right(p) : p->page == 0;
-    return UI_PAGER_TURNED;
+    if (b || a) return UI_PAGER_BACK;       // (a: the caller's Back row taken)
+    if (left && p->page > 0) { p->page--; return UI_PAGER_TURNED; }
+    if (right && p->page < p->pages - 1) { p->page++; return UI_PAGER_TURNED; }
+    return UI_PAGER_NONE;
 }
 
 void ui_pager_draw(const UiPager *p, int x, int y, int w, const char *title)
 {
     const int cw = 64;
-    for (int i = 0; i < 2; i++) {
-        if (i && !has_right(p)) break;
-        int cx = i ? x + w - cw : x;
-        if (i == p->sel) ui_select_box(cx - 4, y - 12, cx + cw + 4, y + 4);
-        const char *label = i ? "Next >" : p->page ? "< Prev" : "Back";
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = i ? ALIGN_RIGHT : ALIGN_LEFT, .width = cw }, FONT_UNBALANCED, cx, y, "%s", label);
-    }
+    if (p->page > 0) rdpq_text_printf(&(rdpq_textparms_t){ .width = cw, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y, "< Prev");
+    if (p->page < p->pages - 1) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = cw, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x + w - cw, y, "Next >");
     // between them the title (if any) and where it is: "BUILD 2/3"
     char n[48];
     if (p->pages > 1) snprintf(n, sizeof n, "%s%s%d/%d", title ? title : "", title ? "  " : "", p->page + 1, p->pages);
     else snprintf(n, sizeof n, "%s", title ? title : "");
     if (n[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = title ? FONT_STYLE_WHITE : FONT_STYLE_GREY }, FONT_UNBALANCED, x, y, "%s", n);
+}
+
+void ui_row(int x, int w, int y, bool on, const char *label)
+{
+    if (on) ui_select_box(x + w / 2 - 48, y - 12, x + w / 2 + 48, y + 4);
+    rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w }, FONT_UNBALANCED, x, y, "%s", label);
 }
 
 static void flat(void)
@@ -370,60 +371,69 @@ UiDoc *ui_panel_doc(UiPanel *p)
 void ui_panel_close(UiPanel *p) { p->open = false; free(p->doc); p->doc = NULL; }
 
 typedef struct { int x0, y0, x1, y1, tx, tw, corners, title, body, bodyEnd, foot; } PanelBox;
+#define CONFIRM_ROWS 34     // a confirm's two rows (Enter or Buy, Back) under its page, and the line over them
 static PanelBox panel_box_in(const UiPanel *p, UiRect r)
 {
+    if (p->narrow) { int cx = (r.x0 + r.x1) / 2; r.x0 = cx - UI_NARROW / 2 + UI_PAD; r.x1 = cx + UI_NARROW / 2 - UI_PAD; }
     PanelBox b = { r.x0, r.y0, r.x1, r.y1 };
     int pitch = ui_line_pitch();
     b.tx = b.x0 + 6; b.tw = b.x1 - b.x0 - 12;
     b.corners = b.y0 + UI_TITLE_DY;
-    b.title = p->confirm ? b.corners + 6 : b.corners + pitch + 2;     // (a confirm has no corners: its title on their row)
+    b.title = p->confirm ? b.corners : b.corners + pitch + 2;     // (a confirm has no corners: its title on their row)
     b.body = b.title + lines_in(p->title, b.tw) * pitch + 4;     // (a long title wraps: the page starts under it)
     b.foot = b.y1 - UI_FOOT_DY;
-    b.bodyEnd = p->confirm ? b.foot - 22 : b.foot - pitch;      // the last baseline a body line may take
+    b.bodyEnd = p->confirm ? b.foot - CONFIRM_ROWS : b.foot - pitch - 2;      // the last baseline a body line may take (over the Back row)
     return b;
 }
-// the menus' box: the title-safe area's width (never wider than the fixed 7.5% one), as tall as its tallest page (laid out
-// for the whole area: its pages don't change), centred
+// the menus' box: the title-safe area's width (never wider than the fixed 7.5% one; a purchase's confirm narrow), as tall as
+// its tallest page (laid out for the whole area: its pages don't change), centred
 static PanelBox panel_box(const UiPanel *p)
 {
     UiRect r = ui_safe_rect();
     PanelBox b = panel_box_in(p, r);
     if (!p->doc || p->doc->tallest <= 0) return b;
     int pitch = ui_line_pitch(), lastBase = b.body + p->doc->tallest - pitch;
-    if (p->pg.pages > 1 && p->confirm) lastBase += pitch;     // (a confirm's "Up/Down 1/2" line over its buttons)
+    if (p->pg.pages > 1 && p->confirm) lastBase += pitch;     // (a confirm's "< 1/2 >" line over its rows)
     int h = lastBase - b.bodyEnd + (r.y1 - r.y0);       // as far under the last line as the area's bottom is under bodyEnd
     if (h >= r.y1 - r.y0) return b;
     r.y0 += (r.y1 - r.y0 - h) / 2; r.y1 = r.y0 + h;
     return panel_box_in(p, r);
 }
 
-void ui_panel_open(UiPanel *p, const char *title, int titleStyle, bool confirm)
+static void panel_open(UiPanel *p, const char *title, int titleStyle, bool confirm, const char *yes, bool narrow)
 {
     snprintf(p->title, sizeof p->title, "%s", title);
     p->titleStyle = titleStyle;
     p->confirm = confirm;
+    p->yes = yes;
+    p->narrow = narrow;
     p->button = 0;
     PanelBox b = panel_box(p);
     int h = b.bodyEnd - b.body + ui_line_pitch(), pages = ui_doc_layout(ui_panel_doc(p), b.tw, h);
-    if (confirm && pages > 1) pages = ui_doc_layout(p->doc, b.tw, h - ui_line_pitch());     // (room for its "Up/Down 1/2")
+    if (confirm && pages > 1) pages = ui_doc_layout(p->doc, b.tw, h - ui_line_pitch());     // (room for its "< 1/2 >")
     ui_pager_reset(&p->pg, pages);
     p->open = true;
+}
+void ui_panel_open(UiPanel *p, const char *title, int titleStyle, bool confirm) { panel_open(p, title, titleStyle, confirm, NULL, false); }
+void ui_confirm_open(UiPanel *p, const char *title, int titleStyle, const char *yes)
+{
+    panel_open(p, title, titleStyle, true, yes, true);
+    p->button = 1;      // on Back: a mashed A never spends
 }
 
 int ui_panel_input(UiPanel *p, bool up, bool down, bool left, bool right, bool a, bool b, bool r)
 {
     if (!p->open) return UI_PANEL_STAY;
-    if (p->confirm) {       // Enter | Back under the page; a long one turns with Up/Down ("Up/Down 1/2" over it)
+    if (left && p->pg.page > 0) p->pg.page--;       // Left/Right turn its pages, nothing else
+    else if (right && p->pg.page < p->pg.pages - 1) p->pg.page++;
+    if (p->confirm) {       // its two rows (Enter or Buy, then Back) under the page: Up/Down between them, A takes one, B is Back
         if (b) { ui_panel_close(p); return UI_PANEL_CLOSED; }
-        if (down && p->pg.page < p->pg.pages - 1) p->pg.page++;
-        if (up && p->pg.page > 0) p->pg.page--;
-        if (left) p->button = 0;
-        if (right) p->button = 1;
+        if (up || down) p->button ^= 1;
         if (!a) return UI_PANEL_STAY;
         ui_panel_close(p);
         return p->button ? UI_PANEL_CLOSED : UI_PANEL_ENTER;
     }
-    if (r || ui_pager_input(&p->pg, left, right, a, b) == UI_PAGER_BACK) { ui_panel_close(p); return UI_PANEL_CLOSED; }
+    if (a || b || r) { ui_panel_close(p); return UI_PANEL_CLOSED; }     // (its one row, Back; R, which opened it, too)
     return UI_PANEL_STAY;
 }
 
@@ -433,14 +443,12 @@ void ui_panel_draw(const UiPanel *p)
     PanelBox b = panel_box(p);
     ui_box(b.x0, b.y0, b.x1, b.y1);     // (drawn alone: the screen under it isn't drawn while it's open)
     if (!p->confirm) ui_pager_draw(&p->pg, b.tx, b.corners, b.tw, NULL);
-    else if (p->pg.pages > 1) {     // (a confirm's pages: Up/Down)
-        char n[24]; snprintf(n, sizeof n, "Up/Down %d/%d", p->pg.page + 1, p->pg.pages);
-        ui_hint(b.tx + b.tw, b.foot - 22, n);
+    else if (p->pg.pages > 1) {     // (a confirm's pages: "< 1/2 >" over its rows)
+        char n[24]; snprintf(n, sizeof n, "%s%d/%d%s", p->pg.page ? "< " : "", p->pg.page + 1, p->pg.pages, p->pg.page < p->pg.pages - 1 ? " >" : "");
+        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = b.tw, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, b.tx, b.bodyEnd, "%s", n);
     }
     rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = b.tw, .wrap = WRAP_WORD, .style_id = p->titleStyle }, FONT_UNBALANCED, b.tx, b.title, "%s", p->title);
     if (p->doc) ui_doc_draw(p->doc, p->pg.page, b.tx, b.body, b.tw);
-    if (p->confirm) {
-        const int bw = 90, gap = 16, bx = b.tx + (b.tw - 2 * bw - gap) / 2, by = b.foot - 15;
-        for (int i = 0; i < 2; i++) ui_button(bx + i * (bw + gap), by, bw, 14, p->button == i, true, i ? "Back" : "Enter");
-    } else ui_hint(b.tx + b.tw, b.foot, "Close (R)");
+    if (p->confirm) for (int i = 0; i < 2; i++) ui_row(b.tx, b.tw, b.foot - 16 * (1 - i), p->button == i, i ? "Back" : p->yes ? p->yes : "Enter");
+    else ui_row(b.tx, b.tw, b.foot, true, "Back");
 }

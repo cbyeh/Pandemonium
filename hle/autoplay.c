@@ -153,7 +153,8 @@ void hle_leak_dump(int from, int to)
 // once; with HLE_TEST_TOWER_SHOP it buys every item by the shelf's presses (the D-pad and the stick in
 // turn): a card with too little gold (refused), then with enough, a level, a "+", the pact, potions past
 // the run's max (refused), Mend twice (once sold), Release, Up/Down along the rows, then B ([shopwalk] lines;
-// tower.c logs each [shop] buy). In a Shop's or Temper's list, A takes the first row
+// tower.c logs each [shop] buy). Each purchase's confirm: the first cancelled by B, the second by its Back row (A),
+// then Up (to Buy) and A, and the A that opened them pressed again. In a Shop's or Temper's list, A takes the first row
 #ifdef HLE_LOG_MOVE_MS
 extern uint32_t dragon_vi_frame(void);
 #define SCR_VI() ((int)dragon_vi_frame())
@@ -179,10 +180,20 @@ void hle_tower_screen(joypad_inputs_t *in, joypad_buttons_t *pressed, int frame)
         PRESS(a);
         return;
     }
+#ifdef HLE_TEST_TOWER_SHOP
+    static int asked, cs, k;     // (k: the shelf's script below)
+    if (ui_details()->open && ui_details()->confirm && now != 10) {      // a purchase's confirm (10: the map's node page)
+        if (asked < 2) { if (asked++ == 0) PRESS(b); else PRESS(a); k--; }      // B, then its Back row (A): cancelled; that A again
+        else if (cs++ % 2 == 0) { if (dirs++ % 2) in->stick_y = 70; else PRESS(d_up); }      // Up: Buy
+        else PRESS(a);
+        debugf("[shopwalk] confirm: %s, gold %d (frame %d)\n", asked <= 2 && cs == 0 ? (asked == 1 ? "B" : "A on Back") : cs % 2 ? "Up" : "A on Buy", tower_gold(), frame);
+        return;
+    }
+    cs = 0;
+#endif
     if (now != SCR_SHOP) { PRESS(a); return; }      // a list: its first row
 #ifdef HLE_TEST_TOWER_SHOP
     static const char seq[] = "gAGADARARADLLAAAARAARAUDDB";
-    static int k;
     if (!seq[k]) return;
     char c = seq[k++];
     if (c == 'g') { tower_test_set_gold(40); character.health = character.maxHealth * 0.5f; character.healthPotions = 1; }     // too little for a card; hurt and low, for Mend and potions
@@ -420,8 +431,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     }
 #endif
 #ifdef HLE_TEST_PACKS
-    // The Shrine's Unlocks on a save with none: 500 Embers; Tower > Shrine > Unlocks (row 7), A buys Blood (120),
-    // Down, A buys Storm (160), Down x5, A buys Shattering Dance (200, the first B form), then B, B. A second boot
+    // The Shrine's Unlocks on a save with none: 500 Embers; Tower > Shrine > Unlocks (row 7), A, Up, A buys Blood (120: A its
+    // confirm, Up its Buy row, A), Down, A, Up, A buys Storm (160), Down x5, the same buys Shattering Dance (200, the first B form), then B, B. A second boot
     // (the same ROM) logs them owned ([tsave]) and buys nothing
     {
         static int phase = 0, t0 = 0, step = 0;
@@ -433,10 +444,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 t0 = frame;
             } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
-            static const char seq[] = "DDADADDDDDDDAA.DA.DDDDDA.B";
+            static const char seq[] = "DDADADDDDDDDAAUA.DAUA.DDDDDAUA.B";
             if (t >= 25 && seq[step]) {
                 char c = seq[step];
-                if (c == 'D') pressed->d_down = 1; else if (c == 'B') { pressed->b = 1; in->btn.b = 1; } else if (c == 'A') { pressed->a = 1; in->btn.a = 1; }
+                if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1; else if (c == 'B') { pressed->b = 1; in->btn.b = 1; } else if (c == 'A') { pressed->a = 1; in->btn.a = 1; }
                 if (c == '.') debugf("[packs] step %d at frame %d\n", step, frame);
                 step++; t0 = frame;
             }
@@ -855,19 +866,22 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     // (HLE_NAV_MODE: 0 D-pad and B, 1 stick and B, 2 D-pad and "A only", 3 stick and "A only": every level left by its
     // Back row and A, a pager's Back corner by Left and A; HLE_PAD_LAYOUT the layout). Each visit walks down its path
     // (the rows, A at each), logs "[menus] at <name> (frame f)" (Mupen's shot numbers: shoot a second run at f+20),
-    // opens Details with R where marked and closes it (B, or its Back corner by A), then backs out a level at a time:
-    // each level must land on its parent's row it came from. [menus] PASS/FAIL, [menus] done with the counts
+    // checks a paged screen's Left/Right (a page each way, or nothing when it has one: never a cursor sideways) and that no
+    // "(R)" is drawn in it, opens a purchase's confirm with A where marked ('c': on Back, nothing spent; B, or its Back row by
+    // A, cancels with the cursor on the row) or a Codex topic's Details ('d': Left/Right its pages, closed by B or its Back row),
+    // then backs out a level at a time: each level must land on its parent's row it came from. [menus] PASS/FAIL, [menus] done
+    // with the counts. The save starts with 5000 Embers and nothing bought (Relics: its first relic's row)
     {
 #ifndef HLE_NAV_MODE
 #define HLE_NAV_MODE 0
 #endif
         extern int menu_controller_test_nav(int *row, int *back, int *corner);
         extern bool scene_is_cutscene_active(void); extern bool tower_active(void), tower_between_open(void);
-        typedef struct { const char *name, *path; int menu; bool r; } Visit;
+        typedef struct { const char *name, *path; int menu; char r; } Visit;     // r: 'c' a purchase's confirm, 'd' a topic's Details
         static const Visit TITLE[] = {
             { "Title", "", MENU_TITLE, false }, { "Bonus", "1", MENU_BONUS, false }, { "Tower", "2", MENU_TOWER, false },
-            { "Shrine", "21", MENU_SHRINE, true }, { "Relics", "215", MENU_RELICS, false }, { "Unlocks", "217", MENU_UNLOCKS, true },
-            { "Offerings", "22", MENU_OFFERINGS, true }, { "Codex", "23", MENU_CODEX, false }, { "Load Game", "3", MENU_LOAD_GAME, false },
+            { "Shrine", "21", MENU_SHRINE, 'c' }, { "Relics", "215", MENU_RELICS, 'c' }, { "Unlocks", "217", MENU_UNLOCKS, 'c' },
+            { "Offerings", "22", MENU_OFFERINGS, 'c' }, { "Codex", "23", MENU_CODEX, 'd' }, { "Nightfarer", "21", MENU_SHRINE, 'n' }, { "Load Game", "3", MENU_LOAD_GAME, false },
             { "Settings", "4", MENU_SETTINGS, false }, { "Audio", "40", MENU_AUDIO, false }, { "Video", "41", MENU_VIDEO, false },
             { "Overscan", "411", 100, false }, { "Controls", "42", MENU_CONTROLS, false }, { "Skins", "44", MENU_SKINS, false },
             { "Credits", "5", MENU_CREDITS, false }, { NULL, NULL, 0, false } };
@@ -876,11 +890,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             { "Pause Video", "31", MENU_VIDEO, false }, { "Pause Overscan", "311", 100, false }, { "Pause Settings Controls", "32", MENU_CONTROLS, false },
             { "Pause Controls", "4", MENU_CONTROLS, false }, { NULL, NULL, 0, false } };     // (no Skins: the pause Settings hide them)
         static const Visit TPAUSE[] = {
-            { "Tower Pause", "", MENU_MAIN, false }, { "Stats", "1", MENU_RUN, false }, { "Tower Pause Codex", "5", MENU_CODEX, false },
+            { "Tower Pause", "", MENU_MAIN, false }, { "Stats", "1", MENU_RUN, false }, { "Tower Pause Codex", "5", MENU_CODEX, 'd' },
             { "Tower Pause Settings", "3", MENU_SETTINGS, false }, { "Tower Pause Controls", "4", MENU_CONTROLS, false }, { NULL, NULL, 0, false } };
         static const char *const GAME[] = { "Story", "Bonus", "Tower" };
         static int phase, t0, vi, lvl, sub, game, pass, fail;
         static int at[8];       // the row taken at each level of the path
+        static bool seen; static int rd;     // (rd: "(R)" strings drawn when the screen came up)
         #define PR(f) do { pressed->f = 1; in->btn.f = 1; } while (0)
         #define CHECK(c, ...) do { if (c) pass++; else fail++; debugf("[menus] %s: ", (c) ? "PASS" : "FAIL"); debugf(__VA_ARGS__); debugf(" (frame %d)\n", frame); } while (0)
         // the box fits its content (ui_fit): all it laid out at least 10 inside its box (the padding, 14, clear of the rounded
@@ -897,7 +912,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         Boss *boss = boss_get_instance();
         const Visit *vs = phase == 1 ? TITLE : game == 2 ? TPAUSE : PAUSE;
         if (phase == 0) {       // the title menu
-            if (menu_controller_is_active() && !boss) { if (t > 40) { phase = 1; t0 = frame; vi = 0; lvl = 0; sub = 0; } }
+            if (menu_controller_is_active() && !boss) { if (t > 40) { phase = 1; t0 = frame; vi = 0; lvl = 0; sub = 0;
+                TowerSave ts; save_controller_get_tower(&ts);       // (every purchase there to ask for)
+                ts.embers = 5000; ts.unlocks = 0; ts.relicsOwned = 0; ts.relicEquipped = 0; ts.offers = 0; ts.flags &= ~TOWER_FLAG_NIGHTFARER;
+                for (int u = 0; u < 5; u++) ts.levels[u] = 0;
+                save_controller_set_tower(&ts); } }
             else { t0 = frame; if (!boss && frame > 200 && frame % 30 == 0) PR(a); }
             return;
         }
@@ -949,26 +968,61 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             CHECK(m == v->menu, "%s: menu %d (want %d), row %d, Back row %d", v->name, m, v->menu, row, back);
             debugf("[menus] at %s%s%s (frame %d)\n", phase == 3 && game < 2 ? GAME[game] : "", phase == 3 && game < 2 ? " " : "", v->name, frame);
             if (m != MENU_TITLE && m != 100) BOXCHECK(v->name, m == MENU_RUN || m == MENU_CODEX);     // (the overscan screen: its corner marks and hint over the scene)
+            bool paged = m == MENU_RUN || m == MENU_CODEX || m == MENU_SHRINE || m == MENU_RELICS || m == MENU_UNLOCKS || m == MENU_OFFERINGS || m == MENU_SKINS;
+            sub = paged ? 10 : v->r ? 1 : 3; rd = ui_test_r_drawn; return;
+        }
+        extern int menu_controller_test_pages(int *per), tower_embers(void);
+        static int row0, pg0, e0, lr, pgR;
+        // a paged screen: no "(R)" drawn in it (the frames since it came up), then Right and Left: a page each way (a list's
+        // cursor onto that page's first row; Stats'/the Codex's page), or with one page nothing (the cursor where it was)
+        int per_, pages_ = menu_controller_test_pages(&per_), pgNow = m == MENU_RUN || m == MENU_CODEX ? corner : per_ ? row / per_ : 0;
+        if (sub == 10) { CHECK(ui_test_r_drawn == rd, "%s: no \"(R)\" drawn in it (%d)", v->name, ui_test_r_drawn - rd); row0 = row; pg0 = pgNow; lr = pages_; MOVE('R'); sub = 11; return; }
+        if (sub == 11) {
+            pgR = pg0 + 1 < lr ? pg0 + 1 : pg0;
+            CHECK(m == v->menu && pgNow == pgR && (lr > 1 || row == row0), "%s: Right: page %d -> %d of %d, row %d -> %d", v->name, pg0 + 1, pgNow + 1, lr, row0, row);
+            MOVE('L'); sub = 12; return;
+        }
+        if (sub == 12) {
+            int want = pgR > 0 ? pgR - 1 : 0;
+            CHECK(m == v->menu && pgNow == want && (lr > 1 || row == row0), "%s: Left: page %d (want %d), row %d", v->name, pgNow + 1, want + 1, row);
+            CHECK(ui_test_r_drawn == rd, "%s: still no \"(R)\" after the turns", v->name);
             sub = v->r ? 1 : 3; return;
         }
-        static bool seen;
-        if (sub == 1) { PR(r); sub = 2; seen = false; return; }           // Details
+        if (sub == 1) {         // 'c': a purchase's confirm (A on the row; Relics: its first relic's row); 'd': a Codex topic's Details (A on row 0)
+            if (v->r == 'c' && m == MENU_RELICS && row != 1) { MOVE(row < 1 ? 'D' : 'U'); return; }
+            if (v->r == 'n' && row != 6) { MOVE(row < 6 ? 'D' : 'U'); return; }     // (the Shrine's Nightfarer row)
+            if (v->r == 'd' && row != 0) { MOVE(row < 0 ? 'D' : 'U'); return; }
+            row0 = row; e0 = tower_embers(); PR(a); sub = 2; seen = false; return;
+        }
         if (sub == 2) {
             UiPanel *dp = ui_details();
-            if (!seen) { seen = true; CHECK(dp->open && dp->owner == UI_OWNER_MENU, "%s: R opens Details", v->name); debugf("[menus] at %s Details (frame %d)\n", v->name, frame); if (!dp->open) sub = 3; else BOXCHECK("Details", true); return; }
-            if (!dp->open) { CHECK(m == v->menu, "%s: Details closed by %s, the menu as it was (%d)", v->name, aOnly ? "its Back corner" : "B", m); sub = 3; return; }
-            if (!aOnly) { PR(b); return; }
-            if (dp->pg.sel != 0) { MOVE('L'); return; }      // its Back corner
-            PR(a); return;
+            if (!seen) {
+                seen = true; rd = ui_test_r_drawn;
+                if (v->r != 'd') CHECK(dp->open && dp->confirm && dp->owner == UI_OWNER_MENU && dp->button == 1 && tower_embers() == e0, "%s: A opens its confirm (\"%s\"), on Back, nothing spent (Embers %d)", v->name, dp->title, tower_embers());
+                else CHECK(dp->open && !dp->confirm && dp->owner == UI_OWNER_MENU, "%s: A opens the topic's Details (%d pages)", v->name, dp->pg.pages);
+                debugf("[menus] at %s %s (frame %d)\n", v->name, v->r != 'd' ? "confirm" : "Details", frame);
+                if (!dp->open) { sub = 3; return; }
+                BOXCHECK(v->r != 'd' ? "Confirm" : "Details", v->r == 'd');
+                lr = dp->pg.pages; pg0 = dp->pg.page;
+                if (v->r == 'd') { MOVE('R'); sub = 6; } return;
+            }
+            if (!dp->open) {
+                CHECK(m == v->menu && row == row0 && tower_embers() == e0, "%s: %s closed by %s: nothing spent (Embers %d), the cursor on its row (%d)", v->name, v->r != 'd' ? "the confirm" : "Details", aOnly ? "its Back row" : "B", tower_embers(), row);
+                sub = 3; return;
+            }
+            CHECK(ui_test_r_drawn == rd, "%s: no \"(R)\" in its %s", v->name, v->r != 'd' ? "confirm" : "Details");
+            if (!aOnly) PR(b); else PR(a);      // (the cursor on Back: A takes Back)
+            return;
         }
+        if (sub == 6) { UiPanel *dp = ui_details(); CHECK(dp->open && dp->pg.page == (lr > 1 ? pg0 + 1 : pg0), "%s: Details' Right turns a page (%d of %d)", v->name, dp->pg.page + 1, lr); MOVE('L'); sub = 7; return; }
+        if (sub == 7) { UiPanel *dp = ui_details(); CHECK(dp->open && dp->pg.page == pg0, "%s: Details' Left turns back (%d)", v->name, dp->pg.page + 1); sub = 2; return; }
         if (sub == 3) { sub = 4; return; }      // (a moment for the shot)
         // back up the path, a level at a time
         if (lvl == 0) { vi++; sub = 0; return; }
         if (sub == 4) {
             if (!aOnly || m == 100) { if (aOnly) PR(a); else PR(b); sub = 5; return; }     // (the overscan screen: A saves, B cancels)
             if (back >= 0) { if (row != back) { MOVE(row < back ? 'D' : 'U'); return; } PR(a); sub = 5; return; }
-            if (row != -1) { MOVE('U'); return; }               // a pager: its corners, then Back (page 0's left)
-            if (corner != 0) { MOVE('L'); return; }
+            if (row != -1) { MOVE('U'); return; }               // a pager: Up to its Back row (-1), A
             PR(a); sub = 5; return;
         }
         if (sub == 5) {
@@ -1032,9 +1086,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
 #ifdef HLE_SHRINE_NONE
-            static const char seq[] = "DDADADDDDDADDABDAUAUUAB";    // ... and back up to Relics, Up x2 (to None), A: no relic
+            static const char seq[] = "DDADADDDDDADDAUABDAUAUAUUAB";    // ... and back up to Relics, Up x2 (to None), A: no relic
 #else
-            static const char seq[] = "DDADADDDDDADDABDA";    // ... Relics: A, Down x2 (Saint's Chalice), A buys it, B; Nightfarer
+            static const char seq[] = "DDADADDDDDADDAUABDAUA";    // ... Relics: A, Down x2 (Saint's Chalice), A buys it, B; Nightfarer
 #endif
             if (t >= 25 && seq[step]) {
                 char c = seq[step];
@@ -1069,12 +1123,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifndef HLE_NAV_MODE
 #define HLE_NAV_MODE 0
 #endif
-        extern int tower_screen(void), tower_map_row(void), tower_map_sel(void), tower_map_next(int), tower_list_sel(void), tower_shop_sel(void), tower_floor(void), tower_draft_selected(void);
+        extern int tower_screen(void), tower_map_row(void), tower_map_sel(void), tower_map_next(int), tower_list_sel(void), tower_shop_sel(void), tower_floor(void), tower_draft_selected(void), tower_gold(void);
         extern bool tower_active(void), tower_between_open(void), tower_draft_is_open(void), tower_event_done(void);
         extern const char *audio_music_now(void); extern int menu_controller_test_state(int *);
         enum { S_MAP = 1, S_REST, S_TEMPER, S_RELEASE, S_SHOP, S_EVENT = 9, S_CONFIRM = 10, N_SHOP = 4, N_EVENT = 3, N_REST = 5, N_ELITE = 2 };
         static int phase, t0, k, pass, fail, entry = -99, mapsSeen, lastRow = -9, sawShop, sawEvent, sawRest, sawElite, fights;
-        static char seq[64]; static int expectRow;
+        static char seq[64]; static int expectRow, shopGold, rdc; static bool rdOpen;
         Boss *boss = boss_get_instance();
         int t = frame - t0;
         bool det = ui_details()->open && !ui_details()->confirm, menu = menu_controller_is_active();
@@ -1131,7 +1185,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
             entry = now; k = 0; t0 = frame;
             bool aOnly = HLE_NAV_MODE == 2;
-            if (now == -1) { MUSIC("the draft"); snprintf(seq, sizeof seq, aOnly ? ">v^A" : "rrB>v^A"); }
+            if (now == -1) { MUSIC("the draft"); snprintf(seq, sizeof seq, aOnly ? ">v^A" : "rBB>v^A"); }
             else if (now == S_MAP) {
                 MUSIC("the map");
                 // the node to go to: a Shop, an Event, a Rest, an Elite not seen yet, else straight on
@@ -1143,7 +1197,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 }
                 if (target < 0) target = tower_map_sel();
                 int n = 0, sel = tower_map_sel();
-                n += snprintf(seq + n, sizeof seq - n, aOnly ? "A>A" : "^vBBrrABA>A");     // (A only: the page's Back button by A)
+                n += snprintf(seq + n, sizeof seq - n, aOnly ? "AvA" : "^vBBrBABAvA");     // (A only: the page's Back row by Down, A)
                 for (; sel < target; sel++) seq[n++] = '>';
                 for (; sel > target; sel--) seq[n++] = '<';
                 seq[n++] = 'A'; seq[n++] = 'A'; seq[n] = 0;
@@ -1153,17 +1207,22 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 mapsSeen++;
                 debugf("[nav] map row %d: next %d %d %d, cursor %d, to %d: \"%s\"\n", tower_map_row() + 2, tower_map_next(0), tower_map_next(1), tower_map_next(2), tower_map_sel(), target, seq);
             }
-            else if (now == S_SHOP) { MUSIC("a Shop"); snprintf(seq, sizeof seq, aOnly ? ">vvvA" : "vrr>vB"); }
-            else if (now == S_EVENT) { MUSIC("an Event"); snprintf(seq, sizeof seq, aOnly ? "vvvA..A" : "rrB"); }     // (a result waits 0.75 s for Continue's press)
-            else if (now == S_REST) { MUSIC("a Rest"); snprintf(seq, sizeof seq, aOnly ? "AA" : "BAAvABrr^^AB"); }
+            else if (now == S_SHOP) {      // Mend's confirm (gold and hurt for it): B or its Back row cancels, then Buy
+                MUSIC("a Shop"); extern void tower_test_set_gold(int); tower_test_set_gold(999); character.health = character.maxHealth * 0.5f; shopGold = 999;
+                snprintf(seq, sizeof seq, aOnly ? ">vvAAA^AvA" : "vrB>vABAvAB"); }
+            else if (now == S_EVENT) { MUSIC("an Event"); snprintf(seq, sizeof seq, aOnly ? "vvvA..A" : "rBB"); }     // (a result waits 0.75 s for Continue's press)
+            else if (now == S_REST) { MUSIC("a Rest"); snprintf(seq, sizeof seq, aOnly ? "AA" : "BAAvABrB^^AB"); }
             else seq[0] = 0;
         }
         if (t < 50 || (t - 50) % 24 || !seq[k]) {      // (the first press past the screens' 0.75 s input delay)
+            if (t > 50 && (t - 50) % 24 == 14 && k > 0 && rdOpen && ui_details()->open)      // a panel (Details, a confirm) up: no "(R)" in it
+                CHECK(ui_test_r_drawn == rdc, "no \"(R)\" drawn in the %s (screen %d)", ui_details()->confirm ? "confirm" : "Details", tower_screen());
+            if (t > 50 && (t - 50) % 24 == 12) { rdc = ui_test_r_drawn; rdOpen = ui_details()->open; }
             if (t > 50 && (t - 50) % 24 == 12 && k > 0) {     // the last press's check, half-way to the next
                 char c = seq[k - 1]; int sc = tower_screen();
                 if (entry == -1) {
-                    if (c == 'r') CHECK(det == (k == 1), "the draft's R: Details %s", k == 1 ? "open" : "closed");
-                    if (c == 'B') CHECK(tower_draft_is_open() && !det && !menu, "the draft's B: nothing (still the draft)");
+                    if (c == 'r') CHECK(det, "the draft's R: Details open");
+                    if (c == 'B') CHECK(tower_draft_is_open() && !det && !menu, "the draft's B: %s (still the draft)", k == 2 ? "Details closed" : "nothing");
                     if (c == 'v') CHECK(tower_draft_selected() == 3, "Down: Skip (%d)", tower_draft_selected());
                     if (c == '^') CHECK(tower_draft_selected() == 1, "Up: back on the card (%d)", tower_draft_selected());
                     if (c == 'A') CHECK(!tower_draft_is_open() && (sc == S_MAP || !tower_between_open()), "A takes the card: the map (%d)", sc);
@@ -1173,19 +1232,28 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                     if (!aOnly && pos == 2) { int opt; int m = menu_controller_test_state(&opt); CHECK(menu && m == 0 && opt == 1, "the map's B: the pause menu, on Stats (menu %d row %d)", m, opt); }
                     if (!aOnly && pos == 3) CHECK(!menu && sc == S_MAP, "B again closes it: the map");
                     if (!aOnly && pos == 4) CHECK(det && sc == S_MAP, "the map's R: the node's Details");
-                    if (!aOnly && pos == 5) CHECK(!det && sc == S_MAP, "R again: closed");
+                    if (!aOnly && pos == 5) CHECK(!det && sc == S_MAP && !menu, "B closes them: the map (no pause menu)");
                     if ((!aOnly && pos == 6) || (aOnly && pos == 0)) CHECK(sc == S_CONFIRM && tower_map_row() == expectRow, "A: the node's page, nothing entered (%d)", sc);
                     if (!aOnly && pos == 7) CHECK(sc == S_MAP && tower_map_row() == expectRow, "the page's B: the map");
-                    if ((!aOnly && pos == 10) || (aOnly && pos == 2)) CHECK(sc == S_MAP && tower_map_row() == expectRow, "the page's Back button (Right, A): the map");
+                    if ((!aOnly && pos == 10) || (aOnly && pos == 2)) CHECK(sc == S_MAP && tower_map_row() == expectRow, "the page's Back row (Down, A): the map");
                     if (!seq[k]) CHECK(tower_map_row() == expectRow + 1, "A, A: the node entered (row %d -> %d)", expectRow + 2, tower_map_row() + 2);
                 } else if (entry == S_SHOP) {
-                    if (c == 'r') CHECK(det == (k == 2), "the Shop's R on A level: Details %s", k == 2 ? "open" : "closed");
-                    if (c == 'v' && k == 1) CHECK(tower_shop_sel() == 3, "Down: the row under (%d)", tower_shop_sel());
-                    if (c == '>' && k == 4) CHECK(tower_shop_sel() == 4, "Right: the next item (%d)", tower_shop_sel());
-                    if (c == 'B' || (c == 'A' && !seq[k])) CHECK(sc == S_MAP, "the Shop's %s: left, the map (%d)", c == 'B' ? "B" : "Leave", sc);
+                    bool aOnly = HLE_NAV_MODE == 2; UiPanel *dp = ui_details();
+                    int ask1 = aOnly ? 4 : 6, cancel = ask1 + 1, ask2 = ask1 + 2, toBuy = ask1 + 3, buy = ask1 + 4;      // (Mend's confirm, by k)
+                    if (!aOnly && c == 'r') CHECK(det, "the Shop's R on A level: Details open");
+                    if (!aOnly && k == 3) CHECK(!det && sc == S_SHOP, "B closes them: still the Shop (%d)", sc);
+                    if (!aOnly && k == 1) CHECK(tower_shop_sel() == 3, "Down: the row under (%d)", tower_shop_sel());
+                    if (!aOnly && k == 4) CHECK(tower_shop_sel() == 4, "Right: the next item (%d)", tower_shop_sel());
+                    if (k == ask1 - 1) CHECK(tower_shop_sel() == 7, "on Mend (%d)", tower_shop_sel());
+                    if (k == ask1 || k == ask2) CHECK(dp->open && dp->confirm && dp->button == 1 && tower_gold() == shopGold, "Mend's A: its confirm (\"%s\"), on Back, nothing paid (gold %d)", dp->title, tower_gold());
+                    if (k == cancel) CHECK(!dp->open && sc == S_SHOP && tower_shop_sel() == 7 && tower_gold() == shopGold, "%s cancels: nothing paid, the cursor on Mend (gold %d)", aOnly ? "its Back row (A)" : "B", tower_gold());
+                    if (k == toBuy) CHECK(dp->open && dp->button == 0, "%s: on Buy", aOnly ? "Up" : "Down");
+                    if (k == buy) CHECK(!dp->open && sc == S_SHOP && tower_gold() == shopGold - 50, "Buy: Mend paid (gold %d -> %d)", shopGold, tower_gold());
+                    if (!seq[k]) CHECK(sc == S_MAP, "the Shop's %s: left, the map (%d)", c == 'B' ? "B" : "Leave", sc);
                 } else if (entry == S_EVENT) {
-                    if (c == 'r') CHECK(det == (k == 1), "the Event's R: Details %s", k == 1 ? "open" : "closed");
-                    if (c == 'B') CHECK(sc == S_MAP, "the Event's B: Leave, the map (%d)", sc);
+                    if (c == 'r') CHECK(det, "the Event's R: Details open");
+                    if (c == 'B' && k == 2) CHECK(!det && sc == S_EVENT, "B closes them: still the Event (%d)", sc);
+                    if (c == 'B' && k == 3) CHECK(sc == S_MAP, "the Event's B: Leave, the map (%d)", sc);
                     if (c == 'A' && !seq[k]) CHECK(sc == S_MAP, "Leave (A), then Continue (A): the map (%d)", sc);
                 } else if (entry == S_REST) {
                     bool aOnly = HLE_NAV_MODE == 2;
@@ -1194,7 +1262,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                     if (!aOnly && k == 5) CHECK(sc == S_TEMPER || sc == S_RELEASE || sc == S_MAP, "Down, A: Temper's list (or, nothing to Temper, Down passed it: the potions taken) (%d)", sc);
                     if (!aOnly && k == 6) CHECK(sc == S_REST && !det, "B: back to the Rest's choices (%d)", sc);
                     if (!aOnly && k == 7) CHECK(det && sc == S_REST, "R on its row: Details");
-                    if (!aOnly && k == 8) CHECK(!det && sc == S_REST, "R again: closed");
+                    if (!aOnly && k == 8) CHECK(!det && sc == S_REST, "B closes them: still the Rest");
                     if (!seq[k]) CHECK(sc == S_MAP, "the Rest taken, %s: the map (%d)", aOnly ? "Keep (A)" : "B keeps the boons", sc);
                 }
             }
@@ -1252,11 +1320,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 k++;
             }
         } else if (phase == 4) {      // A, A: the Elite's fight; its HUD; then the pause menu's pages
-            static const char seq[] = "AA.....SDAAAADDAr.BB.....";      // (the Build page: Down x2 a row, A its Details, R closes)
+            static const char seq[] = "AA.....SDARRRDAr.BB.....";      // (Right x3: the Build page; Down a row, A its Details, R closes)
             if (t >= 30 && seq[step]) {
                 char c = seq[step];
                 if (c == 'A') PR(a); else if (c == 'B') PR(b); else if (c == 'S') PR(start); else if (c == 'r') PR(r);
-                else if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1;
+                else if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1; else if (c == 'R') pressed->d_right = 1;
                 debugf("[gallery] press %c (VI %d, frame %d)\n", c, (int)dragon_vi_frame(), frame);
                 step++; t0 = frame;
             }
@@ -1297,9 +1365,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
             extern bool tower_active(void);
-#ifdef HLE_CODEX_WALK   // instead: Tower > Codex, every topic open and every page of it, by A alone (B closes a topic, Down to the next)
+#ifdef HLE_CODEX_WALK   // instead: Tower > Codex, every topic open and every page of it (Right turns), B closes it; to the next
+            // topic by Down (and Right onto its page)
             {
                 extern int tower_codex_count(void); extern bool tower_codex_open_ok(int); extern const char *tower_codex_title(int);
+                extern int menu_controller_test_nav(int *, int *, int *), menu_controller_test_pages(int *);
                 static int k = 0, sub = 0; static const char pre[] = "DDADDDA";
                 UiPanel *dp = ui_details();
                 if (t < 45) return;
@@ -1307,12 +1377,15 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (pre[step]) { char c = pre[step++]; if (c == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } return; }
                 if (k >= tower_codex_count()) { if (k++ == tower_codex_count()) debugf("[codexwalk] done (frame %d)\n", frame); return; }
                 if (!dp->open) {
+                    int row, back, page, per; menu_controller_test_nav(&row, &back, &page); menu_controller_test_pages(&per);
+                    if (page < k / per) { pressed->d_right = 1; return; }
+                    if (row != k % per) { if (row < k % per) pressed->d_down = 1; else pressed->d_up = 1; return; }
                     if (sub == 0) { debugf("[codexwalk] list, topic %d %s%s (frame %d)\n", k, tower_codex_title(k), tower_codex_open_ok(k) ? "" : " (locked)", frame); sub = 1; return; }
                     if (sub == 1 && tower_codex_open_ok(k)) { pressed->a = 1; in->btn.a = 1; sub = 2; return; }
-                    pressed->d_down = 1; k++; sub = 0; return;     // (closed, or locked: the next topic)
+                    k++; sub = 0; return;     // (closed, or locked: the next topic)
                 }
                 if (sub == 2) { debugf("[codexwalk] topic %d %s page %d/%d (frame %d)\n", k, tower_codex_title(k), dp->pg.page + 1, dp->pg.pages, frame); sub = 3; return; }
-                if (dp->pg.page + 1 < dp->pg.pages) { pressed->a = 1; in->btn.a = 1; sub = 2; return; }      // (the cursor on Next)
+                if (dp->pg.page + 1 < dp->pg.pages) { pressed->d_right = 1; sub = 2; return; }      // (Right: the next page)
                 pressed->b = 1; in->btn.b = 1; sub = 4; return;
             }
 #endif
@@ -1365,9 +1438,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_STATS_SEQ     // another walk through the pause menu (S, D/L/R, A, B)
             static const char seq[] = HLE_STATS_SEQ;
 #else
-            static const char seq[] = "SDAAAAARALDDADrBDDDADDAB";
-#endif   // pause, Stats, Next x4 (the full bar: Stats 1-3, Build 1-2), Right on the last (stays on Prev), Prev (Build 1), Left (stays),
-         // Down x2 (a row), A (its Details), Down (it stays open), R closes, B (the pause menu, on Stats), down to Controls, its Back
+            static const char seq[] = "SDARRRRRLDDADBBDDDADDAB";
+#endif   // pause, Stats, Right x4 (the full bar: Stats 1-3, Build 1-2), Right on the last (stays), Left (Build 1),
+         // Down x2 (a row), A (its Details), Down (it stays open), B closes it, B (the pause menu, on Stats), down to Controls, its Back
          // (A), B closes the pause menu
             if (t >= (step ? 60 : 300) && seq[step]) {
                 char c = seq[step];
@@ -1409,7 +1482,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
             // DDD A (Tower) . A? no: D (Shrine) A; D D A (Honed Blade); D D D D A (Halfmoon); B; U A (Climb)
-            static const char seq[] = "DDA.DA.DDA.B.UA";
+            static const char seq[] = "DDA.DA.DDAUA.B.UA";
             if (t >= 25 && seq[step]) {
                 char c = seq[step];
                 if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1;

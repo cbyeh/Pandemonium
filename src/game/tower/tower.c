@@ -1944,6 +1944,8 @@ static void shop_pay(int i, const char *what)
 }
 
 static void shop_buy(int i);
+static void shop_take(int i);
+static void shop_ask(const char *name, int price, const char *effect);
 static void shop_open(void)
 {
     BoonId pool[BOON_COUNT]; int n = 0, famHeld[FAM_COUNT + 1];
@@ -1954,10 +1956,10 @@ static void shop_open(void)
     s.shop.sold = 0; s.shop.sel = 0;
     s.scr = SCR_SHOP; s.scrOpenMs = get_ticks_ms();
 #ifdef HLE_RUN_PATH     // test aid: the route's shopping (B leaves after): Mend below 65%, potions to the run's max, the cheapest card it can pay for
-    if (character.health < 0.65f * character.maxHealth && !shop_block(SHOP_MEND)[0]) shop_buy(SHOP_MEND);
-    while (!shop_block(SHOP_POTION)[0]) shop_buy(SHOP_POTION);
+    if (character.health < 0.65f * character.maxHealth && !shop_block(SHOP_MEND)[0]) shop_take(SHOP_MEND);
+    while (!shop_block(SHOP_POTION)[0]) shop_take(SHOP_POTION);
     { int c = -1; for (int i = SHOP_CARD0; i <= SHOP_CARD2; i++) if (!shop_block(i)[0] && (c < 0 || shop_price(i) < shop_price(c))) c = i;
-      if (c >= 0) shop_buy(c); }
+      if (c >= 0) shop_take(c); }
 #endif
 #ifdef HLE_AUTOPLAY
     int b = (s.shop.pact - BOON_COUNT) / PC_COUNT, c = (s.shop.pact - BOON_COUNT) % PC_COUNT;
@@ -1984,11 +1986,43 @@ static void shop_buy(int i)
 #endif
         return;
     }
-    char what[48] = "";
     switch (i) {
     case SHOP_LEVEL:   list_open(SCR_SHOP_LEVEL); return;      // (paid when one is chosen)
     case SHOP_PLUS:    list_open(SCR_SHOP_PLUS); return;
     case SHOP_RELEASE: list_open(SCR_SHOP_RELEASE); return;
+    default: break;
+    }
+    // a price: asked first (its Buy runs shop_take); free (the pact): at once
+    char t[64], e[64];
+    int b = (s.shop.pact - BOON_COUNT) / PC_COUNT, c = (s.shop.pact - BOON_COUNT) % PC_COUNT;
+    if (!shop_price(i)) { shop_take(i); return; }
+    if (i <= SHOP_CARD2) { snprintf(t, sizeof t, "%s", BOONS[s.shop.card[i]].name); snprintf(e, sizeof e, "%s", BOONS[s.shop.card[i]].desc); }
+    else if (i == SHOP_PACT) { snprintf(t, sizeof t, "the pact"); snprintf(e, sizeof e, "Blessing %s, its curse %s", BLESSINGS[b].name, CURSES[c].name); }
+    else if (i == SHOP_POTION) { snprintf(t, sizeof t, "a potion"); snprintf(e, sizeof e, "+1 potion (%d now), up to the run's %d", character.healthPotions, tower_mod_max_potions()); }
+    else { snprintf(t, sizeof t, "Mend"); snprintf(e, sizeof e, "Heal 35%%: +%.0f health", (double)fminf(MEND_HEAL * character.maxHealth, character.maxHealth - character.health)); }
+    shop_ask(t, shop_price(i), e);
+}
+// a gold purchase's confirm (ui_confirm_open: Buy / Back, the cursor on Back); B or Back: the Shop as it was
+static void shop_ask(const char *name, int price, const char *effect)
+{
+    UiPanel *p = ui_details();
+    UiDoc *d = ui_panel_doc(p);
+    char t[64];
+    ui_doc_clear(d);
+    ui_doc_text(d, FONT_STYLE_WHITE, "%s", effect);
+    ui_doc_gap(d);
+    ui_doc_text(d, FONT_STYLE_GREY, "Gold %d -> %d", s.gold, s.gold - price);
+    snprintf(t, sizeof t, "Buy %s for %d gold?", name, price);
+    ui_confirm_open(p, t, FONT_STYLE_GOLD, "Buy");
+    p->owner = UI_OWNER_TOWER;
+#ifdef HLE_AUTOPLAY
+    debugf("[buy] confirm: %s (screen %d, item %d, row %d, gold %d)\n", t, s.scr, s.shop.sel, s.listSel, s.gold);
+#endif
+}
+static void shop_take(int i)
+{
+    char what[48] = "";
+    switch (i) {
     case SHOP_PACT:
         snprintf(what, sizeof what, "%s / %s", BLESSINGS[(s.shop.pact - BOON_COUNT) / PC_COUNT].name, CURSES[(s.shop.pact - BOON_COUNT) % PC_COUNT].name);
         shop_pay(i, what); take_pact(s.shop.pact); return;
@@ -2408,6 +2442,20 @@ static void map_unenter(void)
 #endif
 }
 
+// a Shop list's row bought (its confirm's Buy): paid, then back to the shelf
+static void list_take(int v)
+{
+    char nm[40];
+    if (s.scr == SCR_SHOP_RELEASE) {
+        snprintf(nm, sizeof nm, "%s", BOONS[s.slot[v] - 1].name);
+        shop_pay(SHOP_RELEASE, nm); release_slot(v);
+    } else {
+        snprintf(nm, sizeof nm, "%s Lv %d -> %d", BOONS[v].name, s.stacks[v], s.stacks[v] + 1);
+        shop_pay(s.scr == SCR_SHOP_LEVEL ? SHOP_LEVEL : SHOP_PLUS, nm); take_boon((BoonId)v);
+    }
+    s.scr = SCR_SHOP;
+}
+
 static bool s_pauseReq;
 bool tower_take_pause_request(void) { bool r = s_pauseReq; s_pauseReq = false; return r; }
 
@@ -2430,6 +2478,14 @@ bool tower_between_update(bool left, bool right, bool up, bool down, bool confir
         return false;
     }
     if (!s.scr || get_ticks_ms() - s.scrOpenMs < DRAFT_INPUT_DELAY_MS) return false;    // (as the draft: no press taken unseen)
+    if (dp->open && dp->confirm && s.scr != SCR_CONFIRM) {     // a gold purchase's confirm: Buy pays, B or Back the screen as it was
+        int r = ui_panel_input(dp, up, down, left, right, confirm, back, false);
+        if (r == UI_PANEL_ENTER) { if (s.scr == SCR_SHOP) shop_take(s.shop.sel); else list_take(s.list[s.listSel]); }
+#ifdef HLE_AUTOPLAY
+        else if (r == UI_PANEL_CLOSED) debugf("[buy] closed: nothing bought, gold %d, screen %d item %d row %d\n", s.gold, s.scr, s.shop.sel, s.listSel);
+#endif
+        return false;
+    }
     if (s.scr == SCR_CONFIRM) {     // the node's page: A (Enter) enters, B (or Back) returns to the map
         int r = ui_panel_input(dp, up, down, left, right, confirm, back, false);
         if (r == UI_PANEL_CLOSED) { s.scr = SCR_MAP; return false; }
@@ -2490,17 +2546,14 @@ bool tower_between_update(bool left, bool right, bool up, bool down, bool confir
         if (s.eventDone) tower_map_open();
         else event_take(v);
     } else if (shopList) {
-        if (v >= 0) {
-            char nm[40];
-            if (s.scr == SCR_SHOP_RELEASE) {
-                snprintf(nm, sizeof nm, "%s", BOONS[s.slot[v] - 1].name);
-                shop_pay(SHOP_RELEASE, nm); release_slot(v);
-            } else {
-                snprintf(nm, sizeof nm, "%s Lv %d -> %d", BOONS[v].name, s.stacks[v], s.stacks[v] + 1);
-                shop_pay(s.scr == SCR_SHOP_LEVEL ? SHOP_LEVEL : SHOP_PLUS, nm); take_boon((BoonId)v);
-            }
-        }
-        s.scr = SCR_SHOP;
+        if (v < 0) { s.scr = SCR_SHOP; return false; }
+        int item = s.scr == SCR_SHOP_RELEASE ? SHOP_RELEASE : s.scr == SCR_SHOP_LEVEL ? SHOP_LEVEL : SHOP_PLUS;
+        if (!shop_price(item)) { list_take(v); return false; }
+        char nm[48], e[64];
+        if (item == SHOP_RELEASE) { snprintf(nm, sizeof nm, "Release of %s", BOONS[s.slot[v] - 1].name); snprintf(e, sizeof e, "Frees its slot: it goes with its levels"); }
+        else if (item == SHOP_LEVEL) { snprintf(nm, sizeof nm, "a level of %s", BOONS[v].name); snprintf(e, sizeof e, "%s Lv %d -> %d", BOONS[v].name, s.stacks[v], s.stacks[v] + 1); }
+        else { snprintf(nm, sizeof nm, "%s", BOONS[v].name); snprintf(e, sizeof e, "%s", BOONS[v].desc); }
+        shop_ask(nm, shop_price(item), e);
     } else if (s.scr == SCR_REST) {
         if (v < 0) map_unenter();
         else if (v == REST_TEMPER_ROW) list_open(SCR_TEMPER);
@@ -4204,6 +4257,13 @@ static bool test_press(int key)     // a press on the screens between fights, pa
     s.scrOpenMs = s.draftOpenMs = get_ticks_ms() - DRAFT_INPUT_DELAY_MS - 1;
     return tower_between_update(key == 'L', key == 'R', key == 'U', key == 'D', key == 'A', key == 'B', key == 'r');     // ('r': the R button)
 }
+// A on the screen; a purchase's confirm that opens: Up to Buy, A
+static bool test_buy(void)
+{
+    bool r = test_press('A');
+    if (ui_details()->open && ui_details()->confirm && s.scr != SCR_CONFIRM) { test_press('U'); r = test_press('A'); }
+    return r;
+}
 // One circle through the map from its first screen: random moves, A or Up to enter; a Rest heals and
 // keeps the boons; a fight is won (with its draft's first card, or none); returns its fights
 static int walk_circle(bool drafts)
@@ -4576,21 +4636,32 @@ int tower_test_shop(void)
             seq[0], seq[1], seq[2], seq[3], seq[4], seq[5], seq[6], seq[7], seq[8], seq[9], seq[10]); }
     // buy each item
     int g = s.gold, card = s.shop.card[1], st = stacks_sum();
+    // a purchase asks first: the confirm on Back; B, or Back by A, cancels (nothing paid, the cursor on the item); Buy pays
     test_press('A');
+    CHECK(ui_details()->open && ui_details()->confirm && ui_panel_row(ui_details()) == 1 && s.gold == g, "a card's A: its confirm, on Back, nothing paid yet");
+    test_press('B');
+    CHECK(!ui_details()->open && s.scr == SCR_SHOP && s.shop.sel == 1 && s.gold == g && !s.stacks[card], "B on the confirm: nothing bought, the cursor on the card");
+    test_press('A'); test_press('A');
+    CHECK(!ui_details()->open && s.scr == SCR_SHOP && s.shop.sel == 1 && s.gold == g && !s.stacks[card], "A on its Back row: nothing bought, the cursor on the card");
+    test_buy();
     CHECK(s.gold == g - TIER_PRICE[BOONS[card].tier] && s.stacks[card] == 1 && slots_used() == 4 && (s.shop.sold & 7) == 7, "a card: its price, the boon slotted, all three gone");
-    g = s.gold; test_press('L'); test_press('A');
+    g = s.gold; test_press('L'); test_buy();
     CHECK(s.gold == g && stacks_sum() == st + 1, "another card after it: sold, nothing paid");
     s.shop.sel = SHOP_LEVEL; test_press('A');
     CHECK(s.scr == SCR_SHOP_LEVEL && s.listN >= 3 && s.list[0] == BOON_VIGOR && s.list[1] == BOON_EMBER_EDGE && s.list[s.listN - 1] == -1, "a level: the slotted boons below their max, then Back (%d rows)", s.listN);
     test_press('B');
     CHECK(s.scr == SCR_SHOP && s.gold == g, "B in its list: back to the shelf, nothing paid");
     test_press('A'); test_press('A');
+    CHECK(s.scr == SCR_SHOP_LEVEL && ui_details()->open && s.gold == g, "a level's row: its confirm");
+    test_press('B');
+    CHECK(s.scr == SCR_SHOP_LEVEL && !ui_details()->open && s.listSel == 0 && s.gold == g, "B on it: the list as it was, nothing paid");
+    test_buy();
     CHECK(s.scr == SCR_SHOP && s.gold == g - 70 && s.stacks[BOON_VIGOR] == 2 && ((s.shop.sold >> SHOP_LEVEL) & 1), "a level on Vigor: 70, Lv 2, sold");
-    g = s.gold; test_press('A');
+    g = s.gold; test_buy();
     CHECK(s.gold == g && s.scr == SCR_SHOP, "a second level this visit: sold, nothing paid");
     test_press('R'); test_press('A');
     CHECK(s.scr == SCR_SHOP_PLUS && s.list[0] == BOON_STORM_BLADE_PLUS, "a \"+\": Storm Blade+ on its list");
-    test_press('A');
+    test_buy();
     CHECK(s.gold == g - 150 && s.stacks[BOON_STORM_BLADE_PLUS] == 1, "Storm Blade+ for 150");
     g = s.gold; int cu = curses_sum(), bs = 0; for (int b = 0; b < PB_COUNT; b++) bs += s.bless[b];
     test_press('R'); test_press('A');
@@ -4598,14 +4669,14 @@ int tower_test_shop(void)
       CHECK(s.gold == g && bs2 == bs + 1 && curses_sum() == cu + 1, "the pact: free, a blessing and its curse"); }
     int pmax = tower_mod_max_potions();
     test_press('R'); g = s.gold; int p0 = character.healthPotions;
-    for (int i = 0; i < 6; i++) test_press('A');
+    for (int i = 0; i < 6; i++) test_buy();
     CHECK(character.healthPotions == pmax && s.gold == g - 45 * (pmax - p0), "potions: 45 each up to the run's %d (%d, paid %d)", pmax, character.healthPotions, g - s.gold);
     test_press('R'); g = s.gold; float h = character.health;
-    test_press('A'); test_press('A');
+    test_buy(); test_buy();
     CHECK(s.gold == g - 50 && fabsf(character.health - fminf(character.maxHealth, h + 0.35f * character.maxHealth)) < 0.01f, "Mend: 50, +35%% max health once (%.0f -> %.0f)", (double)h, (double)character.health);
     test_press('R'); g = s.gold; test_press('A');
     CHECK(s.scr == SCR_SHOP_RELEASE && s.listN == slots_used() + 1 && s.list[s.listN - 1] == -1, "Release: the slots, then Back");
-    test_press('A');
+    test_buy();
     CHECK(s.gold == g - 20 && !s.stacks[BOON_STORM_BLADE] && !s.stacks[BOON_STORM_BLADE_PLUS] && s.locked[BOON_EXECUTIONER] && slots_used() == 3,
           "Release Storm Blade: 20, it and its \"+\" gone, Executioner still locked");
     test_press('R');
@@ -4617,8 +4688,8 @@ int tower_test_shop(void)
           s.gold = g0; shop_open();
           for (int i = 0; i < SHOP_LEAVE; i++) {
               s.scr = SCR_SHOP; s.shop.sel = (int8_t)i; int gb = s.gold;
-              test_press('A');
-              if (s.scr != SCR_SHOP) test_press('A');     // a list: its first row
+              test_buy();
+              if (s.scr != SCR_SHOP) test_buy();     // a list: its first row
               if (s.gold == gb) refused++;
               if (s.gold < least) least = s.gold;
               if (s.scr != SCR_SHOP) { s.scr = SCR_SHOP; }

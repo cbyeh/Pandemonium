@@ -96,8 +96,8 @@ static bool overscanCalibrating = false;
 static int8_t overscanPrevX = 0;
 static int8_t overscanPrevY = 0;
 
-// The Stats menu: the run's numbers, then its build, as one paged list (ui_pages: the corners); on a Build
-// page Up/Down move a row cursor (-1: the corners) and A or R opens the row's Details
+// The Stats menu: the run's numbers, then its build, as one paged list (ui_pages: Left/Right turn); on a Build
+// page Up/Down move a row cursor (-1: the Back row at the foot) and A opens the row's Details
 static UiPager runPager;
 static int runRow = -1;
 static UiDoc *s_statsDoc;     // (these two on the heap while the Stats menu is open: none during a fight)
@@ -109,7 +109,7 @@ static int run_my(void) { int m = ui_safe_margin_y(); return m < TITLE_SAFE_MARG
 #define RUN_TW (SCREEN_WIDTH - 2 * RUN_TX)
 #define RUN_CY (run_my() + 16)                          // the corners' baseline (34)
 #define RUN_BODY (RUN_CY + 22)                          // the first line's (56)
-#define RUN_BODY_END (SCREEN_HEIGHT - run_my() - 18)    // the last line's (204)
+#define RUN_BODY_END (SCREEN_HEIGHT - run_my() - 22)    // the last line's (200: over the Back row)
 typedef struct { int statsPages, buildPages, n, perPage; char left[TOWER_BUILD_ROWS][40], right[TOWER_BUILD_ROWS][12]; int style[TOWER_BUILD_ROWS], card[TOWER_BUILD_ROWS]; } RunPages;
 static RunPages *s_run;
 static void run_pages_free(void) { free(s_statsDoc); free(s_run); s_statsDoc = NULL; s_run = NULL; }
@@ -127,8 +127,8 @@ static void run_pages_build(void)
     runPager.pages = (int8_t)(s_run->statsPages + s_run->buildPages);
     if (runPager.page >= runPager.pages) runPager.page = runPager.pages - 1;
 }
-// The Codex: its topics, paged as Stats is (the corners; Up/Down along the rows, Down past a page's last to the next;
-// A or R opens a topic in the Details panel). From the Tower menu or the pause menu (a climb's)
+// The Codex: its topics, paged as Stats is (Left/Right turn; Up/Down along the rows and the Back row at the foot;
+// A opens a topic in the Details panel). From the Tower menu or the pause menu (a climb's)
 static UiPager codexPager;
 static int codexRow = 0;
 static MenuState codexReturn = MENU_TOWER;
@@ -370,6 +370,48 @@ MenuAction menu_controller_consume_action(void)
     return action;
 }
 
+// A purchase with Embers (the Shrine's upgrades, the Nightfarer, Relics, Unlocks, an Offering set aside): a confirm first
+// (ui_confirm_open: its effect, Buy / Back, the cursor on Back); too few Embers (or owned, at its max, not sold): nothing
+// opens (its line of help says why, red). Its Buy runs buy_take on the row still under the menu's cursor
+static void buy_ask(const char *name, int cost, const char *effect)
+{
+    if (cost < 0) return;
+    if (tower_embers() < cost) {
+#ifdef HLE_AUTOPLAY
+        debugf("[buy] %s for %d: refused, Embers %d (no confirm)\n", name, cost, tower_embers());
+#endif
+        return;
+    }
+    UiPanel *p = ui_details();
+    UiDoc *d = ui_panel_doc(p);
+    char t[64];
+    ui_doc_clear(d);
+    ui_doc_text(d, FONT_STYLE_WHITE, "%s", effect);
+    ui_doc_gap(d);
+    ui_doc_text(d, FONT_STYLE_GREY, "Embers %d -> %d", tower_embers(), tower_embers() - cost);
+    snprintf(t, sizeof t, "Buy %s for %d Embers?", name, cost);
+    ui_confirm_open(p, t, FONT_STYLE_GOLD, "Buy");
+    p->owner = UI_OWNER_MENU;
+#ifdef HLE_AUTOPLAY
+    debugf("[buy] confirm: %s (menu %d row %d, Embers %d)\n", t, currentMenu, selectedOption, tower_embers());
+#endif
+}
+static void buy_take(void)
+{
+    int i = selectedOption, e = tower_embers();
+    bool ok = false;
+    if (currentMenu == MENU_SHRINE && i < MENU_SHRINE_UPGRADES) ok = tower_upgrade_buy((UpgradeId)i);
+    else if (currentMenu == MENU_SHRINE && i == MENU_SHRINE_NIGHTFARER) ok = tower_nightfarer_buy();
+    else if (currentMenu == MENU_RELICS) ok = tower_relic_select(i - 1);
+    else if (currentMenu == MENU_UNLOCKS) ok = tower_pack_buy(i);
+    else if (currentMenu == MENU_OFFERINGS) ok = !tower_offer_set(i) && tower_offer_toggle(i);
+    if (ok) save_controller_save_settings();
+#ifdef HLE_AUTOPLAY
+    debugf("[buy] bought (menu %d row %d): %s, Embers %d -> %d\n", currentMenu, i, ok ? "yes" : "NO", e, tower_embers());
+#endif
+    (void)e;
+}
+
 static void menu_controller_update_for_state(GameState state, bool cutsceneActive)
 {
     if (state == GAME_STATE_DEAD) {
@@ -453,23 +495,15 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
         aJustPressed = true;
     }
 
-    // a Details panel opened here (R on the Build page or the Shrine) takes every press until it closes
+    // a Details panel opened here (A on a Build row, a Codex topic) or a purchase's confirm takes every press until it closes
     UiPanel *dp = ui_details();
     if (dp->open && dp->owner == UI_OWNER_MENU) {
-        ui_panel_input(dp, upJustPressed, downJustPressed, leftJustPressed, rightJustPressed, aJustPressed, bJustPressed, rJustPressed);
+        if (ui_panel_input(dp, upJustPressed, downJustPressed, leftJustPressed, rightJustPressed, aJustPressed, bJustPressed, rJustPressed) == UI_PANEL_ENTER) buy_take();
+#ifdef HLE_AUTOPLAY
+        else if (!dp->open && dp->confirm) debugf("[buy] closed: nothing bought, Embers %d, menu %d row %d\n", tower_embers(), currentMenu, selectedOption);
+#endif
         return;
     }
-    if (rJustPressed) {     // R: what the row under the cursor does in full
-        if (currentMenu == MENU_SHRINE) {
-            if (selectedOption < MENU_SHRINE_UPGRADES) tower_details_shrine(TOWER_SHRINE_UPGRADE, selectedOption);
-            else if (selectedOption == MENU_SHRINE_RELIC) tower_details_shrine(TOWER_SHRINE_RELIC, tower_relic_equipped());
-            else if (selectedOption == MENU_SHRINE_NIGHTFARER) tower_details_shrine(TOWER_SHRINE_NIGHTFARER, 0);
-        } else if (currentMenu == MENU_RELICS && selectedOption <= tower_relic_total()) tower_details_shrine(TOWER_SHRINE_RELIC, selectedOption - 1);
-        else if (currentMenu == MENU_UNLOCKS && selectedOption < tower_pack_count()) tower_details_shrine(TOWER_SHRINE_UNLOCK, selectedOption);
-        else if (currentMenu == MENU_OFFERINGS && selectedOption < tower_offer_count()) tower_details_shrine(TOWER_SHRINE_OFFERING, selectedOption);
-        if (dp->open) return;
-    }
-
     if (!(currentMenu == MENU_VIDEO && overscanCalibrating)) {
         int maxOptions = get_menu_option_count(currentMenu);
 
@@ -510,7 +544,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                 case MENU_MAIN_RUN:
                     currentMenu = MENU_RUN;
                     run_pages_build();
-                    ui_pager_reset(&runPager, runPager.pages);     // page 0, on Next
+                    ui_pager_reset(&runPager, runPager.pages);     // page 0, on Back
                     runRow = -1;
                     break;
 
@@ -819,21 +853,19 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             (void)save_controller_save_settings();
         }
     } else if (currentMenu == MENU_RUN) {
-        // the pages' buttons in the title row's corners (Back | Next >, < Prev | Next >, < Prev): Left/Right pick
-        // a corner, A takes it, B closes from any page. On a Build page Up/Down walk its rows; A or R: the row's Details
+        // Left/Right turn the pages (Stats, then Build), B closes from any page; on a Build page Up/Down walk its rows and
+        // the Back row at the foot (-1), A opens a row's Details; on a Stats page the Back row is the only one
         run_pages_build();
         int rows = run_rows_on_page();
         if (runRow >= rows) runRow = rows - 1;
-        if (rows && downJustPressed) runRow = runRow + 1 < rows ? runRow + 1 : runRow;
-        else if (rows && upJustPressed) runRow = runRow >= 0 ? runRow - 1 : -1;
+        if (rows && downJustPressed) runRow = runRow + 1 < rows ? runRow + 1 : -1;
+        else if (rows && upJustPressed) runRow = runRow < 0 ? rows - 1 : runRow - 1;
         int at = (runPager.page - s_run->statsPages) * s_run->perPage + runRow;
-        if (runRow >= 0 && !bJustPressed && !leftJustPressed && !rightJustPressed) {
-            if ((aJustPressed || rJustPressed) && s_run->card[at] >= 0) tower_details_card(s_run->card[at]);
-        } else {
-            if (leftJustPressed || rightJustPressed) runRow = -1;
-            int r = ui_pager_input(&runPager, leftJustPressed, rightJustPressed, aJustPressed, bJustPressed);
+        if (runRow >= 0 && aJustPressed && !bJustPressed) { if (s_run->card[at] >= 0) tower_details_card(s_run->card[at]); }
+        else {
+            int r = ui_pager_input(&runPager, leftJustPressed, rightJustPressed, aJustPressed && runRow < 0, bJustPressed);
             if (r == UI_PAGER_BACK) { currentMenu = MENU_MAIN; selectedOption = MENU_MAIN_RUN; run_pages_free(); }
-            else if (r == UI_PAGER_TURNED) runRow = -1;
+            else if (r == UI_PAGER_TURNED) runRow = run_rows_on_page() ? 0 : -1;
         }
     } else if (currentMenu == MENU_CREDITS) {
         if (aJustPressed || bJustPressed) {
@@ -900,12 +932,12 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             currentMenu = MENU_RELICS;
             selectedOption = tower_relic_equipped() + 1;      // on the one worn (None: row 0)
         } else if (selectedOption == MENU_SHRINE_NIGHTFARER && aJustPressed) {
-            if (tower_nightfarer_buy()) save_controller_save_settings();
+            buy_ask("Nightfarer", tower_nightfarer_cost(), "A tracker's winged helm and blue coat (a skin)");
         } else if (selectedOption == MENU_SHRINE_PACKS && aJustPressed) {
             currentMenu = MENU_UNLOCKS;
             selectedOption = 0;
         } else if (aJustPressed && selectedOption < MENU_SHRINE_UPGRADES) {
-            if (tower_upgrade_buy((UpgradeId)selectedOption)) save_controller_save_settings();
+            buy_ask(tower_upgrade_name((UpgradeId)selectedOption), tower_upgrade_cost((UpgradeId)selectedOption), tower_upgrade_desc((UpgradeId)selectedOption));
         }
     } else if (currentMenu == MENU_RELICS) {
         int back = tower_relic_total() + 1;
@@ -913,40 +945,37 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             currentMenu = MENU_SHRINE;
             selectedOption = MENU_SHRINE_RELIC;
         } else if (aJustPressed && selectedOption - 1 != tower_relic_equipped()) {
-            if (tower_relic_select(selectedOption - 1)) save_controller_save_settings();     // buy and equip, equip, or None
+            int k = selectedOption - 1;
+            if (k >= 0 && !tower_relic_owned(k)) buy_ask(tower_relic_name(k), tower_relic_cost(k), tower_relic_desc(k));     // (bought, it's worn)
+            else if (tower_relic_select(k)) save_controller_save_settings();     // wear an owned one, or None
         }
     } else if (currentMenu == MENU_UNLOCKS) {
         int back = tower_pack_count();
         if (bJustPressed || (aJustPressed && selectedOption == back)) {
             currentMenu = MENU_SHRINE;
             selectedOption = MENU_SHRINE_PACKS;
-        } else if (aJustPressed && tower_pack_buy(selectedOption)) {
-            save_controller_save_settings();
+        } else if (aJustPressed) {
+            buy_ask(tower_pack_name(selectedOption), tower_pack_cost(selectedOption), tower_pack_desc(selectedOption));
         }
     } else if (currentMenu == MENU_OFFERINGS) {
         int back = tower_offer_count();
         if (bJustPressed || (aJustPressed && selectedOption == back)) {
             currentMenu = MENU_TOWER;
             selectedOption = MENU_TOWER_OFFERINGS;
-        } else if (aJustPressed && tower_offer_toggle(selectedOption)) {      // set it aside, or take it back
-            save_controller_save_settings();
+        } else if (aJustPressed && tower_offer_set(selectedOption)) {      // take it back: a refund, at once (nothing spent)
+            if (tower_offer_toggle(selectedOption)) save_controller_save_settings();
+        } else if (aJustPressed && !tower_offer_why(selectedOption)[0]) {     // set it aside: Embers spent, so asked first
+            buy_ask(tower_offer_name(selectedOption), tower_offer_price(selectedOption), tower_offer_brief(selectedOption));
         }
     } else if (currentMenu == MENU_CODEX) {
-        // the corners (row -1) and the topics: Up/Down along them (Down past a page's last: the next page's first), A or R opens one;
-        // Left/Right go to the corners and pick one, A takes it; B back from anywhere
-        int rows = codex_rows_on_page(), per = codex_per_page();
-        if (bJustPressed) { currentMenu = codexReturn; selectedOption = codexReturnOption; return; }
-        if (downJustPressed) {
-            if (codexRow + 1 < rows) codexRow++;
-            else if (codexPager.page + 1 < codexPager.pages) { codexPager.page++; codexRow = 0; codexPager.sel = codexPager.page + 1 < codexPager.pages; }
-        } else if (upJustPressed) codexRow = codexRow >= 0 ? codexRow - 1 : -1;
-        else if (codexRow >= 0 && (leftJustPressed || rightJustPressed)) { codexRow = -1; codexPager.sel = rightJustPressed && codexPager.page + 1 < codexPager.pages; }
-        else if (codexRow >= 0 && (aJustPressed || rJustPressed)) tower_codex_open(codexPager.page * per + codexRow);
-        else if (codexRow < 0) {
-            int r = ui_pager_input(&codexPager, leftJustPressed, rightJustPressed, aJustPressed, false);
-            if (r == UI_PAGER_BACK) { currentMenu = codexReturn; selectedOption = codexReturnOption; }
-            else if (r == UI_PAGER_TURNED) codexRow = -1;     // (on the corners, as Stats: A again turns on)
-        }
+        // the page's topics and the Back row at its foot (-1): Up/Down along them, A opens a topic (or takes Back),
+        // Left/Right turn the pages (the cursor on the same row, or the last), B back from anywhere
+        int rows = codex_rows_on_page();
+        if (bJustPressed || (aJustPressed && codexRow < 0)) { currentMenu = codexReturn; selectedOption = codexReturnOption; return; }
+        if (downJustPressed) codexRow = codexRow + 1 < rows ? codexRow + 1 : -1;
+        else if (upJustPressed) codexRow = codexRow < 0 ? rows - 1 : codexRow - 1;
+        else if (aJustPressed && tower_codex_open_ok(codexPager.page * codex_per_page() + codexRow)) tower_codex_open(codexPager.page * codex_per_page() + codexRow);
+        else if (ui_pager_input(&codexPager, leftJustPressed, rightJustPressed, false, false) == UI_PAGER_TURNED && codexRow >= codex_rows_on_page()) codexRow = codex_rows_on_page() - 1;
     } else if (currentMenu == MENU_SKINS) {
         if (bJustPressed || (aJustPressed && selectedOption == SKIN_COUNT + 1)) {
             currentMenu = MENU_SETTINGS;
@@ -1058,7 +1087,8 @@ static void menu_help(UiRect r, int style, const char *s)
 // cursor's; Up/Down run on across them (past a page's end, the next), Left/Right turn a page (s_listPer), "1/2" in the footer
 static int list_page(UiRect r, int y0, int pitch, int rows)
 {
-    int per = (MB_HELP(r) - 14 - y0) / pitch + 1;
+    UiRect sr = ui_safe_rect();     // (by the safe rect, as measured: the fit box holds as many, and both passes agree)
+    int per = (MB_HELP(sr) - 14 - (y0 - r.y0 + sr.y0)) / pitch + 1;
     if (per < 3) per = 3;
     if (per >= rows) { s_listPer = 0; return rows; }
     s_listPer = per;
@@ -1068,7 +1098,8 @@ static int list_page(UiRect r, int y0, int pitch, int rows)
     ui_track_foot(false);
     return per;
 }
-static void menu_details_hint(UiRect r) { ui_track_foot(true); ui_hint(r.x1 - 8, MB_FOOT(r), UI_DETAILS_HINT); ui_track_foot(false); }
+// a paged screen's Back row at the foot (A takes it when it's under the cursor)
+static void menu_back_row(UiRect r, bool on) { ui_track_foot(true); ui_row(MB_X(r), MB_W(r), MB_FOOT(r), on, "Back"); ui_track_foot(false); }
 
 // The Tower lists' title row: Embers left (gold), the title centred unless that would touch them (then just right of them)
 static void tower_menu_title(UiRect r, const char *title)
@@ -1279,8 +1310,10 @@ static void menu_body(UiRect r0)
                          : selectedOption == MENU_SHRINE_NIGHTFARER ? "A tracker's winged helm and blue coat"
                          : selectedOption == MENU_SHRINE_PACKS ? "New boons and skill forms"
                          : "Skills are learned in the climb";
-        menu_help(r, FONT_STYLE_GREY, desc);
-        if (selectedOption != MENU_SHRINE_PACKS && selectedOption < MENU_SHRINE_COUNT - 1) menu_details_hint(r);
+        // too few Embers for it: why A buys nothing, red (as the Offerings' refusals)
+        int c = selectedOption < MENU_SHRINE_UPGRADES ? tower_upgrade_cost((UpgradeId)selectedOption) : selectedOption == MENU_SHRINE_NIGHTFARER ? tower_nightfarer_cost() : -1;
+        bool poor = c >= 0 && tower_embers() < c;
+        menu_help(r, poor ? FONT_STYLE_RED : FONT_STYLE_GREY, poor ? "Not enough Embers" : desc);
     } else if (currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS) {
         // a list: name on the left, its state on the right, what the hovered one does below
         bool relics = currentMenu == MENU_RELICS, packs = currentMenu == MENU_UNLOCKS;
@@ -1322,8 +1355,9 @@ static void menu_body(UiRect r0)
                          : relics ? (selectedOption == 0 ? "Climb without a relic" : tower_relic_desc(selectedOption - 1))
                          : selectedOption == SKIN_COUNT ? (save_controller_sunforged_unlocked() ? "Your skills in gold and white" : "It burns at the Tower's summit")
                          : save_controller_skin_unlocked(selectedOption) ? "" : skin_lock_hint(selectedOption);
-        menu_help(r, FONT_STYLE_GREY, desc);
-        if ((relics || packs) && selectedOption < rows - 1) menu_details_hint(r);
+        int c = selectedOption == rows - 1 ? -1 : packs ? tower_pack_cost(selectedOption) : relics && selectedOption > 0 ? tower_relic_cost(selectedOption - 1) : -1;
+        bool poor = c >= 0 && tower_embers() < c;
+        menu_help(r, poor ? FONT_STYLE_RED : FONT_STYLE_GREY, poor ? "Not enough Embers" : desc);
     } else if (currentMenu == MENU_OFFERINGS) {
         // the Offerings: name, its price now (or set, or why not), then Back; what's set aside over them; the hovered one's line below
         tower_menu_title(r, "OFFERINGS");
@@ -1350,7 +1384,6 @@ static void menu_body(UiRect r0)
         // why A can't set it aside in red, as the Shop's refusals; else what it does
         const char *why = selectedOption < rows - 1 ? tower_offer_why(selectedOption) : "";
         menu_help(r, why[0] ? FONT_STYLE_RED : FONT_STYLE_GREY, selectedOption < rows - 1 ? (why[0] ? why : tower_offer_brief(selectedOption)) : "");
-        if (selectedOption < rows - 1) menu_details_hint(r);
     } else if (currentMenu == MENU_CODEX) {
         // the topics, paged (ui_pages), the corners on the title row
         ui_pager_draw(&codexPager, RUN_TX, RUN_CY, RUN_TW, "CODEX");
@@ -1365,7 +1398,7 @@ static void menu_body(UiRect r0)
                 rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, RUN_TX + RUN_TW - UI_RIGHT_W, ry, "%s", fl);
             }
         }
-        if (codexRow >= 0 && tower_codex_open_ok(first + codexRow)) menu_details_hint(r);
+        menu_back_row(r, codexRow < 0);
     } else if (currentMenu == MENU_AUDIO) {
         y += 8;
         for (int i = 0; i < MENU_AUDIO_COUNT; i++, y += P + 2) {
@@ -1433,8 +1466,8 @@ static void menu_body(UiRect r0)
                 if (s_run->right[i][0] && !noRight)
                     rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W, .style_id = s_run->style[i] }, FONT_UNBALANCED, RUN_TX + RUN_TW - UI_RIGHT_W, ry, "%s", s_run->right[i]);
             }
-            if (runRow >= 0 && s_run->card[first + runRow] >= 0) menu_details_hint(r);
         }
+        menu_back_row(r, runRow < 0);
     } else if (currentMenu == MENU_CREDITS) {
         static const char *const NAMES[] = { "FROMSCRATCH", "BoxingBruin", "HelloNewman", "Aethrone" };
         y += 8;
@@ -1498,13 +1531,14 @@ int menu_controller_test_nav(int *row, int *back, int *corner)
 {
     *corner = 0;
     if (currentMenu == MENU_VIDEO && overscanCalibrating) { *row = 0; *back = -2; return 100; }
-    if (currentMenu == MENU_RUN) { *row = runRow; *back = -1; *corner = runPager.sel; return currentMenu; }
-    if (currentMenu == MENU_CODEX) { *row = codexRow; *back = -1; *corner = codexPager.sel; return currentMenu; }
+    if (currentMenu == MENU_RUN) { *row = runRow; *back = -1; *corner = runPager.page; return currentMenu; }     // (a pager's Back row -1; *corner its page)
+    if (currentMenu == MENU_CODEX) { *row = codexRow; *back = -1; *corner = codexPager.page; return currentMenu; }
     *row = selectedOption;
     *back = currentMenu == MENU_MAIN ? MENU_MAIN_RESUME : currentMenu == MENU_TITLE ? -3 : get_menu_option_count(currentMenu) - 1;
     return currentMenu;
 }
-int menu_controller_test_run(int *page, int *pages, int *row) { *page = runPager.page; *pages = runPager.pages; *row = runRow; return runPager.sel; }
+int menu_controller_test_run(int *page, int *pages, int *row) { *page = runPager.page; *pages = runPager.pages; *row = runRow; return runRow < 0; }     // (1: on Back)
+int menu_controller_test_pages(int *per) { *per = currentMenu == MENU_CODEX ? codex_per_page() : currentMenu == MENU_RUN ? 0 : s_listPer; return currentMenu == MENU_RUN ? runPager.pages : currentMenu == MENU_CODEX ? codexPager.pages : s_listPer ? (get_menu_option_count(currentMenu) + s_listPer - 1) / s_listPer : 1; }
 #endif
 bool menu_controller_is_active(void)
 {

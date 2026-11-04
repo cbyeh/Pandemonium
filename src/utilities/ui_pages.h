@@ -6,20 +6,22 @@
 
 // One way to show more text than fits (the pause menu's Stats and Build pages, the Tower's screens, the
 // R Details panel; a Codex can reuse all of it as is). The style is the Stats pages' (main 83f1c7b, b5ecdae):
-// the page's buttons sit in the title row's corners, page 0 "Back" | "Next >", a middle page
-// "< Prev" | "Next >", the last "< Prev" (a lone page: "Back"); Left/Right pick a corner, A takes it,
-// B is Back from any page. Every press works the same on the D-pad and the stick (the callers pass edges).
+// Left/Right (D-pad or stick) turn the pages, the title row's corners show "< Prev" / "Next >" where there are more,
+// B is Back from any page, and a Back row (ui_row) at the foot is what A takes when nothing else is under the cursor.
+// Every press works the same on the D-pad and the stick (the callers pass edges). No R in a paged screen.
 //
 // UiDoc: rows of text (a left part that word-wraps, an optional right part on its first line, a font
 // style), split into pages that fit a box by ui_doc_layout (measured with the font), one page drawn by
 // ui_doc_draw. Fill it each time it's shown (cheap: the menus do it every frame).
 //     ui_doc_clear(&d); ui_doc_row(&d, FONT_STYLE_GOLD, "Lv 2/3", "Rally"); ui_doc_gap(&d); ui_doc_text(&d, FONT_STYLE_WHITE, "...");
 //     int pages = ui_doc_layout(&d, w, h); ui_doc_draw(&d, page, x, y, w);
-// UiPager: the corners (ui_pager_reset when the doc opens, ui_pager_input with the edges, ui_pager_draw).
+// UiPager: the pages (ui_pager_reset when the doc opens, ui_pager_input with the edges, ui_pager_draw the corners).
 // UiPanel: a framed box inside the title-safe area holding a title, a UiDoc and a UiPager: the Details
 // panel (ui_details(): one shared instance) and the Tower map's confirm screen (ui_panel_open with confirm).
 //     UiPanel *p = ui_details(); UiDoc *d = ui_panel_doc(p); ui_doc_clear(d); ...rows...; ui_panel_open(p, "Rally", FONT_STYLE_BLUE, false);
 //     each frame: if (p->open) { ui_panel_input(p, l, r, a, b, rPress); ui_panel_draw(p); }
+// A purchase's confirm: ui_confirm_open(p, "Buy Whetstone for 40 Embers?", FONT_STYLE_GOLD, "Buy") over a one-line effect,
+// narrow, rows Buy / Back, the cursor on Back (a mashed A never spends); B or Back cancel
 
 #define UI_DOC_ROWS  64          // (the Codex's longest page: a sentence a row)
 #define UI_DOC_TEXT  3072
@@ -55,11 +57,12 @@ int  ui_text_width(const char *s);      // one line's width in pixels
 int  ui_text_lines(const char *s, int w);   // its lines, word-wrapped to w (UI_TOO_WIDE if a word is wider than w)
 int  ui_text_lines_cs(const char *s, int w, int cs);     // the same with cs px between glyphs (-1: set tight)
 
-typedef struct { int8_t page, pages, sel; } UiPager;   // sel: 0 the left corner, 1 the right
+typedef struct { int8_t page, pages; } UiPager;
 enum { UI_PAGER_NONE, UI_PAGER_TURNED, UI_PAGER_BACK };
-void ui_pager_reset(UiPager *p, int pages);     // page 0, the cursor on Next (Back on a lone page)
-int  ui_pager_input(UiPager *p, bool left, bool right, bool a, bool b);
+void ui_pager_reset(UiPager *p, int pages);     // page 0
+int  ui_pager_input(UiPager *p, bool left, bool right, bool a, bool b);     // a: the caller's Back row taken (BACK, as b)
 void ui_pager_draw(const UiPager *p, int x, int y, int w, const char *title);     // the corners, the title and "2/3" between; y: the row's baseline
+void ui_row(int x, int w, int y, bool on, const char *label);   // a centred row ("Back") at baseline y, its cursor when on
 
 // THE MENU STANDARD (one look and one way to move in every menu and screen, 2026-11-03):
 //   the box: one box for every UI (the user's pick, 2026-11-03, the "hybrid"): rounded corners with a soft rim, a
@@ -75,11 +78,17 @@ void ui_pager_draw(const UiPager *p, int x, int y, int w, const char *title);   
 //   corners on that row too). Rows: a list's cursor is ui_select_box; a row of buttons (Enter | Back, the Shop's,
 //   Skip) is ui_button. Colours: white, grey (can't be chosen, or a hint), gold (owned, money, set), red
 //   (why not), the families' own. The footer: the box's last row (UI_FOOT_DY over its bottom), "Details (R)"
-//   right-aligned in grey where R has more to read; a row's line of help over it, centred grey.
+//   right-aligned in grey only where A takes, buys or enters something and R has more to read (the draft's cards, the
+//   map's nodes, the Shop, a Rest's, Temper's, Release's and an Event's rows); a row's line of help over it, centred grey.
 //   Input: D-pad and stick move, A takes the row, B goes back a level (the Tower's draft ignores B: it's the
-//   sword in the Classic layout), every screen has a Back row (or Leave, Keep them all, Continue, Resume, a
-//   pager's Back corner) A alone reaches; Left/Right turn ui_pages' pages; R opens Details. No button letters in
-//   any prompt: "Enter", "Back", "Close", "Continue" (R in parentheses: "Details (R)").
+//   sword in the Classic layout), every screen has a Back row (or Leave, Keep them all, Continue, Resume) A alone
+//   reaches. Paged screens (Stats/Build, the Codex, a Details panel, the long lists): Left/Right turn the pages and
+//   never move a cursor sideways, B is Back, A opens or takes the row (a Codex topic, a Build row's Details), no R and
+//   no "(R)" in them. A Details panel closes with B (or R, or A on its Back row). Lists whose Left/Right change a value
+//   (Audio's volumes, Controls) aren't paged. Every purchase (Embers or gold) opens a confirm first (ui_confirm_open:
+//   "Buy <name> for <price> Embers?", its effect, Buy / Back with Back under the cursor; B cancels); a refund (an
+//   Offering taken back), equipping an owned relic and a free row take effect at once; too little money shows its red
+//   refusal and no confirm. No button letters in any prompt: "Enter", "Back", "Close", "Continue" ("Details (R)").
 #define UI_TITLE_DY 16
 #define UI_SHADE    180     // the menus' black (its alpha), everywhere
 #define UI_FOOT_DY  6
@@ -114,9 +123,13 @@ void ui_button(int x, int y, int w, int h, bool on, bool ok, const char *label);
 // a small grey hint ("Details (R)") ending at x (right-aligned), y its baseline
 void ui_hint(int xRight, int y, const char *s);
 #define UI_DETAILS_HINT "Details (R)"
+#ifdef HLE_AUTOPLAY
+extern int ui_test_r_drawn;             // test aid: strings drawn with "(R)" in them (none in a paged screen)
+#endif
 
 typedef struct {
-    bool open, confirm;                 // confirm: Enter and Back buttons under the page (the map's)
+    bool open, confirm, narrow;         // confirm: Enter (or yes) and Back rows under the page (the map's, a purchase's: narrow)
+    const char *yes;                    // the confirm's first row (NULL: "Enter")
     uint8_t owner;                      // who opened it (UI_OWNER_): each screen draws and drives only its own
     int8_t button;                      // confirm: 0 Enter, 1 Back
     char title[64]; int titleStyle;
@@ -124,12 +137,14 @@ typedef struct {
     UiPager pg;
 } UiPanel;
 enum { UI_OWNER_TOWER, UI_OWNER_MENU };
+static inline int ui_panel_row(const UiPanel *p) { return p->button; }     // a confirm's row under the cursor (0 Enter/Buy, 1 Back)
 UiPanel *ui_details(void);              // the shared Details panel (and the map's confirm screen)
 UiDoc *ui_panel_doc(UiPanel *p);        // its doc to fill (allocated on first use)
 void ui_panel_close(UiPanel *p);        // closed, its doc freed
 void ui_panel_open(UiPanel *p, const char *title, int titleStyle, bool confirm);
-// the presses (edges): Up/Down (a confirm's pages), Left/Right, A, B, R. Returns UI_PANEL_ENTER when a confirm
-// panel's Enter is taken; B, R (not on a confirm) or Back close it
+void ui_confirm_open(UiPanel *p, const char *title, int titleStyle, const char *yes);     // a purchase's (above)
+// the presses (edges): Up/Down (a confirm's rows), Left/Right (the pages), A, B, R. Returns UI_PANEL_ENTER when a confirm
+// panel's Enter (or Buy) is taken; B, R (not on a confirm) or Back close it
 enum { UI_PANEL_STAY, UI_PANEL_CLOSED, UI_PANEL_ENTER };
 int  ui_panel_input(UiPanel *p, bool up, bool down, bool left, bool right, bool a, bool b, bool r);
 void ui_panel_draw(const UiPanel *p);
