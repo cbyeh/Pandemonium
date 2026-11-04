@@ -2401,3 +2401,7 @@ void fallen_knight_draw(Boss* b)
     t3d_light_set_ambient((uint8_t[4]){ 255, 255, 255, 255 });
     floor_fire_draw();
 }
+
+#ifdef HLE_SHOW_HURTBOX
+int hle_fk_state(void) { return s.state; }     // test aid: its move, for [hbb]
+#endif

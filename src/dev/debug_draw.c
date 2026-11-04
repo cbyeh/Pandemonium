@@ -312,22 +312,43 @@ void debug_draw_capsule_vs_aabb_list(
 #include "character.h"
 #include "game/boss/boss.h"
 #include "camera_controller.h"
-// A vertical capsule seen from the test camera (customCamPos): its outline in the plane through
-// the axis facing the camera (convex: B's top half circle, A's bottom half), filled translucent,
-// then stroked, plus a ring round each end of the axis
-static void hb_capsule(T3DViewport *vp, const T3DVec3 *a, const T3DVec3 *b, float r, color_t col)
+int hle_hb_frame;     // the autoplay frame, shown as a barcode (bottom left) to match shots to logs
+// to the screen, unless it is behind or right at the camera (there the projection wraps round)
+static bool hb_proj(T3DViewport *vp, const float w[3], T3DVec3 *out)
 {
-    float nx = a->v[0] - customCamPos.v[0], nz = a->v[2] - customCamPos.v[2], l = sqrtf(nx * nx + nz * nz) + 1e-6f;
-    float sx = -nz / l, sz = nx / l;     // across the view, horizontal
-    enum { H = 12, N = 2 * H + 2 };
+    float f[3], d = 0.0f, fl = 0.0f;
+    for (int m = 0; m < 3; m++) { f[m] = customCamTarget.v[m] - customCamPos.v[m]; fl += f[m] * f[m]; }
+    fl = sqrtf(fl) + 1e-6f;
+    for (int m = 0; m < 3; m++) d += (w[m] - customCamPos.v[m]) * f[m] / fl;
+    if (d < 4.0f) return false;
+    T3DVec3 p = {{ w[0], w[1], w[2] }};
+    t3d_viewport_calc_viewspace_pos(vp, out, &p);
+    return out->v[2] > 0.0f && out->v[2] < 1.0f;
+}
+static void hb_line(const T3DVec3 *a, const T3DVec3 *b, uint16_t c) { debug_draw_line((int)a->v[0], (int)a->v[1], (int)b->v[0], (int)b->v[1], c); }
+// A capsule seen from the test camera (customCamPos): its outline in the plane through the axis
+// facing the camera (convex: a half circle round each end), filled translucent, then stroked,
+// plus a ring round each end of the axis
+static void hb_capsule(T3DViewport *vp, const T3DVec3 *a, const T3DVec3 *b, float r, color_t col, bool rings)
+{
+    float v[3], u[3], sd[3], w[3];
+    for (int m = 0; m < 3; m++) { v[m] = (a->v[m] + b->v[m]) * 0.5f - customCamPos.v[m]; u[m] = b->v[m] - a->v[m]; }
+    float vl = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) + 1e-6f;
+    for (int m = 0; m < 3; m++) v[m] /= vl;
+    float ud = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    for (int m = 0; m < 3; m++) w[m] = u[m] - ud * v[m];     // the axis across the view
+    float wl = sqrtf(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
+    if (wl < 1e-3f) { w[0] = 0; w[1] = 1; w[2] = 0; wl = 1; }   // end on (or a ball): any way up
+    for (int m = 0; m < 3; m++) w[m] /= wl;
+    sd[0] = w[1] * v[2] - w[2] * v[1]; sd[1] = w[2] * v[0] - w[0] * v[2]; sd[2] = w[0] * v[1] - w[1] * v[0];
+    enum { H = 6, N = 2 * H + 2, NR = 12 };     // few: past ~1000 triangles the HLE frame splits in two tasks (the scene went black)
     T3DVec3 sp[N]; float cx = 0.0f, cy = 0.0f;
     for (int i = 0; i < N; i++) {
         const T3DVec3 *c = i <= H ? b : a;
-        float t = T3D_PI * (float)i / H;     // 0..pi over B, pi..2pi under A
-        if (i > H) t = T3D_PI * (float)(i - 1) / H;
-        T3DVec3 w = {{ c->v[0] + r * cosf(t) * sx, c->v[1] + r * sinf(t), c->v[2] + r * cosf(t) * sz }};
-        t3d_viewport_calc_viewspace_pos(vp, &sp[i], &w);
-        if (sp[i].v[2] <= 0.0f || sp[i].v[2] >= 1.0f) return;
+        float t = T3D_PI * (float)(i <= H ? i : i - 1) / H;     // 0..pi round B, pi..2pi round A
+        float p[3];
+        for (int m = 0; m < 3; m++) p[m] = c->v[m] + r * (cosf(t) * sd[m] + sinf(t) * w[m]);
+        if (!hb_proj(vp, p, &sp[i])) return;
         cx += sp[i].v[0] / N; cy += sp[i].v[1] / N;
     }
     color_t f = col; f.a = 60;
@@ -338,19 +359,38 @@ static void hb_capsule(T3DViewport *vp, const T3DVec3 *a, const T3DVec3 *b, floa
     }
     uint16_t c16 = color_to_packed16(col);
     s_hbAlpha = 230;
-    for (int i = 0; i < N; i++) debug_draw_line_vec3(&sp[i], &sp[(i + 1) % N], c16);
+    for (int i = 0; i < N; i++) hb_line(&sp[i], &sp[(i + 1) % N], c16);
     s_hbAlpha = 140;
-    T3DVec3 up = {{ 0, 1, 0 }};
-    debug_draw_circle(vp, a, r, &up, c16);
-    debug_draw_circle(vp, b, r, &up, c16);
-    { T3DVec3 p0, p1; t3d_viewport_calc_viewspace_pos(vp, &p0, a); t3d_viewport_calc_viewspace_pos(vp, &p1, b); debug_draw_line_vec3(&p0, &p1, c16); }
+    // rings round the axis at both ends: e1, e2 across the axis
+    float ul = sqrtf(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+    float un[3] = { 0, 1, 0 };
+    if (ul > 1e-3f) for (int m = 0; m < 3; m++) un[m] = u[m] / ul;
+    float e1[3] = { 1, 0, 0 };
+    if (fabsf(un[0]) > 0.9f) { e1[0] = 0; e1[2] = 1; }
+    float e2[3] = { un[1] * e1[2] - un[2] * e1[1], un[2] * e1[0] - un[0] * e1[2], un[0] * e1[1] - un[1] * e1[0] };
+    float l2 = sqrtf(e2[0] * e2[0] + e2[1] * e2[1] + e2[2] * e2[2]);
+    for (int m = 0; m < 3; m++) e2[m] /= l2;
+    e1[0] = e2[1] * un[2] - e2[2] * un[1]; e1[1] = e2[2] * un[0] - e2[0] * un[2]; e1[2] = e2[0] * un[1] - e2[1] * un[0];
+    for (int e = 0; e < (rings ? 2 : 0); e++) {
+        const T3DVec3 *c = e ? b : a;
+        T3DVec3 q0, q1; bool ok0 = false;
+        for (int i = 0; i <= NR; i++) {
+            float t = 2.0f * T3D_PI * i / NR, p[3];
+            for (int m = 0; m < 3; m++) p[m] = c->v[m] + r * (cosf(t) * e1[m] + sinf(t) * e2[m]);
+            bool ok = hb_proj(vp, p, &q1);
+            if (ok && ok0) hb_line(&q0, &q1, c16);
+            q0 = q1; ok0 = ok;
+        }
+    }
+    { T3DVec3 p0, p1; if (hb_proj(vp, a->v, &p0) && hb_proj(vp, b->v, &p1)) hb_line(&p0, &p1, c16); }
 }
 
-// Test aid: the player's hit capsule (green) and the boss's (magenta) over the frame, as the hit
+// Test aid: the player's hit capsule (green), the boss's (magenta) and the Guardian's limbs (orange) over the frame, as the hit
 // checks build them (pos + local ends, no scale)
 void hle_hurtbox_draw(T3DViewport *vp)
 {
     rdpq_sync_pipe();
+    rdpq_mode_push();     // the frame's own mode back after (the next frame's drawing went black without it)
     rdpq_set_mode_standard();
     rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
     rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
@@ -359,12 +399,26 @@ void hle_hurtbox_draw(T3DViewport *vp)
         const CapsuleCollider *k = &boss->capsuleCollider;
         T3DVec3 ba = {{ boss->pos[0] + k->localCapA.v[0], boss->pos[1] + k->localCapA.v[1], boss->pos[2] + k->localCapA.v[2] }};
         T3DVec3 bb = {{ boss->pos[0] + k->localCapB.v[0], boss->pos[1] + k->localCapB.v[1], boss->pos[2] + k->localCapB.v[2] }};
-        hb_capsule(vp, &ba, &bb, k->radius, RGBA32(255, 40, 220, 255));
+        hb_capsule(vp, &ba, &bb, k->radius, RGBA32(255, 40, 220, 255), true);
+        // the Guardian's (and Unbound's) limbs, which the sword also meets (collision_system.c)
+        extern int hle_guardian_limbs(T3DVec3 p[][2], float r[]);
+        T3DVec3 lp[8][2]; float lr[8];
+        int nl = hle_guardian_limbs(lp, lr);
+        for (int i = 0; i < nl; i++) hb_capsule(vp, &lp[i][0], &lp[i][1], lr[i], RGBA32(255, 150, 30, 255), false);
     }
     const CapsuleCollider *c = &character.capsuleCollider;
     T3DVec3 a = {{ character.pos[0] + c->localCapA.v[0], character.pos[1] + c->localCapA.v[1], character.pos[2] + c->localCapA.v[2] }};
     T3DVec3 b = {{ character.pos[0] + c->localCapB.v[0], character.pos[1] + c->localCapB.v[1], character.pos[2] + c->localCapB.v[2] }};
-    hb_capsule(vp, &a, &b, c->radius, RGBA32(40, 255, 60, 255));
+    hb_capsule(vp, &a, &b, c->radius, RGBA32(40, 255, 60, 255), true);
+    // the frame as 14 bits, 4 px squares from the bottom left (white 1)
+    for (int i = 0; i < 14; i++) {
+        if (!((hle_hb_frame >> i) & 1)) continue;
+        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+        float x = 2.0f + i * 5.0f, y = 232.0f, q0[2] = { x, y }, q1[2] = { x + 4, y }, q2[2] = { x + 4, y + 4 }, q3[2] = { x, y + 4 };
+        rdpq_triangle(&TRIFMT_FILL, q0, q1, q2);
+        rdpq_triangle(&TRIFMT_FILL, q0, q2, q3);
+    }
+    rdpq_mode_pop();
     rdpq_sync_pipe();
 }
 #endif
