@@ -219,11 +219,31 @@ UiRect ui_safe_rect(void)
     return (UiRect){ mx, my, SCREEN_WIDTH - mx, SCREEN_HEIGHT - my };
 }
 
+// main's menu shape: the outline of its dialog art (assets/dialog_vertical.ia8.png, 70 x 135: an arched top, rounded
+// corners), each row's inset from the sides in its 70 px (the narrower side's: made symmetric), its rows 3-131 (the
+// rest empty). Drawn as flat fills, it shows the same on every renderer (the sprite never showed on Delta's)
+static const uint8_t SHAPE_INSET[] = { 30, 26, 21, 14, 7, 6, 6, 6, 5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 5, 8, 11, 14 };
+#define SHAPE_ROWS ((int)sizeof SHAPE_INSET)
+#define SHAPE_GROW 12       // the shape this much past the box each way (its curved rim clear of the text), clamped to the screen
+
 void ui_box(int x0, int y0, int x1, int y1)
 {
     flat();
     rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));       // main's translucent black, no frame (the scene through it)
-    rdpq_fill_rectangle(x0, y0, x1, y1);
+    x0 -= SHAPE_GROW; y0 -= SHAPE_GROW; x1 += SHAPE_GROW; y1 += SHAPE_GROW;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > SCREEN_WIDTH) x1 = SCREEN_WIDTH;
+    if (y1 > SCREEN_HEIGHT) y1 = SCREEN_HEIGHT;
+    int w = x1 - x0, h = y1 - y0;
+    // a run of rows with the same inset (at this size) is one fill
+    for (int i = 0, ya = y0; i < SHAPE_ROWS; ) {
+        int in = SHAPE_INSET[i] * w / 70, j = i + 1;
+        while (j < SHAPE_ROWS && SHAPE_INSET[j] * w / 70 == in) j++;
+        int yb = y0 + j * h / SHAPE_ROWS;
+        if (yb > ya) rdpq_fill_rectangle(x0 + in, ya, x1 - in, yb);
+        ya = yb; i = j;
+    }
 }
 
 void ui_frame(int x0, int y0, int x1, int y1, int t)
@@ -311,10 +331,7 @@ void ui_panel_draw(const UiPanel *p)
 {
     if (!p->open) return;
     PanelBox b = panel_box(p);
-    flat();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, 120));      // the screen under it dimmed
-    rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    ui_box(b.x0, b.y0, b.x1, b.y1);
+    ui_box(b.x0, b.y0, b.x1, b.y1);     // (drawn alone: the screen under it isn't drawn while it's open)
     if (!p->confirm) ui_pager_draw(&p->pg, b.tx, b.corners, b.tw, NULL);
     else if (p->pg.pages > 1) {     // (a confirm's pages: Up/Down)
         char n[24]; snprintf(n, sizeof n, "Up/Down %d/%d", p->pg.page + 1, p->pg.pages);

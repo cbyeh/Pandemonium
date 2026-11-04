@@ -28,6 +28,7 @@ static const char *skin_lock_hint(int k)
          : k == SKIN_NIGHTFARER ? "Its price is paid in embers" : "";
 }
 
+static int s_listPer;        // a paged list's rows a page (list_page), 0 when it fits
 static MenuState currentMenu = MENU_MAIN;
 static MenuState parentMenu = MENU_MAIN;
 static int selectedOption = 0;
@@ -484,6 +485,11 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
         }
     }
 
+    bool pagedList = currentMenu == MENU_SHRINE || currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS || currentMenu == MENU_OFFERINGS;
+    if (pagedList && s_listPer && (leftJustPressed || rightJustPressed)) {
+        int n = get_menu_option_count(currentMenu), k = (selectedOption / s_listPer + (rightJustPressed ? 1 : -1)) * s_listPer;
+        if (k >= 0 && k < n) selectedOption = k;
+    }
     if (currentMenu == MENU_MAIN) {
         if (bJustPressed) {
             menu_controller_close();
@@ -1018,6 +1024,18 @@ static void menu_help(UiRect r, int style, const char *s)
 {
     if (s && s[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = MB_W(r), .style_id = style }, FONT_UNBALANCED, MB_X(r), MB_HELP(r), "%s", s);
 }
+// A list longer than the box holds (the Shrine's at a large overscan setting): a page of its rows at a time, the
+// cursor's; Up/Down run on across them (past a page's end, the next), Left/Right turn a page (s_listPer), "1/2" in the footer
+static int list_page(UiRect r, int y0, int pitch, int rows)
+{
+    int per = (MB_HELP(r) - 14 - y0) / pitch + 1;
+    if (per < 3) per = 3;
+    if (per >= rows) { s_listPer = 0; return rows; }
+    s_listPer = per;
+    char n[24]; snprintf(n, sizeof n, "%d/%d", selectedOption / per + 1, (rows + per - 1) / per);
+    rdpq_text_printf(&(rdpq_textparms_t){ .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, MB_X(r), MB_FOOT(r), "%s", n);
+    return per;
+}
 static void menu_details_hint(UiRect r) { ui_hint(r.x1 - 8, MB_FOOT(r), UI_DETAILS_HINT); }
 
 // The Tower lists' title row: Embers left (gold), the title centred unless that would touch them (then just right of them)
@@ -1172,7 +1190,8 @@ void menu_controller_draw(void)
         for (int i = 0; i < MENU_TOWER_COUNT; i++, y += P + 2) menu_row(r, y, i == selectedOption, FONT_STYLE_WHITE, towerMenuOptions[i], NULL);
     } else if (currentMenu == MENU_SHRINE) {
         tower_menu_title(r, "SHRINE");
-        for (int i = 0; i < MENU_SHRINE_COUNT; i++, y += P) {
+        int per = list_page(r, y, P, MENU_SHRINE_COUNT), first = selectedOption / per * per;
+        for (int i = first; i < MENU_SHRINE_COUNT && i < first + per; i++, y += P) {
             char name[40], right[24] = "";
             if (i < MENU_SHRINE_UPGRADES) {
                 int c = tower_upgrade_cost((UpgradeId)i);
@@ -1207,7 +1226,8 @@ void menu_controller_draw(void)
         bool relics = currentMenu == MENU_RELICS, packs = currentMenu == MENU_UNLOCKS;
         if (relics || packs) tower_menu_title(r, relics ? "RELICS" : "UNLOCKS");
         int rows = get_menu_option_count(currentMenu);
-        for (int i = 0; i < rows; i++, y += packs ? P - 2 : P) {
+        int per = list_page(r, y, packs ? P - 2 : P, rows), first = selectedOption / per * per;
+        for (int i = first; i < rows && i < first + per; i++, y += packs ? P - 2 : P) {
             const char *name, *right = "";
             char cost[12];
             bool grey = false;
@@ -1247,7 +1267,8 @@ void menu_controller_draw(void)
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = line[0] ? FONT_STYLE_GOLD : FONT_STYLE_GREY },
                          FONT_UNBALANCED, x, y - 4, "%s", line[0] ? line : "For the next climb: two at most");
         y += P;
-        for (int i = 0; i < rows; i++, y += P - 1) {
+        int per = list_page(r, y, P - 1, rows), first = selectedOption / per * per;
+        for (int i = first; i < rows && i < first + per; i++, y += P - 1) {
             char right[16] = "";
             bool grey = false, set = false;
             const char *name = i == rows - 1 ? "Back" : tower_offer_name(i);
@@ -1307,16 +1328,20 @@ void menu_controller_draw(void)
         }
     } else if (currentMenu == MENU_CONTROLS) {
         controls_icons(true);
-        // the two settings (Left/Right or A to change), then what each button does in that layout, then Back
-        for (int i = 0; i < 2; i++, y += P) {
+        // the two settings (Left/Right or A to change) and Back, then what each button does in that layout (its pitch
+        // as the box holds it: 14, less at a large overscan setting)
+        for (int i = 0; i < 3; i++, y += P) {
             char line[40];
             if (i == 0) snprintf(line, sizeof line, "Layout: %s", joypad_layout_name(joypad_get_layout()));
-            else snprintf(line, sizeof line, "Camera speed: %d", camera_get_speed());
+            else if (i == 1) snprintf(line, sizeof line, "Camera speed: %d", camera_get_speed());
+            else snprintf(line, sizeof line, "Back");
             menu_row(r, y, i == selectedOption, FONT_STYLE_WHITE, line, NULL);
         }
-        y += 6;
-        const int lh = 14, listW = 150, listX = x + (w - listW) / 2 + 12;
+        int lh = (MB_FOOT(r) - y) / 7;
+        if (lh > 14) lh = 14;
+        const int listW = 150, listX = x + (w - listW) / 2 + 12;
         int lay = joypad_get_layout();
+        y -= 4;
         draw_icon_line(iconStick, listX, y += lh, lh, listW, "Move");
         draw_icon_line(iconA, listX, y += lh, lh, listW, lay == LAYOUT_SWAPPED ? "Attack" : "Dodge / Interact");
         draw_icon_line(iconB, listX, y += lh, lh, listW, lay == LAYOUT_SWAPPED ? "Dodge / Interact" : "Attack");
@@ -1324,7 +1349,6 @@ void menu_controller_draw(void)
         draw_icon_line(iconStart, listX, y += lh, lh, listW, "Pause Menu");
         draw_icon_line(iconCLeft, listX, y += lh, lh, listW, lay == LAYOUT_SKILLS_ON_C ? "Skills / Potion" : "Move Camera");
         draw_icon_line(iconDpad, listX, y += lh, lh, listW, lay == LAYOUT_SKILLS_ON_C ? "Move Camera" : "Skills / Potion");
-        menu_row(r, y + P + 4, selectedOption == 2, FONT_STYLE_WHITE, "Back", NULL);
     } else if (currentMenu == MENU_RUN) {
         // Stats then Build, paged (ui_pages), the corners on the title row
         run_pages_build();
@@ -1351,8 +1375,9 @@ void menu_controller_draw(void)
             rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = i ? FONT_STYLE_WHITE : FONT_STYLE_GOLD }, FONT_UNBALANCED, x, y, "%s", NAMES[i]);
         menu_row(r, y + 12, true, FONT_STYLE_WHITE, "Back", NULL);
     } else if (currentMenu == MENU_LOAD_GAME) {
-        int boxY = r.y0 + UI_TITLE_DY + 10;
-        const int boxH = 40, gap = 4, bl = x, br = x + w;
+        int boxY = r.y0 + UI_TITLE_DY + 10, boxH = (MB_FOOT(r) - 16 - boxY) / 3 - 4;     // (40 at the default overscan, less at a large one)
+        if (boxH > 40) boxH = 40;
+        const int gap = 4, bl = x, br = x + w;
         for (int slot = 0; slot < 3; slot++, boxY += boxH + gap) {
             const SaveData *saveData = save_controller_get_slot_data(slot);
             bool isSelected = slot == selectedOption, isLastPlayed = slot == save_controller_get_last_played_slot();
@@ -1377,11 +1402,11 @@ void menu_controller_draw(void)
                 snprintf(l1, sizeof l1, "Story %s   Tower %d", story, save_progress_tower_best_floor(saveData));
                 snprintf(l2, sizeof l2, "Bonus %d/3   Skins %d/%d", (bm & 1) + ((bm >> 1) & 1) + ((bm >> 2) & 1),
                          save_progress_skins_unlocked(saveData), SAVE_SKINS_TO_EARN);
-                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, bl, boxY + 24, "%s", l1);
-                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, bl, boxY + 35, "%s", l2);
-            } else rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, bl, boxY + 29, "Empty");
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, bl, boxY + boxH / 2 + 3, "%s", l1);
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, bl, boxY + boxH - 4, "%s", l2);
+            } else rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, bl, boxY + boxH - 10, "Empty");
         }
-        menu_row(r, boxY + 14, selectedOption == MENU_LOAD_GAME_BACK, FONT_STYLE_WHITE, loadGameMenuOptions[MENU_LOAD_GAME_BACK], NULL);
+        menu_row(r, boxY + 12, selectedOption == MENU_LOAD_GAME_BACK, FONT_STYLE_WHITE, loadGameMenuOptions[MENU_LOAD_GAME_BACK], NULL);
     }
     if (ui_details()->open && ui_details()->owner == UI_OWNER_MENU) ui_panel_draw(ui_details());     // Details (R), over the menu
 }

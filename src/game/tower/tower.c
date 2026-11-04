@@ -1427,8 +1427,7 @@ static void tower_draft_draw(void)
 {
     if (!s.draftOpen) return;
     flat_mode();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));     // the menus' black (ui_pages.h)
-    rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    ui_box(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);     // the menus' black in main's curved shape (ui_pages.h), the screen's size
 
     char line[80];
     const int T = fit_my(200);      // (the header's three lines, the cards and Skip: 200 px)
@@ -2411,8 +2410,7 @@ static void line_up(int x0, int y0, int x1, int y1)
 static void map_draw(void)
 {
     flat_mode();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));     // the menus' black (ui_pages.h)
-    rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    ui_box(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);     // the menus' black in main's curved shape (ui_pages.h), the screen's size
     // the links: the path taken and the way on bright, the rest dim (the rows behind dimmer)
     for (int r = 0; r < MAP_ROWS - 1; r++) for (int a = 0; a < MAP_LANES; a++) for (int b = 0; b < MAP_LANES; b++) {
         if (!s.map.type[r][a] || !s.map.type[r + 1][b] || !linked(r, a, b)) continue;
@@ -2510,7 +2508,7 @@ static void rest_draw(void)
     char line[80];
     snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d", (double)character.health, (double)character.maxHealth, character.healthPotions);
     text_style(0, T + 47, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
-    const int x = r.x0 + 26, w = r.x1 - r.x0 - 52, y0 = list_first_y(), per = list_per_page(), first = s.listSel / per * per;
+    const int x = r.x0 + 12, w = r.x1 - r.x0 - 24, y0 = list_first_y(), per = list_per_page(), first = s.listSel / per * per;
     for (int i = first; i < s.listN && i < first + per; i++) {
         int v = s.list[i], y = y0 + LIST_PITCH * (i - first), style = row_ok(i) ? FONT_STYLE_WHITE : FONT_STYLE_GREY;
         if (i == s.listSel) select_box(x - 6, y - 11, x + w + 6, y + 3);
@@ -2555,8 +2553,7 @@ void tower_test_set_gold(int g) { s.gold = g; }
 static void shop_draw(void)
 {
     flat_mode();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));     // the menus' black (ui_pages.h)
-    rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    ui_box(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);     // the menus' black in main's curved shape (ui_pages.h), the screen's size
     char line[96];
     const int T = fit_my(204);      // (the header, the shelf, Leave and the line under it: 204 px)
     text(0, T + 10, SCREEN_WIDTH, ALIGN_CENTER, "SHOP");      // the menus' title row: its money left (as the Shrine's Embers)
@@ -2653,7 +2650,7 @@ static void event_draw(void)
         y += lh * text_style(tx, y, tw, ALIGN_CENTER, FONT_STYLE_GREY, line);
     }
     if (s.eventDone) y += lh * text_style(tx, y + 4, tw, ALIGN_CENTER, FONT_STYLE_GOLD, s.eventResult) + 4;
-    const int x = r.x0 + 26, w = r.x1 - r.x0 - 52;
+    const int x = r.x0 + 12, w = r.x1 - r.x0 - 24;
     y += 10;
     for (int i = 0; i < s.listN; i++, y += LIST_PITCH) {
         if (i == s.listSel) select_box(x - 6, y - 11, x + w + 6, y + 3);

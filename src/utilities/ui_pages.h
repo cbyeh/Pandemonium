@@ -57,10 +57,11 @@ void ui_pager_draw(const UiPager *p, int x, int y, int w, const char *title);   
 
 // THE MENU STANDARD (one look and one way to move in every menu and screen, 2026-11-03):
 //   the box: ui_box over the title-safe rect (ui_safe_rect: the overscan setting's, never wider than the fixed
-//   7.5% one): main's translucent black, no frame (main's art and gold frame never drew: its combiner was left
-//   textured; on Delta not even the art), the hall or the title seen through it, at one shade, UI_SHADE: a little
-//   darker than main's 90, so the text stays legible over the title's fire, the Sun and the hall's light. The
-//   Tower's full-screen screens (the draft, the map, the Shop) are shaded the same, their cards and buttons too. Its title: uppercase, white, centred on the row UI_TITLE_DY under the box's top (a pager's
+//   7.5% one): main's translucent black in main's curved shape (its dialog art's outline: an arched top, rounded
+//   corners, drawn as flat fills a little past the rect, so it shows on Delta's renderer as on Mupen's and Ares'), no
+//   frame, the hall or the title seen through it, at one shade, UI_SHADE (darker than main's 90, so the text stays
+//   legible over the title's fire, the Sun and the hall's light). The Tower's full-screen screens (the draft, the
+//   map, the Shop) take the shape at the screen's size; their cards and buttons the same black. Its title: uppercase, white, centred on the row UI_TITLE_DY under the box's top (a pager's
 //   corners on that row too). Rows: a list's cursor is ui_select_box; a row of buttons (Enter | Back, the Shop's,
 //   Skip) is ui_button. Colours: white, grey (can't be chosen, or a hint), gold (owned, money, set), red
 //   (why not), the families' own. The footer: the box's last row (UI_FOOT_DY over its bottom), "Details (R)"
