@@ -318,14 +318,14 @@ _Static_assert(OFF_COUNT == OFFER_TXT, "tower_text.bin: one text an Offering");
 #define OFFER_HEAL    0.40f     // Hearth Ember, the first Rest
 
 // ---- Floor milestones: lasting rewards from the best floor (no save bits). Floor 10 is the Teal Cloak, as ever
-enum { MS_TEAL, MS_KINDLING, MS_POTION, MS_SIGIL, MS_HEART, MS_TITLE, MS_COUNT };
+enum { MS_TEAL, MS_KINDLING, MS_POTION, MS_SIGIL, MS_HEART, MS_SUN, MS_COUNT };
 static const struct { uint8_t floor; const char *name, *reward; } MILESTONES[MS_COUNT] = {
     [MS_TEAL]     = { 10, "The Teal Cloak", "A skin, worn from Settings > Skin" },
     [MS_KINDLING] = { 20, "Kindling", "A new Offering: a Common boon to start" },
     [MS_POTION]   = { 30, "A deeper belt", "Every climb starts with one more potion" },
     [MS_SIGIL]    = { 50, "Climber's Sigil", "A relic: -6% damage taken, +15 max health" },
-    [MS_HEART]    = { 75, "The Tower's Heart", "A Codex page" },
-    [MS_TITLE]    = { 100, "Tower-Breaker", "A title, on the Tower's menu" },
+    [MS_HEART]    = { 75, "The Tower's Heart", "A Codex page, and the title Tower-Breaker" },
+    [MS_SUN]      = { SAVE_SUNFORGED_FLOOR, "Sunforged", "Your skills in gold, set in Settings > Skins" },
 };
 #define CIRCLE_EMBERS 25        // a circle cleared
 
@@ -854,7 +854,7 @@ int  tower_milestone_floor(int i) { return MILESTONES[i].floor; }
 const char *tower_milestone_name(int i) { return MILESTONES[i].name; }
 const char *tower_milestone_reward(int i) { return MILESTONES[i].reward; }
 bool tower_milestone_reached(int i) { return tower_best_floor() >= MILESTONES[i].floor; }
-const char *tower_title_badge(void) { return tower_milestone_reached(MS_TITLE) ? MILESTONES[MS_TITLE].name : ""; }
+const char *tower_title_badge(void) { return tower_milestone_reached(MS_HEART) ? "Tower-Breaker" : ""; }     // (floor 75's, with the Codex page)
 
 // ---- Run ----
 
@@ -2907,7 +2907,8 @@ void tower_details_shrine(int kind, int i)
 static void milestone_notice(int i)
 {
     static const char *const WHERE[MS_COUNT] = { "It waited high within the Tower.", "Set it aside at Tower > Offerings.", "From the next climb on.",
-                                                 "Worn from Tower > Shrine > Relics.", "Read it in the Codex.", "Yours for good." };
+                                                 "Worn from Tower > Shrine > Relics.", "Read it in the Codex. The title is on the Tower's menu.",
+                                                 "Turn it on or off in Settings > Skins, in every mode." };
     UiPanel *p = ui_details();
     UiDoc *d = ui_panel_doc(p);
     char t[40];
@@ -4678,7 +4679,7 @@ int tower_test_offerings(void)
     CHECK(fabsf(character.health - 150.0f) < 0.01f, "Hearth Ember with the Rest's own heal: 40%% + 40%% (50 -> %.0f)", (double)character.health);
     tower_end_run();
     // the milestones: each from the best floor, its notice the floor it's first reached, its reward
-    static const int MS_AT[MS_COUNT] = { 10, 20, 30, 50, 75, 100 };
+    static const int MS_AT[MS_COUNT] = { 10, 20, 30, 50, 75, 100 };     // (100: Sunforged, the save's own floor too)
     for (int i = 0; i < MS_COUNT; i++) {
         SAVE(0, MS_AT[i] - 1, 0);
         bool before = tower_milestone_reached(i);
@@ -4699,8 +4700,10 @@ int tower_test_offerings(void)
     CHECK(!sig0 && !buy && c0 == -2 && sig1 && wear && tower_relic_equipped() == RELIC_SIGIL && tower_embers() == 5000, "the Climber's Sigil: not sold (%d), owned at floor 50, worn for nothing", c0);
     { tower_begin_run(23); float hp = tower_mod_max_health(); tower_end_run(); CHECK(fabsf(hp - hp0 - 15.0f) < 1e-3f, "the Sigil worn: +15 max health (%.0f)", (double)hp); }
     SAVE(0, 74, 0); bool h74 = tower_codex_open_ok(CX_HEART); SAVE(0, 75, 0);
-    CHECK(!h74 && tower_codex_open_ok(CX_HEART) && !tower_title_badge()[0], "the Codex's last page at floor 75");
-    SAVE(0, 100, 0); CHECK(tower_title_badge()[0], "the title at floor 100");
+    CHECK(!h74 && tower_codex_open_ok(CX_HEART) && tower_title_badge()[0], "the Codex's last page and the title at floor 75");
+    SAVE(0, 74, 0); CHECK(!tower_title_badge()[0], "no title at floor 74");
+    SAVE(0, 99, 0); bool sun99 = save_controller_sunforged_unlocked(); SAVE(0, 100, 0);
+    CHECK(!sun99 && save_controller_sunforged_unlocked() && MILESTONES[MS_SUN].floor == 100, "Sunforged: the save's own rule at floor 100 (not 99)");
     // Teal Cloak: the skin's own rule (save_controller) says the same floor
     { const SaveData *sd = save_controller_get_slot_data(save_controller_get_active_slot());
       SAVE(0, 9, 0); bool t9 = save_progress_skin_unlocked(sd, SKIN_TEAL_CLOAK); SAVE(0, 10, 0);

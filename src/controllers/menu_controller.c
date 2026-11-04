@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include "../character/character.h"
 #include "../character/character_skin.h"
+#include "../fx/skill_fx.h"
 #include "../game/tower/tower.h"
 #include "../utilities/ui_pages.h"
 
@@ -249,7 +250,7 @@ static int get_menu_option_count(MenuState menu)
         case MENU_UNLOCKS:   return tower_pack_count() + 1;     // the packs, Back
         case MENU_OFFERINGS: return tower_offer_count() + 1;    // the Offerings, Back
         case MENU_CODEX:     return 1;      // (its corners and rows: codexPager, codexRow)
-        case MENU_SKINS:     return SKIN_COUNT + 1;
+        case MENU_SKINS:     return SKIN_COUNT + 2;   // the skins, Sunforged, Back
         case MENU_CONTROLS:  return 3;    // Layout, Camera speed, Back
         case MENU_RUN:       return 1;      // (its corners and rows: runPager, runRow)
         case MENU_CREDITS:   return 1;
@@ -943,9 +944,11 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             else if (r == UI_PAGER_TURNED) codexRow = -1;     // (on the corners, as Stats: A again turns on)
         }
     } else if (currentMenu == MENU_SKINS) {
-        if (bJustPressed || (aJustPressed && selectedOption == SKIN_COUNT)) {
+        if (bJustPressed || (aJustPressed && selectedOption == SKIN_COUNT + 1)) {
             currentMenu = MENU_SETTINGS;
             selectedOption = MENU_SETTINGS_SKIN;
+        } else if (aJustPressed && selectedOption == SKIN_COUNT) {     // Sunforged: on/off once floor 100 is reached
+            if (save_controller_sunforged_unlocked()) { skill_fx_set_palette(!skill_fx_palette()); (void)save_controller_save_settings(); }
         } else if (aJustPressed && save_controller_skin_unlocked(selectedOption) && selectedOption != character_skin_get()) {
             character_skin_set(selectedOption);
             (void)save_controller_save_settings();
@@ -1246,6 +1249,10 @@ void menu_controller_draw(void)
                     snprintf(cost, sizeof cost, "%d", tower_relic_cost(k)); right = cost;
                     grey = tower_embers() < tower_relic_cost(k);       // can't afford it yet
                 }
+            } else if (i == SKIN_COUNT) {      // Sunforged, the floor-100 reward: the skills' colours
+                name = "Sunforged skills";
+                if (!save_controller_sunforged_unlocked()) { right = "locked"; grey = true; }
+                else right = skill_fx_palette() ? "on" : "off";
             } else {
                 name = character_skin_name(i);
                 if (!save_controller_skin_unlocked(i)) { right = "locked"; grey = true; }
@@ -1256,6 +1263,7 @@ void menu_controller_draw(void)
         const char *desc = selectedOption == rows - 1 ? ""
                          : packs ? tower_pack_brief(selectedOption)
                          : relics ? (selectedOption == 0 ? "Climb without a relic" : tower_relic_desc(selectedOption - 1))
+                         : selectedOption == SKIN_COUNT ? (save_controller_sunforged_unlocked() ? "Your skills in gold and white" : "It burns at the Tower's summit")
                          : save_controller_skin_unlocked(selectedOption) ? "" : skin_lock_hint(selectedOption);
         menu_help(r, FONT_STYLE_GREY, desc);
         if ((relics || packs) && selectedOption < rows - 1) menu_details_hint(r);

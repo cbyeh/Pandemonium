@@ -12,6 +12,7 @@
 #include "video_controller.h"
 #include "../character/character.h"
 #include "../character/character_skin.h"
+#include "../fx/skill_fx.h"
 
 /*
  * EEPROMFS notes:
@@ -416,6 +417,7 @@ bool save_controller_load_settings(void) {
     character_set_skills_enabled(saved_skills_enabled(d));
     // a skin this slot hasn't unlocked (an older save, before the unlocks) falls back to the Knight
     character_skin_set(save_progress_skin_unlocked(d, saved_skin(d)) ? saved_skin(d) : SKIN_KNIGHT);
+    skill_fx_set_palette(save_progress_tower_best_floor(d) >= SAVE_SUNFORGED_FLOOR && (d->_pad[25] & 2));     // Sunforged (off by default)
 #ifdef WIP_TEST_EMBERS   // testing aid for the WIP builds (the Makefile): every slot starts with at least this many Embers
     { TowerSave t; save_controller_get_tower(&t); if (t.embers < WIP_TEST_EMBERS) { t.embers = WIP_TEST_EMBERS; save_controller_set_tower(&t); }
 #ifdef HLE_AUTOPLAY
@@ -444,6 +446,7 @@ bool save_controller_save_settings(void) {
     save_set_hd_aspect(d, hdAspect);
     save_set_skills_enabled(d, character_skills_enabled());
     d->_pad[5] = (uint8_t)character_skin_get();
+    d->_pad[25] = (uint8_t)((d->_pad[25] & ~2) | (skill_fx_palette() ? 2 : 0));     // Sunforged on (bit 0 is the unlocks')
     d->_pad[20] = (uint8_t)joypad_get_layout();
     d->_pad[21] = (uint8_t)camera_get_speed();
     // the slot just changed is the one reopened on boot (Save 1 on a fresh EEPROM)
@@ -474,7 +477,7 @@ bool save_controller_increment_run_count(void) {
 // [16..18] relics found before 1.0, [19] flags, [22] relics owned, [23] relic equipped, [24] and [25] bit 0 the unlocks,
 // [26] the Offerings set aside for the next climb (two 4-bit ids + 1, 0 none: bought, Embers already paid)
 // ([24..27] were never written before 1.1, and 1.0 never touches them: old saves read zeros, nothing bought or set aside;
-// [25] bits 1-7 and [27] stay free. The floor milestones come from the best floor: no bits)
+// [25] bit 1 Sunforged on (Skins); bits 2-7 and [27] stay free. The floor milestones come from the best floor: no bits)
 void save_controller_get_tower(TowerSave *out)
 {
     memset(out, 0, sizeof(*out));
@@ -541,6 +544,8 @@ int save_progress_skins_unlocked(const SaveData *d)
     return save_progress_skin_unlocked(d, SKIN_CRIMSON_CLOAK) + save_progress_skin_unlocked(d, SKIN_TEAL_CLOAK)
          + save_progress_skin_unlocked(d, SKIN_NIGHTFARER);
 }
+
+bool save_controller_sunforged_unlocked(void) { return s_initialized && save_progress_tower_best_floor(&s_blob.slots[s_active_slot]) >= SAVE_SUNFORGED_FLOOR; }
 
 bool save_controller_skin_unlocked(int skin)
 {

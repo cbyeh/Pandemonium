@@ -98,10 +98,10 @@ The balance case, on the agreed metric: the player's 352 resources (150 health, 
 | Floor 20 | Kindling joins the Offerings | an option, still paid for |
 | Floor 30 | every climb starts with one more potion | about the Spare Flask's 68 HP, free: 19% of a fresh climb's resources, about 5% of a floor-30 climb's |
 | Floor 50 | the Climber's Sigil, a relic (-6% damage taken, +15 max health), worn from Shrine > Relics, not sold | a relic like the others (two effects of their size); one relic is worn |
-| Floor 75 | a Codex page (lore) | none |
-| Floor 100 | the title Tower-Breaker, on the Tower menu | none |
+| Floor 75 | a Codex page (lore) and the title Tower-Breaker, on the Tower menu | none |
+| Floor 100 | Sunforged: the player's skills in gold and white, on or off in Settings > Skins (Story and Bonus too) | looks only |
 
-**Save bits:** `_pad[26]` holds the Offerings set aside (low nibble the first, high the second, each id + 1, 0 none); `_pad[25]` bits 1-7 and `_pad[27]` stay free. The milestones (and the Sigil, which has no `relicsOwned` bit: 1.0 has five relics, so a Sigil worn there reads as none) come from the best floor. 1.0 never touches `_pad[24..27]`.
+**Save bits:** `_pad[26]` holds the Offerings set aside (low nibble the first, high the second, each id + 1, 0 none); `_pad[25]` bit 1 is Sunforged on (off by default), bits 2-7 and `_pad[27]` stay free. The milestones (and the Sigil, which has no `relicsOwned` bit: 1.0 has five relics, so a Sigil worn there reads as none) come from the best floor. 1.0 never touches `_pad[24..27]`.
 
 - **Heap** (Ares, 4 MB, the UI pass's path and seeds 11/22/33, fresh ROM folders): 461/462/461 KB at the low point; dc6e6a9 on the same path the same night 462/465/481 (the UI pass measured 481/481/466 earlier: Ares runs vary by 15-20 KB). This pass adds about 15 KB of code and tables (the Codex's generators, the Offerings, the milestones), paid for by building the code that never runs in a fight for size (`-Os`: the story's cutscenes and ending, the opening credits, the title, the save; 6.5 KB), so the low point stays over 450 (447-455 without it). Tested: `HLE_TEST_TOWER` all self-checks ok (`[offer]` included), `HLE_TEST_TOWER_NAV` in every mode and layout (9 runs, 867 PASS, 0 FAIL; 3 again on the final code, 286 PASS), TOWER_RUN, TOWER_UI, TOWER_STATS, TOWER_SHOP, CYCLE (40 cycles, no fall; what stays held is the HLE replay cache), TWO_RUNS with the cutscenes and ENDING (the size-built code), Delta's core (a Tower run and the Codex walk), and the save both ways with v1.0 (a 1.0 save loads, nothing set aside; this build's save, with two Offerings set aside, the Sigil worn and best floor 50, survives a v1.0 climb byte for byte in `_pad[24..27]`).
 

@@ -570,6 +570,9 @@ static bool s_drawPlayer;       // the player's effect being drawn: its skill pa
 #define HLE_SKILL_PALETTE 0
 #endif
 static int s_skillPalette = HLE_SKILL_PALETTE;
+// Sunforged (the floor-100 reward, toggled in Skins): the save sets it; the test aid keeps it on
+void skill_fx_set_palette(bool sunforged) { s_skillPalette = sunforged || HLE_SKILL_PALETTE; }
+bool skill_fx_palette(void) { return s_skillPalette != 0; }
 // Sunforged: the waves' ramp, dark gold to saturated gold (at SUN_MID of 256) to white: through gold, not
 // a pale peach mix, so it stands out from the tan floor, and white soon enough to stand out from the Sun's orange
 static const uint8_t SUN_RAMP[3][3] = { { 235, 175, 45 }, { 255, 196, 45 }, { 255, 254, 250 } };

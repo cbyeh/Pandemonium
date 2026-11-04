@@ -79,6 +79,9 @@ bool save_progress_skin_unlocked(const SaveData *d, int skin);
 // The active slot
 void save_controller_mark_bonus_beaten(int bonusIndex);   // 0..2
 bool save_controller_skin_unlocked(int skin);
+// Sunforged, the floor-100 milestone: gold skills, on or off in Skins (_pad[25] bit 1; 1.0 never touches it)
+#define SAVE_SUNFORGED_FLOOR 100
+bool save_controller_sunforged_unlocked(void);
 
 // Run + boss stats
 bool save_controller_increment_run_count(void);

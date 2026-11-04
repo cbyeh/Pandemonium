@@ -115,7 +115,7 @@ int  tower_milestone_floor(int i);
 const char *tower_milestone_name(int i);
 const char *tower_milestone_reward(int i);
 bool tower_milestone_reached(int i);
-const char *tower_title_badge(void);    // the floor-100 title, "" before it
+const char *tower_title_badge(void);    // the floor-75 title (with its Codex page), "" before it
 int  tower_relic_floor(int id);         // a relic not sold: the floor that gives it (0: sold)
 // ---- The Codex: a page a topic, opened in the Details panel (owner the menu) ----
 int  tower_codex_count(void);
