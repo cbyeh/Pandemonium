@@ -857,8 +857,12 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
 #define HB_DMG_K 2.0f
 #endif
     amount *= HB_DMG_K;
+    { extern float hb_dealt; hb_dealt += amount; }
 #endif
     boss->health -= amount;
+#if defined(HLE_HUMAN_BOT) && (defined(HLE_DUMMY_BUILD) || defined(HB_HOLD))
+    if (boss->health < 1.0f) boss->health = 1.0f;     // test aid: the bench's boss never falls (its health is held in a band)
+#endif
     if (boss->health < 0.0f) boss->health = 0.0f;
     if (boss->staggerT <= 0.0f) {      // the stagger meter
         // from the blow itself, not the damage: the same hits fill the same share on every floor,

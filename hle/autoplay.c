@@ -1733,6 +1733,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                     return;
                 }
                 deadAt = 0;
+#ifndef HLE_HB_MAXCIRCLE
+#define HLE_HB_MAXCIRCLE 13     // a run this deep is ended (the time a marathon has): "[hbrun] capped"
+#endif
+                { extern int tower_circle(void); static int capped;
+                  if (tower_circle() > HLE_HB_MAXCIRCLE && !capped) { capped = 1; debugf("[hbrun] capped at circle %d floor %d\n", tower_circle(), tower_floor()); character.health = 0.0f; character_set_state(CHAR_STATE_DEAD); return; }
+                  if (tower_circle() <= HLE_HB_MAXCIRCLE) capped = 0; }
                 if (boss->mode == BOSS_MODE_COMBAT && boss->health > 0.0f && boss->state != BOSS_STATE_DEAD) {
                     if (!hb_fight_on()) { hb_fight_begin(boss); t0 = frame; t = 0; }
                     hb_fight(in, pressed, boss);
@@ -2379,7 +2385,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
                 extern void hb_fight_begin(Boss *), hb_fight_end(const char *, Boss *), hb_fight(joypad_inputs_t *, joypad_buttons_t *, Boss *), hb_init(void), hb_dump_table(void);
                 extern bool hb_fight_on(void); extern int hb_skill_pref;
-                static int w = -1; static float w0, prevHp, dealt, wasStag; static int staggers;
+                static int w = -1; static float w0, prevHp, dealt, wasStag, dealt0; static int staggers; extern float hb_dealt;
                 hb_init();
                 if (!boss) return;
                 if (w < 0 || tm - w0 >= HLE_SWEEP_S) {
@@ -2389,9 +2395,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #else
                                          -1,
 #endif
-                                         (double)(tm - w0), (double)dealt, (double)(dealt * 60.0f / (tm - w0)), staggers, (double)boss->maxHealth);
+                                         (double)(tm - w0), (double)(hb_dealt - dealt0), (double)((hb_dealt - dealt0) * 60.0f / (tm - w0)), staggers, (double)boss->maxHealth);
                                   hb_fight_end("window", boss); hb_dump_table(); }
-                    w++; w0 = tm; dealt = 0.0f; staggers = 0;
+                    w++; w0 = tm; dealt = 0.0f; staggers = 0; dealt0 = hb_dealt;
 #ifdef HLE_DUMMY_BUILD
                     { extern int tower_test_build(int); static const int L[] = { HLE_DUMMY_BUILD };
                       int sk = tower_test_build(L[w % (int)(sizeof L / sizeof L[0])]); hb_skill_pref = sk - 1; character_cut_skill_cooldowns(1e6f); }
