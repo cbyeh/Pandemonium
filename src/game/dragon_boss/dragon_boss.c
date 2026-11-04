@@ -3824,6 +3824,21 @@ void dragon_boss_draw(Boss* b)
     rdpq_mode_pop();
 }
 
+#ifdef HLE_HB_PROPOSALS
+// test aid: the charge's shove as it tests the body (each drawn part's radius; the shove adds SHOVE_R - PLAYER_R)
+int hle_dragon_charge_vols(float a[][3], float b[][3], float r[], float *extra)
+{
+    if (!s.ready || s.state != DG_CHARGE || s.step != 1) return 0;
+    int n = 0;
+    const float *t[4] = { s.chest, s.spine[0], s.spine[1], s.hips };
+    for (int i = 0; i < 3; i++) { memcpy(a[n], t[i], 12); memcpy(b[n], t[i + 1], 12); r[n++] = 17.0f; }
+    for (int i = 0; i < NNECK; i++) { memcpy(a[n], s.neck[i], 12); memcpy(b[n], s.neck[i + 1], 12); r[n++] = (11.0f - i * 1.2f) * 0.9f; }
+    memcpy(a[n], s.head, 12); mad3(b[n], s.head, s.hz, 26.0f); r[n++] = 6.0f;
+    for (int k = 0; k < 4; k++) { memcpy(a[n], s.shoulder[k], 12); memcpy(b[n], s.foot[k], 12); r[n++] = 6.0f; }
+    *extra = SHOVE_R - PLAYER_R;
+    return n;
+}
+#endif
 #if defined(HLE_SHOW_HURTBOX) || defined(HLE_LOG_HITGAP)
 int hle_dg_state(void) { return s.state; }     // test aid: its move, for [hbb]
 #endif

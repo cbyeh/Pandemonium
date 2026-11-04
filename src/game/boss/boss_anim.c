@@ -205,7 +205,13 @@ void boss_anim_breathe(Boss* boss, int anim, float t0, float t1, float k)
     s_breathK = k;
 }
 
+#ifdef HLE_HB_PROPOSALS
+int hle_hb_hold;     // test aid: the pose held still (debug_draw.c: the moment of contact, for shots)
+#endif
 void boss_anim_update(Boss* boss) {
+#ifdef HLE_HB_PROPOSALS
+    if (hle_hb_hold) return;
+#endif
     if (!boss || !boss->skeleton || !boss->animations || !boss->skeletonBlend) return;
     // Safety check: ensure deltaTime is valid (not zero, negative, or denormal)
     // Use a minimum threshold to prevent denormal floating point values

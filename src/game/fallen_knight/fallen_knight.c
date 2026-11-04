@@ -2430,6 +2430,13 @@ void fallen_knight_draw(Boss* b)
     floor_fire_draw();
 }
 
+#ifdef HLE_HB_PROPOSALS
+bool hle_fk_tri(float t[3][2], float *y, int *step)     // test aid: the Triangle Slam's marked triangle (its area: inside, or 6 past an edge)
+{
+    if (s.state != FK_TRISLAM || s.step < 1 || (s.step == 2 && s.t > 0.3f)) return false;
+    memcpy(t, s.tri, sizeof(float) * 6); *y = s.groundY; *step = s.step; return true;
+}
+#endif
 #if defined(HLE_SHOW_HURTBOX) || defined(HLE_LOG_HITGAP)
 int hle_fk_state(void) { return s.state; }     // test aid: its move, for [hbb]
 #endif

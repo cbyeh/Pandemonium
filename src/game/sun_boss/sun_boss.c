@@ -1651,6 +1651,15 @@ void sun_boss_draw(Boss* b)
 #undef SPROF
 }
 
+#ifdef HLE_HB_PROPOSALS
+bool hle_sun_dive(float c[3], bool *landed)     // test aid: the dive's landing (34 round over the floor, 6 high) as it drops and just after
+{
+    Boss *b = boss_get_instance(); if (!b) return false;
+    bool live = (s.state == SB_DIVE && s.step == 2 && b->pos[1] < s.groundY + REST_H + 30.0f) || (s.state == SB_REST && s.t < 0.25f);
+    c[0] = b->pos[0]; c[1] = s.groundY; c[2] = b->pos[2]; *landed = s.state == SB_REST;
+    return live;
+}
+#endif
 #if defined(HLE_SHOW_HURTBOX) || defined(HLE_LOG_HITGAP)
 int hle_sun_state(void) { return s.state; }     // test aid: its move, for [hbb]
 #endif
