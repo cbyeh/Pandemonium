@@ -406,6 +406,12 @@ void hle_hurtbox_draw(T3DViewport *vp)
         T3DVec3 lp[8][2]; float lr[8];
         int nl = hle_guardian_limbs(lp, lr);
         for (int i = 0; i < nl; i++) hb_capsule(vp, &lp[i][0], &lp[i][1], lr[i], RGBA32(255, 150, 30, 255), false);
+        // the Guardian's and Unbound's blade, while it can hit (cyan: the drawn blade's outline and middle)
+        if (boss->handAttackColliderActive) {
+            extern float bossBladeSeg[6][2][3]; extern float bossWeaponRadius;
+            for (int i = 0; i < 6; i++) { T3DVec3 p0 = {{ bossBladeSeg[i][0][0], bossBladeSeg[i][0][1], bossBladeSeg[i][0][2] }}, p1 = {{ bossBladeSeg[i][1][0], bossBladeSeg[i][1][1], bossBladeSeg[i][1][2] }};
+              hb_capsule(vp, &p0, &p1, bossWeaponRadius, RGBA32(40, 230, 255, 255), false); }
+        }
         // Shadowborne's tail, its second hit volume (the sword and the skills)
         if (boss->phaseIndex == DRAGON_BOSS_PHASE) {
             float ta[DRAGON_TAIL_VOLUMES][3], tb[DRAGON_TAIL_VOLUMES][3], tr[DRAGON_TAIL_VOLUMES];
