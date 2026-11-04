@@ -7,6 +7,7 @@
 
 #include "character.h"
 #include "game/boss/boss.h"
+#include "game/dragon_boss/dragon_boss.h"
 
 #include "simple_collision_utility.h"
 #include "debug_draw.h"
@@ -141,6 +142,21 @@ static bool guardian_body_hit(const Boss *boss, const float a[3], const float b[
             return true;
         }
     }
+    return false;
+}
+
+// Shadowborne's tail (the user's call): the sword meets it too, where it is drawn. bossTailHit and
+// its segment: what this frame's sword contact met, for the blood (character.c)
+bool bossTailHit; float bossTailA[3], bossTailB[3], bossTailR;
+static bool dragon_tail_hit(const float a[3], const float b[3], float r)
+{
+    float ta[DRAGON_TAIL_VOLUMES][3], tb[DRAGON_TAIL_VOLUMES][3], tr[DRAGON_TAIL_VOLUMES];
+    int n = dragon_boss_tail_volumes(ta, tb, tr);
+    for (int i = 0; i < n; i++)
+        if (scu_capsule_vs_capsule_f(a, b, r, ta[i], tb[i], tr[i])) {
+            memcpy(bossTailA, ta[i], 12); memcpy(bossTailB, tb[i], 12); bossTailR = tr[i];
+            return true;
+        }
     return false;
 }
 
@@ -501,6 +517,9 @@ void collision_update(void)
                   wasHit = att; }
                 hle_limb_only = false;
 #endif
+                bossTailHit = false;
+                if (!charWeaponCollision && character_get_state() == CHAR_STATE_ATTACKING && boss->phaseIndex == DRAGON_BOSS_PHASE && boss->mode == BOSS_MODE_COMBAT && boss->health > 0.0f)
+                    charWeaponCollision = bossTailHit = dragon_tail_hit(charWeaponCapA.v, charWeaponCapB.v, charWeaponRadius);
                 if (!charWeaponCollision && character_get_state() == CHAR_STATE_ATTACKING) {     // (only read mid-swing)
                     charWeaponCollision = guardian_body_hit(boss, charWeaponCapA.v, charWeaponCapB.v, charWeaponRadius);
 #ifdef HLE_LOG_HITVOL

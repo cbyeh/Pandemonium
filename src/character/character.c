@@ -3029,7 +3029,7 @@ void character_update(void)
                     game_time_hitstop(finisher ? 0.08f : 0.045f);     // hit-stop: the blow lands with weight
                     if (finisher) screen_shake_set_shake_mag(3.0f);
 #ifdef HLE_AUTOPLAY
-                    debugf("[hit] combo %d%s%s\n", attackComboIndex, finisher ? " (finisher)" : "", boss->staggerT > 0.0f ? " on a staggered boss" : "");
+                    { extern bool bossTailHit; debugf("[hit] combo %d%s%s%s\n", attackComboIndex, finisher ? " (finisher)" : "", boss->staggerT > 0.0f ? " on a staggered boss" : "", bossTailHit ? " on the tail" : ""); }
 #ifdef HLE_LOG_HITVOL
                     { extern bool hle_limb_only; if (hle_limb_only) debugf("[hitvol] that hit met only a limb outside the capsule\n"); }
 #endif
@@ -3054,6 +3054,9 @@ void character_update(void)
                             boss->pos[1] + boss->capsuleCollider.localCapB.v[1],
                             boss->pos[2] + boss->capsuleCollider.localCapB.v[2],
                         };
+                        extern bool bossTailHit; extern float bossTailA[3], bossTailB[3], bossTailR;
+                        float bossR = boss->capsuleCollider.radius;
+                        if (bossTailHit) { memcpy(bcA, bossTailA, sizeof bcA); memcpy(bcB, bossTailB, sizeof bcB); bossR = bossTailR; }     // (Shadowborne's tail)
 
                         // Inline closest-point-on-segment(A,B; P) -> out
                         #define CHAR_CLOSEST_PT(A, B, P, OUT) do { \
@@ -3084,7 +3087,7 @@ void character_update(void)
                         float d  = sqrtf(dx*dx + dy*dy + dz*dz);
                         float impact[3];
                         if (d > 1e-4f) {
-                            float k = boss->capsuleCollider.radius / d;
+                            float k = bossR / d;
                             impact[0] = pBoss[0] + dx * k;
                             impact[1] = pBoss[1] + dy * k;
                             impact[2] = pBoss[2] + dz * k;

@@ -1,3 +1,4 @@
+#include "game/dragon_boss/dragon_boss.h"
 #include "debug_draw.h"
 #include <libdragon.h>
 #include <t3d/t3d.h>
@@ -405,6 +406,12 @@ void hle_hurtbox_draw(T3DViewport *vp)
         T3DVec3 lp[8][2]; float lr[8];
         int nl = hle_guardian_limbs(lp, lr);
         for (int i = 0; i < nl; i++) hb_capsule(vp, &lp[i][0], &lp[i][1], lr[i], RGBA32(255, 150, 30, 255), false);
+        // Shadowborne's tail, its second hit volume (the sword and the skills)
+        if (boss->phaseIndex == DRAGON_BOSS_PHASE) {
+            float ta[DRAGON_TAIL_VOLUMES][3], tb[DRAGON_TAIL_VOLUMES][3], tr[DRAGON_TAIL_VOLUMES];
+            int nt = dragon_boss_tail_volumes(ta, tb, tr);
+            for (int i = 0; i < nt; i++) { T3DVec3 p0 = {{ ta[i][0], ta[i][1], ta[i][2] }}, p1 = {{ tb[i][0], tb[i][1], tb[i][2] }}; hb_capsule(vp, &p0, &p1, tr[i], RGBA32(255, 150, 30, 255), false); }
+        }
     }
     const CapsuleCollider *c = &character.capsuleCollider;
     T3DVec3 a = {{ character.pos[0] + c->localCapA.v[0], character.pos[1] + c->localCapA.v[1], character.pos[2] + c->localCapA.v[2] }};

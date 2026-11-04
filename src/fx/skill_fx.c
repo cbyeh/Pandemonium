@@ -15,6 +15,7 @@
 #include "utilities/general_utility.h"
 #include "character/character.h"
 #include "utilities/simple_collision_utility.h"
+#include "game/dragon_boss/dragon_boss.h"
 #ifdef HLE_LOG_HITGAP     // test aid: each hostile effect's reach, and what was drawn when it landed
 extern void hle_hg_vol(const char *, const float *, const float *, float), hle_hg_vol_xz(const char *, const float *, float), hle_hg_begin(void);
 extern void hle_hg_seg(const char *, const float *, const float *, float), hle_hg_ring(const char *, const float *, float, float, float), hle_hg_hit(const char *);
@@ -287,6 +288,22 @@ static void closest_on_segment(const float a[3], const float b[3], const float p
     for (int i = 0; i < 3; i++) out[i] = a[i] + ab[i] * t;
 }
 
+// Shadowborne's tail, a second hit volume (the user's call): a ball meets it where it is drawn
+static bool sphere_hits_tail(const float p[3], float r, float contact[3])
+{
+    float a[DRAGON_TAIL_VOLUMES][3], c[DRAGON_TAIL_VOLUMES][3], tr[DRAGON_TAIL_VOLUMES], q[3];
+    int n = dragon_boss_tail_volumes(a, c, tr);
+    for (int i = 0; i < n; i++) {
+        closest_on_segment(a[i], c[i], p, q);
+        float d[3] = { p[0]-q[0], p[1]-q[1], p[2]-q[2] }, dist = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+        if (dist > r + tr[i]) continue;
+        float k = dist > 1e-4f ? tr[i] / dist : 0.0f;
+        for (int m = 0; m < 3; m++) contact[m] = q[m] + d[m] * k;
+        return true;
+    }
+    return false;
+}
+
 /** Sphere vs boss capsule; `contact` gets the point on the boss surface. */
 static bool sphere_hits_boss(Boss *b, const float p[3], float r, float contact[3])
 {
@@ -296,7 +313,13 @@ static bool sphere_hits_boss(Boss *b, const float p[3], float r, float contact[3
     float d[3] = { p[0]-q[0], p[1]-q[1], p[2]-q[2] };
     float dist = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
     float br = b->capsuleCollider.radius;
-    if (dist > r + br) return false;
+    if (dist > r + br) {
+        bool t = b->phaseIndex == DRAGON_BOSS_PHASE && sphere_hits_tail(p, r, contact);
+#ifdef HLE_AUTOPLAY
+        if (t) debugf("[tailhit] a skill's shot met the tail\n");
+#endif
+        return t;
+    }
     float k = dist > 1e-4f ? br / dist : 0.0f;
     for (int i = 0; i < 3; i++) contact[i] = q[i] + d[i] * k;
     return true;
@@ -351,6 +374,26 @@ bool skill_arc_reaches(const Boss *b, float arcY)
     return fminf(a[1], c[1]) - b->capsuleCollider.radius <= arcY + ARC_REACH;
 }
 
+// The arc's front meets Shadowborne's tail: a point along a link out to the wave's radius (with the
+// link's own), ahead of the player as the body is, within the wave's reach over the floor
+static bool arc_meets_tail(const SkillFx *f, float contact[3])
+{
+    float a[DRAGON_TAIL_VOLUMES][3], c[DRAGON_TAIL_VOLUMES][3], tr[DRAGON_TAIL_VOLUMES];
+    int n = dragon_boss_tail_volumes(a, c, tr);
+    float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw), R = arc_radius(f);
+    for (int i = 0; i < n; i++)
+        for (int k = 0; k <= 4; k++) {
+            float p[3]; for (int m = 0; m < 3; m++) p[m] = a[i][m] + (c[i][m] - a[i][m]) * k * 0.25f;
+            float dx = p[0] - f->pos[0], dz = p[2] - f->pos[2], d = sqrtf(dx * dx + dz * dz);
+            if (d - tr[i] > R || p[1] - tr[i] > f->pos[1] + ARC_REACH) continue;
+            if (f->half < T3D_PI * 0.75f && d > 1e-3f && (dx * fx + dz * fz) / d < -0.2f) continue;
+            float s = d > 1e-3f ? tr[i] / d : 0.0f;
+            contact[0] = p[0] - dx * s; contact[1] = f->pos[1]; contact[2] = p[2] - dz * s;
+            return true;
+        }
+    return false;
+}
+
 static void update_arc_hit(SkillFx *f, Boss *b)
 {
     // One hit, when the wave front reaches the target
@@ -385,10 +428,21 @@ static void update_arc_hit(SkillFx *f, Boss *b)
     if (!boss_capsule(b, a, c)) return;
     float dx = b->pos[0] - f->pos[0], dz = b->pos[2] - f->pos[2];
     float dist = sqrtf(dx*dx + dz*dz);
-    if (dist - b->capsuleCollider.radius > arc_radius(f)) return;
     float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
-    if (f->half < T3D_PI * 0.75f && dist > 1e-3f && (dx*fx + dz*fz) / dist < -0.2f) return;    // behind the player (Full Moon's goes all round)
-    if (!skill_arc_reaches(b, f->pos[1])) return;      // over the wave: it may come down into it while it rolls
+    if (dist - b->capsuleCollider.radius > arc_radius(f) ||
+        (f->half < T3D_PI * 0.75f && dist > 1e-3f && (dx*fx + dz*fz) / dist < -0.2f) ||    // behind the player (Full Moon's goes all round)
+        !skill_arc_reaches(b, f->pos[1])) {    // over the wave: it may come down into it while it rolls
+        float tc[3];
+        if (b->phaseIndex == DRAGON_BOSS_PHASE && arc_meets_tail(f, tc)) {      // (or Shadowborne's tail, as drawn)
+            f->hitsLeft = 0;
+#ifdef HLE_AUTOPLAY
+            debugf("[tailhit] an arc met the tail\n");
+#endif
+            damage_boss(b, f->damage, f->poise, tc, 2.5f);
+            screen_shake_set_shake_mag(14.0f);
+        }
+        return;
+    }
     f->hitsLeft = 0;
 #ifdef HLE_LOG_SKILLHIT     // test aid: the arc as drawn when it hit (its front at the boss's body)
     debugf("[skillhit] arc age %.2f: boss body's edge %.1f out at %.0f deg from its facing, the arc drawn out to %.1f (round %.0f deg each side)\n", (double)f->age,

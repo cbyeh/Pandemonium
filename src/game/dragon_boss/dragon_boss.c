@@ -340,6 +340,14 @@ static void tail_tip(float e[3])        // the end of the crystal blade (dragon_
     norm3(d);
     mad3(e, s.tl[NTAIL], d, 16.0f);
 }
+int dragon_boss_tail_volumes(float a[][3], float b[][3], float r[])
+{
+    if (!s.ready || s.state == DG_INTRO || s.state == DG_DEAD) return 0;
+    for (int i = 0; i < NTAIL; i++) { memcpy(a[i], s.tl[i], 12); memcpy(b[i], s.tl[i + 1], 12); r[i] = tail_r(i); }
+    memcpy(a[NTAIL], s.tl[NTAIL], 12); tail_tip(b[NTAIL]); r[NTAIL] = 3.4f;
+    return NTAIL + 1;
+}
+_Static_assert(NTAIL + 1 <= DRAGON_TAIL_VOLUMES, "the tail's volumes");
 static float tail_gap(void)
 {
     float g = 1e9f, e[3];

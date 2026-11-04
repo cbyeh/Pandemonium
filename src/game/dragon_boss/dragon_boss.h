@@ -21,5 +21,9 @@ bool dragon_boss_stagger(Boss* boss);   // the stagger meter broke: false if it 
 void dragon_boss_update(Boss* boss, float dt);
 void dragon_boss_draw(Boss* boss);
 void dragon_boss_free(void);
+// Its tail, a second hit volume for the player's sword and skills: the links as drawn (and the
+// crystal blade at its end), n segments a[i]-b[i], r[i] round; 0 when it isn't in the fight
+int dragon_boss_tail_volumes(float a[][3], float b[][3], float r[]);
+#define DRAGON_TAIL_VOLUMES 8
 
 #endif
