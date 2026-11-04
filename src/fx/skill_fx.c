@@ -564,12 +564,33 @@ static void build_tri(int a, int b, int c)
 }
 
 static bool s_drawHostile;      // crimson palette for the effect being drawn
+static bool s_drawPlayer;       // the player's effect being drawn: its skill palette
+
+#ifndef HLE_SKILL_PALETTE       // test aid (preview): 0 today's cyan/white, any other Sunforged
+#define HLE_SKILL_PALETTE 0
+#endif
+static int s_skillPalette = HLE_SKILL_PALETTE;
+// Sunforged: the waves' ramp, dark gold to saturated gold (at SUN_MID of 256) to white: through gold, not
+// a pale peach mix, so it stands out from the tan floor, and white soon enough to stand out from the Sun's orange
+static const uint8_t SUN_RAMP[3][3] = { { 235, 175, 45 }, { 255, 196, 45 }, { 255, 254, 250 } };
+#define SUN_MID 90
 
 static inline uint32_t rgba(int r, int g, int b, float a)
 {
     if (s_drawHostile) {        // cyan/white -> crimson/rose, gold -> violet
         int nr = b, ng = g / 4, nb = r / 2;
         r = nr; g = ng; b = nb;
+    } else if (s_drawPlayer && s_skillPalette) {
+        if (r < 255) {          // the cyan waves (the gold sparks stay): their red is how white they are (40 deep .. 245 white)
+            int t = (r - 40) * 5 / 4;
+            t = t < 0 ? 0 : t > 256 ? 256 : t;
+            const uint8_t *c0 = SUN_RAMP[t >= SUN_MID], *c1 = SUN_RAMP[1 + (t >= SUN_MID)];
+            int u = t < SUN_MID ? t * 256 / SUN_MID : (t - SUN_MID) * 256 / (256 - SUN_MID);
+            r = c0[0] + (((c1[0] - c0[0]) * u) >> 8);
+            g = c0[1] + (((c1[1] - c0[1]) * u) >> 8);
+            b = c0[2] + (((c1[2] - c0[2]) * u) >> 8);
+            a *= a < 0.4f ? 1.6f : 1.3f;    // denser than the cyan: thinned amber reads brown over the dark and melts into tan and orange
+        }
     }
     int ai = (int)(a * 255.0f);
     ai = ai < 0 ? 0 : ai > 255 ? 255 : ai;
@@ -612,6 +633,7 @@ static void draw_arc(const SkillFx *f)
 #endif
     float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
     float rx = fz, rz = -fx;
+    bool sun = !f->hostile && s_skillPalette;
     // Layer 0: flat crescent on the slash plane; layer 1: a blade-wall standing on its
     // outer edge, so the slash also reads from a low camera
     for (int layer = 0; layer < 2; layer++) {
@@ -625,14 +647,14 @@ static void draw_arc(const SkillFx *f)
                 float w = 16.0f * taper;
                 outer[i][1] = f->pos[1];
                 inner[i][0] = f->pos[0] + dx * (R - w); inner[i][1] = f->pos[1]; inner[i][2] = f->pos[2] + dz * (R - w);
-                co[i] = rgba(110, 210, 255, a);
-                ci[i] = rgba(40, 120, 255, 0.0f);
+                co[i] = rgba(sun ? 40 : 110, 210, 255, a);     // Sunforged: the dark gold where it meets the floor (its own gold reads as the tan floor)
+                ci[i] = rgba(sun ? 245 : 40, 120, 255, 0.0f);   // fading in to white
             } else {
                 float h = 12.0f * taper;
                 outer[i][1] = f->pos[1] + h;
                 inner[i][0] = outer[i][0]; inner[i][1] = f->pos[1] - h * 0.5f; inner[i][2] = outer[i][2];
                 co[i] = rgba(240, 252, 255, 0.0f);
-                ci[i] = rgba(200, 240, 255, a);
+                ci[i] = rgba(sun ? 40 : 200, 240, 255, a);
             }
         }
         build_ribbon(outer, inner, co, ci, N);
@@ -998,6 +1020,7 @@ void skill_fx_draw(void)
     for (int i = 0; i < SKILL_FX_MAX; i++) {
         const SkillFx *f = &s_fx[i];
         s_drawHostile = f->hostile;
+        s_drawPlayer = !f->hostile;
         switch (f->type) {
             case FX_ARC:    draw_arc(f); break;
             case FX_WAVE:   if (f->shape == SKILL_WAVE_ORB) draw_orb(f); else if (f->shape != SKILL_WAVE_BLADE) draw_xwave(f); else draw_blade(f); break;
@@ -1007,6 +1030,7 @@ void skill_fx_draw(void)
             default: break;
         }
     }
+    s_drawPlayer = false;
 #ifndef HLE_FIRE_NODRAW     // test aid: the fire trail's cost (not drawn)
     draw_fire_trail();
 #endif
