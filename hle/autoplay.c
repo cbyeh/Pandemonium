@@ -883,6 +883,14 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         static int at[8];       // the row taken at each level of the path
         #define PR(f) do { pressed->f = 1; in->btn.f = 1; } while (0)
         #define CHECK(c, ...) do { if (c) pass++; else fail++; debugf("[menus] %s: ", (c) ? "PASS" : "FAIL"); debugf(__VA_ARGS__); debugf(" (frame %d)\n", frame); } while (0)
+        // the box fits its content (ui_fit): all it laid out at least 12 inside its box (clear of the rounded corners), and
+        // (paged screens aside, whose pages fill the safe rect) at most 24 at any side: one even padding, not stretched
+        #define BOXCHECK(nm, paged) do { UiRect b_ = ui_last_box(), c_ = ui_tracked(false), f_ = ui_tracked(true); \
+            if (f_.x1 > f_.x0 || f_.y1 > f_.y0) { if (f_.x0 < c_.x0) c_.x0 = f_.x0; if (f_.y0 < c_.y0) c_.y0 = f_.y0; if (f_.x1 > c_.x1) c_.x1 = f_.x1; if (f_.y1 > c_.y1) c_.y1 = f_.y1; } \
+            int gl_ = c_.x0 - b_.x0, gt_ = c_.y0 - b_.y0, gr_ = b_.x1 - c_.x1, gb_ = b_.y1 - c_.y1; \
+            bool in_ = gl_ >= 12 && gt_ >= 12 && gr_ >= 12 && gb_ >= 12, snug_ = (paged) || (gl_ <= 24 && gt_ <= 24 && gr_ <= 24 && gb_ <= 24); \
+            CHECK(in_ && snug_, "%s: its box %d,%d-%d,%d, its content %d,%d-%d,%d: gaps left %d top %d right %d bottom %d%s", nm, \
+                  b_.x0, b_.y0, b_.x1, b_.y1, c_.x0, c_.y0, c_.x1, c_.y1, gl_, gt_, gr_, gb_, (paged) ? " (paged)" : ""); } while (0)
         bool stick = HLE_NAV_MODE & 1, aOnly = HLE_NAV_MODE >= 2;
         int t = frame - t0, row, back, corner, m = menu_controller_test_nav(&row, &back, &corner);
         Boss *boss = boss_get_instance();
@@ -939,13 +947,14 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
             CHECK(m == v->menu, "%s: menu %d (want %d), row %d, Back row %d", v->name, m, v->menu, row, back);
             debugf("[menus] at %s%s%s (frame %d)\n", phase == 3 && game < 2 ? GAME[game] : "", phase == 3 && game < 2 ? " " : "", v->name, frame);
+            if (m != MENU_TITLE && m != 100) BOXCHECK(v->name, m == MENU_RUN || m == MENU_CODEX);     // (the overscan screen: its corner marks and hint over the scene)
             sub = v->r ? 1 : 3; return;
         }
         static bool seen;
         if (sub == 1) { PR(r); sub = 2; seen = false; return; }           // Details
         if (sub == 2) {
             UiPanel *dp = ui_details();
-            if (!seen) { seen = true; CHECK(dp->open && dp->owner == UI_OWNER_MENU, "%s: R opens Details", v->name); debugf("[menus] at %s Details (frame %d)\n", v->name, frame); if (!dp->open) sub = 3; return; }
+            if (!seen) { seen = true; CHECK(dp->open && dp->owner == UI_OWNER_MENU, "%s: R opens Details", v->name); debugf("[menus] at %s Details (frame %d)\n", v->name, frame); if (!dp->open) sub = 3; else BOXCHECK("Details", true); return; }
             if (!dp->open) { CHECK(m == v->menu, "%s: Details closed by %s, the menu as it was (%d)", v->name, aOnly ? "its Back corner" : "B", m); sub = 3; return; }
             if (!aOnly) { PR(b); return; }
             if (dp->pg.sel != 0) { MOVE('L'); return; }      // its Back corner

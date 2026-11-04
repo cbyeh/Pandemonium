@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The Tower's family emblems and marks, pixelled by hand in the map icons' style (assets/ui/map/map_icons.i4.png:
 a bright body, a soft edge, darker inner detail), written as one 16-wide I4 strip: 16x16 each, one above the next.
-Run: python3 tools/tower_icons.py  (writes assets/ui/tower/tower_icons.i4.png; no PIL needed)"""
+Run: python3 tools/tower_icons.py  (writes assets/ui/tower/tower_icons.i4.png; no PIL needed)
+It also writes the menus' box corner, assets/ui/box_corner.i4.png (ui_pages.c's 9-slice: see box_corner())."""
 import struct, zlib, os
 
 # '#' 15 (body), 'o' 12 (edge), '+' 10 (soft edge), ':' 8 (detail), '-' 6 (deep detail), '.' 0 (clear)
@@ -177,6 +178,26 @@ def write_png(path, px):
     png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 0, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b'')
     open(path, 'wb').write(png)
 
+# The menus' box, its top left corner (16x16, its coverage as the intensity: I4 reads it as alpha): a quarter circle of
+# radius R round (R, R), its rim fading out over F px as main's dialog art's soft edge; column 15 is the top edge's
+# profile and row 15 the left's (ui_pages stretches them along the sides), the rest of the box a flat fill
+def box_corner(R=9.0, F=3.0, N=16):
+    out = []
+    for y in range(N):
+        row = []
+        for x in range(N):
+            a = 0.0
+            for sy in range(4):          # 4x4 samples a pixel
+                for sx in range(4):
+                    px, py = x + (sx + 0.5) / 4, y + (sy + 0.5) / 4
+                    if px < R and py < R: d = R - ((px - R) ** 2 + (py - R) ** 2) ** 0.5    # (inside the circle: positive)
+                    else: d = min(px, py)
+                    a += min(max(d / F, 0.0), 1.0)
+            row.append(int(round(a / 16 * 15)) * 17)
+        out.append(row)
+    return out
+
 if __name__ == '__main__':
     here = os.path.dirname(os.path.abspath(__file__))
     write_png(os.path.join(here, '..', 'assets', 'ui', 'tower', 'tower_icons.i4.png'), rows())
+    write_png(os.path.join(here, '..', 'assets', 'ui', 'box_corner.i4.png'), box_corner())

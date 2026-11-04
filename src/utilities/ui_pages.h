@@ -34,6 +34,7 @@ typedef struct {
     int pages;
     bool pendingGap, pendingBreak, pendingKeep;
     uint8_t pendingIcon;
+    int16_t tallest;                    // the tallest page's height, by the last layout (a panel fits it)
 } UiDoc;
 
 void ui_doc_clear(UiDoc *d);
@@ -61,12 +62,13 @@ int  ui_pager_input(UiPager *p, bool left, bool right, bool a, bool b);
 void ui_pager_draw(const UiPager *p, int x, int y, int w, const char *title);     // the corners, the title and "2/3" between; y: the row's baseline
 
 // THE MENU STANDARD (one look and one way to move in every menu and screen, 2026-11-03):
-//   the box: ui_box over the title-safe rect (ui_safe_rect: the overscan setting's, never wider than the fixed
-//   7.5% one): main's translucent black in main's curved shape (its dialog art's outline: an arched top, rounded
-//   corners, drawn as flat fills a little past the rect, so it shows on Delta's renderer as on Mupen's and Ares'), no
-//   frame, the hall or the title seen through it, at one shade, UI_SHADE (darker than main's 90, so the text stays
-//   legible over the title's fire, the Sun and the hall's light). The Tower's full-screen screens (the draft, the
-//   map, the Shop) take the shape at the screen's size; their cards and buttons the same black. Its title: uppercase, white, centred on the row UI_TITLE_DY under the box's top (a pager's
+//   the box: ui_box, main's translucent black at one shade, UI_SHADE (darker than main's 90, so the text stays legible
+//   over the title's fire, the Sun and the hall's light), rounded corners with a soft rim (a 9-slice of one 16x16 I4
+//   corner: it renders on Delta's renderer as on Mupen's and Ares'), no frame, the scene seen through it. Sized to its
+//   content with one even padding (ui_fit: measured in a first pass, then drawn), centred inside the title-safe rect
+//   (ui_safe_rect: the overscan setting's, never wider than the fixed 7.5% one); paged screens (Stats/Build, the Codex)
+//   keep the safe rect, a Details panel its tallest page. Only the Tower's full-screen screens (the draft, the map, the
+//   Shop) take the screen's size; their cards and buttons the same black. Its title: uppercase, white, centred on the row UI_TITLE_DY under the box's top (a pager's
 //   corners on that row too). Rows: a list's cursor is ui_select_box; a row of buttons (Enter | Back, the Shop's,
 //   Skip) is ui_button. Colours: white, grey (can't be chosen, or a hint), gold (owned, money, set), red
 //   (why not), the families' own. The footer: the box's last row (UI_FOOT_DY over its bottom), "Details (R)"
@@ -78,8 +80,25 @@ void ui_pager_draw(const UiPager *p, int x, int y, int w, const char *title);   
 #define UI_TITLE_DY 16
 #define UI_SHADE    150     // the menus' black (its alpha), everywhere
 #define UI_FOOT_DY  6
+#define UI_PAD      12      // the box past its content's rect, every side (ui_box)
 typedef struct { int x0, y0, x1, y1; } UiRect;
 UiRect ui_safe_rect(void);
+// Boxes fit to their content (one even padding, UI_EVEN, between the box's edge and what's in it): a screen is drawn
+// twice a frame, first measured (ui_measure_begin/end: an empty scissor, nothing reaches the screen; its text, cursors and
+// buttons tracked as they're laid out, the footer's apart: ui_track_foot), then in the rect ui_fit gives (its content's
+// size, centred in the safe rect; a list whose rows reach the safe rect's sides keeps its width). Text goes through ui_textf
+// (rdpq_text_printf's twin: the files that draw menus #define rdpq_text_printf ui_textf), which tracks what it lays out
+#include <rdpq_text.h>
+rdpq_textmetrics_t ui_textf(const rdpq_textparms_t *parms, uint8_t font, float x, float y, const char *fmt, ...) __attribute__((format(printf, 5, 6)));
+#define UI_EVEN 20      // (the sides and the bottom; the top 19: a title row 16 under the rect. A footer sits 15 over the box's bottom)
+void ui_track(int x0, int y0, int x1, int y1);
+void ui_track_foot(bool foot);          // what's tracked next is the footer's (anchored to the box's bottom)
+void ui_measure_begin(void);
+void ui_measure_end(void);
+bool ui_measuring(void);
+UiRect ui_fit(UiRect drawn);            // the rect to draw in, from what was measured drawn in `drawn` (the safe rect)
+UiRect ui_tracked(bool foot);           // what the last pass laid out (the self-checks: inside its box less UI_EVEN)
+UiRect ui_last_box(void);               // the last box ui_box drew (its rect on screen)
 void ui_box(int x0, int y0, int x1, int y1);
 void ui_frame(int x0, int y0, int x1, int y1, int t);     // a frame t px wide in the colour set (a translucent fill inside shows no colour through)
 // the menus' selection box (black 140 under a 1 px white 70 frame)

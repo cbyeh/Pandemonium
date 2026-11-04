@@ -14,6 +14,7 @@
 #include "video_layout.h"
 #include "joypad_utility.h"
 #include "ui_pages.h"
+#define rdpq_text_printf ui_textf     // (tracked: the list screens' boxes fit their content, ui_pages.h)
 #include "game/boss/boss.h"
 
 // ---- Tuning ----
@@ -2591,9 +2592,10 @@ static void map_draw(void)
 // A list screen (a Rest's, Temper, Release, the Shop's lists, an Event): the menus' box over the title-safe area
 // (ui_pages.h: THE MENU STANDARD), its title on the top row, a line or two under it, the rows (a page at a time
 // when they don't fit: Up/Down past a page's end, Left/Right a page; "1/2" in the footer), "Details (R)" in the footer
+static UiRect s_listR;      // the list screen's rect this pass (tower_between_draw: the safe rect measured, then fit to its content)
 static UiRect list_box(const char *title, bool gold)
 {
-    UiRect r = ui_safe_rect();
+    UiRect r = s_listR;
     ui_box(r.x0, r.y0, r.x1, r.y1);
     char t[48]; int n = 0;
     for (; title[n] && n < (int)sizeof t - 1; n++) t[n] = (char)toupper((unsigned char)title[n]);
@@ -2603,18 +2605,21 @@ static UiRect list_box(const char *title, bool gold)
     return r;
 }
 #define LIST_PITCH 15
-static int list_first_y(void) { return ui_safe_rect().y0 + 62; }        // the first row's baseline (under the title and two lines)
+static int list_first_y(void) { return s_listR.y0 + 62; }        // the first row's baseline (under the title and two lines)
 static int list_per_page(void)      // the rows that fit over the footer's help line
 {
-    UiRect r = ui_safe_rect();
-    int n = (r.y1 - UI_FOOT_DY - 15 - 12 - list_first_y()) / LIST_PITCH + 1;
+    UiRect r = ui_safe_rect();      // (a page's rows by the safe rect: the fit box holds as many)
+    int n = (r.y1 - UI_FOOT_DY - 15 - 12 - (r.y0 + 62)) / LIST_PITCH + 1;
     return n < 3 ? 3 : n;
 }
 static void list_footer(UiRect r)
 {
+    ui_track_foot(true);
+    ui_track((r.x0 + r.x1) / 2, r.y1 - UI_FOOT_DY - 10, (r.x0 + r.x1) / 2, r.y1 - UI_FOOT_DY + 3);     // (its room, hint or not)
     int per = list_per_page();
     if (s.listN > per) { char p[16]; snprintf(p, sizeof p, "%d/%d", s.listSel / per + 1, (s.listN + per - 1) / per); text_style(r.x0 + 8, r.y1 - UI_FOOT_DY, 60, ALIGN_LEFT, FONT_STYLE_GREY, p); }
     if (details_for_cursor(false)) ui_hint(r.x1 - 8, r.y1 - UI_FOOT_DY, UI_DETAILS_HINT);
+    ui_track_foot(false);
 }
 
 static void rest_draw(void)
@@ -2653,7 +2658,9 @@ static void rest_draw(void)
         }
         text_style(x, y, w, ALIGN_CENTER, style, line);
     }
+    ui_track_foot(true);
     if (s.scr == SCR_REST && slots_used()) text_style(0, r.y1 - UI_FOOT_DY - 15, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, "Then, free: Release a boon if you wish");
+    ui_track_foot(false);
     list_footer(r);
 }
 
@@ -2778,7 +2785,9 @@ static void event_draw(void)
     }
     snprintf(line, sizeof line, "Gold %d   Health %.0f/%.0f   Potions %d", s.gold, (double)character.health, (double)character.maxHealth, character.healthPotions);
     int fy = r.y1 - UI_FOOT_DY - 15;
+    ui_track_foot(true);
     text_style(0, y + 4 > fy ? y + 4 : fy, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);     // (never over the rows)
+    ui_track_foot(false);
     list_footer(r);
 }
 
@@ -2789,8 +2798,13 @@ void tower_between_draw(void)
     if (s.draftOpen) tower_draft_draw();
     else if (s.scr == SCR_MAP || s.scr == SCR_CONFIRM) map_draw();
     else if (s.scr == SCR_SHOP) shop_draw();
-    else if (s.scr == SCR_EVENT) event_draw();
-    else if (s.scr) rest_draw();
+    else if (s.scr) {       // a list screen: its box fit to its content (ui_fit), measured first
+        void (*draw)(void) = s.scr == SCR_EVENT ? event_draw : rest_draw;
+        s_listR = ui_safe_rect();
+        ui_measure_begin(); draw(); ui_measure_end();
+        s_listR = ui_fit(s_listR);
+        draw();
+    }
     if (ui_details()->open && ui_details()->owner == UI_OWNER_TOWER) ui_panel_draw(ui_details());     // Details (R) or the map's confirm, over it
 }
 

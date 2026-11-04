@@ -3,10 +3,69 @@
 #include <stdarg.h>
 #include <string.h>
 #include <stdlib.h>
+#include <rdpq_paragraph.h>
 
 #include "ui_pages.h"
 #include "globals.h"
 #include "video_layout.h"
+
+// ---- Tracking what's laid out, measuring a screen, fitting its box (ui_pages.h) ----
+
+static bool s_measuring, s_foot;
+static UiRect s_trk[2]; static bool s_trkAny[2];
+static UiRect s_lastBox;
+void ui_track(int x0, int y0, int x1, int y1)
+{
+    UiRect *r = &s_trk[s_foot];
+    if (!s_trkAny[s_foot]) { *r = (UiRect){ x0, y0, x1, y1 }; s_trkAny[s_foot] = true; return; }
+    if (x0 < r->x0) r->x0 = x0;
+    if (y0 < r->y0) r->y0 = y0;
+    if (x1 > r->x1) r->x1 = x1;
+    if (y1 > r->y1) r->y1 = y1;
+}
+void ui_track_foot(bool foot) { s_foot = foot; }
+static void track_reset(void) { s_trkAny[0] = s_trkAny[1] = false; s_foot = false; }
+void ui_measure_begin(void) { s_measuring = true; track_reset(); rdpq_set_scissor(0, 0, 0, 0); }
+void ui_measure_end(void) { s_measuring = false; s_foot = false; rdpq_set_scissor(0, 0, display_get_width(), display_get_height()); }
+bool ui_measuring(void) { return s_measuring; }
+UiRect ui_tracked(bool foot) { return s_trkAny[foot] ? s_trk[foot] : (UiRect){ 0, 0, 0, 0 }; }
+UiRect ui_last_box(void) { return s_lastBox; }
+
+// From a measured pass drawn in `d` (the safe rect): the rect (the box less UI_PAD) to draw in. Width: content that
+// reaches d's sides (a list's rows, a pager's corners) keeps d's; else as wide as it is (centred), UI_EVEN from the box.
+// Height: the body's (its top as it was laid out: the title's row), the footer under it (as far over the bottom as it
+// was), centred in d
+UiRect ui_fit(UiRect d)
+{
+    const int in = UI_EVEN - UI_PAD;      // (content to the rect's edge: the box adds UI_PAD)
+    UiRect b = s_trk[0], r = d;
+    if (!s_trkAny[0]) return d;
+    // (a menu's centred text is laid out 8 inside its rect, as wide as the rect less 16: any less and it's cut)
+    int cx = (d.x0 + d.x1) / 2, half = cx - b.x0 > b.x1 - cx ? cx - b.x0 : b.x1 - cx;
+    if (half + in < (d.x1 - d.x0) / 2) { r.x0 = cx - half - in; r.x1 = cx + half + in; }
+    int h = b.y1 - d.y0 + in;             // the body's bottom, from d's top (where it was laid out from)
+    if (s_trkAny[1]) h = b.y1 - d.y0 + 6 + (d.y1 - s_trk[1].y0);
+    if (h > d.y1 - d.y0) h = d.y1 - d.y0;
+    r.y0 = d.y0 + (d.y1 - d.y0 - h) / 2;
+    r.y1 = r.y0 + h;
+    return r;
+}
+
+rdpq_textmetrics_t ui_textf(const rdpq_textparms_t *parms, uint8_t font, float x, float y, const char *fmt, ...)
+{
+    char buf[512];
+    va_list ap; va_start(ap, fmt); int n = vsnprintf(buf, sizeof buf, fmt, ap); va_end(ap);
+    if (n <= 0) return (rdpq_textmetrics_t){ 0 };
+    if (n > (int)sizeof buf - 1) n = sizeof buf - 1;
+    int len = n;
+    rdpq_paragraph_t *p = rdpq_paragraph_build(parms, font, buf, &len);     // (on the heap: a word cut with an ellipsis can't overrun it)
+    ui_track((int)(x + p->bbox.x0), (int)(y + p->bbox.y0), (int)(x + p->bbox.x1 + 0.99f), (int)(y + p->bbox.y1 + 0.99f));
+    if (!s_measuring) rdpq_paragraph_render(p, x, y);
+    rdpq_textmetrics_t m = { .advance_x = p->advance_x, .advance_y = p->advance_y, .nlines = p->nlines, .utf8_text_advance = len };
+    rdpq_paragraph_free(p);
+    return m;
+}
+#define rdpq_text_printf ui_textf
 
 // ---- Text measures ----
 
@@ -55,7 +114,7 @@ int ui_text_lines_cs(const char *s, int w, int cs) { return lines_cs(s, w, cs); 
 
 // ---- UiDoc ----
 
-void ui_doc_clear(UiDoc *d) { d->used = 0; d->n = 0; d->pages = 1; d->start[0] = 0; d->start[1] = 0; d->pendingGap = d->pendingBreak = d->pendingKeep = false; d->pendingIcon = 0; }
+void ui_doc_clear(UiDoc *d) { d->used = 0; d->n = 0; d->pages = 1; d->tallest = 0; d->start[0] = 0; d->start[1] = 0; d->pendingGap = d->pendingBreak = d->pendingKeep = false; d->pendingIcon = 0; }
 int (*ui_icon_hook)(uint8_t icon, int x, int y, bool draw);
 static int icon_w(uint8_t icon) { return icon && ui_icon_hook ? ui_icon_hook(icon, 0, 0, false) : 0; }
 
@@ -124,7 +183,7 @@ static void rejoin(UiDoc *d)     // the rows a layout split, whole again (a layo
 // pages that fit h: a row's lines (word-wrapped to its width) x the pitch, a gap half a line
 int ui_doc_layout(UiDoc *d, int w, int h)
 {
-    int pitch = ui_line_pitch(), used = 0;
+    int pitch = ui_line_pitch(), used = 0, tall = 0;
     rejoin(d);
     d->pages = 1; d->start[0] = 0;
     for (int i = 0; i < d->n; i++) {
@@ -140,8 +199,10 @@ int ui_doc_layout(UiDoc *d, int w, int h)
         }
         if (d->row[i].keep && i + 1 < d->n) rh -= lines_in(d->text + d->row[i + 1].l, row_w(d, i + 1, w)) * pitch;
         used += gap + rh;
+        if (used > tall) tall = used;
     }
     d->start[d->pages] = (uint8_t)d->n;
+    d->tallest = (int16_t)tall;
     return d->pages;
 }
 
@@ -207,6 +268,8 @@ static void flat(void)
 
 void ui_select_box(int x0, int y0, int x1, int y1)
 {
+    ui_track(x0, y0, x1, y1);
+    if (s_measuring) return;
     flat();
     rdpq_set_prim_color(RGBA32(0, 0, 0, 140));
     rdpq_fill_rectangle(x0, y0, x1, y1);
@@ -225,31 +288,47 @@ UiRect ui_safe_rect(void)
     return (UiRect){ mx, my, SCREEN_WIDTH - mx, SCREEN_HEIGHT - my };
 }
 
-// main's menu shape: the outline of its dialog art (assets/dialog_vertical.ia8.png, 70 x 135: an arched top, rounded
-// corners), each row's inset from the sides in its 70 px (the narrower side's: made symmetric), its rows 3-131 (the
-// rest empty). Drawn as flat fills, it shows the same on every renderer (the sprite never showed on Delta's)
-static const uint8_t SHAPE_INSET[] = { 30, 26, 21, 14, 7, 6, 6, 6, 5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 5, 8, 11, 14 };
-#define SHAPE_ROWS ((int)sizeof SHAPE_INSET)
-#define SHAPE_GROW 12       // the shape this much past the box each way (its curved rim clear of the text), clamped to the screen
-
+// The box: main's translucent black with rounded corners and a soft rim (main's dialog art's anti-aliased edge), a
+// 9-slice of one 16x16 I4 corner (assets/ui/box_corner.i4.png, tools/tower_icons.py: its coverage the alpha, its last
+// column the top edge's profile, its last row the left's), mirrored to the four corners, the edges its last row/column
+// stretched, the middle a flat fill. A small texture renders the same on Delta's, Mupen's and Ares' renderers (the
+// 70x135 dialog sprite never showed on Delta's). Drawn UI_PAD past the rect asked for (its content's), clamped to the screen
+static sprite_t *s_corner;
+#define CORNER 16
 void ui_box(int x0, int y0, int x1, int y1)
 {
-    flat();
-    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));       // main's translucent black, no frame (the scene through it)
-    x0 -= SHAPE_GROW; y0 -= SHAPE_GROW; x1 += SHAPE_GROW; y1 += SHAPE_GROW;
+    if (s_measuring) return;
+    track_reset();      // (a box starts its screen: what's tracked from here is what's in it)
+    x0 -= UI_PAD; y0 -= UI_PAD; x1 += UI_PAD; y1 += UI_PAD;
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
     if (x1 > SCREEN_WIDTH) x1 = SCREEN_WIDTH;
     if (y1 > SCREEN_HEIGHT) y1 = SCREEN_HEIGHT;
-    int w = x1 - x0, h = y1 - y0;
-    // a run of rows with the same inset (at this size) is one fill
-    for (int i = 0, ya = y0; i < SHAPE_ROWS; ) {
-        int in = SHAPE_INSET[i] * w / 70, j = i + 1;
-        while (j < SHAPE_ROWS && SHAPE_INSET[j] * w / 70 == in) j++;
-        int yb = y0 + j * h / SHAPE_ROWS;
-        if (yb > ya) rdpq_fill_rectangle(x0 + in, ya, x1 - in, yb);
-        ya = yb; i = j;
+    s_lastBox = (UiRect){ x0, y0, x1, y1 };
+    if (!s_corner) s_corner = sprite_load("rom:/ui/box_corner.i4.sprite");
+    if (x1 - x0 < 2 * CORNER || y1 - y0 < 2 * CORNER || !s_corner) {     // (too small for the corners: a plain fill)
+        flat();
+        rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));
+        rdpq_fill_rectangle(x0, y0, x1, y1);
+        return;
     }
+    rdpq_sync_pipe();
+    rdpq_set_mode_standard();
+    rdpq_mode_combiner(RDPQ_COMBINER1((0, 0, 0, PRIM), (TEX0, 0, PRIM, 0)));     // black, its alpha the texel's x the shade
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));
+    const int ex = x1 - x0 - 2 * CORNER, ey = y1 - y0 - 2 * CORNER;     // the edges' lengths
+    for (int k = 0; k < 4; k++) {
+        bool fx = k & 1, fy = k & 2;
+        int cx = fx ? x1 - CORNER : x0, cy = fy ? y1 - CORNER : y0;
+        rdpq_sprite_blit(s_corner, cx, cy, &(rdpq_blitparms_t){ .flip_x = fx, .flip_y = fy });
+        // the top/bottom edge (the corner's last column, stretched) and the left/right (its last row), each once
+        if (!fx && ex > 0) rdpq_sprite_blit(s_corner, x0 + CORNER, cy, &(rdpq_blitparms_t){ .s0 = CORNER - 1, .width = 1, .flip_y = fy, .scale_x = (float)ex });
+        if (!fy && ey > 0) rdpq_sprite_blit(s_corner, cx, y0 + CORNER, &(rdpq_blitparms_t){ .t0 = CORNER - 1, .height = 1, .flip_x = fx, .scale_y = (float)ey });
+    }
+    flat();
+    rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));
+    if (ex > 0 && ey > 0) rdpq_fill_rectangle(x0 + CORNER, y0 + CORNER, x1 - CORNER, y1 - CORNER);
 }
 
 void ui_frame(int x0, int y0, int x1, int y1, int t)
@@ -262,6 +341,7 @@ void ui_frame(int x0, int y0, int x1, int y1, int t)
 
 void ui_button(int x, int y, int w, int h, bool on, bool ok, const char *label)
 {
+    ui_track(x - 2, y - 2, x + w + 2, y + h + 2);
     flat();
     rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));
     rdpq_fill_rectangle(x, y, x + w, y + h);
@@ -288,10 +368,8 @@ UiDoc *ui_panel_doc(UiPanel *p)
 void ui_panel_close(UiPanel *p) { p->open = false; free(p->doc); p->doc = NULL; }
 
 typedef struct { int x0, y0, x1, y1, tx, tw, corners, title, body, bodyEnd, foot; } PanelBox;
-static PanelBox panel_box(const UiPanel *p)
+static PanelBox panel_box_in(const UiPanel *p, UiRect r)
 {
-    // the menus' box: the title-safe area (never wider than the fixed 7.5% one: the default overscan shows more, a larger one less)
-    UiRect r = ui_safe_rect();
     PanelBox b = { r.x0, r.y0, r.x1, r.y1 };
     int pitch = ui_line_pitch();
     b.tx = b.x0 + 6; b.tw = b.x1 - b.x0 - 12;
@@ -301,6 +379,20 @@ static PanelBox panel_box(const UiPanel *p)
     b.foot = b.y1 - UI_FOOT_DY;
     b.bodyEnd = p->confirm ? b.foot - 22 : b.foot - pitch;      // the last baseline a body line may take
     return b;
+}
+// the menus' box: the title-safe area's width (never wider than the fixed 7.5% one), as tall as its tallest page (laid out
+// for the whole area: its pages don't change), centred
+static PanelBox panel_box(const UiPanel *p)
+{
+    UiRect r = ui_safe_rect();
+    PanelBox b = panel_box_in(p, r);
+    if (!p->doc || p->doc->tallest <= 0) return b;
+    int pitch = ui_line_pitch(), lastBase = b.body + p->doc->tallest - pitch;
+    if (p->pg.pages > 1 && p->confirm) lastBase += pitch;     // (a confirm's "Up/Down 1/2" line over its buttons)
+    int h = lastBase - b.bodyEnd + (r.y1 - r.y0);       // as far under the last line as the area's bottom is under bodyEnd
+    if (h >= r.y1 - r.y0) return b;
+    r.y0 += (r.y1 - r.y0 - h) / 2; r.y1 = r.y0 + h;
+    return panel_box_in(p, r);
 }
 
 void ui_panel_open(UiPanel *p, const char *title, int titleStyle, bool confirm)

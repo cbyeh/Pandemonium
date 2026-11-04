@@ -15,6 +15,7 @@
 #include "../fx/skill_fx.h"
 #include "../game/tower/tower.h"
 #include "../utilities/ui_pages.h"
+#define rdpq_text_printf ui_textf     // (what a menu lays out is tracked: its box fits it, ui_pages.h)
 
 #include "../utilities/globals.h"
 #include "../utilities/video_layout.h"
@@ -987,6 +988,7 @@ static void draw_menu_line(int x, int y, int w, int h, rdpq_align_t align, const
                             .style_id = beaten ? FONT_STYLE_GOLD : FONT_STYLE_WHITE };
     int nb = strlen(text);
     rdpq_paragraph_t *pg = rdpq_paragraph_build(&tp, FONT_UNBALANCED, text, &nb);
+    ui_track(x + (int)pg->bbox.x0, y + (int)pg->bbox.y0, x + (int)pg->bbox.x1 + 1, y + (int)pg->bbox.y1 + 1);
     rdpq_paragraph_render(pg, x, y);
     int mx = x + (int)pg->bbox.x1 + 5, my = y + (int)((pg->bbox.y0 + pg->bbox.y1) * 0.5f);
     rdpq_paragraph_free(pg);
@@ -1000,10 +1002,9 @@ static void draw_menu_line(int x, int y, int w, int h, rdpq_align_t align, const
     for (int r = 0; r < 7; r++) rdpq_fill_rectangle(mx + 3 - ROW[r] / 2, my - 3 + r, mx + 3 - ROW[r] / 2 + ROW[r], my - 2 + r);
 }
 
-// The standard box (ui_pages.h: THE MENU STANDARD) over the title-safe rect, its title on the top row
-static UiRect menu_box(const char *title)
+// The standard box (ui_pages.h: THE MENU STANDARD) over r (fit to its content: menu_controller_draw), its title on the top row
+static UiRect menu_box(UiRect r, const char *title)
 {
-    UiRect r = ui_safe_rect();
     ui_box(r.x0, r.y0, r.x1, r.y1);
     if (title) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = r.x1 - r.x0 }, FONT_UNBALANCED, r.x0, r.y0 + UI_TITLE_DY, "%s", title);
     return r;
@@ -1013,13 +1014,26 @@ static UiRect menu_box(const char *title)
 #define MB_BODY(r)  ((r).y0 + UI_TITLE_DY + 24)          // the first row's baseline
 #define MB_FOOT(r)  ((r).y1 - UI_FOOT_DY)                 // the footer's
 #define MB_HELP(r)  (MB_FOOT(r) - 15)                     // a row's line of help, over the footer
-#define ROW_W       176                                   // a centred list's cursor
+// a centred list's cursor: its widest row's label and 12 each side (measured in the frame's first pass: s_rowMax), at least 96
+static int s_rowW = 176, s_rowMax;
+#define ROW_MIN 96
+#define ROW_W s_rowW
+// a centred row's label at its baseline y: tracked with its cursor's room (the cursor's own width isn't known yet when measuring)
+static void row_fit(int x, int w, int y, const char *label)
+{
+    if (!ui_measuring()) return;
+    int lw = ui_text_width(label), cx = x + w / 2;
+    if (lw > s_rowMax) s_rowMax = lw;
+    if (lw < ROW_MIN - 24) lw = ROW_MIN - 24;
+    ui_track(cx - lw / 2 - 12, y - 12, cx + lw / 2 + 12, y + 4);
+}
 // a list's row: centred (right NULL), or a name left and its state right; y its baseline
 static void menu_row(UiRect r, int y, bool sel, int style, const char *left, const char *right)
 {
     int x = MB_X(r), w = MB_W(r);
     if (!right) {
-        if (sel) ui_select_box(x + (w - ROW_W) / 2, y - 12, x + (w + ROW_W) / 2, y + 4);
+        row_fit(x, w, y, left);
+        if (sel && !ui_measuring()) ui_select_box(x + (w - ROW_W) / 2, y - 12, x + (w + ROW_W) / 2, y + 4);
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = style }, FONT_UNBALANCED, x, y, "%s", left);
         return;
     }
@@ -1027,10 +1041,13 @@ static void menu_row(UiRect r, int y, bool sel, int style, const char *left, con
     rdpq_text_printf(&(rdpq_textparms_t){ .width = w - UI_RIGHT_W, .style_id = style }, FONT_UNBALANCED, x, y, "%s", left);
     if (right[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W + 40, .style_id = style }, FONT_UNBALANCED, x + w - UI_RIGHT_W - 40, y, "%s", right);
 }
-// a row's line of help over the footer (one line: the box ends under it)
+// a row's line of help over the footer (one line: the box ends under it; its room kept when a row has none)
 static void menu_help(UiRect r, int style, const char *s)
 {
+    ui_track_foot(true);
+    ui_track(MB_X(r) + MB_W(r) / 2, MB_HELP(r) - 10, MB_X(r) + MB_W(r) / 2, MB_HELP(r) + 3);
     if (s && s[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = MB_W(r), .style_id = style }, FONT_UNBALANCED, MB_X(r), MB_HELP(r), "%s", s);
+    ui_track_foot(false);
 }
 // A list longer than the box holds (the Shrine's at a large overscan setting): a page of its rows at a time, the
 // cursor's; Up/Down run on across them (past a page's end, the next), Left/Right turn a page (s_listPer), "1/2" in the footer
@@ -1041,10 +1058,12 @@ static int list_page(UiRect r, int y0, int pitch, int rows)
     if (per >= rows) { s_listPer = 0; return rows; }
     s_listPer = per;
     char n[24]; snprintf(n, sizeof n, "%d/%d", selectedOption / per + 1, (rows + per - 1) / per);
+    ui_track_foot(true);
     rdpq_text_printf(&(rdpq_textparms_t){ .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, MB_X(r), MB_FOOT(r), "%s", n);
+    ui_track_foot(false);
     return per;
 }
-static void menu_details_hint(UiRect r) { ui_hint(r.x1 - 8, MB_FOOT(r), UI_DETAILS_HINT); }
+static void menu_details_hint(UiRect r) { ui_track_foot(true); ui_hint(r.x1 - 8, MB_FOOT(r), UI_DETAILS_HINT); ui_track_foot(false); }
 
 // The Tower lists' title row: Embers left (gold), the title centred unless that would touch them (then just right of them)
 static void tower_menu_title(UiRect r, const char *title)
@@ -1076,6 +1095,7 @@ static void draw_icon_line(sprite_t *icon, int x, int rowBaselineY, int lineH, i
     const int iconH = (int)(srcH * s);
     const int iconX = x + (box - iconW) / 2;
     const int iconY = rowTop + (box - iconH) / 2;
+    ui_track(x, rowTop, x + box, rowTop + box);     // (the icon: inside the fit box too)
 
     rdpq_sync_pipe();
     rdpq_set_mode_standard();
@@ -1097,6 +1117,7 @@ static void draw_icon_line(sprite_t *icon, int x, int rowBaselineY, int lineH, i
     }, FONT_UNBALANCED, x + box + gap, rowBaselineY, "%s", text ? text : "");
 }
 
+static void menu_body(UiRect r0);
 void menu_controller_draw(void)
 {
     if (!menuActive) {
@@ -1147,13 +1168,29 @@ void menu_controller_draw(void)
         return;
     }
 
+    // the box fit to its content (ui_fit: one even padding): measured first (nothing reaches the screen), then drawn in
+    // its rect; Stats/Build and the Codex keep the safe rect (their pages fill it)
+    UiRect r = ui_safe_rect();
+    if (currentMenu != MENU_RUN && currentMenu != MENU_CODEX) {
+        s_rowMax = 0;
+        ui_measure_begin(); menu_body(r); ui_measure_end();
+        r = ui_fit(r);
+        s_rowW = s_rowMax ? s_rowMax + 24 : 176;
+        if (s_rowW < ROW_MIN) s_rowW = ROW_MIN;
+    }
+    menu_body(r);
+    if (ui_details()->open && ui_details()->owner == UI_OWNER_MENU) ui_panel_draw(ui_details());     // Details (R), over the menu
+}
+
+static void menu_body(UiRect r0)
+{
     static const char *const TITLE[] = {
         [MENU_MAIN] = "PAUSE MENU", [MENU_SETTINGS] = "SETTINGS", [MENU_AUDIO] = "AUDIO", [MENU_VIDEO] = "VIDEO", [MENU_CONTROLS] = "CONTROLS",
         [MENU_CREDITS] = "CREDITS", [MENU_LOAD_GAME] = "LOAD GAME", [MENU_BONUS] = "BONUS", [MENU_TOWER] = "TOWER", [MENU_SKINS] = "SKINS",
     };
     bool tower = currentMenu == MENU_SHRINE || currentMenu == MENU_RELICS || currentMenu == MENU_UNLOCKS || currentMenu == MENU_OFFERINGS;
     bool pager = currentMenu == MENU_RUN || currentMenu == MENU_CODEX;
-    UiRect r = menu_box(tower || pager ? NULL : TITLE[currentMenu]);
+    UiRect r = menu_box(r0, tower || pager ? NULL : TITLE[currentMenu]);
     const int x = MB_X(r), w = MB_W(r), P = 16;
     int y = MB_BODY(r);
 
@@ -1181,13 +1218,17 @@ void menu_controller_draw(void)
         const SaveData *sd = save_controller_get_slot_data(save_controller_get_active_slot());
         for (int i = 0; i < MENU_BONUS_COUNT; i++) {
             bool beaten = i < 3 && (save_progress_bonus_mask(sd) & (1 << i));
-            if (i == selectedOption) ui_select_box(x + (w - ROW_W) / 2, y - 12, x + (w + ROW_W) / 2, y + 4);
+            row_fit(x, w, y, bonusMenuOptions[i]);
+            if (i == selectedOption && !ui_measuring()) ui_select_box(x + (w - ROW_W) / 2, y - 12, x + (w + ROW_W) / 2, y + 4);
             draw_menu_line(x, y, w, 0, ALIGN_CENTER, bonusMenuOptions[i], beaten);
             y += P + 4;
         }
     } else if (currentMenu == MENU_TOWER) {
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y - 4, "Boss after boss\nEver higher");
-        y += 2 * P + 2;
+        UiRect sr = ui_safe_rect();
+        if (sr.y1 - sr.y0 >= 190) {     // (its two lines of flavour; a large overscan setting leaves no room for them)
+            rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y - 4, "Boss after boss\nEver higher");
+            y += 2 * P + 2;
+        }
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GOLD }, FONT_UNBALANCED, x, y, "Best floor %d   Embers %d", tower_best_floor(), tower_embers());
         y += P;
         // the floor-100 title; else what waits set aside for the next climb
@@ -1398,6 +1439,7 @@ void menu_controller_draw(void)
             bool isSelected = slot == selectedOption, isLastPlayed = slot == save_controller_get_last_played_slot();
             // each slot a card: the cursor's frame white (as the selection box's), the last played gold, the others the box's
             rdpq_sync_pipe(); rdpq_set_mode_standard(); rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY); rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+            ui_track(bl, boxY, br, boxY + boxH);
             if (isSelected) { rdpq_set_prim_color(RGBA32(0, 0, 0, 140)); rdpq_fill_rectangle(bl, boxY, br, boxY + boxH); }     // (the selection box's black)
             rdpq_set_prim_color(isSelected ? RGBA32(255, 255, 255, 255) : isLastPlayed ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
             rdpq_fill_rectangle(bl, boxY, br, boxY + 1);
@@ -1423,7 +1465,6 @@ void menu_controller_draw(void)
         }
         menu_row(r, boxY + 12, selectedOption == MENU_LOAD_GAME_BACK, FONT_STYLE_WHITE, loadGameMenuOptions[MENU_LOAD_GAME_BACK], NULL);
     }
-    if (ui_details()->open && ui_details()->owner == UI_OWNER_MENU) ui_panel_draw(ui_details());     // Details (R), over the menu
 }
 
 void menu_controller_free(void)
