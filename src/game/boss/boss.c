@@ -184,6 +184,31 @@ static void boss_update_transforms(Boss* boss)
     float sc[3] = { boss->scale[0], boss->scale[1], boss->scale[2] };
     t3d_mat4fp_from_srt_euler(mat, sc, boss->rot, p);
 
+    // The Guardian's (and Unbound's) combo leap and flip attack jump in the clip, not by moving its
+    // origin: the hit capsule goes with the drawn body, its top end by the waist (over the 21 it
+    // stands at), its bottom end by the lowest of the feet and head (the flip turns it over; 1 over
+    // the origin standing: the drawn feet reach 1-13 under their bones, the capsule 11), and over
+    // the floor with them as they rise (none of it before the leap)
+    if (boss->phaseIndex <= 2) {
+        float A[3] = { 0.0f, 10.0f, 0.0f }, B[3] = { 0.0f, 40.0f, 0.0f };
+        T3DVec3 w, h, f0, f1;
+        if (boss->mode == BOSS_MODE_COMBAT && (boss->state == BOSS_STATE_COMBO_ATTACK || boss->state == BOSS_STATE_FLIP_ATTACK) &&
+            boss_get_bone_world_pos(boss, boss->waistBoneIndex, &w) && boss_get_bone_world_pos(boss, boss->headBoneIndex, &h)) {
+            static const void *sk; static int foot[2];
+            if (sk != boss->skeleton) { sk = boss->skeleton; foot[0] = t3d_skeleton_find_bone((T3DSkeleton*)sk, "Foot-Left"); foot[1] = t3d_skeleton_find_bone((T3DSkeleton*)sk, "Foot-Right"); }
+            const T3DVec3 *lo = &h;
+            if (boss_get_bone_world_pos(boss, foot[0], &f0) && f0.v[1] < lo->v[1]) lo = &f0;
+            if (boss_get_bone_world_pos(boss, foot[1], &f1) && f1.v[1] < lo->v[1]) lo = &f1;
+            float up = fmaxf(0.0f, w.v[1] - boss->pos[1] - 21.0f), k = fminf(1.0f, up * 0.1f);
+            B[1] += up;
+            A[1] = fminf(B[1], A[1] + fmaxf(0.0f, lo->v[1] - boss->pos[1] - 1.0f));
+            A[0] = k * (lo->v[0] - boss->pos[0]); A[2] = k * (lo->v[2] - boss->pos[2]);
+            B[0] = k * (w.v[0] - boss->pos[0]);   B[2] = k * (w.v[2] - boss->pos[2]);
+        }
+        memcpy(boss->capsuleCollider.localCapA.v, A, sizeof A);
+        memcpy(boss->capsuleCollider.localCapB.v, B, sizeof B);
+    }
+
     boss_update_shadow_mat(boss);
 }
 

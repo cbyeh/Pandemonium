@@ -3083,6 +3083,10 @@ void character_update(void)
                 character_play_hit();
             }
         }
+#ifdef HLE_LOG_JUMPBODY
+        { extern void hle_jb_swing(int, float, float, float, bool, const float*, const float*); float sb[3], st[3];
+          if (character_sword_world_segment(sb, st)) hle_jb_swing(attackComboIndex, actionTimer, hitStart, hitEnd, character.currentAttackHasHit, sb, st); }
+#endif
     }
     else if (characterState == CHAR_STATE_SKILL)
     {

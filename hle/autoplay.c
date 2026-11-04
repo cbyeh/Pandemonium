@@ -406,6 +406,25 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
     }
 #endif
+#if defined(HLE_LOG_JUMPBODY) && defined(HLE_LOG_HITVOL)    // test aid: the Guardian's/Unbound's drawn body against its hit capsule in its jumps (heights over the player's floor)
+    {
+        Boss *bb = boss_get_instance();
+        extern bool hle_body_yspan(const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M, float out[2]);
+        float y[2];
+        bool leap = bb && (bb->state == BOSS_STATE_POWER_JUMP || bb->state == BOSS_STATE_FLIP_ATTACK || bb->state == BOSS_STATE_COMBO_ATTACK);
+        if (bb && leap && frame % 2 == 0 && bb->mode == BOSS_MODE_COMBAT && bb->phaseIndex <= 2 && hle_body_yspan(bb->model, bb->skeleton, bb->modelMat, y)) {
+            float g = character.pos[1], r = bb->capsuleCollider.radius;
+            float lo = bb->pos[1] + fminf(bb->capsuleCollider.localCapA.v[1], bb->capsuleCollider.localCapB.v[1]) - r - g;
+            float hi = bb->pos[1] + fmaxf(bb->capsuleCollider.localCapA.v[1], bb->capsuleCollider.localCapB.v[1]) + r - g;
+            T3DVec3 w; float wy = boss_get_bone_world_pos(bb, bb->waistBoneIndex, &w) ? w.v[1] - g : -999.0f;
+            static int fl = -2, fr; if (fl == -2) { fl = t3d_skeleton_find_bone((T3DSkeleton*)bb->skeleton, "Foot-Left"); fr = t3d_skeleton_find_bone((T3DSkeleton*)bb->skeleton, "Foot-Right"); }
+            T3DVec3 f1, f2; float fy = boss_get_bone_world_pos(bb, fl, &f1) && boss_get_bone_world_pos(bb, fr, &f2) ? fminf(f1.v[1], f2.v[1]) - g : -999.0f;
+                debugf("[jb] f%d boss %d st %d t %.2f origin %.0f | body %.0f..%.0f | capsule %.0f..%.0f | waist %.0f | player %.0f away, state %d | feet %.0f\n", frame, bb->phaseIndex, bb->state, (double)bb->stateTimer,
+                       (double)(bb->pos[1] - g), (double)(y[0] - g), (double)(y[1] - g), (double)lo, (double)hi, (double)wy,
+                       (double)sqrtf((character.pos[0] - bb->pos[0]) * (character.pos[0] - bb->pos[0]) + (character.pos[2] - bb->pos[2]) * (character.pos[2] - bb->pos[2])), (int)character_get_state(), (double)fy);
+        }
+    }
+#endif
 #ifdef HLE_LOG_JUMPS     // test aid: any frame the boss moves further than it could in one step (a teleport)
     {
         Boss *bb = boss_get_instance(); static float last[3]; static bool have;
@@ -2623,6 +2642,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
               in->btn.z = 1;
               float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
               in->stick_y = d < HLE_DUMMY_KEEP - 15.0f ? -70 : d > HLE_DUMMY_KEEP + 15.0f ? 70 : 0;
+#ifdef HLE_KEEP_SWING     // and swing on a loop where it stands (what a leap that comes to it meets)
+              if (k % 12 == 0) { pressed->b = 1; in->btn.b = 1; }
+#endif
 #ifndef HLE_DUMMY_KEEP_STILL    // (or only in and out while the boss isn't attacking: no strafe)
               in->stick_x = 45;
 #else
@@ -3200,6 +3222,133 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #include <t3d/t3dmodel.h>
 #include <t3d/t3dskeleton.h>
 #include "utilities/game_math.h"
+// test aid: a skinned mesh's vertices in the world (which: 0 the body, swords left out; 1 the swords only)
+int hle_mesh_points(const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M, int which, float (*out)[3], int max)
+{
+    int n = 0;
+    if (!m || !sk || !M) return 0;
+    T3DModelIter it = t3d_model_iter_create(m, T3D_CHUNK_TYPE_OBJECT);
+    while (t3d_model_iter_next(&it)) {
+        const T3DObject *ob = it.object;
+        const char *mn = ob->material && ob->material->name ? ob->material->name : "";
+        bool sw = strstr(mn, "sword") != NULL;
+        if (strstr(mn, "a_black") || sw != (which == 1)) continue;
+        for (int p = 0; p < ob->numParts; p++) {
+            const T3DObjectPart *pt = &ob->parts[p];
+            if (pt->matrixIdx >= sk->skeletonRef->boneCount) continue;
+            const T3DMat4FP *B = &sk->boneMatricesFP[pt->matrixIdx];
+            for (int v = 0; v < pt->vertLoadCount && n < max; v++) {
+                const int16_t *q = (v & 1) ? pt->vert[v >> 1].posB : pt->vert[v >> 1].posA;
+                float l[3] = { q[0], q[1], q[2] }, mm[3];
+                mat4fp_mul_point_f32_row3_colbasis(B, l, mm);
+                mat4fp_mul_point_f32_row3_colbasis(M, mm, out[n++]);
+            }
+        }
+    }
+    return n;
+}
+// test aid: a blade as drawn: the segment between its two furthest vertices, and how far its other vertices stand off it
+bool hle_points_blade(const float (*p)[3], int n, float a[3], float b[3], float *hw)
+{
+    if (n < 2) return false;
+    int i0 = 0, i1 = 1; float best = -1.0f;
+    for (int i = 0; i < n; i++) for (int j = i + 1; j < n; j++) {
+        float dx = p[i][0] - p[j][0], dy = p[i][1] - p[j][1], dz = p[i][2] - p[j][2], d = dx * dx + dy * dy + dz * dz;
+        if (d > best) { best = d; i0 = i; i1 = j; }
+    }
+    memcpy(a, p[i0], 12); memcpy(b, p[i1], 12);
+    extern float hle_pt_seg(const float q[3], const float a[3], const float b[3]);
+    // its half-width: the median vertex's distance off the segment (the guard's few, much wider, left out)
+    enum { NW = 256 }; float d[NW]; int m = 0;
+    for (int i = 0; i < n && m < NW; i++) { float v = hle_pt_seg(p[i], a, b), t = v; int j = m++; while (j > 0 && d[j - 1] > t) { d[j] = d[j - 1]; j--; } d[j] = t; }
+    *hw = d[m / 2];
+#ifdef HLE_LOG_HITGAP
+    { static int said; if (said++ < 6) { float l = sqrtf((a[0]-b[0])*(a[0]-b[0]) + (a[1]-b[1])*(a[1]-b[1]) + (a[2]-b[2])*(a[2]-b[2]));
+        debugf("[hgblade] %d vertices, %.1f long, off its line: p25 %.1f p50 %.1f p75 %.1f max %.1f\n", n, (double)l, (double)d[m / 4], (double)d[m / 2], (double)d[m * 3 / 4], (double)d[m - 1]); } }
+#endif
+    return true;
+}
+float hle_pt_seg(const float q[3], const float a[3], const float b[3])     // test aid: a point's distance from a segment
+{
+    float ab[3] = { b[0] - a[0], b[1] - a[1], b[2] - a[2] }, aq[3] = { q[0] - a[0], q[1] - a[1], q[2] - a[2] };
+    float l2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2], t = l2 > 1e-6f ? (aq[0] * ab[0] + aq[1] * ab[1] + aq[2] * ab[2]) / l2 : 0.0f;
+    t = fminf(1.0f, fmaxf(0.0f, t));
+    float d[3] = { aq[0] - ab[0] * t, aq[1] - ab[1] * t, aq[2] - ab[2] * t };
+    return sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+}
+#ifdef HLE_LOG_JUMPBODY
+// test aid: each player swing while the Guardian/Unbound leaps (combo attack, flip attack): did it land, and did the drawn blade touch the drawn body
+void hle_jb_swing(int idx, float t, float t0, float t1, bool hit, const float base[3], const float tip[3])
+{
+    static int lastIdx = -1, st; static float lastT = 1e9f, gap = 1e9f, bodyLo, bodyHi, capLo, capHi, bladeLo, bladeHi, at; static bool any, wasHit, hitLimb; static float hitGap, hitBodyLo, hitCapLo, hitBladeHi;
+    Boss *bb = boss_get_instance();
+    bool jump = bb && bb->phaseIndex <= 2 && bb->mode == BOSS_MODE_COMBAT && (bb->state == BOSS_STATE_COMBO_ATTACK || bb->state == BOSS_STATE_FLIP_ATTACK);
+    bool fresh = idx != lastIdx || t < lastT;
+    if ((fresh || idx < 0) && any) {
+        debugf("[jbswing] boss %d st %d t %.2f: %s | drawn blade to drawn body %.1f | body %.0f..%.0f, blade %.0f..%.0f, capsule %.0f..%.0f (over the floor, at the closest)", bb ? bb->phaseIndex : 0, st, (double)at,
+               wasHit ? "HIT" : "miss", (double)gap, (double)bodyLo, (double)bodyHi, (double)bladeLo, (double)bladeHi, (double)capLo, (double)capHi);
+        if (wasHit) debugf(" | at the hit: gap %.1f, body from %.0f, capsule from %.0f, blade up to %.0f%s", (double)hitGap, (double)hitBodyLo, (double)hitCapLo, (double)hitBladeHi, hitLimb ? ", a limb" : "");
+        debugf("\n");
+        any = false;
+    }
+    if (fresh) { gap = 1e9f; wasHit = false; }
+    lastIdx = idx; lastT = t;
+    if (idx < 0 || !jump || t <= t0 || t >= t1) return;
+    if (!any && hit) return;     // it landed before the leap began
+    enum { NP = 1400 };
+    static float pts[NP][3], sw[64][3];
+    extern T3DModel *characterModel;
+    int n = hle_mesh_points(bb->model, bb->skeleton, bb->modelMat, 0, pts, NP);
+    int ns = hle_mesh_points(characterModel, character.skeleton, character.modelMat, 1, sw, 64);
+    float a[3], b[3], hw;
+    if (!hle_points_blade((const float (*)[3])sw, ns, a, b, &hw)) { memcpy(a, base, 12); memcpy(b, tip, 12); hw = 1.0f; }
+    float g = 1e9f, lo = 1e9f, hi = -1e9f, fl = character.pos[1];
+    for (int i = 0; i < n; i++) { g = fminf(g, hle_pt_seg(pts[i], a, b) - hw); lo = fminf(lo, pts[i][1]); hi = fmaxf(hi, pts[i][1]); }
+    {   // every frame of a swing's live part in the leap: the sword's hit test against the drawn blade meeting the drawn body
+        extern bool charWeaponCollision; static int nf, both, air, missed, n0;
+        nf++; if (charWeaponCollision && g <= 1.5f) both++; else if (charWeaponCollision && g > 3.0f) air++; else if (!charWeaponCollision && g <= 1.5f) missed++;
+        if (nf - n0 >= 60) { n0 = nf; debugf("[jbframes] %d frames: the sword's test meets it and the drawn blade touches the body %d | meets it with the blade >3 off the body (air) %d | the blade touches the body, the test misses %d\n", nf, both, air, missed); }
+    }
+    if (hit && !wasHit) {     // the frame it landed
+        extern bool hle_limb_only;
+        hitGap = g; hitLimb = hle_limb_only; hitBodyLo = lo - fl;
+        hitCapLo = bb->pos[1] + bb->capsuleCollider.localCapA.v[1] - bb->capsuleCollider.radius - fl;
+        hitBladeHi = fmaxf(a[1], b[1]) - fl;
+    }
+    if (g < gap) {
+        gap = g; st = bb->state; at = bb->stateTimer; bodyLo = lo - fl; bodyHi = hi - fl;
+        bladeLo = fminf(a[1], b[1]) - fl; bladeHi = fmaxf(a[1], b[1]) - fl;
+        capLo = bb->pos[1] + bb->capsuleCollider.localCapA.v[1] - bb->capsuleCollider.radius - fl;
+        capHi = bb->pos[1] + bb->capsuleCollider.localCapB.v[1] + bb->capsuleCollider.radius - fl;
+    }
+    any = true;
+    if (hit) wasHit = true;
+}
+#endif
+bool hle_body_yspan(const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M, float out[2])     // test aid: the drawn body's lowest and highest skinned vertex (world y; swords left out)
+{
+    if (!m || !sk || !M) return false;
+    out[0] = 1e9f; out[1] = -1e9f;
+    T3DModelIter it = t3d_model_iter_create(m, T3D_CHUNK_TYPE_OBJECT);
+    while (t3d_model_iter_next(&it)) {
+        const T3DObject *ob = it.object;
+        const char *mn = ob->material && ob->material->name ? ob->material->name : "";
+        if (strstr(mn, "sword") || strstr(mn, "a_black")) continue;
+        for (int p = 0; p < ob->numParts; p++) {
+            const T3DObjectPart *pt = &ob->parts[p];
+            if (pt->matrixIdx >= sk->skeletonRef->boneCount) continue;
+            const T3DMat4FP *B = &sk->boneMatricesFP[pt->matrixIdx];
+            for (int v = 0; v < pt->vertLoadCount; v++) {
+                const int16_t *q = (v & 1) ? pt->vert[v >> 1].posB : pt->vert[v >> 1].posA;
+                float l[3] = { q[0], q[1], q[2] }, mm[3], w[3];
+                mat4fp_mul_point_f32_row3_colbasis(B, l, mm);
+                mat4fp_mul_point_f32_row3_colbasis(M, mm, w);
+                out[0] = fminf(out[0], w[1]); out[1] = fmaxf(out[1], w[1]);
+            }
+        }
+    }
+    return out[1] > out[0];
+}
 /** Every skinned vertex (swords and the summoned swords left out) in world space, from o: the
  *  widest (horizontal) below h above o of the legs, torso, arms and head; the top; the furthest
  *  in front of yaw (facing (-sin, cos)) and to its side */
