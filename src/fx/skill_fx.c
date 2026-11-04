@@ -570,9 +570,9 @@ static bool s_drawPlayer;       // the player's effect being drawn: its skill pa
 #define HLE_SKILL_PALETTE 0
 #endif
 static int s_skillPalette = HLE_SKILL_PALETTE;
-// Sunforged: the waves' ramp, deep amber to saturated gold (at SUN_MID of 256) to white: through gold, not
+// Sunforged: the waves' ramp, dark gold to saturated gold (at SUN_MID of 256) to white: through gold, not
 // a pale peach mix, so it stands out from the tan floor, and white soon enough to stand out from the Sun's orange
-static const uint8_t SUN_RAMP[3][3] = { { 225, 135, 25 }, { 255, 196, 45 }, { 255, 254, 250 } };
+static const uint8_t SUN_RAMP[3][3] = { { 235, 175, 45 }, { 255, 196, 45 }, { 255, 254, 250 } };
 #define SUN_MID 90
 
 static inline uint32_t rgba(int r, int g, int b, float a)
@@ -647,7 +647,7 @@ static void draw_arc(const SkillFx *f)
                 float w = 16.0f * taper;
                 outer[i][1] = f->pos[1];
                 inner[i][0] = f->pos[0] + dx * (R - w); inner[i][1] = f->pos[1]; inner[i][2] = f->pos[2] + dz * (R - w);
-                co[i] = rgba(sun ? 40 : 110, 210, 255, a);     // Sunforged: deep amber where it meets the floor (gold reads as the tan floor)
+                co[i] = rgba(sun ? 40 : 110, 210, 255, a);     // Sunforged: the dark gold where it meets the floor (its own gold reads as the tan floor)
                 ci[i] = rgba(sun ? 245 : 40, 120, 255, 0.0f);   // fading in to white
             } else {
                 float h = 12.0f * taper;
