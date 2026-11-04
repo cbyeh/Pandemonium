@@ -566,16 +566,14 @@ static void build_tri(int a, int b, int c)
 static bool s_drawHostile;      // crimson palette for the effect being drawn
 static bool s_drawPlayer;       // the player's effect being drawn: its skill palette
 
-#ifndef HLE_SKILL_PALETTE       // test aid (preview): 0 today's cyan/white, 1 Sunforged, 2 Moonlit
+#ifndef HLE_SKILL_PALETTE       // test aid (preview): 0 today's cyan/white, any other Sunforged
 #define HLE_SKILL_PALETTE 0
 #endif
 static int s_skillPalette = HLE_SKILL_PALETTE;
-// Per palette: the deep end and the white end of the waves' cyan ramp, then the sparks' base and tip
-static const uint8_t SKILL_PAL[3][4][3] = {
-    { { 40, 120, 255 }, { 245, 252, 255 }, { 255, 210, 80 }, { 255, 245, 190 } },     // today (unused: as drawn)
-    { { 255, 185, 60 }, { 255, 250, 235 }, { 255, 210, 80 }, { 255, 245, 190 } },     // Sunforged: amber to warm white
-    { { 135, 162, 192 }, { 238, 244, 255 }, { 205, 218, 240 }, { 245, 248, 255 } },   // Moonlit: grey-blue to silver
-};
+// Sunforged: the waves' ramp, deep amber to saturated gold (at SUN_MID of 256) to white: through gold, not
+// a pale peach mix, so it stands out from the tan floor, and white soon enough to stand out from the Sun's orange
+static const uint8_t SUN_RAMP[3][3] = { { 225, 135, 25 }, { 255, 196, 45 }, { 255, 254, 250 } };
+#define SUN_MID 90
 
 static inline uint32_t rgba(int r, int g, int b, float a)
 {
@@ -583,16 +581,15 @@ static inline uint32_t rgba(int r, int g, int b, float a)
         int nr = b, ng = g / 4, nb = r / 2;
         r = nr; g = ng; b = nb;
     } else if (s_drawPlayer && s_skillPalette) {
-        const uint8_t (*P)[3] = SKILL_PAL[s_skillPalette];
-        if (r == 255) {         // the gold sparks: base, or tip (its blue is the higher)
-            const uint8_t *c = P[b > 130 ? 3 : 2];
-            r = c[0]; g = c[1]; b = c[2];
-        } else {                // the cyan waves: their red is how white they are (40 deep .. 245 white)
+        if (r < 255) {          // the cyan waves (the gold sparks stay): their red is how white they are (40 deep .. 245 white)
             int t = (r - 40) * 5 / 4;
             t = t < 0 ? 0 : t > 256 ? 256 : t;
-            r = P[0][0] + (((P[1][0] - P[0][0]) * t) >> 8);
-            g = P[0][1] + (((P[1][1] - P[0][1]) * t) >> 8);
-            b = P[0][2] + (((P[1][2] - P[0][2]) * t) >> 8);
+            const uint8_t *c0 = SUN_RAMP[t >= SUN_MID], *c1 = SUN_RAMP[1 + (t >= SUN_MID)];
+            int u = t < SUN_MID ? t * 256 / SUN_MID : (t - SUN_MID) * 256 / (256 - SUN_MID);
+            r = c0[0] + (((c1[0] - c0[0]) * u) >> 8);
+            g = c0[1] + (((c1[1] - c0[1]) * u) >> 8);
+            b = c0[2] + (((c1[2] - c0[2]) * u) >> 8);
+            a *= a < 0.4f ? 1.6f : 1.3f;    // denser than the cyan: thinned amber reads brown over the dark and melts into tan and orange
         }
     }
     int ai = (int)(a * 255.0f);
