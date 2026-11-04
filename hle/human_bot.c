@@ -237,7 +237,7 @@ static int pick_skill(Boss *boss, float openAge, float d)
         int k = o == 0 ? hb_skill_pref : o - 1;
         if (k < 0 || (o > 0 && k == hb_skill_pref)) continue;
         if (!character_skill_usable(k) || character_get_skill_cooldown(k) > 0.0f || !character_can_afford_skill(k)) continue;
-        if (d > (k == SKILL_CRESCENT_CLEAVE ? 95.0f : 48.0f)) continue;     // (the Cleave's blades fly)
+        if (d > (k == SKILL_CRESCENT_CLEAVE ? 95.0f : boss->phaseIndex == 5 ? 62.0f : 48.0f)) continue;     // (the Cleave's blades fly; Shadowborne's position is its hips)
         // Halfmoon's 2 s charge: at an opening's start or on a staggered boss (Full Moon can't be broken)
         if (k == SKILL_HALFMOON_SLASH && openAge > HB_REACT + 0.35f && boss->staggerT < 1.5f && tower_skill_form(k) != SKILL_FORM_B) continue;
         return k;
