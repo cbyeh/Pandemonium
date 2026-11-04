@@ -3521,6 +3521,9 @@ void character_apply_damage(float amount)
     if (amount <= 0.0f || characterState == CHAR_STATE_DEAD) return;   // the death screen's attacks still in flight: harmless
     amount *= boss_damage_scale();      // the Bonus bosses hit harder than their attacks' base numbers
     { Boss *b = boss_get_instance(); if (b) amount *= tower_elite_blow(b->health / fmaxf(b->maxHealth, 1.0f)); }     // (an Enraged Elite below half: +25%)
+#ifdef HLE_HUMAN_BOT     // test aid: the human-like bot learns the blow's timing and logs why it landed
+    { extern bool hb_blow(float, bool); if (hb_blow(amount, character_is_invulnerable())) return; }     // (true: its reflex fallback avoided it)
+#endif
     if (character_is_invulnerable()) {
         // A perfect dodge: a real blow (not a hazard's tick) caught in the first moments of a roll
         if (characterState == CHAR_STATE_ROLLING && !s_perfectThisRoll && amount >= 6.0f
@@ -3552,7 +3555,15 @@ void character_apply_damage(float amount)
 #ifdef HLE_LOG_MOVES     // test aid: each hit, after the move that dealt it ([move])
     debugf("[hit] %.1f\n", (double)amount);
 #endif
-#ifdef HLE_DUMMY_BUILD   // the build bot: 30% of blows land (the metric's dodging), as a real one would: it breaks a skill's wind-up (not Full
+#if defined(HLE_DUMMY_BUILD) && defined(HLE_HUMAN_BOT)   // the human-like bot on the build bench: the blows it didn't roll through land, as a real one would
+                                                         // (they break a wind-up, end Berserker's streak, fill Rally); the health stays as it was
+    { extern int hle_build_breaks;
+      bool unbroken = characterState == CHAR_STATE_SKILL && activeSkill == SKILL_HALFMOON_SLASH && halfmoon_full();
+      bool steady = tower_berserk() && amount * tower_mod_damage_taken() < 20.0f;
+      if (characterState == CHAR_STATE_SKILL && skillStep == 0 && activeSkill != SKILL_MOON_BLADE_DANCE && !unbroken && !steady) { end_skill(); hle_build_breaks++; extern void hb_cast_broken(void); hb_cast_broken(); }
+      tower_on_player_hurt(amount * boss_hp_loss_scale() * tower_mod_damage_taken());
+      tower_on_boss_dealt(amount * boss_hp_loss_scale() * tower_mod_damage_taken()); }
+#elif defined(HLE_DUMMY_BUILD)   // the build bot: 30% of blows land (the metric's dodging), as a real one would: it breaks a skill's wind-up (not Full
                          // Moon's, nor Berserker's below half), ends Berserker's streak and fills Rally's pool; the health stays as it was
     { static float land; land += 0.3f;
       if (land >= 1.0f) {
@@ -3579,6 +3590,9 @@ void character_apply_damage(float amount)
 #endif
     if (characterState == CHAR_STATE_SKILL && skillStep == 0 && activeSkill != SKILL_MOON_BLADE_DANCE && !unbroken && !steady) {
         end_skill();
+#ifdef HLE_HUMAN_BOT
+        { extern void hb_cast_broken(void); hb_cast_broken(); }
+#endif
     }
 
     amount = tower_mod_blow(amount * tower_mod_damage_taken());     // 1 outside a Tower run (Stalwart, Vanish)

@@ -1101,6 +1101,88 @@ const char *tower_milestone_reward(int i) { return MILESTONES[i].reward; }
 bool tower_milestone_reached(int i) { return tower_best_floor() >= MILESTONES[i].floor; }
 const char *tower_title_badge(void) { return tower_milestone_reached(MS_HEART) ? "Tower-Breaker" : ""; }     // (floor 75's, with the Codex page)
 
+#ifdef HLE_HUMAN_BOT
+// Test aid (the balance audit's human-like bot, hle/human_bot.c): its choices between fights, by a build plan
+// (hb_plan) and a route (hb_route). A card's worth to the plan: its key boons high, its family's next, the
+// generalists after; levels of what it holds, "+", duos; its skill and form; pacts low. [hbdraft] logs the cards'
+// scores and the pick (the fun audit's draft quality), [hbshop]/[hbrest]/[hbevent] the rest
+#ifndef HB_UNLOCK_ALL
+#define HB_UNLOCK_ALL 1     // every pack and B form, the best floor held at 25 (events and affixes all open, no milestone after 20)
+#endif
+extern int hb_plan, hb_route, hb_skill_pref; extern uint32_t hb_seed; int hb_unlock_all = HB_UNLOCK_ALL;
+enum { HP_SWORD, HP_STORM, HP_FMD, HP_STAGGER, HP_TWIN, HP_FULLMOON, HP_CSTORM, HP_LONGCLEAVE, HP_BLOOD, HP_BERSERK, HP_COUNT };
+static const char *const HP_NAMES[HP_COUNT] = { "sword", "storm", "fmd", "stagger", "twin", "fullmoon", "cstorm", "longcleave", "blood", "berserk" };
+static const struct { int8_t skill, form, fam; BoonId key[7]; uint8_t w[7]; } HPLAN[HP_COUNT] = {
+    [HP_SWORD]   = { -1, 0, FAM_HEARTH, { BOON_EMBER_EDGE, BOON_IRON_SKIN, BOON_VIGOR, BOON_HEMORRHAGE, BOON_STORM_BLADE, BOON_UNBROKEN, BOON_EMBER_EDGE_PLUS }, { 95, 70, 65, 60, 70, 60, 80 } },
+    [HP_STORM]   = { -1, 0, FAM_STORM, { BOON_STORM_BLADE, BOON_STATIC, BOON_THUNDERCLAP, BOON_OVERCHARGE, BOON_CONDUCTOR, BOON_EMBER_EDGE, BOON_STORM_BLADE_PLUS }, { 110, 95, 95, 70, 55, 70, 90 } },
+    [HP_FMD]     = { 0, 1, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY_PLUS, BOON_IRON_SKIN }, { 100, 85, 60, 60, 45, 85, 50 } },
+    [HP_STAGGER] = { 0, 2, FAM_IRON, { BOON_EXECUTIONER, BOON_CRUSHING_BLOWS, BOON_HEAVY_HAND, BOON_ECLIPSE, BOON_MOON_MASTERY, BOON_EXECUTIONER_PLUS, BOON_CRUSHING_BLOWS_PLUS }, { 105, 95, 90, 85, 85, 90, 80 } },
+    [HP_TWIN]    = { 1, 1, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY_PLUS, BOON_IRON_SKIN }, { 100, 85, 60, 60, 50, 85, 50 } },
+    [HP_FULLMOON]= { 1, 2, FAM_IRON, { BOON_MOON_MASTERY, BOON_EXECUTIONER, BOON_CRUSHING_BLOWS, BOON_LUNAR_TIDE, BOON_ECLIPSE, BOON_HEAVY_HAND, BOON_MOON_MASTERY_PLUS }, { 100, 80, 75, 75, 70, 50, 85 } },
+    [HP_CSTORM]  = { 2, 1, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY_PLUS, BOON_IRON_SKIN }, { 100, 85, 60, 60, 45, 85, 50 } },
+    [HP_LONGCLEAVE] = { 2, 2, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY_PLUS, BOON_VIGOR }, { 100, 85, 60, 60, 45, 85, 50 } },
+    [HP_BLOOD]   = { -1, 0, FAM_BLOOD, { BOON_BLOODTHIRST, BOON_RALLY, BOON_RED_THIRST, BOON_HEMORRHAGE, BOON_BLOOD_PACT, BOON_SANGUINE_FLASK, BOON_BLOODTHIRST_PLUS }, { 105, 100, 75, 70, 70, 55, 85 } },
+    [HP_BERSERK] = { -1, 0, FAM_BLOOD, { BOON_BERSERKER, BOON_RED_THIRST, BOON_BLOODTHIRST, BOON_RALLY, BOON_LAST_STAND, BOON_HEMORRHAGE, BOON_EMBER_EDGE }, { 120, 85, 80, 75, 70, 60, 60 } },
+};
+static int hb_generic(BoonId b)
+{
+    switch (b) {
+    case BOON_EMBER_EDGE: return 55; case BOON_IRON_SKIN: return 50; case BOON_VIGOR: return 45; case BOON_DEEP_FLASK: return 45;
+    case BOON_KINDLED_FLASK: return 40; case BOON_UNBROKEN: return 50; case BOON_STALWART: return 40; case BOON_STORM_BLADE: return 45;
+    case BOON_BLOODTHIRST: return 40; case BOON_RALLY: return 40; case BOON_MOON_MASTERY: return 30; case BOON_PHANTOM_STEP: return 30;
+    case BOON_RIPOSTE: return 30; case BOON_SECOND_WIND: return 25; case BOON_FLEETFOOT: return 25; case BOON_BLOOD_PACT: return 40;
+    default: return 20;
+    }
+}
+static int hb_key_w(int plan, int b) { for (int i = 0; i < 7; i++) if (HPLAN[plan].key[i] == b) return HPLAN[plan].w[i]; return -1; }
+int hb_card_score(int c)
+{
+    int plan = hb_plan % HP_COUNT;
+    if (c == GOLD_CARD) return 12;
+    if (c >= BOON_COUNT) {      // a pact
+        int bl = (c - BOON_COUNT) / PC_COUNT, cu = (c - BOON_COUNT) % PC_COUNT;
+        int v = bl == PB_MIGHT || bl == PB_BULWARK ? 30 : bl == PB_VITALITY ? 25 : bl == PB_STAGGERED ? (plan == HP_STAGGER ? 30 : 10) : 15;
+        return v - (cu == PC_THIRST || cu == PC_IMPAIRED ? 12 : 5);
+    }
+    BoonId b = (BoonId)c;
+    if (is_skill_card(b)) {
+        int k = is_learn(b) ? b - BOON_LEARN_MOONBLADE : form_skill(b);
+        bool mine = k == HPLAN[plan].skill;
+        if (is_form(b)) return mine ? (skill_form_card(k, HPLAN[plan].form) == b ? 115 : 45) : 25;
+        if (mine) return is_learn(b) && !s.stacks[b] ? 110 : 95;
+        if (!s.skills && HPLAN[plan].skill < 0) return 30;     // a sword build may still learn one
+        return is_learn(b) && !s.stacks[b] ? 22 : 12;
+    }
+    if (BOONS[b].duo) return 100;
+    int w = hb_key_w(plan, b);
+    if (BOONS[b].up) { int u = BOONS[b].up - 1; int wu = hb_key_w(plan, u); return w >= 0 ? w : wu >= 0 ? wu - 10 : hb_generic((BoonId)u) - 5; }
+    int v = w >= 0 ? w : BOONS[b].family == HPLAN[plan].fam ? 40 : hb_generic(b);
+    if (s.stacks[b]) v += 8;        // its next level
+    else if (slots_used() >= 3 && w < 0) v -= 25;   // a slot is precious late
+    for (int k = 0, r; (r = rival_k(b, k)) >= 0; k++) if (hb_key_w(plan, r) > v) v -= 30;  // it would lock out a key boon
+    return v;
+}
+static void hb_draft_choose(void)
+{
+    int best = -1, bv = -999, sc[DRAFT_CHOICES] = { 0 };
+    for (int i = 0; i < s.nChoices; i++) { sc[i] = hb_card_score(s.choices[i]); if (sc[i] > bv) { bv = sc[i]; best = i; } }
+    s.sel = bv < 15 ? s.nChoices : best;
+    debugf("[hbdraft] floor %d circle %d plan %s:", s.floor, s.circle, HP_NAMES[hb_plan % HP_COUNT]);
+    for (int i = 0; i < s.nChoices; i++) debugf(" %d=%d", s.choices[i], sc[i]);
+    debugf(" | pick %d (%s) slots %d%s\n", s.sel, s.sel < s.nChoices ? (s.choices[s.sel] < BOON_COUNT ? BOONS[s.choices[s.sel]].name : "pact/gold") : "skip", slots_used(), s.elite ? " elite" : "");
+}
+// the route's path value (section 13 routes; 4 adaptive: greedy while healthy, safe when hurt)
+static int hb_route_now(void)
+{
+    if (hb_route != 4) return hb_route;
+    float f = character.health / fmaxf(1.0f, character.maxHealth);
+    return f >= 0.7f && character.healthPotions >= 2 ? 3 : f < 0.45f || character.healthPotions == 0 ? 1 : 2;
+}
+#define HLE_ROUTE hb_route_now()
+#elif defined(HLE_RUN_PATH)
+#define HLE_ROUTE HLE_RUN_PATH
+#endif
+
 // ---- Run ----
 
 static bool offerable(BoonId b);
@@ -1118,6 +1200,12 @@ void tower_begin_run(uint32_t seed)
 #endif
 #ifdef HLE_TOWER_SEED       // test aid: a set run seed (the map, the drafts)
     s.rng = HLE_TOWER_SEED;
+#endif
+#ifdef HLE_HUMAN_BOT        // test aid: the bot's run: its seed, every pack and B form (unlock-all mode, the best floor held at 25)
+    if (hb_seed) s.rng = hb_seed;
+    if (hb_unlock_all) { s.packs = (1 << FAM_COUNT) - 1; s.forms = (1 << SKILL_COUNT) - 1; TowerSave tb; tower_load(&tb); tb.bestFloor = 25; save_controller_set_tower(&tb); }
+    hb_skill_pref = HPLAN[hb_plan % HP_COUNT].skill;
+    debugf("[hbrun] start: seed %08lx plan %s route %d unlock %d\n", (unsigned long)s.rng, HP_NAMES[hb_plan % HP_COUNT], hb_route, hb_unlock_all);
 #endif
     s.seed = s.rng;
 #ifdef HLE_MILESTONE_AT     // test aid: the climb starts on this floor, the save's best one below it (its milestone's notice at the first kill)
@@ -1402,9 +1490,12 @@ int tower_test_build(int n)
     tower_begin_run(7);
     s.packs = (1 << FAM_COUNT) - 1; s.forms = (1 << SKILL_COUNT) - 1;
     #define MAXB(b) while (s.stacks[b] < BOONS[b].maxStacks) take_boon(b)
-    static const int FORM[13][2] = { [2] = { 1, 1 }, [3] = { 2, 1 }, [4] = { 3, 1 }, [5] = { 1, 2 }, [6] = { 2, 2 }, [7] = { 3, 2 } };
+    static const int FORM[32][2] = { [2] = { 1, 1 }, [3] = { 2, 1 }, [4] = { 3, 1 }, [5] = { 1, 2 }, [6] = { 2, 2 }, [7] = { 3, 2 },
+                                     [13] = { 1, 2 }, [14] = { 3, 1 }, [15] = { 1, 1 }, [16] = { 2, 1 }, [17] = { 3, 1 }, [18] = { 1, 0 }, [19] = { 2, 0 }, [20] = { 3, 0 },
+                                     [21] = { 1, 2 }, [22] = { 2, 2 }, [23] = { 3, 2 } };
     int skill = FORM[n][0];
-    if (skill) { tower_test_skill_lv(skill - 1, 5, FORM[n][1]); take_boon(BOON_MOON_MASTERY); take_boon(BOON_MOON_MASTERY); }
+    if (skill && FORM[n][1]) { tower_test_skill_lv(skill - 1, 5, FORM[n][1]); take_boon(BOON_MOON_MASTERY); take_boon(BOON_MOON_MASTERY); }
+    else if (skill) tower_test_skill_lv(skill - 1, 1, 0);       // (18-20: the skill at Lv 1, no boons: Story's)
     switch (n) {
     case 1: MAXB(BOON_STORM_BLADE); MAXB(BOON_STATIC); MAXB(BOON_THUNDERCLAP); break;
     case 5: MAXB(BOON_HEAVY_HAND); MAXB(BOON_CRUSHING_BLOWS); MAXB(BOON_EXECUTIONER); MAXB(BOON_ECLIPSE); break;
@@ -1413,6 +1504,12 @@ int tower_test_build(int n)
     case 10: take_boon(BOON_RALLY); break;          // (the healing boons one at a time: Rally Lv 1, Lv 2, Bloodthirst Lv 2)
     case 11: MAXB(BOON_RALLY); break;
     case 12: MAXB(BOON_BLOODTHIRST); break;
+    // the audit's (HLE_HUMAN_BOT): 13 the stagger build with Iron Tide (Crushing Blows + Moon Mastery merged), 14 Crescent Storm with Iron Tide,
+    // 15-17 the A forms with Skyfall (Storm Blade + Moon Mastery), 21-23 the B forms with Blood Moon Rite (Rally + Moon Mastery)
+    case 13: MAXB(BOON_HEAVY_HAND); MAXB(BOON_EXECUTIONER); MAXB(BOON_ECLIPSE); MAXB(BOON_CRUSHING_BLOWS); MAXB(BOON_MOON_MASTERY); take_boon(BOON_IRON_TIDE); break;
+    case 14: MAXB(BOON_CRUSHING_BLOWS); MAXB(BOON_MOON_MASTERY); take_boon(BOON_IRON_TIDE); break;
+    case 15: case 16: case 17: MAXB(BOON_STORM_BLADE); MAXB(BOON_MOON_MASTERY); take_boon(BOON_SKYFALL); break;
+    case 21: case 22: case 23: MAXB(BOON_RALLY); MAXB(BOON_MOON_MASTERY); take_boon(BOON_BLOOD_MOON_RITE); break;
     }
     #undef MAXB
     debugf("[build] %d: slots %d %d %d %d %d, skill %d Lv %d form %d, cooldowns x%.2f\n", n, s.slot[0], s.slot[1], s.slot[2], s.slot[3], s.slot[4], skill,
@@ -1479,6 +1576,7 @@ static int roll_pact(const int table[], int nTable)
     }
     return card;
 }
+
 
 void tower_draft_open(void)
 {
@@ -1560,6 +1658,9 @@ void tower_draft_open(void)
     s.sel = 0;
     s.draftOpen = true;
     s.draftOpenMs = get_ticks_ms();
+#ifdef HLE_HUMAN_BOT
+    hb_draft_choose();
+#endif
 #ifdef HLE_AUTOPLAY
     debugf("[draft] floor %d:", s.floor);
     for (int i = 0; i < s.nChoices; i++) {
@@ -1836,7 +1937,7 @@ bool tower_rest_is_open(void) { return s.scr >= SCR_REST && s.scr != SCR_CONFIRM
 void tower_enter_guardian(void) { if (s.map.row < 0) { s.map.sel = 1; map_enter(); } }
 bool tower_between_open(void) { return s.draftOpen || s.scr != SCR_NONE; }
 
-#ifdef HLE_RUN_PATH     // test aid: the climb's route (section 13): 1 safe (the fewest fights, a Shop or Event over a Fight, no
+#if defined(HLE_RUN_PATH) || defined(HLE_HUMAN_BOT)     // test aid: the climb's route (section 13): 1 safe (the fewest fights, a Shop or Event over a Fight, no
                         // Elite), 2 normal (3 fights in rows 2-5 where it can), 3 greedy (the most fights, Elites first)
 static int path_score(int r, int l, int fights, int elites, int other)
 {
@@ -1847,7 +1948,8 @@ static int path_score(int r, int l, int fights, int elites, int other)
         for (int k = 0; k < MAP_LANES; k++) if (s.map.type[r + 1][k] && linked(r, l, k)) { int v = path_score(r + 1, k, fights, elites, other); if (v > best) best = v; }
         return best;
     }
-    return HLE_RUN_PATH == 1 ? -100 * fights - 30 * elites + 10 * other : HLE_RUN_PATH == 3 ? 100 * fights + 30 * elites : -100 * abs(fights - 3) - 30 * elites + 5 * other;
+    int rt = HLE_ROUTE;
+    return rt == 1 ? -100 * fights - 30 * elites + 10 * other : rt == 3 ? 100 * fights + 30 * elites : -100 * abs(fights - 3) - 30 * elites + 5 * other;
 }
 #endif
 void tower_map_open(void)
@@ -1859,7 +1961,7 @@ void tower_map_open(void)
     map_assign_bosses();
     int r = s.map.row + 1, l = s.map.row >= 0 ? s.map.path[s.map.row] : 1;     // the cursor: straight up, else the first reachable
     if (!map_reachable(r, l)) for (l = 0; l < MAP_LANES - 1 && !map_reachable(r, l); l++) {}
-#ifdef HLE_RUN_PATH
+#if defined(HLE_RUN_PATH) || defined(HLE_HUMAN_BOT)
     if (r >= 1 && r <= MAP_ROWS - 3) {
         int best = -1 << 30;
         for (int k = 0; k < MAP_LANES; k++) if (map_reachable(r, k)) { int v = path_score(r, k, s.map.fights > 0 ? s.map.fights - 1 : 0, 0, 0); if (v > best) { best = v; l = k; } }
@@ -2011,6 +2113,32 @@ static void list_open(int scr)
 #ifdef HLE_RUN_PATH     // test aid: the route's Rest: heal below 60%, else Temper (else potions); A takes the row under the cursor
     if (scr == SCR_REST && character.health >= 0.6f * character.maxHealth) s.listSel = row_ok(REST_TEMPER_ROW) ? REST_TEMPER_ROW : row_ok(REST_POTIONS_ROW) ? REST_POTIONS_ROW : 0;
 #endif
+#ifdef HLE_HUMAN_BOT    // test aid: the bot's Rest (heal below 60%, else Temper its best, else potions), Temper's pick, an Event's choice
+    if (scr == SCR_REST) {
+        s.listSel = character.health < 0.6f * character.maxHealth ? 0 : row_ok(REST_TEMPER_ROW) ? REST_TEMPER_ROW : row_ok(REST_POTIONS_ROW) ? REST_POTIONS_ROW : 0;
+        debugf("[hbrest] floor %d circle %d: %s at %.0f/%.0f, potions %d\n", s.floor, s.circle, s.listSel == 0 ? "heal" : s.listSel == REST_TEMPER_ROW ? "temper" : "potions",
+               (double)character.health, (double)character.maxHealth, character.healthPotions);
+    }
+    if (scr == SCR_TEMPER) { int bv = -999; for (int i = 0; i < s.listN - 1; i++) { int v = hb_card_score(s.list[i]); if (v > bv) { bv = v; s.listSel = i; } }
+        debugf("[hbrest] temper %s\n", s.listN > 1 ? BOONS[s.list[s.listSel]].name : "-"); }
+    if (scr == SCR_EVENT && !s.eventDone) {
+        float f = character.health / fmaxf(1.0f, character.maxHealth); int c = EVENTS[s.event].choices - 1;     // (Leave)
+        switch (s.event) {
+        case EV_ALTAR:    if (f >= 0.6f) c = 0; break;
+        case EV_GRAVE:    c = f >= 0.7f ? 0 : 1; break;
+        case EV_MIRROR:   c = 0; break;
+        case EV_MERCHANT: c = s.gold >= MERCHANT_POTION + 50 && character.healthPotions < 3 ? 0 : character.healthPotions >= 5 ? 1 : c; break;
+        case EV_POOL:     c = HPLAN[hb_plan % HP_COUNT].skill >= 0 && knows(HPLAN[hb_plan % HP_COUNT].skill) ? 1 : !s.skills ? 0 : 1; break;
+        case EV_PRISONER: if (f >= 0.7f && hb_route_now() >= 2) c = 0; break;
+        case EV_BONES:    if (s.gold >= 100) c = 0; break;
+        case EV_BRAZIER:  c = hb_route == 1 ? 0 : 1; break;
+        }
+        while (c > 0 && !event_ok(c)) c = c == EVENTS[s.event].choices - 1 ? 0 : c + 1;
+        if (!event_ok(c)) c = EVENTS[s.event].choices - 1;
+        for (int i = 0; i < s.listN; i++) if (s.list[i] == c) s.listSel = i;
+        debugf("[hbevent] floor %d circle %d: %s choice %d (health %.0f%%, gold %d, potions %d)\n", s.floor, s.circle, EVENTS[s.event].name, c + 1, (double)(f * 100), s.gold, character.healthPotions);
+    }
+#endif
 }
 
 // Release (free at a Rest, with its choice): the slot's boon and its levels are gone ("+" too; a duo
@@ -2115,6 +2243,22 @@ static void shop_open(void)
     s.shop.pact = roll_pact(NULL, 0);
     s.shop.sold = 0; s.shop.sel = 0; s.shop.levels = 0;
     s.scr = SCR_SHOP; s.scrOpenMs = get_ticks_ms();
+#ifdef HLE_HUMAN_BOT    // test aid: the bot's shopping (B leaves after): Mend below 55%, a potion while under 3, the best card if it suits the
+                        // plan, a level of its best boon, more potions to the max with what's left
+    {
+        int g0 = s.gold;
+        if (character.health < 0.55f * character.maxHealth && !shop_block(SHOP_MEND)[0]) shop_buy(SHOP_MEND);
+        while (character.healthPotions < 3 && !shop_block(SHOP_POTION)[0]) shop_buy(SHOP_POTION);
+        int c = -1, cv = 39;
+        for (int i = SHOP_CARD0; i <= SHOP_CARD2; i++) if (!shop_block(i)[0]) { int v = hb_card_score(s.shop.card[i]); if (v > cv) { cv = v; c = i; } }
+        if (c >= 0) shop_buy(c);
+        if (!shop_block(SHOP_LEVEL)[0]) { int8_t t[LIST_MAX]; int n = level_targets(t, LIST_MAX), bi = -1, bv = 49;
+            for (int i = 0; i < n; i++) { int v = hb_card_score(t[i]); if (v > bv) { bv = v; bi = i; } }
+            if (bi >= 0) { char nm[40]; snprintf(nm, sizeof nm, "%s", BOONS[t[bi]].name); shop_pay(SHOP_LEVEL, nm); take_boon((BoonId)t[bi]); } }
+        while (character.healthPotions < tower_mod_max_potions() && s.gold >= PRICE_POTION + 40 && !shop_block(SHOP_POTION)[0]) shop_buy(SHOP_POTION);
+        debugf("[hbshop] floor %d circle %d: gold %d -> %d\n", s.floor, s.circle, g0, s.gold);
+    }
+#endif
 #ifdef HLE_RUN_PATH     // test aid: the route's shopping (B leaves after): Mend below 65%, potions to the run's max, the cheapest card it can pay for
     if (character.health < 0.65f * character.maxHealth && !shop_block(SHOP_MEND)[0]) shop_take(SHOP_MEND);
     while (!shop_block(SHOP_POTION)[0]) shop_take(SHOP_POTION);
@@ -3930,7 +4074,8 @@ void tower_on_stagger(void)
 {
     if (tower_boon_stacks(BOON_OVERCHARGE)) { s.overcharge = 5; BFX("Overcharge: a stagger, the next 5 hits call lightning\n"); }
     if (tower_boon_stacks(BOON_IRON_TIDE)) {
-        BFX("Iron Tide: a stagger resets the skill cooldowns (%.1f %.1f %.1f s left)\n", (double)character_get_skill_cooldown(0), (double)character_get_skill_cooldown(1), (double)character_get_skill_cooldown(2));
+        extern float gameTime;
+        BFX("Iron Tide: a stagger resets the skill cooldowns (%.1f %.1f %.1f s left), player state %d at %.2f s\n", (double)character_get_skill_cooldown(0), (double)character_get_skill_cooldown(1), (double)character_get_skill_cooldown(2), character_get_state(), (double)gameTime);
         character_cut_skill_cooldowns(1e6f);
     }
 }

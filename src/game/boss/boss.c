@@ -643,12 +643,15 @@ void boss_update(Boss* boss)
     if (!boss) return;
     boss_sync_max_health(boss);
     boss_poise_update(boss, deltaTime);
+#ifdef HLE_HUMAN_BOT     // test aid: the human-like bot learns each move's timing from its start
+    { static int last = -1; if (boss->phaseIndex <= 2 && (int)boss->state != last) { last = boss->state; extern void hb_move(int, int); hb_move(boss->phaseIndex, boss->state); } }
+#endif
 #ifdef HLE_LOG_MOVES     // test aid: the Guardian's and Unbound's moves as they start ([hit]: the hits after)
     { static int last = -1; if (boss->phaseIndex <= 2 && (int)boss->state != last) { last = boss->state; debugf("[move] %d\n", last); } }
 #endif
     if (boss->phaseIndex <= 2)      // the Guardian's and Unbound's: a blow's live part, or the barrage in the air
         boss->striking = boss->handAttackColliderActive || boss->sphereAttackColliderActive || boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE;
-#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT)   // test aid: the Guardian's and Unbound's openings (time not attacking), like the Bonus bosses'
+#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT) || defined(HLE_HUMAN_BOT)   // test aid: the Guardian's and Unbound's openings (time not attacking), like the Bonus bosses'
     if (boss->phaseIndex <= 2 && boss->mode == BOSS_MODE_COMBAT) { extern void hle_open_tick(bool, float); hle_open_tick(!boss->isAttacking, deltaTime); }
 #endif
 #ifdef HLE_TEST_FREEZE_BOSS
@@ -848,6 +851,13 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
         amount *= tower_mod_damage_dealt() * tower_mod_damage_vs(boss->health / fmaxf(boss->maxHealth, 1.0f), boss->staggerT > 0.0f, kind);
     }
     if (boss->staggerT > 0.0f) amount *= tower_mod_stagger_damage(kind);     // staggered: only boons make hits land harder (added, capped)
+#ifdef HLE_HUMAN_BOT    // test aid: the human-like bot's hits land for this much more (it swings about half the metric's 148 a minute, held by stamina;
+                        // x2 brings its Story Guardian kill to the metric's cost). Damage only: the stagger meter and healing go by the hit
+#ifndef HB_DMG_K
+#define HB_DMG_K 2.0f
+#endif
+    amount *= HB_DMG_K;
+#endif
     boss->health -= amount;
     if (boss->health < 0.0f) boss->health = 0.0f;
     if (boss->staggerT <= 0.0f) {      // the stagger meter

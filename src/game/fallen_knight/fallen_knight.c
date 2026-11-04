@@ -438,6 +438,9 @@ static void enter(FkState st)
 #ifdef HLE_LOG_POP
     pop_mark(s.anim, -1, s.state, st);
 #endif
+#ifdef HLE_HUMAN_BOT     // test aid: the human-like bot learns each move's timing from its start
+    { extern void hb_move(int, int); hb_move(FALLEN_KNIGHT_PHASE, st); }
+#endif
 #ifdef HLE_LOG_MOVES     // test aid: each move as it starts (the hits after it are its: [hit])
     debugf("[move] %d\n", st);
 #endif
@@ -2040,7 +2043,7 @@ void fallen_knight_update(Boss* b, float dt)
 
     b->striking = s.striking || s.state == FK_ROLL;     // mid-swing (melee_check) or rolling off
     s.striking = false;
-#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT)
+#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT) || defined(HLE_HUMAN_BOT)
     { extern void hle_open_tick(bool, float); hle_open_tick((s.state == FK_CHASE || s.state == FK_RECOVER), dt); }   // test aid: measure the openings
 #endif
     // a Moon Blade cross's second beam, BEAM_GAP after its first (even once the leap has landed)

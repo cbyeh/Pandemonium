@@ -101,6 +101,9 @@ void floor_fire_update(float dt)
         float dy = f->p[1] < y0 ? y0 - f->p[1] : f->p[1] > y1 ? f->p[1] - y1 : 0.0f;
         float gap = sqrtf(dx * dx + dy * dy + dz * dz) - flame_r(f->size, f->age, f->life);
         if (gap >= PLAYER_R) continue;
+#ifdef HLE_HUMAN_BOT
+        { extern int hb_src; hb_src = 1; }   // test aid: Smouldering's floor fire
+#endif
         character_apply_damage(FF_DPS * FF_TICK / boss_damage_scale());
         s_hitCd = FF_TICK;
         s_spent = f->patch;

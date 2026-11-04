@@ -1569,6 +1569,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         Boss *boss = boss_get_instance();
         int t = frame - t0;
         if (phase == 0) {
+#ifdef HLE_HUMAN_BOT
+            { extern void hb_init(void); hb_init(); }
+#endif
             if (menu_controller_is_active()) { phase = 1; t0 = frame; }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
@@ -1581,6 +1584,24 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
               hle_leak_cyc = tower_floor();
               if (lastFloor && t == 60) { char w[16]; snprintf(w, sizeof w, "floor%d", lastFloor); hle_leak_by_caller(w); }
               if (lastFloor && t == 59) for (int f = 1; f <= lastFloor; f++) hle_low_report(f); }
+#endif
+#ifdef HLE_HUMAN_BOT       // a run over, back at the title: the next one (HLE_HB_RUNS in all)
+#ifndef HLE_HB_RUNS
+#define HLE_HB_RUNS 1
+#endif
+            if (!boss && !tower_active()) {
+                static int idle;
+                if (++idle > 120 && menu_controller_is_active()) {
+                    extern int hb_runs; extern void hb_next_run(void);
+                    idle = 0; hb_runs++;
+                    if (hb_runs >= HLE_HB_RUNS) { debugf("[hbrun] all %d runs done\n", hb_runs); phase = 9; return; }
+                    hb_next_run();
+                    phase = 1; step = 0; t0 = frame; lastFloor = 0;
+                }
+                return;
+            }
+            { static int fr, between; fr++; if (tower_between_open()) between++;
+              if (fr % 3600 == 0) debugf("[hbtime] %d frames in the run, %d on the screens between fights\n", fr, between); }
 #endif
             if (!boss) return;
 #ifdef HLE_RUN_CLIMB
@@ -1693,7 +1714,32 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (boss->health < boss->maxHealth * 0.7f) boss->health = boss->maxHealth;     // the fight lasts the window
             }
 #endif
-#ifdef HLE_RUN_BOT         // the climbing bot (HLE_RUN_PATH's climbs): stays close and strikes in the boss's openings, drinks below 40%;
+#ifdef HLE_HUMAN_BOT       // the human-like bot (hle/human_bot.c): it learns the moves' timing and rolls through them, swings and casts in the
+                            // openings, drinks when it's safe; dies for real. Runs follow one another (HLE_HB_RUNS), each its own seed, plan and route
+            {
+                extern void hb_fight_begin(Boss *), hb_fight_end(const char *, Boss *), hb_fight(joypad_inputs_t *, joypad_buttons_t *, Boss *), hb_init(void), hb_dump_table(void);
+                extern bool hb_fight_on(void);
+                static int deadAt;
+                hb_init();
+                if (character_get_state() == CHAR_STATE_DEAD) {
+                    if (!deadAt) { deadAt = frame; hb_fight_end("died", boss); extern int tower_circle(void), tower_gold(void);
+                        debugf("[bot] died on floor %d (circle %d), boss %d at %.0f/%.0f, potions %d, gold %d\n", tower_floor(), tower_circle(), tower_floor_boss(),
+                               (double)boss->health, (double)boss->maxHealth, character.healthPotions, tower_gold());
+                        extern int tower_run_embers(void), tower_best_floor(void), tower_embers(void);
+                        debugf("[hbrun] end: floor %d circle %d run embers %d, gold %d, best floor %d, Embers banked %d\n", tower_floor(), tower_circle(), tower_run_embers(), tower_gold(), tower_best_floor(), tower_embers());
+                        hb_dump_table(); }
+                    if (frame - deadAt == 60) debugf("[run] died: \"%s\"\n", tower_death_summary());
+                    if (frame - deadAt > 150 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+                    return;
+                }
+                deadAt = 0;
+                if (boss->mode == BOSS_MODE_COMBAT && boss->health > 0.0f && boss->state != BOSS_STATE_DEAD) {
+                    if (!hb_fight_on()) { hb_fight_begin(boss); t0 = frame; t = 0; }
+                    hb_fight(in, pressed, boss);
+                    if (t == 300 * 60) { debugf("[bot] floor %d: timed out at 300 s, boss %.0f/%.0f\n", tower_floor(), (double)boss->health, (double)boss->maxHealth); hb_fight_end("timeout", boss); boss_apply_damage(boss, boss->maxHealth * 2.0f); }
+                } else if (hb_fight_on() && (boss->health <= 0.0f || boss->state == BOSS_STATE_DEAD)) hb_fight_end("won", boss);   // (not a break: the Sun's)
+            }
+#elif defined(HLE_RUN_BOT)         // the climbing bot (HLE_RUN_PATH's climbs): stays close and strikes in the boss's openings, drinks below 40%;
                             // it takes the metric's 30% of each blow (character.c), its sword x1.9 (tower.c: the metric's rate), and dies for real
             {
                 extern bool hle_open_now;
@@ -1755,10 +1801,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
                 boss_apply_damage(boss, boss->maxHealth * 2.0f);
             }
-#elif !defined(HLE_RUN_BOT)
+#elif !defined(HLE_RUN_BOT) && !defined(HLE_HUMAN_BOT)
             if (t == 90) boss_apply_damage(boss, boss->maxHealth * 2.0f);
 #endif
-#ifdef HLE_RUN_BOT
+#if defined(HLE_RUN_BOT) || defined(HLE_HUMAN_BOT)
             if (boss->state == BOSS_STATE_DEAD) {
 #else
             if (t >= 90 && t < 140) {   // stand facing the fallen boss, where its "A" prompt would show
@@ -1772,7 +1818,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (!tower_draft_is_open()) k = 0;
                 else {
                     k++;
-#if defined(HLE_RUN_CLIMB)    // take a boon while any are offered (so they run out), else the first pact
+#if defined(HLE_HUMAN_BOT)    // (tower.c put the cursor on the bot's card: A below)
+#elif defined(HLE_RUN_CLIMB)    // take a boon while any are offered (so they run out), else the first pact
                     static int want;
                     if (k == 1) {
                         extern int tower_draft_card(int i);
@@ -2323,6 +2370,74 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
             else if (frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 4) {
+#ifdef HLE_HUMAN_BOT     // test aid: the human-like bot (hle/human_bot.c) in the dummy's fight: windows of HLE_SWEEP_S s ([hbfight] each), with
+                         // HLE_DUMMY_BUILD each window that build (section 14's, tower_test_build), the boss's health held in its half and the
+                         // player's at 42%; without HLE_DUMMY_REAL the blows don't hurt (the bench: what lands is counted, "landed")
+            {
+#ifndef HLE_SWEEP_S
+#define HLE_SWEEP_S 240.0f
+#endif
+                extern void hb_fight_begin(Boss *), hb_fight_end(const char *, Boss *), hb_fight(joypad_inputs_t *, joypad_buttons_t *, Boss *), hb_init(void), hb_dump_table(void);
+                extern bool hb_fight_on(void); extern int hb_skill_pref;
+                static int w = -1; static float w0, prevHp, dealt, wasStag; static int staggers;
+                hb_init();
+                if (!boss) return;
+                if (w < 0 || tm - w0 >= HLE_SWEEP_S) {
+                    if (w >= 0) { debugf("[hbwin] window %d build %d: %.0f s dealt %.1f (%.1f a minute) staggers %d | boss max %.0f\n", w,
+#ifdef HLE_DUMMY_BUILD
+                                         (int)((const int[]){ HLE_DUMMY_BUILD })[w % (int)(sizeof (const int[]){ HLE_DUMMY_BUILD } / sizeof(int))],
+#else
+                                         -1,
+#endif
+                                         (double)(tm - w0), (double)dealt, (double)(dealt * 60.0f / (tm - w0)), staggers, (double)boss->maxHealth);
+                                  hb_fight_end("window", boss); hb_dump_table(); }
+                    w++; w0 = tm; dealt = 0.0f; staggers = 0;
+#ifdef HLE_DUMMY_BUILD
+                    { extern int tower_test_build(int); static const int L[] = { HLE_DUMMY_BUILD };
+                      int sk = tower_test_build(L[w % (int)(sizeof L / sizeof L[0])]); hb_skill_pref = sk - 1; character_cut_skill_cooldowns(1e6f); }
+#endif
+#ifdef HLE_ELITE_SWEEP
+                    { extern int hle_elite_force; static const int A[] = { HLE_ELITE_SWEEP }; int a = A[w % (int)(sizeof A / sizeof A[0])];
+                      hle_elite_force = a ? 1 << (a - 1) : 0; debugf("[hbwin] window %d: affix %d\n", w, a); }
+#endif
+#ifdef HLE_ELITE_MASKS      // (with HLE_ELITE_FORCE=0) each window these affixes at once (a bit each: two-affix Elites)
+                    { extern int hle_elite_force; static const int A[] = { HLE_ELITE_MASKS }; hle_elite_force = A[w % (int)(sizeof A / sizeof A[0])];
+                      debugf("[hbwin] window %d: affixes %02x\n", w, hle_elite_force); }
+#endif
+                    prevHp = boss->health;
+                    hb_fight_begin(boss);
+                }
+#ifdef HLE_DUMMY_BUILD
+#ifdef HLE_DUMMY_HALF
+                const float lo = 0.1f, hi = 0.45f;
+#else
+                const float lo = 0.55f, hi = 1.0f;
+#endif
+                dealt += prevHp - boss->health;
+                if (boss->health < boss->maxHealth * lo) boss->health = boss->maxHealth * hi;
+                if (boss->health > boss->maxHealth * hi) boss->health = boss->maxHealth * hi;
+                prevHp = boss->health;
+                character.health = character.maxHealth * 0.42f;
+#else
+                dealt += prevHp - boss->health;
+#ifdef HB_HOLD          // (the fight goes on: its health kept over 30%)
+                if (boss->health < boss->maxHealth * 0.3f) boss->health = boss->maxHealth * 0.6f;
+#endif
+                prevHp = boss->health;
+#endif
+                if (boss->staggerT > 0.0f && wasStag <= 0.0f) staggers++;
+                wasStag = boss->staggerT;
+#ifdef HLE_DUMMY_REAL
+                if (character_get_state() == CHAR_STATE_DEAD || boss->health <= 0.0f || (HLE_DUMMY_BOSS == 1 && boss->state == BOSS_STATE_DEAD)) {
+                    static bool once; if (!once) { once = true; hb_fight_end(character_get_state() == CHAR_STATE_DEAD ? "died" : "won", boss); hb_dump_table(); debugf("[hbrun] all 1 runs done\n"); }
+                    return;
+                }
+#endif
+                if (boss->mode == BOSS_MODE_COMBAT) hb_fight(in, pressed, boss);
+                tm += deltaTime;
+                return;
+            }
+#endif
 #ifdef HLE_DUMMY_CAST    // test aid: a skill (1-3; 4 five in turn, [palcast]) cast every HLE_DUMMY_CAST_EVERY frames, locked on, its cooldown zeroed, in a Tower
                          // run begun here; with HLE_SKILL_LV=<skill>,<lv>,<form> the casts alternate Lv 1 and that level: [castft] the
                          // frame time through each (mean, worst), the most effects alive, any dropped ([fxfull])
