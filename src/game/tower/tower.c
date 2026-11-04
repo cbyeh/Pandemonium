@@ -14,6 +14,7 @@
 #include "video_layout.h"
 #include "joypad_utility.h"
 #include "ui_pages.h"
+#include "gpu_frame.h"
 #define rdpq_text_printf ui_textf     // (tracked: the list screens' boxes fit their content, ui_pages.h)
 #include "game/boss/boss.h"
 
@@ -486,7 +487,12 @@ static bool takes_slot(BoonId b) { return !is_skill_card(b) && !BOONS[b].up && !
 // between fights, Stats, the Codex, the fight's slot strip); freed when the run ends or the title's Codex closes
 enum { ICON_PADLOCK = FAM_COUNT, ICON_LINK };
 static sprite_t *s_ticons;
-void tower_icons_free(void) { if (s_ticons) { rspq_wait(); sprite_free(s_ticons); s_ticons = NULL; } }
+static rspq_block_t *s_stripBlock;      // the slot strip as last drawn (hud_strip: recorded again when what it shows changes)
+void tower_icons_free(void)
+{
+    if (s_stripBlock) { gpu_wait(); rspq_block_free(s_stripBlock); s_stripBlock = NULL; }     // (it draws the strip's texture)
+    if (s_ticons) { rspq_wait(); sprite_free(s_ticons); s_ticons = NULL; }
+}
 static bool ticons(void) { if (!s_ticons) s_ticons = sprite_load("rom:/ui/tower/tower_icons.i4.sprite"); return s_ticons != NULL; }
 // the families' colours (their font styles'), Iron a cool white
 static const color_t FAM_RGB[FAM_COUNT + 1] = {
@@ -1214,6 +1220,13 @@ int tower_skill_form(int skill)
     return s.stacks[skill_form_card(skill, SKILL_FORM_A)] ? SKILL_FORM_A : s.stacks[skill_form_card(skill, SKILL_FORM_B)] ? SKILL_FORM_B : SKILL_FORM_NONE;
 }
 #ifdef HLE_AUTOPLAY
+// test aid (HLE_STRIP_FULL): five slots held, one a family (the slot strip's busiest)
+void tower_test_fill_slots(void)
+{
+    static const BoonId B[] = { BOON_RALLY, BOON_STORM_BLADE, BOON_MOON_MASTERY, BOON_VIGOR, BOON_SECOND_WIND };
+    for (unsigned i = 0; i < sizeof B / sizeof B[0]; i++) while (s.stacks[B[i]] < (BOONS[B[i]].maxStacks > 2 ? 2 : BOONS[B[i]].maxStacks)) take_boon(B[i]);
+    debugf("[strip] slots %d %d %d %d %d\n", s.slot[0], s.slot[1], s.slot[2], s.slot[3], s.slot[4]);
+}
 // test aid (HLE_SKILL_LV): a skill known at this level (1-5) and form (at 5: 1 A, 2 B), as if drafted
 void tower_test_skill_lv(int skill, int lv, int form)
 {
@@ -2847,9 +2860,24 @@ static bool boon_live(BoonId b)
 #define STRIP_GAP  3
 static void hud_strip(void)
 {
+#ifdef HLE_NO_STRIP     // test aid: the strip's cost (not drawn)
+    return;
+#endif
     if (!ticons()) return;
     extern int character_ui_bar_slide(void);
     const int x0 = ui_safe_margin_x(), y = ui_safe_margin_y() + 23 - character_ui_bar_slide();      // (the stamina bar ends 20 under the margin; it slides in with the bars)
+    // what it shows (each slot's boon, level and light, where): recorded once for it, run each frame (its blits and modes
+    // cost the CPU a frame's tenth of a millisecond, the D-pad keys' way)
+    static uint8_t look[3 * TOWER_SLOTS + 3], last[sizeof look];
+    for (int i = 0; i < TOWER_SLOTS; i++) {
+        BoonId b = (BoonId)(s.slot[i] - 1);
+        look[3 * i] = s.slot[i]; look[3 * i + 1] = s.slot[i] ? s.stacks[b] : 0; look[3 * i + 2] = s.slot[i] && boon_live(b);
+    }
+    look[3 * TOWER_SLOTS] = (uint8_t)x0; look[3 * TOWER_SLOTS + 1] = (uint8_t)y; look[3 * TOWER_SLOTS + 2] = 1;
+    if (s_stripBlock && !memcmp(look, last, sizeof look)) { rspq_block_run(s_stripBlock); return; }
+    if (s_stripBlock) { gpu_wait(); rspq_block_free(s_stripBlock); }
+    memcpy(last, look, sizeof look);
+    gpu_block_begin();
     for (int i = 0; i < TOWER_SLOTS; i++) {
         int x = x0 + i * (STRIP_SLOT + STRIP_GAP);
         if (!s.slot[i]) {       // empty: a dim outline
@@ -2870,6 +2898,8 @@ static void hud_strip(void)
         int max = BOONS[b].maxStacks;
         if (max > 1) pips(x + (STRIP_SLOT - (max * 3 - 1)) / 2, y + STRIP_SLOT + 2, s.stacks[b], 0, max, dim(FAM_RGB[BOONS[b].family], lit ? 100 : 70), 2);
     }
+    s_stripBlock = gpu_block_end();
+    rspq_block_run(s_stripBlock);
 }
 // A D-pad skill key's marks (a climb's): its level's 4 pips along the key's foot, white; a form's badge in its top right too
 void tower_hud_skill_marks(int k, int x, int y)

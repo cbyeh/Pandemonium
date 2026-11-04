@@ -2147,7 +2147,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 extern void tower_begin_run(uint32_t); extern bool tower_active(void); extern void tower_test_skill_lv(int, int, int);
                 extern int skill_fx_live(void); extern void character_cut_skill_cooldowns(float);
                 static int k, n; static uint32_t prev, sum, worst, cnt; static int live;
-                if (!tower_active()) tower_begin_run(1);
+                if (!tower_active()) {
+                    tower_begin_run(1);
+#ifdef HLE_STRIP_FULL       // (the slot strip full: its cost in [castft], against HLE_NO_STRIP)
+                    { extern void tower_test_fill_slots(void); tower_test_fill_slots(); }
+#endif
+                }
                 int c = k % HLE_DUMMY_CAST_EVERY;
 #if HLE_DUMMY_CAST == 4     // 4: each in turn, Moon Blade Dance, Full Moon Dance, Halfmoon Slash, Crescent Cleave, Crescent Storm (palette shots)
                 static const int CYC[5][3] = { { 1, 1, 0 }, { 1, 5, 1 }, { 2, 1, 0 }, { 3, 1, 0 }, { 3, 5, 1 } };
