@@ -257,13 +257,13 @@ void character_ui_draw_health_bar(const char *name, float ratio, float flash)
         rdpq_fill_rectangle(fillRight, top + 2, lossRight, bottom - 2);
     }
 
-    // Rally: the health a hit back can still win, orange as in Bloodborne
+    // Rally: the health a hit back can still win, a lighter red past the fill (Bloodborne's regain), draining as the pool does
     float rally = tower_rally_pool();
     if (rally > 0.0f && character_get_max_health() > 0.0f) {
         int rallyRight = fillRight + (int)((float)(barWidth - 4) * rally / character_get_max_health() + 0.5f);
         if (rallyRight > right - 2) rallyRight = right - 2;
         if (rallyRight > fillRight) {
-            rdpq_set_prim_color(RGBA32(235, 120, 40, 220));
+            rdpq_set_prim_color(RGBA32(250, 160, 150, 255));
             rdpq_fill_rectangle(fillRight, top + 2, rallyRight, bottom - 2);
         }
     }
@@ -373,6 +373,20 @@ static void character_ui_draw_icon(sprite_t *sprite, const surface_t *surf, int 
     rdpq_sprite_blit(sprite, x, y, &(rdpq_blitparms_t){
         .scale_x = scale, .scale_y = scale, .cx = surf->width / 2, .cy = surf->height / 2,
     });
+}
+
+// a skill's HUD icon (0 Moon Blade Dance, 1 Halfmoon Slash, 2 Crescent Cleave) px wide at its centre x, y (the Build rows': a fight's sprites)
+void character_ui_draw_skill_icon(int skill, int x, int y, int px)
+{
+    sprite_t *spr[3] = { s_skillMoonBladeSprite, s_skillHalfmoonSprite, s_skillCleaveSprite };
+    const surface_t *surf[3] = { &s_skillMoonBladeSurf, &s_skillHalfmoonSurf, &s_skillCleaveSurf };
+    if (skill < 0 || skill > 2 || !spr[skill]) return;
+    rdpq_sync_pipe();
+    rdpq_set_mode_standard();
+    rdpq_mode_alphacompare(1);
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+    rdpq_mode_filter(FILTER_BILINEAR);
+    character_ui_draw_icon(spr[skill], surf[skill], x, y, (float)px);
 }
 
 /** Skill slot: icon, darkened from the top while on cooldown, plus seconds left. */
@@ -489,6 +503,8 @@ void character_ui_draw_c_buttons(void)
     rspq_block_run(s_keysBlock);
     for (int i = 0; i < 3; i++)
         if (look & (1u << i)) character_ui_draw_skill_cooldown(keys[i].s, keys[i].x, keys[i].y, keyPx);
+    for (int i = 0; i < 3; i++)     // a climb's levels: pips and a form's badge over the key (over the cooldown's shade)
+        if (look & (1u << i)) tower_hud_skill_marks(keys[i].s, keys[i].x, keys[i].y);
 
     if (potionCount <= 0) {
         return;

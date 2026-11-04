@@ -28,11 +28,12 @@
 
 typedef struct {
     char text[UI_DOC_TEXT]; int used;
-    struct { int16_t l, r; uint8_t style, gap, brk, keep, cont; } row[UI_DOC_ROWS];     // cont: split off the row before it by a layout
+    struct { int16_t l, r; uint8_t style, gap, brk, keep, cont, icon; } row[UI_DOC_ROWS];     // cont: split off the row before it by a layout
     int n;
     uint8_t start[UI_DOC_PAGES + 1];    // the first row of each page (start[pages] = n)
     int pages;
     bool pendingGap, pendingBreak, pendingKeep;
+    uint8_t pendingIcon;
 } UiDoc;
 
 void ui_doc_clear(UiDoc *d);
@@ -41,6 +42,10 @@ void ui_doc_row(UiDoc *d, int style, const char *right, const char *fmt, ...) __
 void ui_doc_gap(UiDoc *d);              // half a line before the next row (dropped at a page's top)
 void ui_doc_break(UiDoc *d);            // the next row starts a page
 void ui_doc_keep(UiDoc *d);             // the next row stays on the page of the one after it (a heading)
+void ui_doc_icon(UiDoc *d, uint8_t icon);   // the next row has this icon left of its text (drawn by ui_icon_hook; its text indented)
+// draws an icon at x (y a row's baseline) when draw, and returns its width with the gap after it (0: none). The Tower's
+// emblems (tower.c sets it before it fills a doc with them)
+extern int (*ui_icon_hook)(uint8_t icon, int x, int y, bool draw);
 int  ui_doc_layout(UiDoc *d, int w, int h);     // returns the pages (1 at least)
 void ui_doc_draw(const UiDoc *d, int page, int x, int y, int w);     // y: the first line's baseline
 int  ui_line_pitch(void);               // the font's line pitch (FONT_UNBALANCED)

@@ -1620,6 +1620,16 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 debugf("[berserk-run] t %d: the potion pressed at %.0f/%.0f health, %d potions (blocked %d)\n", t, (double)character.health, (double)character.maxHealth, p0, tower_potion_blocked()); }
             if (t > 0 && t % 600 == 320) debugf("[berserk-run] t %d: potions now %d\n", t, character.healthPotions);
 #endif
+#ifdef HLE_HUD_LEVELS      // (icons step 1) the D-pad keys' marks: every skill known, all three at Lv 1, 2, 3, 4, then 5 (A, B, A), 120 frames each
+            if (t % 120 == 60) {
+                extern void tower_test_skill_lv(int skill, int lv, int form);
+                int lv = (t / 120) % 5 + 1;
+                for (int k = 0; k < 3; k++) tower_test_skill_lv(k, lv, 1 + (k & 1));
+                debugf("[hudlv] skills at Lv %d (frame %d)\n", lv, frame);
+            }
+            { extern float tower_rally_pool(void); float rp = tower_rally_pool();      // the Rally pool as the bar draws it
+              if (rp > 0.0f && t % 10 == 0) debugf("[rallybar] pool %d.%d of %d (frame %d)\n", (int)rp, (int)(rp * 10) % 10, (int)character.maxHealth, frame); }
+#endif
             if (t < HLE_STRIKE_FRAMES) {
                 if (t == 1) pressed->z = 1;
                 in->btn.z = 1;

@@ -418,6 +418,9 @@ bool save_controller_load_settings(void) {
     // a skin this slot hasn't unlocked (an older save, before the unlocks) falls back to the Knight
     character_skin_set(save_progress_skin_unlocked(d, saved_skin(d)) ? saved_skin(d) : SKIN_KNIGHT);
     skill_fx_set_palette(save_progress_tower_best_floor(d) >= SAVE_SUNFORGED_FLOOR && (d->_pad[25] & 2));     // Sunforged (off by default)
+#ifdef HLE_AUTOPLAY
+    debugf("[save] slot %d: best floor %d, _pad[25] %02x, Sunforged %s\n", s_active_slot, save_progress_tower_best_floor(d), d->_pad[25], skill_fx_palette() ? "on" : "off");
+#endif
 #ifdef WIP_TEST_EMBERS   // testing aid for the WIP builds (the Makefile): every slot starts with at least this many Embers
     { TowerSave t; save_controller_get_tower(&t); if (t.embers < WIP_TEST_EMBERS) { t.embers = WIP_TEST_EMBERS; save_controller_set_tower(&t); }
 #ifdef HLE_AUTOPLAY

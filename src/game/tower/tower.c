@@ -480,6 +480,115 @@ static int slots_used(void)
 static bool is_skill_card(BoonId b) { return BOONS[b].family == FAM_SKILL; }
 static bool takes_slot(BoonId b) { return !is_skill_card(b) && !BOONS[b].up && !BOONS[b].duo; }   // ("+" none, a duo merges two)
 
+// ---- Icons (step 1): the families' emblems, the padlock and the link (assets/ui/tower/tower_icons.i4.png, tools/tower_icons.py:
+// 16x16 I4 one above the next, 1 KB), level pips, the A/B form badge and the rarity frames. Loaded when first drawn (a screen
+// between fights, Stats, the Codex, the fight's slot strip); freed when the run ends or the title's Codex closes
+enum { ICON_PADLOCK = FAM_COUNT, ICON_LINK };
+static sprite_t *s_ticons;
+void tower_icons_free(void) { if (s_ticons) { rspq_wait(); sprite_free(s_ticons); s_ticons = NULL; } }
+static bool ticons(void) { if (!s_ticons) s_ticons = sprite_load("rom:/ui/tower/tower_icons.i4.sprite"); return s_ticons != NULL; }
+// the families' colours (their font styles'), Iron a cool white
+static const color_t FAM_RGB[FAM_COUNT + 1] = {
+    [FAM_BLOOD] = RGBA32(235, 110, 85, 255), [FAM_STORM] = RGBA32(140, 185, 255, 255), [FAM_MOON] = RGBA32(130, 225, 210, 255),
+    [FAM_IRON] = RGBA32(225, 228, 235, 255), [FAM_SHADOW] = RGBA32(190, 145, 255, 255), [FAM_HEARTH] = RGBA32(255, 200, 90, 255),
+    [FAM_SKILL] = RGBA32(110, 210, 255, 255),     // (a skill's: its effects' cyan; the level a card gives white)
+};
+#define GOLD_RGB RGBA32(255, 200, 90, 255)
+static color_t dim(color_t c, int k) { return RGBA32(c.r * k / 100, c.g * k / 100, c.b * k / 100, 255); }
+static void icon_mode(void)
+{
+    rdpq_sync_pipe();
+    rdpq_set_mode_standard();
+    rdpq_mode_combiner(RDPQ_COMBINER1((TEX0, 0, PRIM, 0), (TEX0, 0, PRIM, 0)));
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+}
+static void fill_mode(void)
+{
+    rdpq_sync_pipe();
+    rdpq_set_mode_standard();
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+    rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+}
+// a tile of the strip (w x h from its top left) at x, y in colour c (icon_mode set)
+static void icon_blit(int tile, int x, int y, int w, int h, color_t c)
+{
+    rdpq_set_prim_color(c);
+    rdpq_sprite_blit(s_ticons, x, y, &(rdpq_blitparms_t){ .t0 = 16 * tile, .width = w, .height = h });
+}
+// a family's emblem, 16x16 at x, y (its top left); k: brightness in percent
+static void emblem(int fam, int x, int y, int k)
+{
+    if (fam < 0 || fam >= FAM_COUNT || !ticons()) return;
+    icon_mode();
+    icon_blit(fam, x, y, 16, 16, dim(FAM_RGB[fam], k));
+}
+// a duo's two emblems joined by the link (44 px wide), in its two families' colours, the link gold
+static void duo_emblems(int famA, int famB, int x, int y)
+{
+    if (!ticons()) return;
+    icon_mode();
+    icon_blit(famA, x, y, 16, 16, FAM_RGB[famA]);
+    icon_blit(ICON_LINK, x + 16, y + 6, 12, 5, GOLD_RGB);
+    icon_blit(famB, x + 28, y, 16, 16, FAM_RGB[famB]);
+}
+static void padlock(int x, int y, color_t c) { if (ticons()) { icon_mode(); icon_blit(ICON_PADLOCK, x, y, 7, 8, c); } }
+static void link_mark(int x, int y, color_t c) { if (ticons()) { icon_mode(); icon_blit(ICON_LINK, x, y, 12, 5, c); } }
+// Level pips: lv held in the family's colour, up to next the level a card would give (white), the rest empty (dark,
+// a lit rim); sz px each, sz + 1 apart (sz 3 on the menus, 2 in a fight). Returns the width
+static int pips(int x, int y, int lv, int next, int max, color_t c, int sz)
+{
+    fill_mode();
+    for (int i = 0; i < max; i++) {
+        int px = x + i * (sz + 1);
+        if (i >= lv && i < next) rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+        else rdpq_set_prim_color(i < lv ? c : sz >= 3 ? RGBA32(70, 66, 62, 255) : RGBA32(25, 22, 20, 255));     // (a fight's small ones: dark on the key and the hall)
+        rdpq_fill_rectangle(px, y, px + sz, y + sz);
+        if (i >= next && sz >= 3) { rdpq_set_prim_color(RGBA32(20, 18, 16, 255)); rdpq_fill_rectangle(px + 1, y + 1, px + sz - 1, y + sz - 1); }   // (hollow: shape, not just shade)
+    }
+    return max * (sz + 1) - 1;
+}
+// a skill's Lv 5 form: a gold badge 5x7 with its letter (A or B, a 3x5 glyph), x, y its top left
+static void form_badge(int x, int y, int form)
+{
+    static const uint8_t GLYPH[2][5] = { { 2, 5, 7, 5, 5 }, { 6, 5, 6, 5, 6 } };    // A, B: 3 bits a row, the left one high
+    fill_mode();
+    rdpq_set_prim_color(RGBA32(255, 200, 90, 255));
+    rdpq_fill_rectangle(x, y, x + 5, y + 7);
+    rdpq_set_prim_color(RGBA32(30, 20, 5, 255));
+    for (int r = 0; r < 5; r++) for (int c = 0; c < 3; c++)
+        if ((GLYPH[form - 1][r] >> (2 - c)) & 1) rdpq_fill_rectangle(x + 1 + c, y + 1 + r, x + 2 + c, y + 2 + r);
+}
+// A rarity frame (colour-blind safe: its shape says the tier too): Common grey, thin; Rare blue, thick, two studs on its
+// top corners; Legendary gold, thick, a stud on every corner (a pact crimson, thick). t: the thick width (2 on the cards, 1
+// round an emblem); a stud a square on the corner, past the frame's outer edge (5 px on a card, 3 round an emblem)
+static const color_t RARITY[4][2] = {
+    { RGBA32(105, 105, 105, 255), RGBA32(200, 200, 200, 255) },
+    { RGBA32(60, 95, 160, 255),   RGBA32(140, 185, 255, 255) },
+    { RGBA32(150, 115, 30, 255),  RGBA32(255, 200, 90, 255) },
+    { RGBA32(120, 20, 30, 255),   RGBA32(230, 50, 60, 255) },
+};
+static void rarity_frame(int x0, int y0, int x1, int y1, int tier, bool on, int t)
+{
+    fill_mode();
+    rdpq_set_prim_color(RARITY[tier][on]);
+    int w = tier == TIER_COMMON ? 1 : t;
+    ui_frame(x0 + t - w, y0 + t - w, x1 - t + w, y1 - t + w, w);
+    if (tier != TIER_RARE && tier != TIER_LEGENDARY) return;
+    for (int k = 0; k < (tier == TIER_LEGENDARY ? 4 : 2); k++) {
+        int cx = k & 1 ? x1 - 1 : x0, cy = k & 2 ? y1 - 1 : y0, r = t >= 2 ? 2 : 1;     // centred on the corner's pixel (a card's inside the 7.5% area)
+        rdpq_fill_rectangle(cx - r, cy - r, cx + r + 1, cy + r + 1);
+    }
+}
+// ui_pages' row icons (ui_doc_icon): a family's emblem (its id + 1), a duo's two (the second's id + 1 in the high nibble), the padlock
+static int doc_icon(uint8_t icon, int x, int y, bool draw)
+{
+    int a = (icon & 15) - 1, b = (icon >> 4) - 1;
+    if (b >= 0) { if (draw) duo_emblems(a, b, x, y - 12); return 48; }
+    if (a == ICON_PADLOCK) { if (draw) padlock(x + 2, y - 8, RGBA32(235, 110, 85, 255)); return 12; }
+    if (draw) emblem(a, x, y - 12, 100);
+    return 20;
+}
+
 // A family's boons are all in the pool: its pack bought, or it has none (Hearth's is held back)
 static bool family_open(int f)
 {
@@ -979,7 +1088,7 @@ void tower_begin_run(uint32_t seed)
 
 static void icons_free(void);
 static int map_enter(void);
-void tower_end_run(void) { offers_restore(); s.active = false; s.draftOpen = false; s.scr = SCR_NONE; icons_free(); if (ui_details()->owner == UI_OWNER_TOWER) ui_panel_close(ui_details()); }   // (a run quit from its Details)
+void tower_end_run(void) { offers_restore(); s.active = false; s.draftOpen = false; s.scr = SCR_NONE; icons_free(); tower_icons_free(); if (ui_details()->owner == UI_OWNER_TOWER) ui_panel_close(ui_details()); }   // (a run quit from its Details)
 bool tower_active(void) { return s.active; }
 int  tower_floor(void) { return s.floor; }
 int  tower_circle(void) { return s.circle; }
@@ -1389,13 +1498,7 @@ static void flat_mode(void)
     rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
 }
 
-// A card's frame tells the rarity: bronze, blue, gold; a pact crimson (brighter when selected)
-static const color_t FRAME[4][2] = {
-    { RGBA32(90, 70, 50, 255),  RGBA32(230, 150, 50, 255) },
-    { RGBA32(50, 80, 150, 255), RGBA32(110, 170, 255, 255) },
-    { RGBA32(150, 115, 30, 255), RGBA32(255, 215, 90, 255) },
-    { RGBA32(120, 20, 30, 255), RGBA32(230, 50, 60, 255) },
-};
+// A card's frame tells the rarity (rarity_frame: grey, blue, gold, by shape too; a pact crimson; brighter when selected)
 static const int NAME_STYLE[3] = { FONT_STYLE_WHITE, FONT_STYLE_BLUE, FONT_STYLE_GOLD };
 
 #define DRAFT_CARD_H 136
@@ -1423,6 +1526,22 @@ static int card_text(int x, int y, int w, int pitch, int style, const char *str)
 }
 // the y of a card's text (from the card's top): under its name's last line
 static int card_desc_y(int nameLines) { return 27 + CARD_PITCH * ((nameLines > 1 ? nameLines : 1) - 1) + CARD_GAP_Y; }
+// A card's head (the draft's and the Shop's): the family's emblem centred over the name (a duo's two, linked; a skill's
+// card its "Skill" or "Lv 5 form" tag, a form its A/B badge), and its levels' pips in the top right corner: those held,
+// the one it gives white (none for a boon of one level)
+static void card_head(int card, int x, int y0, int cw)
+{
+    const BoonDef *bd = &BOONS[card];
+    if (bd->duo) duo_emblems(bd->family, bd->duo - 1, x + cw / 2 - 22, y0 + 1);
+    else if (is_form(card)) { card_text(x + 2, y0 + 12, CARD_NAME_W, CARD_PITCH, FONT_STYLE_GOLD, "Lv 5 form"); form_badge(x + cw - 8, y0 + 3, 1 + (card - BOON_FULL_MOON_DANCE) % 2); }
+    else if (bd->family == FAM_SKILL) card_text(x + 2, y0 + 12, CARD_NAME_W, CARD_PITCH, FONT_STYLE_GREY, "Skill");
+    else emblem(bd->family, x + cw / 2 - 8, y0 + 1, 100);
+    int max = is_learn(card) ? SKILL_LV_MAX : bd->maxStacks;
+    if (max > 1 && !bd->up && !bd->duo) {
+        int w = max * 4 - 1;
+        pips(x + cw - 3 - w, y0 + 3, s.stacks[card], s.stacks[card] + 1, max, FAM_RGB[bd->family], 3);
+    }
+}
 static void tower_draft_draw(void)
 {
     if (!s.draftOpen) return;
@@ -1452,8 +1571,7 @@ static void tower_draft_draw(void)
         bool on = i == s.sel;
         rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));     // (the menus' black: the frame shows the one under the cursor)
         rdpq_fill_rectangle(x, y0, x + cw, y0 + ch);
-        rdpq_set_prim_color(FRAME[tier][on]);
-        ui_frame(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2, 2);
+        rarity_frame(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2, tier, on, 2);
         if (pact) {
             int b = (card - BOON_COUNT) / PC_COUNT, c = (card - BOON_COUNT) % PC_COUNT;
             // the blessing (a line of name, two of text), then its curse (name, two of text)
@@ -1476,12 +1594,7 @@ static void tower_draft_draw(void)
             continue;
         }
         const BoonDef *bd = &BOONS[card];
-        // the family's tag over the name, in its colour (a duo's two families, gold)
-        if (bd->duo) {
-            snprintf(line, sizeof line, "%s+%s", FAMILIES[bd->family].name, FAMILIES[bd->duo - 1].name);
-            card_text(x + 2, y0 + 12, CARD_NAME_W, CARD_PITCH, FONT_STYLE_GOLD, line);
-        } else if (is_form(card)) card_text(x + 2, y0 + 12, CARD_NAME_W, CARD_PITCH, FONT_STYLE_GOLD, "Lv 5 form");     // (in place of "Skill")
-        else card_text(x + 2, y0 + 12, CARD_NAME_W, CARD_PITCH, FAMILIES[bd->family].style, FAMILIES[bd->family].name);
+        card_head(card, x, y0, cw);     // the family's emblem over the name (a duo's two, linked), its level's pips
         int nameLines = card_text(x + 2, y0 + 27, CARD_NAME_W, CARD_PITCH, NAME_STYLE[tier], bd->name);
         const char *desc = bd->desc;    // a Learn card names the skill's button in the layout; a level what it adds
         if (is_learn(card) && s.stacks[card]) desc = SKILL_LV_DESC[card - BOON_LEARN_MOONBLADE][s.stacks[card] - 1];
@@ -1519,6 +1632,12 @@ static void tower_draft_draw(void)
             int lines = card_lines(bottom[k], CARD_FOOT_W);
             y -= FOOT_PITCH * (lines - 1);
             card_text(x + 1, y, CARD_FOOT_W, FOOT_PITCH, bstyle[k], bottom[k]);
+            // "Locks out" with the padlock, a duo's "Merges:" with the link, left of the word
+            bool lock = !strcmp(bottom[k], "Locks out"), merge = !strcmp(bottom[k], "Merges:");
+            if (lock || merge) {
+                int lx = x + 1 + (CARD_FOOT_W - ui_text_width(bottom[k])) / 2 - (lock ? 10 : 15);
+                if (lock) padlock(lx, y - 8, RGBA32(235, 110, 85, 255)); else link_mark(lx, y - 6, GOLD_RGB);
+            }
         }
     }
     // Skip, under the cards
@@ -2018,11 +2137,13 @@ static void doc_boon(UiDoc *d, int b, char *title, int tn, int *tstyle)
     char line[96];
     snprintf(title, tn, "%s", bd->name);
     *tstyle = NAME_STYLE[tier];
+    ui_icon_hook = doc_icon;    // its family's emblem by its family line (a duo's two), a padlock by a lock-out
     if (bd->duo) snprintf(line, sizeof line, "Duo of %s + %s", FAMILIES[bd->family].name, FAMILIES[bd->duo - 1].name);
     else if (is_form(b)) snprintf(line, sizeof line, "Lv 5 form of %s", BOONS[BOON_LEARN_MOONBLADE + form_skill(b)].name);
     else if (is_skill_card(b)) snprintf(line, sizeof line, "Skill");
     else if (bd->up) snprintf(line, sizeof line, "%s: the \"+\" of %s", FAMILIES[bd->family].name, BOONS[bd->up - 1].name);
     else snprintf(line, sizeof line, "%s family", FAMILIES[bd->family].name);
+    if (bd->family != FAM_SKILL) ui_doc_icon(d, (uint8_t)((bd->family + 1) | bd->duo << 4));
     ui_doc_row(d, bd->duo ? FONT_STYLE_GOLD : FAMILIES[bd->family].style, TIER_NAME[tier], "%s", line);
     if (is_learn(b) || is_form(b)) {      // the whole track
         int k = is_learn(b) ? b - BOON_LEARN_MOONBLADE : form_skill(b);
@@ -2054,7 +2175,7 @@ static void doc_boon(UiDoc *d, int b, char *title, int tn, int *tstyle)
         char rn[48]; rival_names(b, rn, sizeof rn);
         ui_doc_gap(d);
         ui_doc_text(d, FONT_STYLE_RED, "Rival: %s. Taking one locks the other out for the run.", rn);
-        if (s.locked[b]) ui_doc_text(d, FONT_STYLE_RED, "Locked out this run: its rival was taken.");
+        if (s.locked[b]) { ui_doc_icon(d, ICON_PADLOCK + 1); ui_doc_text(d, FONT_STYLE_RED, "Locked out this run: its rival was taken."); }
     }
     if (takes_slot(b)) {
         // the "+" at its top level
@@ -2569,12 +2690,10 @@ static void shop_draw(void)
         flat_mode();
         rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));     // (the menus' black: the frame shows the one under the cursor)
         rdpq_fill_rectangle(x, y0, x + cw, y0 + ch);
-        rdpq_set_prim_color(FRAME[card >= 0 ? BOONS[card].tier : 0][on]);
-        ui_frame(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2, 2);
+        rarity_frame(x - 2, y0 - 2, x + cw + 2, y0 + ch + 2, card >= 0 ? BOONS[card].tier : 0, on, 2);
         if (card < 0) { card_text(x + 2, y0 + 46, CARD_NAME_W, CARD_PITCH, FONT_STYLE_GREY, "No new boon fits"); continue; }
         const BoonDef *bd = &BOONS[card];
-        if (bd->duo) snprintf(line, sizeof line, "%s+%s", FAMILIES[bd->family].name, FAMILIES[bd->duo - 1].name);
-        card_text(x + 2, y0 + 12, CARD_NAME_W, CARD_PITCH, bd->duo ? FONT_STYLE_GOLD : FAMILIES[bd->family].style, bd->duo ? line : FAMILIES[bd->family].name);
+        card_head(card, x, y0, cw);     // (as the draft's)
         int nl = card_text(x + 2, y0 + 27, CARD_NAME_W, CARD_PITCH, sold ? FONT_STYLE_GREY : NAME_STYLE[bd->tier], bd->name);
         card_text(x + 2, y0 + card_desc_y(nl), CARD_TEXT_W, CARD_PITCH, sold ? FONT_STYLE_GREY : FONT_STYLE_WHITE, bd->desc);
         if (sold) snprintf(line, sizeof line, "Sold");
@@ -2675,9 +2794,67 @@ void tower_between_draw(void)
     if (ui_details()->open && ui_details()->owner == UI_OWNER_TOWER) ui_panel_draw(ui_details());     // Details (R) or the map's confirm, over it
 }
 
+// A slot's effect at work now (its icon lit in the fight's strip): a boon that waits for a moment is dim until it comes
+// (Berserker and Last Stand at their health, Red Thirst a quarter down, a window after a roll, a perfect dodge, a potion or a
+// cast, a bleed, a stagger, Unbroken and Vanish while they're ready); one that always works is always lit
+static bool boon_live(BoonId b)
+{
+    extern double nowS;
+    Boss *boss = boss_get_instance();
+    bool stag = boss && boss->staggerT > 0.0f;
+    float hp = character.maxHealth > 0.0f ? character.health / character.maxHealth : 1.0f;
+    switch (b) {
+    case BOON_BERSERKER:     return tower_berserk();
+    case BOON_LAST_STAND:    return hp < 0.3f;
+    case BOON_RED_THIRST:    return hp <= 0.75f;
+    case BOON_UNBROKEN:      return !s.unbrokenUsed;
+    case BOON_RIPOSTE:       return nowS < s.riposteUntil;
+    case BOON_SHADOW_EDGE:   return nowS < s.shadowEdgeUntil;
+    case BOON_WAXING_MOON:   return nowS < s.waxingUntil;
+    case BOON_SANGUINE_FLASK:return nowS < s.sanguineUntil;
+    case BOON_HEMORRHAGE:    return s.bleedLeft > 0.0f;
+    case BOON_OVERCHARGE:    return s.overcharge > 0;
+    case BOON_VANISH:        return s.vanishArmed;
+    case BOON_EXECUTIONER: case BOON_ECLIPSE: case BOON_CRUSHING_BLOWS: case BOON_ANVIL_OF_STORMS: case BOON_IRON_TIDE: return stag;
+    case BOON_RALLY:         return s.rally > 0.0f;
+    case BOON_SHADES_MERCY:  return nowS < s.mercyUntil || s.rally > 0.0f;
+    case BOON_STEEL_HEARTH:  return nowS < s.steelUntil;
+    default:                 return true;
+    }
+}
+// The fight's slot strip: the 5 slots' emblems down the left edge, between the player's bars and the D-pad (clear of the
+// boss's title and bar), each with its levels' pips beside it, lit while its effect works, dim while it waits; a
+// duo's emblem gold, an empty slot nothing. 1 KB of icons, a blit and a few fills a slot
+static void hud_strip(void)
+{
+    if (!slots_used() || !ticons()) return;
+    const int x = ui_safe_margin_x(), y0 = ui_safe_margin_y() + 24;
+    const int dpadTop = SCREEN_HEIGHT - ui_safe_margin_y() - 26 - 36 - 10 - 4;     // (character_ui's diamond: its up key's top)
+    int pitch = (dpadTop - y0) / TOWER_SLOTS;
+    pitch = pitch > 18 ? 18 : pitch < 12 ? 12 : pitch;
+    for (int i = 0, n = 0; i < TOWER_SLOTS; i++) {
+        if (!s.slot[i]) continue;
+        BoonId b = (BoonId)(s.slot[i] - 1);
+        int y = y0 + pitch * n++;
+        bool lit = boon_live(b);
+        if (BOONS[b].duo) { icon_mode(); icon_blit(BOONS[b].family, x, y, 16, 16, dim(GOLD_RGB, lit ? 100 : 40)); continue; }
+        emblem(BOONS[b].family, x, y, lit ? 100 : 40);
+        if (BOONS[b].maxStacks > 1) pips(x + 18, y + 7, s.stacks[b], 0, BOONS[b].maxStacks, dim(FAM_RGB[BOONS[b].family], lit ? 100 : 60), 3);
+    }
+}
+// A D-pad skill key's marks (a climb's): its level's 4 pips along the key's foot, white; a form's badge in its top right too
+void tower_hud_skill_marks(int k, int x, int y)
+{
+    if (!s.active || !knows(k)) return;
+    int f = tower_skill_form(k);
+    pips(x - 5, y + 6, s.stacks[BOON_LEARN_MOONBLADE + k], 0, SKILL_LV_MAX, RGBA32(255, 255, 255, 255), 2);
+    if (f) form_badge(x + 3, y - 9, f);     // (Lv 5: the 4 pips full and its form's letter)
+}
+
 void tower_hud_draw(void)
 {
     if (!s.active || tower_between_open()) return;     // the screens between fights have their own header
+    hud_strip();
     char line[32];
     // inside the title-safe area, like the rest of the HUD (TVs and accurate emulators show the edges)
     const int w = SCREEN_WIDTH - ui_safe_margin_x(), top = ui_safe_margin_y() + 10;
@@ -2690,7 +2867,57 @@ void tower_hud_draw(void)
     }
 }
 
+// what each Build row is (tower_build_row_marks draws its icons): ROW_SKILL + k, a slot, a duo's line of two, a rival locked
+enum { ROW_EMPTY, ROW_SKILL, ROW_SLOT = ROW_SKILL + SKILL_COUNT, ROW_DUO, ROW_DUO_PAIR, ROW_LOCKED };
+static uint8_t s_rowKind[TOWER_BUILD_ROWS]; static int8_t s_rowCard[TOWER_BUILD_ROWS];
+static int tower_build_rows_text(char left[][40], char right[][12], int style[], int card[], int max);
 int tower_build_rows(char left[][40], char right[][12], int style[], int card[], int max)
+{
+    int n = tower_build_rows_text(left, right, style, card, max);
+    for (int i = 0; i < n && i < TOWER_BUILD_ROWS; i++) {
+        s_rowCard[i] = (int8_t)card[i];
+        s_rowKind[i] = i < SKILL_COUNT ? ROW_SKILL + i : card[i] < 0 ? ROW_EMPTY : !strncmp(left[i], "Locked: ", 8) ? ROW_LOCKED
+                     : BOONS[card[i]].duo ? (left[i][0] == ' ' ? ROW_DUO_PAIR : ROW_DUO) : ROW_SLOT;
+    }
+    return n;
+}
+// A Build row's icons (after tower_build_rows): a slot's emblem in its rarity's frame and its levels' pips (its "+" after
+// them), a duo's two emblems linked, a locked rival's padlock, a skill's pips and its form's badge. Returns how far its
+// text moves right; *noRight: its pips stand in for the right column's text
+extern void character_ui_draw_skill_icon(int skill, int x, int y, int px);
+int tower_build_row_marks(int i, int x, int y, int w, bool *noRight)
+{
+    *noRight = false;
+    if (i < 0 || i >= TOWER_BUILD_ROWS) return 0;
+    int kind = s_rowKind[i], b = s_rowCard[i], top = y - 12, right = x + w;
+    if (kind >= ROW_SKILL && kind < ROW_SLOT) {
+        int k = kind - ROW_SKILL;
+        character_ui_draw_skill_icon(k, x + 8, top + 8, 16);
+        if (!knows(k)) return 20;
+        int f = tower_skill_form(k), bw = f ? 8 : 0;
+        if (f) form_badge(right - 5, top + 5, f);
+        pips(right - bw - 15, top + 7, s.stacks[BOON_LEARN_MOONBLADE + k], 0, SKILL_LV_MAX, FAM_RGB[FAM_SKILL], 3);
+        *noRight = true;
+        return 20;
+    }
+    if (kind == ROW_EMPTY) return 20;
+    if (kind == ROW_LOCKED) { padlock(x + 5, top + 4, RGBA32(130, 130, 130, 255)); return 20; }
+    if (kind == ROW_DUO || kind == ROW_DUO_PAIR) {
+        if (kind == ROW_DUO) { duo_emblems(BOONS[b].family, BOONS[b].duo - 1, x, top); return 48; }
+        return 20;      // (its two boons' names, under the duo's)
+    }
+    // a slot: its emblem framed by its rarity, its pips (a boon of one level: none), its "+" after them
+    rarity_frame(x - 1, top - 1, x + 17, top + 17, BOONS[b].tier, false, 1);
+    emblem(BOONS[b].family, x, top, 100);
+    bool plus = false;
+    for (int p = 0; p < BOON_COUNT; p++) plus |= BOONS[p].up == b + 1 && s.stacks[p];
+    int max = BOONS[b].maxStacks, pw = plus ? 9 : 0;
+    if (plus) rdpq_text_printf(&(rdpq_textparms_t){ .style_id = FONT_STYLE_GOLD }, FONT_UNBALANCED, right - 7, y, "+");
+    if (max > 1) pips(right - pw - (max * 4 - 1), top + 7, s.stacks[b], 0, max, FAM_RGB[BOONS[b].family], 3);
+    *noRight = true;
+    return 20;
+}
+static int tower_build_rows_text(char left[][40], char right[][12], int style[], int card[], int max)
 {
     int n = 0;
     for (int k = 0; k < SKILL_COUNT && n < max; k++, n++) {     // the skills: button, name (its form's), its level
@@ -2948,6 +3175,7 @@ static const char *lc(const char *t)
 }
 static void codex_gen(UiDoc *d, int k)
 {
+    ui_icon_hook = doc_icon;
     char line[200];
     int best = tower_best_floor();
     switch (k) {
@@ -2968,6 +3196,7 @@ static void codex_gen(UiDoc *d, int k)
             }
             bool own = s.active ? family_open(f) : (sv.unlocks >> f) & 1;
             ui_doc_gap(d);
+            ui_doc_icon(d, (uint8_t)(f + 1));
             ui_doc_text(d, FAMILIES[f].style, "%s: %s", FAMILIES[f].name, line);
             if (m) ui_doc_text(d, own ? FAMILIES[f].style : FONT_STYLE_GREY, "%s %s", own ? "Its pack:" : "Its pack (Shrine):", pk);
         }
@@ -2979,7 +3208,7 @@ static void codex_gen(UiDoc *d, int k)
     case CX_PLUS:
         ui_doc_gap(d);
         for (int b = 0; b < BOON_COUNT; b++) if (BOONS[b].duo)
-            ui_doc_text(d, FONT_STYLE_WHITE, "%s, %s + %s: %s", BOONS[b].name, FAMILIES[BOONS[b].family].name, FAMILIES[BOONS[b].duo - 1].name, lc(BOONS[b].desc));
+            { ui_doc_icon(d, (uint8_t)((BOONS[b].family + 1) | BOONS[b].duo << 4)); ui_doc_text(d, FONT_STYLE_WHITE, "%s, %s + %s: %s", BOONS[b].name, FAMILIES[BOONS[b].family].name, FAMILIES[BOONS[b].duo - 1].name, lc(BOONS[b].desc)); }
         break;
     case CX_MBD: case CX_HALFMOON: case CX_CLEAVE:
         if (!s.active) { TowerSave t; tower_load(&t); s.forms = (t.unlocks >> FAM_COUNT) & ((1 << SKILL_COUNT) - 1); }   // (outside a climb: the B forms bought)
@@ -4930,6 +5159,7 @@ const char *tower_test_gallery(int k)
     STEP("draft: duos", gallery_draft(BOON_BLOOD_MOON_RITE, BOON_ANVIL_OF_STORMS, BOON_STEEL_HEARTH, 1, false))
     STEP("draft: the longest pacts", gallery_draft(PACT_CARD(PB_WOUNDED, PC_EXPOSED), PACT_CARD(PB_LAST_BREATH, PC_WEAKNESS), PACT_CARD(PB_STAGGERED, PC_IMPAIRED), 2, false))
     STEP("draft: rivals", gallery_draft(BOON_RIPOSTE, BOON_IRON_SKIN, BOON_BERSERKER, 1, false))
+    STEP("draft: levels (pips)", gallery_draft(BOON_EMBER_EDGE, BOON_LEARN_MOONBLADE, BOON_VIGOR, 0, false))
     STEP("draft: pluses and the purse", gallery_draft(BOON_CRUSHING_BLOWS_PLUS, BOON_PHANTOM_STEP_PLUS, GOLD_CARD, 2, false))
     STEP("details: Iron Skin (rivals)", gallery_draft(BOON_RIPOSTE, BOON_IRON_SKIN, BOON_BERSERKER, 1, false); gallery_details())
     STEP("details: Full Moon Dance 1", gallery_draft(BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE, BOON_RALLY, 0, false); gallery_details())

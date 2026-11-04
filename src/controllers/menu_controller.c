@@ -949,6 +949,9 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             selectedOption = MENU_SETTINGS_SKIN;
         } else if (aJustPressed && selectedOption == SKIN_COUNT) {     // Sunforged: on/off once floor 100 is reached
             if (save_controller_sunforged_unlocked()) { skill_fx_set_palette(!skill_fx_palette()); (void)save_controller_save_settings(); }
+#ifdef HLE_AUTOPLAY
+            debugf("[sunforged] Skins row: unlocked %d, now %s\n", save_controller_sunforged_unlocked(), skill_fx_palette() ? "on" : "off");
+#endif
         } else if (aJustPressed && save_controller_skin_unlocked(selectedOption) && selectedOption != character_skin_get()) {
             character_skin_set(selectedOption);
             (void)save_controller_save_settings();
@@ -959,6 +962,7 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
 void menu_controller_update(void)
 {
     if (currentMenu != MENU_CONTROLS || !menuActive) controls_icons(false);
+    if (!tower_active() && (currentMenu != MENU_CODEX || !menuActive)) tower_icons_free();     // (the emblems: a climb's, or the Codex's)
     menu_controller_update_for_state(
         scene_get_game_state(),
         scene_is_cutscene_active()
@@ -968,6 +972,7 @@ void menu_controller_update(void)
 void menu_controller_update_title(void)
 {
     if (currentMenu != MENU_CONTROLS || !menuActive) controls_icons(false);
+    if (!tower_active() && (currentMenu != MENU_CODEX || !menuActive)) tower_icons_free();     // (the emblems: a climb's, or the Codex's)
     menu_controller_update_for_state(
         GAME_STATE_TITLE,
         false
@@ -1370,8 +1375,10 @@ void menu_controller_draw(void)
             for (int k = 0; k < run_rows_on_page(); k++) {
                 int i = first + k, ry = RUN_BODY + k * pitch + (i >= 3 && first == 0 ? 8 : 0);     // a gap between the skills and the slots
                 if (k == runRow) ui_select_box(RUN_TX - 4, ry - 12, RUN_TX + RUN_TW + 4, ry + 4);
-                rdpq_text_printf(&(rdpq_textparms_t){ .width = RUN_TW - UI_RIGHT_W, .style_id = s_run->style[i] }, FONT_UNBALANCED, RUN_TX, ry, "%s", s_run->left[i]);
-                if (s_run->right[i][0])
+                bool noRight;     // its emblem (or a skill's icon, a padlock, a duo's two) left, its pips right (tower_build_row_marks)
+                int in = tower_build_row_marks(i, RUN_TX, ry, RUN_TW, &noRight);
+                rdpq_text_printf(&(rdpq_textparms_t){ .width = RUN_TW - UI_RIGHT_W - in, .style_id = s_run->style[i] }, FONT_UNBALANCED, RUN_TX + in, ry, "%s", s_run->left[i]);
+                if (s_run->right[i][0] && !noRight)
                     rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W, .style_id = s_run->style[i] }, FONT_UNBALANCED, RUN_TX + RUN_TW - UI_RIGHT_W, ry, "%s", s_run->right[i]);
             }
             if (runRow >= 0 && s_run->card[first + runRow] >= 0) menu_details_hint(r);

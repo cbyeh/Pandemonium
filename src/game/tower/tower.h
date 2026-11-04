@@ -95,6 +95,10 @@ void tower_details_shrine(int kind, int i);     // the same for a Shrine entry (
 // card: each row's BoonId for its Details (-1 none); a locked rival is a row of its own
 #define TOWER_BUILD_ROWS (3 + 2 * TOWER_SLOTS + 12)     // (10 rival pairs: 10 locked at most)
 int tower_build_rows(char left[][40], char right[][12], int style[], int card[], int max);
+// a Build row's icons drawn at x, y (its baseline) across w: returns its text's indent; *noRight: its pips replace the right text
+int tower_build_row_marks(int i, int x, int y, int w, bool *noRight);
+void tower_icons_free(void);            // the emblems' strip (loaded when first drawn)
+void tower_hud_skill_marks(int skill, int x, int y);   // a D-pad skill key's level pips and form badge (a climb's), at its centre
 
 // ---- Offerings (Tower > Offerings): gifts for the next climb only, two at most, the second 50 Embers more; set aside
 // in the save (Embers paid at once), used when the climb starts (a climb quit before its first Guardian falls sets them aside again)
