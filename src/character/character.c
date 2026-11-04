@@ -78,6 +78,10 @@ static const float MAX_MOVEMENT_SPEED = 50.0f;
 static const float SPEED_BUILDUP_RATE = 1.5f;
 static const float SPEED_DECAY_RATE = 4.0f;
 
+#ifndef PLAYER_CAP_R
+#define PLAYER_CAP_R 6.0f       // the hurtbox's radius (test builds may set another)
+#endif
+#define PLAYER_CAP_TOP 20.0f    // its top over the feet, standing
 static const float ROLL_DURATION = 0.9f;
 static const float ROLL_DURATION_MOVING = 0.45f; // tune 0.45–0.70
 static const float ROLL_LAND_S = 0.39f;   // the Roll clip: down on the floor (its sound's peak then)
@@ -2758,12 +2762,15 @@ void character_init(void)
     t3d_model_draw(characterShadowModel);
     rspq_block_t* dpl_shadow = gpu_block_end();
 
-    // The body as drawn: the arms and feet reach ~8 out (the torso 3), the helmet 19.5 up (the
-    // top at 24 took blows passing over the head)
+    // The body as drawn: the helmet 18.8 up (the top at 24 took blows passing over the head), its
+    // front 5.8 and sides 5.1 out from the axis at idle (every skinned vertex; the torso 3, the legs
+    // 5.4): 6 round, so a blow lands as it meets the drawing (8 round, ~2/3 of the Bonus bosses'
+    // blows landed 1.5-5 short of the body). The top stays at 20; character_fit_capsule lowers it
+    // while rolling and down
     CapsuleCollider collider = {
         .localCapA = {{0.0f, 4.0f, 0.0f}},
-        .localCapB = {{0.0f, 12.0f, 0.0f}},
-        .radius = 8.0f
+        .localCapB = {{0.0f, PLAYER_CAP_TOP - PLAYER_CAP_R, 0.0f}},
+        .radius = PLAYER_CAP_R
     };
 
     Character newCharacter = {
@@ -2809,8 +2816,19 @@ void character_init(void)
     characterState = CHAR_STATE_TITLE_IDLE;
 }
 
+// The capsule's top follows the curled body: mid-roll it is 10-13.5 high (after its first frames,
+// still upright at 17-18.6), crouched after a knockdown 17.1 (standing 18.8)
+static void character_fit_capsule(void)
+{
+    float top = PLAYER_CAP_TOP;
+    if (characterState == CHAR_STATE_ROLLING && actionTimer > 0.06f) top = 14.0f;
+    else if (characterState == CHAR_STATE_KNOCKDOWN) top = 18.0f;
+    character.capsuleCollider.localCapB.v[1] = fmaxf(character.capsuleCollider.localCapA.v[1], top - PLAYER_CAP_R);
+}
+
 void character_update(void)
 {
+    character_fit_capsule();
     if (characterState == CHAR_STATE_DEAD ||
         characterState == CHAR_STATE_TITLE_IDLE ||
         characterState == CHAR_STATE_FOG_WALK ||

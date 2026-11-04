@@ -273,7 +273,7 @@ static void collision_resolve_character_scene_bounds(void)
 static float s_clearX, s_clearZ;     // where the walls last left the player
 static bool  s_clearOk;
 
-// The hall's walls are 20 thick, the player's radius 8: a move that took his middle past a wall's
+// The hall's walls are 20 thick, the player's radius 6: a move that took his middle past a wall's
 // middle in one frame (the knockdown's shove on a slow frame, a big body's shove) was pushed out the
 // far side, out of the hall. Such a move is walked in steps of his radius
 static void collision_sweep_character_scene_bounds(float fromX, float fromZ)
