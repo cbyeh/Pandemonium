@@ -1285,7 +1285,7 @@ static void menu_body(UiRect r0)
         }
     } else if (currentMenu == MENU_TOWER) {
         UiRect sr = ui_safe_rect();
-        if (sr.y1 - sr.y0 >= 190) {     // (its two lines of flavour; a large overscan setting leaves no room for them)
+        if (sr.y1 - sr.y0 >= 190 + P + 2) {     // (its two lines of flavour where they fit: the Heat row took their room at the default overscan)
             rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y - 4, "Boss after boss\nEver higher");
             y += 2 * P + 2;
         }

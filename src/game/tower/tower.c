@@ -5654,7 +5654,7 @@ static void gallery_draft(int a, int b, int c, int sel, bool cleared)
 {
     s.choices[0] = a; s.choices[1] = b; s.choices[2] = c; s.nChoices = 3; s.sel = sel;
     s.draftOpen = true; s.draftOpenMs = get_ticks_ms() - 2000; s.scr = SCR_NONE;
-    s.circleCleared = cleared; s.nextNight = NIGHT_STARFALL; s.lastFloorEmbers = 999; s.lastFloorGold = 999;
+    s.circleCleared = cleared; s.nextNight = NIGHT_STARFALL; s.lastFloorEmbers = 999; s.lastFloorGold = 999; s.chestLine[0] = 0;
 }
 static void gallery_map(int t, uint8_t afx, int boss, bool prisoner)
 {
@@ -5689,6 +5689,8 @@ const char *tower_test_gallery(int k)
     STEP("draft: rivals", gallery_draft(BOON_RIPOSTE, BOON_IRON_SKIN, BOON_BERSERKER, 1, false))
     STEP("draft: levels (pips)", gallery_draft(BOON_EMBER_EDGE, BOON_LEARN_MOONBLADE, BOON_VIGOR, 0, false))
     STEP("draft: pluses and a minor blessing", gallery_draft(BOON_CRUSHING_BLOWS_PLUS, BOON_PHANTOM_STEP_PLUS, MINOR_CARD(PB_VITALITY), 2, false))
+    STEP("draft: an Elite's chest (the longest line)", gallery_draft(BOON_CRUSHING_BLOWS_PLUS, BOON_PHANTOM_STEP_PLUS, MINOR_CARD(PB_BULWARK), 2, false);
+         snprintf(s.chestLine, sizeof s.chestLine, "Elite chest: %s, +1 potion", BOONS[BOON_CRUSHING_BLOWS_PLUS].name))
     STEP("details: Iron Skin (rivals)", gallery_draft(BOON_RIPOSTE, BOON_IRON_SKIN, BOON_BERSERKER, 1, false); gallery_details())
     STEP("details: Full Moon Dance 1", gallery_draft(BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE, BOON_RALLY, 0, false); gallery_details())
     STEP("details: Full Moon Dance 2", gallery_draft(BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE, BOON_RALLY, 0, false); gallery_details(); gal_press('A'))
