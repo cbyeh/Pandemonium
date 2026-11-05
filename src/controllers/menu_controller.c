@@ -204,6 +204,7 @@ static const char* towerMenuOptions[MENU_TOWER_COUNT] = {
     "Shrine",
     "Offerings",
     "Codex",
+    "Heat: %d",
     "Back",
 };
 
@@ -919,6 +920,9 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             selectedOption = 0;
         } else if (aJustPressed && selectedOption == MENU_TOWER_CODEX) {
             codex_open_menu(MENU_TOWER, MENU_TOWER_CODEX);
+        } else if (selectedOption == MENU_TOWER_HEAT && (aJustPressed || leftJustPressed || rightJustPressed)) {
+            int h = tower_heat() + (leftJustPressed ? -1 : 1);
+            tower_heat_set(aJustPressed && h > 10 ? 0 : h);      // (A alone reaches every step; saved with the Tower's bytes)
         } else if (bJustPressed || (aJustPressed && selectedOption == MENU_TOWER_BACK)) {
             currentMenu = MENU_TITLE;
             selectedOption = MENU_TITLE_TOWER;
@@ -1292,7 +1296,14 @@ static void menu_body(UiRect r0)
         if (badge[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_RED }, FONT_UNBALANCED, x, y, "%s", badge);
         else if (offers[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y, "%s", offers);
         y += P + 8;
-        for (int i = 0; i < MENU_TOWER_COUNT; i++, y += P + 2) menu_row(r, y, i == selectedOption, FONT_STYLE_WHITE, towerMenuOptions[i], NULL);
+        for (int i = 0; i < MENU_TOWER_COUNT; i++, y += P + 2) {
+            char heat[24];
+            if (i == MENU_TOWER_HEAT) {
+                int h = tower_heat();
+                if (h) snprintf(heat, sizeof heat, "Heat: %d (+%d%%)", h, 10 * h); else snprintf(heat, sizeof heat, "Heat: off");
+            }
+            menu_row(r, y, i == selectedOption, i == MENU_TOWER_HEAT && tower_heat() ? FONT_STYLE_RED : FONT_STYLE_WHITE, i == MENU_TOWER_HEAT ? heat : towerMenuOptions[i], NULL);
+        }
     } else if (currentMenu == MENU_SHRINE) {
         tower_menu_title(r, "SHRINE");
         int per = list_page(r, y, P, MENU_SHRINE_COUNT), first = selectedOption / per * per;

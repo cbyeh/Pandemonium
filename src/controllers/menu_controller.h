@@ -96,6 +96,7 @@ typedef enum {
     MENU_TOWER_SHRINE,
     MENU_TOWER_OFFERINGS,
     MENU_TOWER_CODEX,
+    MENU_TOWER_HEAT,        // the Heat dial: Left/Right (A steps it up, past the top back to 0)
     MENU_TOWER_BACK,
     MENU_TOWER_COUNT
 } TowerMenuOption;

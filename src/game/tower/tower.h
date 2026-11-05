@@ -166,6 +166,11 @@ bool tower_upgrade_buy(UpgradeId u);
 const char* tower_upgrade_name(UpgradeId u);
 const char* tower_upgrade_desc(UpgradeId u);
 int  tower_best_floor(void);
+// The Heat dial (Tower menu): each step +10% boss health and blows, +10% Embers; set before a climb (saved), the best a circle fell at
+int  tower_heat(void);
+int  tower_heat_best(void);
+int  tower_run_heat(void);      // this climb's (0 outside one)
+void tower_heat_set(int h);
 
 // ---- Modifiers (Shrine upgrades and Boons, during a run only) ----
 // In a run a skill can be used only once learned from a draft (the Skills setting is ignored)

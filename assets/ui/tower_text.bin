@@ -32,15 +32,15 @@ A blow that would take over 20% of your max health deals 25% less.
 Any roll gives +8% damage a level for 2 s.
 A perfect dodge gives the roll's stamina back.
 After 3 perfect dodges on a floor, the next blow that lands deals nothing (once a floor).
-+20% gold a level, from every source: fights, Skip, the purse and the Events.
++20% gold a level, from every source: fights, Skip, chests and the Events.
 Below half health: a blow that doesn't knock you down can't flinch you or break a skill's wind-up; each sword hit in a row +8% damage, up to +40% (a blow taken or 2 s without a hit ends the streak); and no potions.
 Leap and send 5 crosses round you (0.8 each, about 4 a cast; they fill the stagger meter like one sword hit). Cooldown 15 s.
 Charge 2 s, then a wide slash in front (28). A blow during the charge breaks it. Cooldown 45 s.
 5 blades fly out in a fan, each hitting up to 4 times (about 13 a cast). Cooldown 18 s.
-10 crosses of 2 each (about 20 a cast); the first five keep Lv 1's stagger.
+9 crosses of 1.75 each (about 16 a cast); the first five keep Lv 1's stagger.
 7 crosses of 1.75, each filling the stagger meter like two thirds of a sword hit: the heart of a stagger build.
-A second slash 0.35 s after the first, the same arc at 40% of its damage and stagger.
-The slash all the way round you, x1.15 damage, 60% stagger; blows don't break its charge or slash (their damage still lands).
+A second slash 0.35 s after the first, the same arc at 45% of its damage and stagger.
+The slash all the way round you, Lv 4's damage, 60% stagger; blows don't break its charge or slash (their damage still lands).
 3 more blades follow the middle three 0.3 s behind, at 70% damage (8 blades a cast).
 Blades fly 1.6x as far and hit 6 times, in a narrower fan, to hit from range.
 The combo's 3rd hit deals +25%.
@@ -59,7 +59,7 @@ Moon Mastery cuts 25% a level (was 20%: x0.42 at Lv 3).
 With Bloodthirst, each bolt of lightning heals at half its rate (of the bolt's damage); without it, bolts deal +25%.
 A perfect dodge calls two bolts on the boss, 0.3 s apart (Storm Blade's, with Static's bonus).
 Each skill cast costs 3% of max health (never the last of it), and skills' hits deal +40%.
-When the boss is staggered, every skill cooldown is ready again.
+When the boss is staggered, every skill cooldown is ready again, and it stays down 1.5 s longer.
 A perfect dodge opens Riposte's window (2.5 s); hits in it win back 60% of their base of the health blows took (on top of Rally's share).
 Lightning on a staggered boss deals double.
 A perfect dodge takes 2 s off every skill cooldown.
@@ -69,24 +69,24 @@ footwork, breathers and cooldowns 20% faster; strikes keep their timing.
 +30% health, a stagger bar 30% longer.
 below half health, blows +25%, shorter breathers.
 its stagger drains 2x, it rises in 2.5 s, shorter breathers.
-heals 25% of the health its blows take.
+heals 25% of the health its blows take (15% beside another affix).
 slams and dives leave fire for 2-3 s.
 Start the next climb with one more potion, and its most potions one higher: a Shop sells one further.
 +10 max health for the whole climb. A potion heals a share of max health, so each one heals a little more too.
-Start the next climb with 60 gold: a Mend, a potion or a Common boon at its first Shop.
+Start the next climb with Minor Might and Minor Bulwark: +4% damage and -3% damage taken for the whole climb, no curse.
 +25% damage until the first circle is cleared, when its Guardian Unbound falls.
 The climb's first draft holds two skill cards: choose which skill to learn, or a level of the one you know. Nothing with Skills off.
 The climb's first Rest heals 40% of max health on top of whatever you take there.
 Start the next climb holding a random Common boon at Lv 1, in a slot (never Deep Flask). Release it at a Rest if it doesn't suit you.
-Each floor is one fight. Fall, and the climb ends: its gold and boons are lost, its Embers kept.|A circle is one map, from the Guardian to Guardian Unbound. Each circle the bosses grow stronger, and so do you, through the fifth.|#Your belt|A fallen boss gives a potion, even past your most, up to 15. Health isn't given back between floors.
+Each floor is one fight. Fall, and the climb ends: its gold and boons are lost, its Embers kept.|A circle is one map, from the Guardian to Guardian Unbound. Each circle the bosses grow stronger, and so do you, through the fifth.|#Your belt|A fallen boss gives a potion, up to your most. Health isn't given back between floors.
 Seven rows, three lanes, from the bottom up. The Guardian opens a circle and Guardian Unbound ends it, after a Rest on every lane. Your path holds 4 to 6 fights.|#Moving|Left and Right pick a node. A shows its page, A again enters, B goes back. B on the map: the pause menu.|#Nodes|Fight: a Bonus boss.|!Elite: a stronger one, for a richer draft.|Event: a choice. Shop: spend gold. Rest: heal, Temper or potions.
-A Fight is a Bonus boss, met once a circle while any are left; only they come as Elites.|!Elites: x1.25 health and an affix, two from the fourth circle.|They pay a Rare-or-better draft and x1.5 gold and Embers; with two affixes, a duo if one is ready.|#The bosses|@
-#Rest|Heal 40%, Temper a level, or +2 potions. Then Release a boon if you wish, free.|#Shop|Each item once a visit:|@|#Events|A choice on the way; you can always walk on. None comes twice in a climb while others wait, and more wait deeper in.
-Five slots. A new boon takes one at Lv 1; the same card again is its next level.|Full, drafts offer only what you hold: levels, "+", duos, skills and pacts.|Release frees one: free at a Rest, 20 gold at a Shop.|%Skills and pacts take none.
+A Fight is a Bonus boss, met once a circle while any are left; only they come as Elites.|!Elites: x1.25 health and an affix, two from the fourth circle.|They pay a Rare-or-better draft, x1.5 gold, x2 Embers, a second potion and a chest (a slotted boon's next level, or its "+"); with two affixes, a duo if one is ready.|#The bosses|@
+#Rest|Heal 40%, Temper a level, or +2 potions. Then Release a boon if you wish, free.|#Shop|Each item once a visit; a level again and again, each one dearer:|@|#Events|A choice on the way; you can always walk on. None comes twice in a climb while others wait, and more wait deeper in.
+Five slots. A new boon takes one at Lv 1; the same card again is its next level.|Full, drafts offer only what you hold: levels, "+", duos, skills and pacts; with nothing left, a minor blessing.|Release frees one: free at a Rest, 20 gold at a Shop.|%Skills and pacts take none.
 Every boon is of a family: its emblem on the card, its name in the family's colour. Hold two of a family and its boons come twice as often.|@
 Take one, and its rival is locked out for the climb, even if you release it. A skill's two forms are rivals too.|@
 #"+"|A boon at its most can rise once more: its "+". No slot.|#Duos|With a maxed boon of each of two families, their duo can come. It merges both into one slot (both keep working) and opens the other.|%It goes only as a whole, and needs both families' packs.|@
-Learned only in the climb. The Learn card is Lv 1, the same card again the next level, up to Lv 4. Then a draft offers its two forms: take one, lose the other.|Until one is known, every draft leads with a Learn card; then one in three holds a skill card.|%Each skill's second form is bought at the Shrine.
+Learned only in the climb. The Learn card is Lv 1, the same card again the next level, up to Lv 4. Then a draft offers one of its two forms, by chance; pass it by and a later draft may offer either. Take one, lose the other.|Until one is known, every draft leads with a Learn card; then one in three holds a skill card.|%Each skill's second form is bought at the Shrine.
 @
 @
 @
