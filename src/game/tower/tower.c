@@ -2082,13 +2082,18 @@ static const struct { const char *name, *text; uint8_t choices; } EVENTS[EV_COUN
     [EV_GRAVE]    = { "A Knight's Grave",    "A knight lies under his shield. Coins were left on the stone, and a prayer is carved in it.", 3 },
     [EV_MIRROR]   = { "Mirror of Shadows",   "Your reflection holds out its hand. It will make a boon of yours stronger, and leave something of itself in you.", 2 },
     [EV_MERCHANT] = { "Merchant of Ash",     "A merchant by a cold fire. He sells potions past what your belt should hold, and buys them back.", 3 },
-    [EV_POOL]     = { "Moonlit Pool",        "Moonlight lies on still water. Something in it remembers the old techniques.", 3 },
+    [EV_POOL]     = { "Moonlit Pool",        "Moonlight lies on still water. Something in it remembers the old techniques, and it asks for a potion.", 3 },
     [EV_PRISONER] = { "The Chained Prisoner","A prisoner begs to be freed. Its jailer will come for you at your next fight, and bring its treasure.", 2 },
     [EV_BONES]    = { "Gambler's Bones",     "A cup of bones, a voice in the dark: fifty to play, a hundred and twenty back if they fall your way.", 2 },
-    [EV_BRAZIER]  = { "Ember Brazier",       "A brazier burns without fuel. Take its embers to the Shrine, or its warmth into the climb.", 3 },
+    [EV_BRAZIER]  = { "Ember Brazier",       "A brazier burns low. Carry its coals to the Shrine, or feed it for its warmth.", 3 },
 };
 #define MERCHANT_POTION 70      // over the Shop's 45: it sells past the run's max (up to POTION_CAP)
-#define GRAVE_GOLD      60
+#define GRAVE_GOLD      80
+#define GRAVE_HURT      0.20f   // of current health: the coins' cost (his shield falls)
+#define GRAVE_PRAYER    30      // gold left on the stone: the prayer's cost
+#define POOL_POTIONS    1       // poured in: either of the Pool's choices
+#define BRAZIER_HURT    0.15f   // of current health: carrying the coals (the Embers)
+#define BRAZIER_FEED    40      // gold: its warmth (half a blessing)
 #define BONES_STAKE     50
 #define BONES_WIN       120
 #define BRAZIER_EMBERS  12      // x circle (was 30, with the fights' Embers cut)
@@ -2100,11 +2105,12 @@ static bool event_ok(int i)
     if (i == EVENTS[e].choices - 1) return true;
     switch (e) {
     case EV_ALTAR:    return rare_boon(false) >= 0;
-    case EV_GRAVE:    return i == 0 || character.health < character.maxHealth;
+    case EV_GRAVE:    return i == 0 || (character.health < character.maxHealth && s.gold >= GRAVE_PRAYER);
     case EV_MIRROR:   return mirror_targets(t) > 0;
     case EV_MERCHANT: return i == 0 ? s.gold >= MERCHANT_POTION && character.healthPotions < POTION_CAP : character.healthPotions >= 2 && rare_boon(false) >= 0;
-    case EV_POOL:     return pool_targets(i == 0, t) > 0;
+    case EV_POOL:     return pool_targets(i == 0, t) > 0 && character.healthPotions >= POOL_POTIONS;
     case EV_BONES:    return s.gold >= BONES_STAKE;
+    case EV_BRAZIER:  return i == 0 || s.gold >= BRAZIER_FEED;
     default:          return true;
     }
 }
@@ -2433,9 +2439,10 @@ static void event_take(int i)
         snprintf(r, rn, "The altar drinks %.0f max health. It gives you %s.", (double)cut, boon_lv(b, nm, sizeof nm));
         break; }
     case EV_GRAVE:
-        if (i == 0) snprintf(r, rn, "You take %d gold from the stone.", gain_gold(GRAVE_GOLD));
-        else { float h = character.health; character.health = fminf(character.maxHealth, h + REST_HEAL * character.maxHealth);
-               snprintf(r, rn, "You pray: +%.0f health.", (double)(character.health - h)); }
+        if (i == 0) { float hurt = GRAVE_HURT * character.health; character.health -= hurt;
+                      snprintf(r, rn, "His shield falls on you (-%.0f health). You take %d gold.", (double)hurt, gain_gold(GRAVE_GOLD)); }
+        else { float h = character.health; s.gold -= GRAVE_PRAYER; character.health = fminf(character.maxHealth, h + REST_HEAL * character.maxHealth);
+               snprintf(r, rn, "You leave %d gold and pray: +%.0f health.", GRAVE_PRAYER, (double)(character.health - h)); }
         break;
     case EV_MIRROR: {
         int b = t[rng_next() % mirror_targets(t)], c = rng_next() % PC_COUNT;
@@ -2449,6 +2456,7 @@ static void event_take(int i)
         break;
     case EV_POOL:
         k = pool_targets(i == 0, t);
+        character.healthPotions -= POOL_POTIONS;
         { int b = t[rng_next() % k];
           take_boon((BoonId)b);
           if (is_learn(b)) s.skillsOffered |= 1 << (b - BOON_LEARN_MOONBLADE);
@@ -2465,8 +2473,10 @@ static void event_take(int i)
         else snprintf(r, rn, "The bones fall against you: the %d gold is gone.", BONES_STAKE);
         break;
     case EV_BRAZIER:
-        if (i == 0) { int em = BRAZIER_EMBERS * s.circle; bank_embers(em); snprintf(r, rn, "You bank %d Embers.", em); }
+        if (i == 0) { int em = BRAZIER_EMBERS * s.circle; float hurt = BRAZIER_HURT * character.health; character.health -= hurt; bank_embers(em);
+                      snprintf(r, rn, "The coals burn you (-%.0f health). You bank %d Embers.", (double)hurt, em); }
         else {
+            s.gold -= BRAZIER_FEED;
             s.halfBless[s.eventPick]++;
             if (s.eventPick == PB_VITALITY) { character.health += 6.0f; sync_max_health(); }
             snprintf(r, rn, "Half a blessing, without a curse: %s.", BLESSINGS[s.eventPick].name);
@@ -2670,17 +2680,17 @@ static void doc_event_choice(UiDoc *d, int i)
     const char *rare = "a random Rare boon: a new one, or a level of one held (never a skill card, a \"+\" or a duo)";
     switch (e) {
     case EV_ALTAR:    ui_doc_text(d, FONT_STYLE_WHITE, "Give 15%% of your max health (%.0f) for the rest of the climb, for %s.", (double)(0.15f * character.maxHealth), rare); break;
-    case EV_GRAVE:    { if (i == 0) ui_doc_text(d, FONT_STYLE_WHITE, "Take %d gold from the stone.", gold_with(GRAVE_GOLD));
-                      else ui_doc_text(d, FONT_STYLE_WHITE, "Pray: heal 40%% of max health (+%.0f now).", (double)fminf(REST_HEAL * character.maxHealth, character.maxHealth - character.health)); } break;
+    case EV_GRAVE:    { if (i == 0) ui_doc_text(d, FONT_STYLE_WHITE, "Take %d gold from the stone. His shield falls: lose 20%% of your health now (%.0f).", gold_with(GRAVE_GOLD), (double)(GRAVE_HURT * character.health));
+                      else ui_doc_text(d, FONT_STYLE_WHITE, "Leave %d gold on the stone and pray: heal 40%% of max health (+%.0f now).", GRAVE_PRAYER, (double)fminf(REST_HEAL * character.maxHealth, character.maxHealth - character.health)); } break;
     case EV_MIRROR:   ui_doc_text(d, FONT_STYLE_WHITE, "A random slotted boon gains a level (its \"+\" at its max; never a duo), and a random curse is laid on you:");
                       { for (int c = 0; c < PC_COUNT; c++) ui_doc_text(d, FONT_STYLE_RED, "%s: %s", CURSES[c].name, CURSES[c].desc); } break;
     case EV_MERCHANT: { if (i == 0) ui_doc_text(d, FONT_STYLE_WHITE, "One potion for %d gold, past the run's most potions, up to %d.", MERCHANT_POTION, POTION_CAP);
                       else ui_doc_text(d, FONT_STYLE_WHITE, "Give 2 potions for %s.", rare); } break;
-    case EV_POOL:     ui_doc_text(d, FONT_STYLE_WHITE, i == 0 ? "Learn a skill you don't know (at random), at Lv 1." : "A skill you know (at random) gains a level, up to Lv 4."); break;
+    case EV_POOL:     ui_doc_text(d, FONT_STYLE_WHITE, i == 0 ? "Pour a potion into the water: learn a skill you don't know (at random), at Lv 1." : "Pour a potion into the water: a skill you know (at random) gains a level, up to Lv 4."); break;
     case EV_PRISONER: ui_doc_text(d, FONT_STYLE_WHITE, "Your next Fight node becomes an Elite: x1.25 health, x1.5 gold, x2 Embers, a chest, and an all-Legendary draft."); break;
     case EV_BONES:    ui_doc_text(d, FONT_STYLE_WHITE, "Pay %d gold. Half the time %d come back.", BONES_STAKE, gold_with(BONES_WIN)); break;
-    case EV_BRAZIER:  { if (i == 0) ui_doc_text(d, FONT_STYLE_WHITE, "Bank %d Embers now, for the Shrine.", BRAZIER_EMBERS * s.circle);
-                      else ui_doc_text(d, FONT_STYLE_WHITE, "Half a pact's blessing, with no curse: %s (%s at a full stack).", BLESSINGS[s.eventPick].name, BLESSINGS[s.eventPick].desc); } break;
+    case EV_BRAZIER:  { if (i == 0) ui_doc_text(d, FONT_STYLE_WHITE, "Bank %d Embers now, for the Shrine. The coals burn: lose 15%% of your health now (%.0f).", BRAZIER_EMBERS * s.circle, (double)(BRAZIER_HURT * character.health));
+                      else ui_doc_text(d, FONT_STYLE_WHITE, "Feed it %d gold: half a pact's blessing, with no curse: %s (%s at a full stack).", BRAZIER_FEED, BLESSINGS[s.eventPick].name, BLESSINGS[s.eventPick].desc); } break;
     }
 }
 
@@ -3198,17 +3208,17 @@ static void event_label(int i, char *out, int n)
     switch (e) {
     case EV_ALTAR:    snprintf(out, n, "Give %.0f max health: a Rare boon", (double)(0.15f * character.maxHealth)); break;
     case EV_GRAVE:
-        if (i == 0) snprintf(out, n, "Take the %d gold", gold_with(GRAVE_GOLD));
-        else snprintf(out, n, "Pray: heal 40%% (+%.0f)", (double)fminf(REST_HEAL * character.maxHealth, character.maxHealth - character.health));
+        if (i == 0) snprintf(out, n, "Take %d gold: -%.0f health", gold_with(GRAVE_GOLD), (double)(GRAVE_HURT * character.health));
+        else snprintf(out, n, "Pray for %d gold: +%.0f health", GRAVE_PRAYER, (double)fminf(REST_HEAL * character.maxHealth, character.maxHealth - character.health));
         break;
     case EV_MIRROR:   snprintf(out, n, "A boon +1 level, and a curse"); break;
     case EV_MERCHANT: if (i == 0) snprintf(out, n, "1 potion for %d gold", MERCHANT_POTION); else snprintf(out, n, "2 potions for a Rare boon"); break;
-    case EV_POOL:     snprintf(out, n, i == 0 ? "Learn a skill you don't know" : "A skill you know: +1 level"); break;
+    case EV_POOL:     snprintf(out, n, i == 0 ? "A potion: learn a new skill" : "A potion: a skill +1 level"); break;
     case EV_PRISONER: snprintf(out, n, "Free it: your next Fight is an Elite"); break;
     case EV_BONES:    snprintf(out, n, "Pay %d gold: %d back, half the time", BONES_STAKE, gold_with(BONES_WIN)); break;
     case EV_BRAZIER:
-        if (i == 0) snprintf(out, n, "Bank %d Embers", BRAZIER_EMBERS * s.circle);
-        else snprintf(out, n, "Half a blessing: %s", BLESSINGS[s.eventPick].name);
+        if (i == 0) snprintf(out, n, "Bank %d Embers: -%.0f health", BRAZIER_EMBERS * s.circle, (double)(BRAZIER_HURT * character.health));
+        else snprintf(out, n, "%d gold: half a blessing, %s", BRAZIER_FEED, BLESSINGS[s.eventPick].name);
         break;
     }
 }
@@ -5208,13 +5218,13 @@ int tower_test_events(void)
         if (leave) ok &= s.gold == g && character.healthPotions == p && stacks_sum() == st && curses_sum() == cu && character.maxHealth == mh && character.health == hp && !s.prisoner;
         else switch (e) {
         case EV_ALTAR:    ok &= fabsf(character.maxHealth - 0.85f * mh) < 0.01f && stacks_sum() == st + 1; break;
-        case EV_GRAVE:    ok &= i == 0 ? s.gold == g + 60 : fabsf(character.health - hp - 0.4f * mh) < 0.01f; break;
+        case EV_GRAVE:    ok &= i == 0 ? s.gold == g + 80 && fabsf(character.health - 0.8f * hp) < 0.01f : s.gold == g - 30 && fabsf(character.health - hp - 0.4f * mh) < 0.01f; break;
         case EV_MIRROR:   ok &= stacks_sum() == st + 1 && curses_sum() == cu + 1; break;
         case EV_MERCHANT: ok &= i == 0 ? s.gold == g - 70 && character.healthPotions == p + 1 : character.healthPotions == p - 2 && stacks_sum() == st + 1; break;
-        case EV_POOL:     ok &= i == 0 ? s.skills != sk && stacks_sum() == st + 1 : s.stacks[BOON_LEARN_HALFMOON] == 2; break;
+        case EV_POOL:     ok &= character.healthPotions == p - 1 && (i == 0 ? s.skills != sk && stacks_sum() == st + 1 : s.stacks[BOON_LEARN_HALFMOON] == 2); break;
         case EV_PRISONER: ok &= s.prisoner; break;
         case EV_BONES:    ok &= s.gold == g - 50 || s.gold == g + 70; break;
-        case EV_BRAZIER:  ok &= i == 0 ? s.runEmbers == em + BRAZIER_EMBERS : s.halfBless[PB_MIGHT] == 1 && fabsf(tower_mod_damage_dealt() / dd - 1.04f) < 0.001f; break;
+        case EV_BRAZIER:  ok &= i == 0 ? s.runEmbers == em + BRAZIER_EMBERS && fabsf(character.health - 0.85f * hp) < 0.01f : s.gold == g - 40 && s.halfBless[PB_MIGHT] == 1 && fabsf(tower_mod_damage_dealt() / dd - 1.04f) < 0.001f; break;
         }
         debugf("[event] %s, choice %d: \"%s\" -> %s\n", EVENTS[e].name, i + 1, s.eventResult, ok ? "ok" : "FAIL");
         CHECK(ok, "%s, choice %d", EVENTS[e].name, i + 1);
@@ -5254,6 +5264,14 @@ int tower_test_events(void)
     CHECK(!row_ok(0), "the Mirror with no boon: greyed");
     RUN4(105); s.skills = 7; s.event = EV_POOL; s.eventDone = false; list_open(SCR_EVENT);
     CHECK(!row_ok(0) && row_ok(1), "the Pool knowing every skill: Learn greyed");
+    // the costs (2026-11-05): no prayer under 30 gold, no Pool without a potion, no warmth under 40 gold; the hurt ones never greyed
+    RUN4(106); s.gold = 29; character.health = 0.5f * character.maxHealth; s.event = EV_GRAVE; s.eventDone = false; list_open(SCR_EVENT);
+    CHECK(row_ok(0) && !row_ok(1), "the Grave with 29 gold, hurt: Pray greyed, the coins open");
+    RUN4(107); s.skills = 1; character.healthPotions = 0; s.event = EV_POOL; s.eventDone = false; list_open(SCR_EVENT);
+    CHECK(!row_ok(0) && !row_ok(1) && s.listSel == 2, "the Pool with no potion: only Leave");
+    RUN4(108); s.gold = 39; character.health = 1.0f; s.event = EV_BRAZIER; s.eventDone = false; list_open(SCR_EVENT);
+    { int e0 = s.runEmbers; CHECK(row_ok(0) && !row_ok(1), "the Brazier with 39 gold: its warmth greyed");
+      test_press('A'); CHECK(character.health > 0.0f && s.runEmbers == e0 + BRAZIER_EMBERS, "its coals at 1 health: %.2f left, never a death", (double)character.health); }
     s.scr = SCR_NONE;
     tower_end_run();
     character.maxHealth = tower_mod_max_health(); character.health = character.maxHealth;

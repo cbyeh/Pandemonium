@@ -203,13 +203,13 @@ Each event is one screen of text with 2-3 choices, the last always **Leave**.
 | Event | Choices |
 |---|---|
 | **The Bleeding Altar** | Give 15% max health (for the run): a random Rare boon. / Leave. |
-| **A Knight's Grave** | Take the 60 gold left on it. / Pray: heal 40%. |
+| **A Knight's Grave** | Take the 80 gold left on it, his shield falls: -20% of current health. / Leave 30 gold and pray: heal 40%. (2026-11-05: costs added, both were free) |
 | **Mirror of Shadows** | One random slotted boon gets +1 level (its "+" if maxed), and you take a random curse. / Leave. |
 | **Merchant of Ash** | 1 potion for 70 gold. / 2 potions for a Rare boon. / Leave. |
-| **Moonlit Pool** | Learn a skill you don't know (if any). / +1 level on a skill you know (below Lv 4). / Leave. |
+| **Moonlit Pool** | Pour in a potion: learn a skill you don't know (if any). / Pour in a potion: +1 level on a skill you know (below Lv 4). / Leave. (2026-11-05: the potion added) |
 | **The Chained Prisoner** | Free it: the next Fight becomes an Elite, and its draft is all Legendary. / Leave. |
 | **Gambler's Bones** | Pay 50 gold: half the time 120 back, half the time nothing (run seed). / Leave. |
-| **Ember Brazier** | Bank 30 x circle Embers now. / A blessing without a curse (half a pact's stack). |
+| **Ember Brazier** | Bank 12 x circle Embers now, the coals burn: -15% of current health. / Feed it 40 gold: a blessing without a curse (half a pact's stack). (2026-11-05: costs added) |
 
 ## 5. Rest shrines
 Choose one:
