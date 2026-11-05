@@ -236,7 +236,7 @@ static const struct { const char *name, *desc; } CURSES[PC_COUNT] = {
 static bool is_minor(int c) { return c >= MINOR_CARD0 && c < MINOR_CARD0 + PB_COUNT; }
 static const char *const MINOR_NAME[PB_COUNT] = { "Minor Might", "Minor Bulwark", "Minor Vitality" };
 static const char *const MINOR_DESC[PB_COUNT] = { "+4% damage", "-3% damage taken", "+6 max health" };
-#define SKIP_EMBERS 5
+#define SKIP_EMBERS 3           // (was 5)
 
 // ---- Gold (section 3): this run only, lost when it ends ----
 #define GOLD_FIGHT      25      // a fight (Guardian, Unbound, a Bonus boss): 25 + 5 x circle
@@ -251,6 +251,8 @@ static const int TIER_PRICE[3] = { 60, 110, 180 };
 #define PRICE_LEVEL_UP 30       // each further level the same visit (phase 2: a level once a visit left gold unspent)
 #define PRICE_RELEASE 20
 #define PRICE_POTION  45
+#define PRICE_POTION_PAST 60     // past the run's max (up to POTION_CAP), 20 more each the same visit (the user's gold sink)
+#define PRICE_POTION_PAST_UP 20
 #define PRICE_MEND    50
 #define MEND_HEAL     0.35f
 
@@ -335,10 +337,10 @@ static const struct { uint8_t floor; const char *name, *reward; } MILESTONES[MS_
     [MS_HEART]    = { 75, "The Tower's Heart", "A Codex page, and the title Tower-Breaker" },
     [MS_SUN]      = { SAVE_SUNFORGED_FLOOR, "Sunforged", "Your skills in gold, set in Settings > Skins" },
 };
-#define CIRCLE_EMBERS 25        // a circle cleared
+#define CIRCLE_EMBERS 10        // a circle cleared (was 25)
 // ---- The Heat dial (phase 2, the Curse dial: a ladder for strong players): each step +10% boss health and blows, +10% Embers
 #define HEAT_MAX  10
-#define HEAT_STEP 0.10f
+#define HEAT_STEP 0.05f         // (was 0.10: Heat 3 took the decent bot from floor 40 to 14)
 
 // ---- The map (docs/design/TOWER_ROGUELIKE.md section 2): 7 rows of 3 lanes a circle, climbed bottom to
 // top, each node linked to the one above it and its diagonal neighbours. Row 1 is the Guardian and row 7
@@ -432,7 +434,7 @@ static struct {
     int8_t event, eventPick;        // the Event on screen, its rolled blessing (the Brazier)
     bool eventDone;                 // its choice taken: the result, then Continue
     char eventResult[96];
-    struct { int16_t card[3]; int pact; uint16_t sold; int8_t sel, levels; } shop;  // a visit: the cards (-1 none), its pact, bought items (bit per SHOP_), levels bought
+    struct { int16_t card[3]; int pact; uint16_t sold; int8_t sel, levels, pastMax; } shop;  // a visit: the cards (-1 none), its pact, bought items (bit per SHOP_), levels bought
     uint8_t scr;                    // the screen after the draft: the map, a Rest's (SCR_)
     uint32_t scrOpenMs;
     int8_t list[LIST_MAX], listN, listSel;  // a Rest screen's rows: a choice, a BoonId to Temper (-1 Back), a slot to Release (-1 keep)
@@ -1337,7 +1339,9 @@ int  tower_boon_stacks(BoonId b) { return (s.active && b < BOON_COUNT) ? s.stack
 static int floor_embers(void)
 {
     // (the fight's place in its circle: 0 for the Guardian, up to 5 for Unbound on a 6-fight path)
-    float e = (8 * tower_circle() + 3 * (s.map.fights - 1)) * NIGHTS[s.night].embers * (s.elite ? ELITE_EMBERS : 1.0f);
+    // (the user's Shrine pacing: 4 + 2 x circle + the fight's place, was 8 x circle + 3 x place: a deep climb earned 2.8x
+    // less, a short one 1.7x, so the whole Shrine takes the decent bot about 8-12 climbs)
+    float e = (4 + 2 * tower_circle() + (s.map.fights - 1)) * NIGHTS[s.night].embers * (s.elite ? ELITE_EMBERS : 1.0f);
     if (has_relic(RELIC_EMBERS)) e *= 1.2f;
     if (has_relic(RELIC_AVARICE)) e *= 1.4f;
     e *= 1.0f + HEAT_STEP * s.heat;
@@ -2084,7 +2088,7 @@ static const struct { const char *name, *text; uint8_t choices; } EVENTS[EV_COUN
 #define GRAVE_GOLD      60
 #define BONES_STAKE     50
 #define BONES_WIN       120
-#define BRAZIER_EMBERS  30      // x circle
+#define BRAZIER_EMBERS  12      // x circle (was 30, with the fights' Embers cut)
 
 // can choice i of the Event on screen be taken now (the last, Leave, always)
 static bool event_ok(int i)
@@ -2211,6 +2215,7 @@ static int shop_price(int i)
     static const int P[SHOP_ITEMS] = { [SHOP_LEVEL] = PRICE_LEVEL, [SHOP_PLUS] = PRICE_PLUS, [SHOP_POTION] = PRICE_POTION, [SHOP_MEND] = PRICE_MEND, [SHOP_RELEASE] = PRICE_RELEASE };
     if (i <= SHOP_CARD2) return s.shop.card[i] >= 0 ? TIER_PRICE[BOONS[s.shop.card[i]].tier] : 0;
     if (i == SHOP_LEVEL) return PRICE_LEVEL + PRICE_LEVEL_UP * s.shop.levels;     // 70, 100, 130...
+    if (i == SHOP_POTION && character.healthPotions >= tower_mod_max_potions()) return PRICE_POTION_PAST + PRICE_POTION_PAST_UP * s.shop.pastMax;     // 60, 80, 100...
     return i < SHOP_ITEMS ? P[i] : 0;
 }
 // why item i can't be bought now ("": it can). Each item once a visit (one of the three cards), levels again and again at rising prices; potions up to the run's max
@@ -2222,7 +2227,7 @@ static const char *shop_block(int i)
     if ((s.shop.sold >> i) & 1) return "Sold";
     if (i == SHOP_LEVEL && !level_targets(t, LIST_MAX)) return "No boon or skill below its max";
     if (i == SHOP_PLUS && !plus_targets(t, LIST_MAX)) return "No maxed boon with a \"+\"";
-    if (i == SHOP_POTION && character.healthPotions >= tower_mod_max_potions()) return "Potions at the run's max";
+    if (i == SHOP_POTION && character.healthPotions >= POTION_CAP) return "Potions at 15, the most";
     if (i == SHOP_MEND && character.health >= character.maxHealth) return "Health full";
     if (i == SHOP_RELEASE && !slots_used()) return "No boon slotted";
     if (s.gold < shop_price(i)) return "Not enough gold";
@@ -2237,6 +2242,7 @@ static void shop_pay(int i, const char *what)
 {
     int g = s.gold, p = shop_price(i);
     s.gold -= p;
+    if (i == SHOP_POTION && character.healthPotions >= tower_mod_max_potions()) s.shop.pastMax++;     // (before the potion's added)
     if (i == SHOP_LEVEL) s.shop.levels++;
     else if (i != SHOP_POTION) s.shop.sold |= i <= SHOP_CARD2 ? 7 : 1 << i;
 #ifdef HLE_AUTOPLAY
@@ -2255,7 +2261,7 @@ static void shop_open(void)
     for (int b = 0; b < BOON_COUNT; b++) if (shop_card_ok(b)) pool[n++] = b;
     for (int i = 0; i < 3; i++) s.shop.card[i] = (int16_t)(n ? pick_card(pool, &n, famHeld) : -1);     // rolled as a draft's (family weighting too)
     s.shop.pact = roll_pact(NULL, 0);
-    s.shop.sold = 0; s.shop.sel = 0; s.shop.levels = 0;
+    s.shop.sold = 0; s.shop.sel = 0; s.shop.levels = 0; s.shop.pastMax = 0;
     s.scr = SCR_SHOP; s.scrOpenMs = get_ticks_ms();
 #ifdef HLE_HUMAN_BOT    // test aid: the bot's shopping (B leaves after): Mend below 55%, a potion while under 3, the best card if it suits the
                         // plan, a level of its best boon, more potions to the max with what's left
@@ -2275,6 +2281,9 @@ static void shop_open(void)
             char nm[40]; snprintf(nm, sizeof nm, "%s", BOONS[t[bi]].name); shop_pay(SHOP_LEVEL, nm); take_boon((BoonId)t[bi]);
         }
         while (character.healthPotions < tower_mod_max_potions() && s.gold >= PRICE_POTION + 40 && !shop_block(SHOP_POTION)[0]) shop_take(SHOP_POTION);
+#ifdef PRICE_POTION_PAST    // spare gold past the max: potions while it keeps 150 back, at most 4 past
+        while (character.healthPotions >= tower_mod_max_potions() && character.healthPotions < tower_mod_max_potions() + 4 && s.gold >= shop_price(SHOP_POTION) + 150 && !shop_block(SHOP_POTION)[0]) shop_take(SHOP_POTION);
+#endif
         debugf("[hbshop] floor %d circle %d: gold %d -> %d\n", s.floor, s.circle, g0, s.gold);
     }
 #endif
@@ -2321,7 +2330,7 @@ static void shop_buy(int i)
     if (!shop_price(i)) { shop_take(i); return; }
     if (i <= SHOP_CARD2) { snprintf(t, sizeof t, "%s", BOONS[s.shop.card[i]].name); snprintf(e, sizeof e, "%s", BOONS[s.shop.card[i]].desc); }
     else if (i == SHOP_PACT) { snprintf(t, sizeof t, "the pact"); snprintf(e, sizeof e, "Blessing %s, its curse %s", BLESSINGS[b].name, CURSES[c].name); }
-    else if (i == SHOP_POTION) { snprintf(t, sizeof t, "a potion"); snprintf(e, sizeof e, "+1 potion (%d now), up to the run's %d", character.healthPotions, tower_mod_max_potions()); }
+    else if (i == SHOP_POTION) { snprintf(t, sizeof t, "a potion"); snprintf(e, sizeof e, character.healthPotions >= tower_mod_max_potions() ? "+1 potion (%d now), past the run's %d" : "+1 potion (%d now), up to the run's %d", character.healthPotions, tower_mod_max_potions()); }
     else { snprintf(t, sizeof t, "Mend"); snprintf(e, sizeof e, "Heal 35%%: +%.0f health", (double)fminf(MEND_HEAL * character.maxHealth, character.maxHealth - character.health)); }
     shop_ask(t, shop_price(i), e);
 }
@@ -2349,10 +2358,9 @@ static void shop_take(int i)
     case SHOP_PACT:
         snprintf(what, sizeof what, "%s / %s", BLESSINGS[(s.shop.pact - BOON_COUNT) / PC_COUNT].name, CURSES[(s.shop.pact - BOON_COUNT) % PC_COUNT].name);
         shop_pay(i, what); take_pact(s.shop.pact); return;
-    case SHOP_POTION:
-        character.healthPotions++;
-        snprintf(what, sizeof what, "%d of %d now", character.healthPotions, tower_mod_max_potions());
-        shop_pay(i, what); return;
+    case SHOP_POTION:     // (paid at the price before it: up to the max, or past it)
+        snprintf(what, sizeof what, "%d of %d now", character.healthPotions + 1, tower_mod_max_potions());
+        shop_pay(i, what); character.healthPotions++; return;
     case SHOP_MEND: {
         float h = character.health;
         character.health = fminf(character.maxHealth, h + MEND_HEAL * character.maxHealth);
@@ -2717,7 +2725,7 @@ static bool details_cursor_impl(bool open)
             snprintf(t, sizeof t, "%s: %d gold", NM[i], shop_price(i));
             if (i == SHOP_LEVEL) { ui_doc_text(d, FONT_STYLE_WHITE, "+1 level on a slotted boon below its max (a duo has none). You choose it from:"); doc_targets(d, tg, level_targets(tg, LIST_MAX)); }
             else if (i == SHOP_PLUS) { ui_doc_text(d, FONT_STYLE_WHITE, "A maxed boon's \"+\", its top level. You choose it from:"); doc_targets(d, tg, plus_targets(tg, LIST_MAX)); }
-            else if (i == SHOP_POTION) ui_doc_text(d, FONT_STYLE_WHITE, "+1 potion, up to the run's most (%d). Each fight won gives one too, up to the same most.", tower_mod_max_potions());
+            else if (i == SHOP_POTION) ui_doc_text(d, FONT_STYLE_WHITE, "+1 potion: %d each up to the run's most (%d), then past it up to %d at %d, %d more for each further one in a visit. Each fight won gives one too, up to the run's most.", PRICE_POTION, tower_mod_max_potions(), POTION_CAP, PRICE_POTION_PAST, PRICE_POTION_PAST_UP);
             else if (i == SHOP_MEND) ui_doc_text(d, FONT_STYLE_WHITE, "Heal 35%% of max health: +%.0f now. Once a visit.", (double)fminf(MEND_HEAL * character.maxHealth, character.maxHealth - character.health));
             else ui_doc_text(d, FONT_STYLE_WHITE, "Free a slot: you choose a boon; it goes with its levels and its \"+\" (a duo with its two boons). A rival it locked out stays locked.");
             const char *why = shop_block(i);
@@ -3143,7 +3151,7 @@ static void shop_draw(void)
     } else if (i == SHOP_LEVEL) snprintf(line, sizeof line, s.shop.levels ? "+1 level again, %d more each time" : "+1 level on a boon or skill (choose it)", PRICE_LEVEL_UP);
     else if (i == SHOP_PLUS) snprintf(line, sizeof line, "A maxed boon's \"+\", its top level (choose it)");
     else if (i == SHOP_PACT) line[0] = 0;     // (below, with its curse)
-    else if (i == SHOP_POTION) snprintf(line, sizeof line, "+1 potion, up to the run's %d", tower_mod_max_potions());
+    else if (i == SHOP_POTION) snprintf(line, sizeof line, character.healthPotions >= tower_mod_max_potions() ? "+1 potion past the run's %d, up to 15" : "+1 potion, up to the run's %d", tower_mod_max_potions());
     else if (i == SHOP_MEND) snprintf(line, sizeof line, "Heal 35%%: +%.0f health", (double)fminf(MEND_HEAL * character.maxHealth, character.maxHealth - character.health));
     else if (i == SHOP_RELEASE) snprintf(line, sizeof line, "Free a slot: a boon and its levels are gone");
     else snprintf(line, sizeof line, "Back to the map");
@@ -3421,7 +3429,7 @@ void tower_stats_doc(UiDoc *d)
     ui_doc_row(d, FONT_STYLE_GOLD, NULL, "Floor %d", s.floor);
     if (tower_circle() > 1) ui_doc_row(d, FONT_STYLE_RED, NULL, "Ascension %d", tower_circle() - 1);
     if (s.night) ui_doc_text(d, FONT_STYLE_RED, "%s", night_line(s.night, nl, sizeof nl));
-    if (s.heat) ui_doc_text(d, FONT_STYLE_RED, "Heat %d: bosses +%d%% health and blows, Embers +%d%%", s.heat, 10 * s.heat, 10 * s.heat);
+    if (s.heat) ui_doc_text(d, FONT_STYLE_RED, "Heat %d: bosses +%d%% health and blows, Embers +%d%%", s.heat, (int)(HEAT_STEP * 100 * s.heat + 0.5f), (int)(HEAT_STEP * 100 * s.heat + 0.5f));
     ui_doc_row(d, FONT_STYLE_GOLD, NULL, "Gold %d   Embers this run %d", s.gold, s.runEmbers);
     ui_doc_text(d, FONT_STYLE_GREY, "Seed %08lX", (unsigned long)s.seed);
     if (s.offers) ui_doc_text(d, FONT_STYLE_WHITE, "Offerings: %s", tower_offers_line());
@@ -3650,7 +3658,7 @@ static void codex_gen(UiDoc *d, int k)
     case CX_STOPS:
         ui_doc_text(d, FONT_STYLE_WHITE, "A new boon or duo: %d, %d or %d by its tier.", TIER_PRICE[0], TIER_PRICE[1], TIER_PRICE[2]);
         ui_doc_text(d, FONT_STYLE_WHITE, "A level: %d, %d more for each further one in a visit. A \"+\": %d. Release: %d.", PRICE_LEVEL, PRICE_LEVEL_UP, PRICE_PLUS, PRICE_RELEASE);
-        ui_doc_text(d, FONT_STYLE_WHITE, "A potion: %d, up to your most. Mend: %d, heals 35%%.", PRICE_POTION, PRICE_MEND);
+        ui_doc_text(d, FONT_STYLE_WHITE, "A potion: %d up to your most, then %d past it (up to %d), %d more each in a visit. Mend: %d, heals 35%%.", PRICE_POTION, PRICE_POTION_PAST, POTION_CAP, PRICE_POTION_PAST_UP, PRICE_MEND);
         ui_doc_text(d, FONT_STYLE_WHITE, "A pact: free. Its curse is the price.");
         break;
     case CX_FAMILIES: {
@@ -3694,7 +3702,7 @@ static void codex_gen(UiDoc *d, int k)
         ui_doc_text(d, FONT_STYLE_WHITE, "Prospector: +20%% a level, on every gain.");
         break;
     case CX_EMBERS:
-        ui_doc_text(d, FONT_STYLE_WHITE, "A fallen boss: 8 x its circle, and 3 more for each fight before it in the circle.");
+        ui_doc_text(d, FONT_STYLE_WHITE, "A fallen boss: 4, 2 more a circle, and 1 more for each fight before it in the circle.");
         ui_doc_text(d, FONT_STYLE_WHITE, "An Elite: x2. A circle cleared: +%d. Skip a draft: +%d.", CIRCLE_EMBERS, SKIP_EMBERS);
         ui_doc_gap(d);
         ui_doc_text(d, FONT_STYLE_RED, "Heat (the Tower's menu, Left/Right): each step makes the bosses %d%% tougher and harder-hitting, and every Ember %d%% richer, up to %d.", (int)(HEAT_STEP * 100 + 0.5f), (int)(HEAT_STEP * 100 + 0.5f), HEAT_MAX);
@@ -4934,8 +4942,8 @@ int tower_test_map(void)
       s.elite = false;
       float n3 = tower_boss_health_scale(3); int ne = floor_embers();
       debugf("[map] elite: 500 drafts, %d boon cards, %d Common; Bonus health x%.3f (plain x%.3f), Guardian x%.2f; Embers %d (plain %d)\n", cards, common, (double)h3, (double)n3, (double)h1, e, ne);
-      MCHECK(!common && cards > 1000 && fabsf(h3 / n3 - 1.25f) < 0.001f && h1 == tower_boss_health_scale(1) && e == 22 && ne == 11,
-             "an Elite: no Common card, x1.25 health on a Bonus boss only, Embers x2 (22 for 11)"); }
+      MCHECK(!common && cards > 1000 && fabsf(h3 / n3 - 1.25f) < 0.001f && h1 == tower_boss_health_scale(1) && e == 14 && ne == 7,
+             "an Elite: no Common card, x1.25 health on a Bonus boss only, Embers x2 (14 for 7)"); }
     #undef RUN
     tower_end_run();
     character.maxHealth = tower_mod_max_health(); character.health = character.maxHealth;
@@ -5047,8 +5055,11 @@ int tower_test_shop(void)
       CHECK(s.gold == g && bs2 == bs + 1 && curses_sum() == cu + 1, "the pact: free, a blessing and its curse"); }
     int pmax = tower_mod_max_potions();
     test_press('R'); g = s.gold; int p0 = character.healthPotions;
-    for (int i = 0; i < 6; i++) test_buy();
+    for (int i = 0; i < 12 && character.healthPotions < pmax; i++) test_buy();
     CHECK(character.healthPotions == pmax && s.gold == g - 45 * (pmax - p0), "potions: 45 each up to the run's %d (%d, paid %d)", pmax, character.healthPotions, g - s.gold);
+    g = s.gold; test_buy(); test_buy();
+    CHECK(character.healthPotions == pmax + 2 && s.gold == g - 60 - 80 && shop_price(SHOP_POTION) == 100, "past the max: 60 then 80, the next 100 (%d held, paid %d)", character.healthPotions, g - s.gold);
+    { int keep = character.healthPotions; character.healthPotions = POTION_CAP; CHECK(shop_block(SHOP_POTION)[0], "no potion past 15"); character.healthPotions = keep; }
     test_press('R'); g = s.gold; float h = character.health;
     test_buy(); test_buy();
     CHECK(s.gold == g - 50 && fabsf(character.health - fminf(character.maxHealth, h + 0.35f * character.maxHealth)) < 0.01f, "Mend: 50, +35%% max health once (%.0f -> %.0f)", (double)h, (double)character.health);
@@ -5145,7 +5156,7 @@ int tower_test_events(void)
         case EV_POOL:     ok &= i == 0 ? s.skills != sk && stacks_sum() == st + 1 : s.stacks[BOON_LEARN_HALFMOON] == 2; break;
         case EV_PRISONER: ok &= s.prisoner; break;
         case EV_BONES:    ok &= s.gold == g - 50 || s.gold == g + 70; break;
-        case EV_BRAZIER:  ok &= i == 0 ? s.runEmbers == em + 30 : s.halfBless[PB_MIGHT] == 1 && fabsf(tower_mod_damage_dealt() / dd - 1.04f) < 0.001f; break;
+        case EV_BRAZIER:  ok &= i == 0 ? s.runEmbers == em + BRAZIER_EMBERS : s.halfBless[PB_MIGHT] == 1 && fabsf(tower_mod_damage_dealt() / dd - 1.04f) < 0.001f; break;
         }
         debugf("[event] %s, choice %d: \"%s\" -> %s\n", EVENTS[e].name, i + 1, s.eventResult, ok ? "ok" : "FAIL");
         CHECK(ok, "%s, choice %d", EVENTS[e].name, i + 1);

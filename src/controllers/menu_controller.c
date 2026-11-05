@@ -1300,7 +1300,7 @@ static void menu_body(UiRect r0)
             char heat[24];
             if (i == MENU_TOWER_HEAT) {
                 int h = tower_heat();
-                if (h) snprintf(heat, sizeof heat, "Heat: %d (+%d%%)", h, 10 * h); else snprintf(heat, sizeof heat, "Heat: off");
+                if (h) snprintf(heat, sizeof heat, "Heat: %d (+%d%%)", h, 5 * h);     // (tower.c HEAT_STEP) else snprintf(heat, sizeof heat, "Heat: off");
             }
             menu_row(r, y, i == selectedOption, i == MENU_TOWER_HEAT && tower_heat() ? FONT_STYLE_RED : FONT_STYLE_WHITE, i == MENU_TOWER_HEAT ? heat : towerMenuOptions[i], NULL);
         }
