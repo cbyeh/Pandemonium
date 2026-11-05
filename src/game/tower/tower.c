@@ -1141,6 +1141,9 @@ int hb_card_score(int c)
 {
     int plan = hb_plan % HP_COUNT;
 #ifdef MINOR_CARD0
+#ifdef HB_NO_MINOR
+    if (is_minor(c)) return 0;      // (a test of what the minor blessings add: it skips them)
+#endif
     if (is_minor(c)) return 20;     // half a blessing, no curse (above Skip's 15)
 #else
     if (c == GOLD_CARD) return 12;
