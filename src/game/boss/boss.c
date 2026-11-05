@@ -891,12 +891,10 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
     }
 }
 
-void boss_init(Boss* boss)
+// The Guardian's model, its two skeletons and its clips (boss_init; the Tower drops them on a Bonus floor and
+// loads them again for the next Guardian or Unbound floor: about 85 KB the Bonus fights never drew from)
+static void boss_model_load(Boss* boss)
 {
-    if (!boss) return;
-
-    sword_trail_instance_init(sword_trail_get_boss());
-
     T3DModel* bossModel = t3d_model_load("rom:/boss/boss_anim.t3dm");
     gpu_log_model("guardian", bossModel);
     boss->model = bossModel;
@@ -984,6 +982,45 @@ void boss_init(Boss* boss)
     boss->currentAnimState = BOSS_ANIM_KNEEL;
     t3d_anim_set_playing(animations[BOSS_ANIM_KNEEL], true);
 
+
+    boss->handRightBoneIndex = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, "Hand-Right");
+    boss->waistBoneIndex = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, "Waist");
+    boss->headBoneIndex = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, "Head");
+    boss->lowerLegLeftBoneIndex = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, "LowerLeg-Left");
+    boss->lowerLegRightBoneIndex = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, "LowerLeg-Right");
+
+}
+void boss_tower_release_model(Boss* boss)
+{
+    if (!boss || !boss->model) return;
+    gpu_wait();
+    boss_render_forget_model();     // its recorded blocks and the flash tint's cached materials point into the model
+    boss_render_forget_flash();
+    boss_anim_forget_model();       // the breathing pose's clone of its skeleton
+    T3DAnim** anims = (T3DAnim**)boss->animations;
+    if (anims) {
+        for (int i = 0; i < boss->animationCount; i++) if (anims[i]) { t3d_anim_destroy(anims[i]); free_uncached(anims[i]); }
+        free_uncached(anims);
+        boss->animations = NULL;
+    }
+    if (boss->skeletonBlend) { t3d_skeleton_destroy((T3DSkeleton*)boss->skeletonBlend); free(boss->skeletonBlend); boss->skeletonBlend = NULL; }
+    if (boss->skeleton) { t3d_skeleton_destroy((T3DSkeleton*)boss->skeleton); free(boss->skeleton); boss->skeleton = NULL; }
+    t3d_model_free((T3DModel*)boss->model);
+    boss->model = NULL;
+}
+void boss_tower_ensure_model(Boss* boss)
+{
+    if (boss && !boss->model) boss_model_load(boss);
+}
+
+void boss_init(Boss* boss)
+{
+    if (!boss) return;
+
+    sword_trail_instance_init(sword_trail_get_boss());
+
+    boss_model_load(boss);
+
     if (!s_bossShadowModel) {
         s_bossShadowModel = t3d_model_load("rom:/blob_shadow/shadow.t3dm");
     }
@@ -1014,12 +1051,6 @@ void boss_init(Boss* boss)
     boss->capsuleCollider.localCapB.v[2] = 0.0f;
 
     boss->capsuleCollider.radius = 20.0f;
-
-    boss->handRightBoneIndex = t3d_skeleton_find_bone(skeleton, "Hand-Right");
-    boss->waistBoneIndex = t3d_skeleton_find_bone(skeleton, "Waist");
-    boss->headBoneIndex = t3d_skeleton_find_bone(skeleton, "Head");
-    boss->lowerLegLeftBoneIndex = t3d_skeleton_find_bone(skeleton, "LowerLeg-Left");
-    boss->lowerLegRightBoneIndex = t3d_skeleton_find_bone(skeleton, "LowerLeg-Right");
 
     boss->handAttackCollider.localCapA.v[0] = 0.0f;
     boss->handAttackCollider.localCapA.v[1] = 0.0f;

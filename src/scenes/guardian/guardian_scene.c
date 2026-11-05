@@ -1379,6 +1379,7 @@ static void scene_tower_start_floor(void)
     dragon_boss_free();
     screen_shake_set_shake_mag(0.0f);
 
+    if (tb == TOWER_GUARDIAN || tb == TOWER_UNBOUND) boss_tower_ensure_model(g_boss);     // (dropped on a Bonus floor)
     boss_reset(g_boss);
     g_boss->pos[0] = BONUS_SPAWN_X;
     g_boss->pos[2] = 0.0f;
@@ -1405,7 +1406,7 @@ static void scene_tower_start_floor(void)
         }
     } else {
         s_bonusFight = tb == TOWER_FALLEN_KNIGHT ? BONUS_FALLEN_KNIGHT : tb == TOWER_SHACKLED_SUN ? BONUS_SHACKLED_SUN : BONUS_SHADOWBORN;
-        boss_render_forget_model();   // the Guardian's recorded draws (~74 KB): re-recorded when it next draws
+        boss_tower_release_model(g_boss);   // the Guardian's model, skeletons and clips, and its recorded draws (~74 KB): loaded again for its next floor
         const BonusDef *d = &BONUS_DEFS[s_bonusFight];
         d->begin(g_boss);
         d->skip(g_boss);

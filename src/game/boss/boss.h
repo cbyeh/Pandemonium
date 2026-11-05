@@ -361,6 +361,9 @@ void boss_set_full_health(Boss* boss);
 
 // Initialization and cleanup
 void boss_init(Boss* boss);
+// The Tower: the Guardian's model, skeletons and clips dropped for a Bonus floor, loaded again for a Guardian/Unbound one
+void boss_tower_release_model(Boss* boss);
+void boss_tower_ensure_model(Boss* boss);
 void boss_reset(Boss* boss);
 void boss_free(Boss* boss);
 

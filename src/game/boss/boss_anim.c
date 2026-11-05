@@ -84,6 +84,7 @@ static T3DSkeleton s_breathSkel;
 static bool s_breathReady;
 static float s_breathK = -1.0f;     // < 0: not breathing
 static float s_blendDur = 0.4f;     // the current crossfade (boss->blendDuration paces the AI, not this)
+void boss_anim_forget_model(void) { if (s_breathReady) { t3d_skeleton_destroy(&s_breathSkel); s_breathReady = false; } s_breathK = -1.0f; }
 // The crucifix pose (boss_anim_update), radians about each bone's own axes
 #ifndef CX_SPINE1
 #define CX_SPINE1      0.10f

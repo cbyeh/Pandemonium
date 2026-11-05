@@ -244,6 +244,7 @@ static void boss_record_blocks(Boss *boss)
 static bool filter_dynamic(void *u, const T3DObject *obj) { (void)u; return is_dynamic(obj); }
 
 /** Frees the recorded blocks (the model is about to go: a later one may reuse its address). */
+void boss_render_forget_flash(void) { boss_flash_cache_init(NULL); }
 void boss_render_forget_model(void)
 {
     if (!s_recModel) return;
