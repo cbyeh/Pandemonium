@@ -1228,16 +1228,19 @@ static const int   MBD_WAVES = 5;
 #define SHATTER_DMG 1.75f           // its crosses' damage (Lv 4's 1.5: the stagger build stayed -11..-13% with any stagger a cross, its breaks capped by the bosses' moves)
 #endif
 #ifndef FULL_MOON_HIT
-#define FULL_MOON_HIT 1.15f         // Full Moon's slash, on Lv 3's (as it was: the Halfmoon build -13% under the mean)
+#define FULL_MOON_HIT 1.0f          // Full Moon's slash, on Lv 3's (phase 2: 1.15 -> 1.0, the safest form under Twin Moon)
 #endif
 // The skills' levels and Lv 5 forms (docs/design/TOWER_ROGUELIKE.md section 6; outside the Tower Lv 1):
-// Moon Blade Dance Lv 2 crosses 1.5, Lv 3 7 of them, Lv 4 a 12 s cooldown; Full Moon Dance 10 crosses
-// of 2, Shattering Dance 7 that fill the stagger meter
+// Moon Blade Dance Lv 2 crosses 1.5, Lv 3 7 of them, Lv 4 a 12 s cooldown; Full Moon Dance 9 crosses
+// of 1.75 (phase 2: was 10 of 2, the riskiest form dealt the most), Shattering Dance 7 that fill the stagger meter
+#define FMD_WAVES 9
+#define FMD_DMG 1.75f
+#define TWIN_SHARE 0.45f            // Twin Moon's second slash (phase 2: was 0.4)
 static inline int skill_lv(int k) { return tower_skill_level(k); }
 static inline int skill_form(int k) { return tower_skill_form(k); }
 static inline int mbd_waves(void)
 {
-    return skill_form(SKILL_MOON_BLADE_DANCE) == SKILL_FORM_A ? 10 : skill_lv(SKILL_MOON_BLADE_DANCE) >= 3 ? 7 : MBD_WAVES;
+    return skill_form(SKILL_MOON_BLADE_DANCE) == SKILL_FORM_A ? FMD_WAVES : skill_lv(SKILL_MOON_BLADE_DANCE) >= 3 ? 7 : MBD_WAVES;
 }
 static const float MBD_AIM_DIST = 60.0f;           // ground distance of the aim point without lock-on
 static const float HALFMOON_CHARGE = 2.0f;         // rooted; a hit cancels it and hurts more
@@ -1254,7 +1257,7 @@ static const float CLEAVE_RELEASE = 0.85f;         // interruptible wind-up (the
 static const float CLEAVE_END = 1.7f;
 static const int   CLEAVE_BLADES = 5;
 static const float CLEAVE_BLADE_GAP = 0.1f;
-// Halfmoon Lv 2 charges 1.6 s, Lv 3 +20%, Lv 4 reach 106; Twin Moon a second slash 0.35 s after at 40%;
+// Halfmoon Lv 2 charges 1.6 s, Lv 3 +20%, Lv 4 reach 106; Twin Moon a second slash 0.35 s after at 45%;
 // Full Moon all round, its charge unbroken, stagger 60%
 static const float TWIN_GAP = 0.35f;
 static const float TWIN_LEAD = 0.2f, TWIN_EASE = 0.12f;
@@ -1408,7 +1411,7 @@ static void skill_fire_moon_blade(void)
     // a sword hit). The levels never stagger less: Lv 2-4 and Full Moon Dance keep that for the first 5
     // crosses (the extra ones fill none); Shattering Dance's crosses fill SHATTER_HIT of a sword hit each
     int lv = skill_lv(SKILL_MOON_BLADE_DANCE), form = skill_form(SKILL_MOON_BLADE_DANCE);
-    float dmg = form == SKILL_FORM_A ? 2.0f : form == SKILL_FORM_B ? SHATTER_DMG : lv >= 2 ? 1.5f : 0.8f;
+    float dmg = form == SKILL_FORM_A ? FMD_DMG : form == SKILL_FORM_B ? SHATTER_DMG : lv >= 2 ? 1.5f : 0.8f;
     if (form == SKILL_FORM_B) skill_fx_next_poise(SHATTER_HIT * 4.0f / POISE_DAMAGE);
     else if (lv >= 2) skill_fx_next_poise(skillStep < 5 ? 0.8f / POISE_DAMAGE : 0.0f);
     skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, dmg, 1, 0.0f, len / MBD_WAVE_SPEED, skillStep == n - 1);
@@ -1446,7 +1449,7 @@ static void update_skill(float dt)
                 pulse = 0.45f - 0.3f * (skillTime / charge);
             }
         }
-        // The slash, then (Twin Moon) the same slash again TWIN_GAP later at 40%: skillStep 1-3 the first's
+        // The slash, then (Twin Moon) the same slash again TWIN_GAP later at TWIN_SHARE: skillStep 1-3 the first's
         // debris, 4 the second slash, 5-7 its debris. The second replays the clip's swing: from TWIN_LEAD
         // before its arc, eased from the follow-through over TWIN_EASE (the clip runs on 0.35 s longer)
         if (halfmoon_twin() && skillStep >= 1 && !twinSwing && skillTime >= charge + TWIN_GAP - TWIN_LEAD) {
@@ -1463,7 +1466,7 @@ static void update_skill(float dt)
         float radius = HALFMOON_RADIUS * (skill_lv(SKILL_HALFMOON_SLASH) >= 4 ? 1.25f : 1.0f);
         bool full = halfmoon_full();
         if ((skillStep == 0 && skillTime >= charge) || (skillStep == 4 && skillTime >= charge + TWIN_GAP)) {
-            float share = skillStep ? 0.4f : 1.0f;
+            float share = skillStep ? TWIN_SHARE : 1.0f;
             skill_fx_next_poise((full ? 2.0f : 1.0f) * HALFMOON_POISE * share);
             if (full) skill_fx_next_arc_half(T3D_PI);       // all round
             skill_fx_spawn_arc((float[3]){ character.pos[0], character.pos[1] + 10.0f, character.pos[2] },
