@@ -17,7 +17,9 @@ Phase 2 balance (2026-11-04, the user's approved items from the balance audit, /
 - **Random Lv 5 forms:** a skill at Lv 4 leads the next draft with one form, A or B at random once B is bought; a skipped form can come back as either in a later skill card.
 - **Shadow family:** has its own bot plan (plan 10).
 
-Measured before and after in the REPORT's phase-2 section.
+- **Follow-ups (the user's calls, same night):** one minor blessing taken a circle; Full Moon x1.05; Blood Moon Embers x1.3; Heat +5% a step (Embers +5%); Shrine pacing by income (a floor's Embers 4 + 2 x circle + place, a circle +10, Skip +3, the Brazier 12 x circle); the Shop sells potions past the max up to 15 at 60, +20 each in a visit. Memory: on a Bonus floor the Tower drops the Guardian's model, skeletons and clips (loaded again for its next floor).
+
+Measured before and after in the REPORT's phase-2 sections.
 
 Stage 1 built (2026-11-01, pre-release v1.1-beta.1): 5 slots with levels, families on the cards and their weighting, the slot line, Stats > Build, the Shrine's Boon Packs in `_pad[24..25]`. Calls made while building it:
 - Section 7's tables hold 18 existing and 17 new boons (35), not 40 / 19 new. Hearth's two are held back: **Quick Draught** speeds up a drink the game doesn't have (a potion heals at once) and **Prospector** needs gold (stage 4); so 15 new boons in five packs, and the ladder sells five (120-280). (Stage 4: Prospector and the Hearth pack are in, six packs.)
