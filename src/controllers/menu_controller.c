@@ -1003,6 +1003,7 @@ void menu_controller_update(void)
     if (currentMenu != MENU_CONTROLS || !menuActive) controls_icons(false);
     if (!tower_active() && (currentMenu != MENU_CODEX || !menuActive)) tower_icons_free();     // (the emblems: a climb's, or the Codex's)
     if (!menuActive || !list_icons_menu(currentMenu)) tower_list_icons_free();
+    if (!menuActive && !tower_between_open()) tower_money_free();      // (the gold and Embers icons: none in a fight's HUD)
     menu_controller_update_for_state(
         scene_get_game_state(),
         scene_is_cutscene_active()
@@ -1014,6 +1015,7 @@ void menu_controller_update_title(void)
     if (currentMenu != MENU_CONTROLS || !menuActive) controls_icons(false);
     if (!tower_active() && (currentMenu != MENU_CODEX || !menuActive)) tower_icons_free();     // (the emblems: a climb's, or the Codex's)
     if (!menuActive || !list_icons_menu(currentMenu)) tower_list_icons_free();
+    if (!menuActive && !tower_between_open()) tower_money_free();      // (the gold and Embers icons: none in a fight's HUD)
     menu_controller_update_for_state(
         GAME_STATE_TITLE,
         false
@@ -1122,10 +1124,10 @@ static void menu_back_row(UiRect r, bool on) { ui_track_foot(true); ui_row(MB_X(
 // The Tower lists' title row: Embers left (gold), the title centred unless that would touch them (then just right of them)
 static void tower_menu_title(UiRect r, const char *title)
 {
-    char e[24]; snprintf(e, sizeof e, "Embers %d", tower_embers());
+    char e[24]; snprintf(e, sizeof e, TOWER_EMBERS " %d", tower_embers());
     int y = r.y0 + UI_TITLE_DY, x = MB_X(r), w = MB_W(r);
-    rdpq_text_printf(&(rdpq_textparms_t){ .style_id = FONT_STYLE_GOLD }, FONT_UNBALANCED, x, y, "%s", e);
-    int tw = ui_text_width(title), tx = x + (w - tw) / 2, after = x + ui_text_width(e) + 10;
+    tower_money_text(x, y, w, ALIGN_LEFT, FONT_STYLE_GOLD, e);
+    int tw = ui_text_width(title), tx = x + (w - tw) / 2, after = x + 16 + ui_text_width(e + 1) + 10;     // (its icon: 16)
     if (tx < after) tx = after;
     rdpq_text_printf(&(rdpq_textparms_t){ .width = tw + 8 }, FONT_UNBALANCED, tx, y, "%s", title);
 }
@@ -1289,7 +1291,7 @@ static void menu_body(UiRect r0)
             rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, x, y - 4, "Boss after boss\nEver higher");
             y += 2 * P + 2;
         }
-        rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w, .style_id = FONT_STYLE_GOLD }, FONT_UNBALANCED, x, y, "Best floor %d   Embers %d", tower_best_floor(), tower_embers());
+        { char e[48]; snprintf(e, sizeof e, "Best floor %d   " TOWER_EMBERS " %d", tower_best_floor(), tower_embers()); tower_money_text(x, y, w, ALIGN_CENTER, FONT_STYLE_GOLD, e); }
         y += P;
         // the floor-100 title; else what waits set aside for the next climb
         const char *badge = tower_title_badge(), *offers = tower_offers_line();

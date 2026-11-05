@@ -100,6 +100,11 @@ int tower_build_row_marks(int i, int x, int y, int w, bool *noRight);
 void tower_icons_free(void);            // the emblems' strip (loaded when first drawn)
 void tower_list_icons_free(void);       // the 12 px list icons (and, outside the screens between fights, the portraits and forms)
 bool tower_list_icon(const char *name, int x, int y);     // a list row's 12 px icon by its name at x, y (its top left); false: none
+// counters, prices and rewards: a line drawn with its gold and Embers icons where it has these markers
+#define TOWER_GOLD   "\x01"
+#define TOWER_EMBERS "\x02"
+void tower_money_text(int x, int y, int w, rdpq_align_t align, int style, const char *str);
+void tower_money_free(void);            // its icons (held while a menu or a screen between fights is up)
 void tower_hud_skill_marks(int skill, int x, int y);   // a D-pad skill key's level pips and form badge (a climb's), at its centre
 
 // ---- Offerings (Tower > Offerings): gifts for the next climb only, two at most, the second 50 Embers more; set aside

@@ -25,7 +25,7 @@
 
 #define UI_DOC_ROWS  64          // (the Codex's longest page: a sentence a row)
 #define UI_DOC_TEXT  3072
-#define UI_DOC_PAGES 10
+#define UI_DOC_PAGES 16          // (a Codex family page at the largest overscan: 10+)
 #define UI_RIGHT_W   64          // the right part's column
 
 typedef struct {

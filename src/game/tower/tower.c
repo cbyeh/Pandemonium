@@ -137,7 +137,7 @@ static const char *const SKILL_LV_DESC[SKILL_COUNT][3] = {
     { "+20% damage", "Blades hit 5 times", "Wind-up 0.6 s" },
 };
 // The Codex's pages (the Tower menu and the pause menu): each its text in tower_text.bin, and some its tables (codex_gen)
-enum { CX_CLIMB, CX_MAP, CX_FIGHTS, CX_STOPS, CX_SLOTS, CX_FAMILIES, CX_RIVALS, CX_PLUS, CX_SKILLS, CX_MBD, CX_HALFMOON, CX_CLEAVE,
+enum { CX_CLIMB, CX_MAP, CX_FIGHTS, CX_STOPS, CX_SLOTS, CX_FAMILIES, CX_FAM0, CX_RIVALS = CX_FAM0 + FAM_COUNT, CX_PLUS, CX_SKILLS, CX_MBD, CX_HALFMOON, CX_CLEAVE,
        CX_AFFIXES, CX_GOLD, CX_EMBERS, CX_OFFERINGS, CX_MILESTONES, CX_PACTS, CX_NIGHTS, CX_HEART, CX_COUNT };
 #define OFFER_TXT 7         // (OFF_COUNT, below)
 // What each card does in full, for its Details panel (R), the affixes', the Offerings' and the Codex's pages (the numbers
@@ -615,6 +615,8 @@ static int list_icon_find(const char *name)     // its LIST_ICONS entry (-1: non
 {
     static const struct { const char *row, *icon; } ALIAS[] = { { "Relics", "Knight's Oath" }, { "Unlocks", "Families" }, { "Nightfarer (skin)", "Nightfarer" } };
     for (unsigned a = 0; a < sizeof ALIAS / sizeof ALIAS[0]; a++) if (!strcmp(name, ALIAS[a].row)) name = ALIAS[a].icon;
+    char fam[16]; const char *sp = strstr(name, " boons");      // a Codex family page ("Blood boons"): its family's icon
+    if (sp && !sp[6] && sp - name < (int)sizeof fam) { snprintf(fam, sizeof fam, "%.*s", (int)(sp - name), name); name = fam; }
     for (unsigned i = 0; i < sizeof LIST_ICONS / sizeof LIST_ICONS[0]; i++) if (!strcmp(name, LIST_ICONS[i].name)) return (int)i;
     return -1;
 }
@@ -649,6 +651,43 @@ bool tower_list_icon(const char *name, int x, int y)
         return true;
     }
     return false;
+}
+// A line with the gold and Embers icons (the Codex's 12 px Gold and Embers icons) where it has TOWER_GOLD / TOWER_EMBERS:
+// counters, prices, rewards. Its own copy of the list sheet (1.7 KB): the lists' is freed each frame outside them
+static sprite_t *s_money;
+void tower_money_free(void) { if (s_money) { gpu_wait(); sprite_free(s_money); s_money = NULL; } }
+static int seg_end(const char *s, int n)     // the pen's x after n bytes of s (its trailing spaces too)
+{
+    if (n <= 0) return 0;
+    rdpq_paragraph_t *p = rdpq_paragraph_build(&(rdpq_textparms_t){ 0 }, FONT_UNBALANCED, s, &n);
+    int w = (int)(fmaxf(p->advance_x, p->bbox.x1) + 0.5f);
+    rdpq_paragraph_free(p);
+    return w;
+}
+void tower_money_text(int x, int y, int w, rdpq_align_t align, int style, const char *str)
+{
+    enum { ICON = 12, PAD = 2 };
+    int total = 0;
+    for (const char *c = str; *c; ) {
+        int n = (int)strcspn(c, TOWER_GOLD TOWER_EMBERS);
+        total += seg_end(c, n); c += n;
+        if (*c) { total += PAD + ICON + PAD; c++; }
+    }
+    int px = align == ALIGN_CENTER ? x + (w - total) / 2 : align == ALIGN_RIGHT ? x + w - total : x;
+    for (const char *c = str; *c; ) {
+        int n = (int)strcspn(c, TOWER_GOLD TOWER_EMBERS);
+        if (n) { char seg[96]; snprintf(seg, sizeof seg, "%.*s", n, c); rdpq_text_printf(&(rdpq_textparms_t){ .style_id = style }, FONT_UNBALANCED, px, y, "%s", seg); }
+        px += seg_end(c, n); c += n;
+        if (!*c) break;
+        int t = list_icon_find(*c == TOWER_GOLD[0] ? "Gold" : "Embers and the Shrine");
+        if (!s_money) s_money = sprite_load("rom:/ui/tower/list_icons.i4.sprite");
+        if (s_money && t >= 0 && !ui_measuring()) {
+            icon_mode();
+            rdpq_set_prim_color(RGBA32(LIST_ICONS[t].r, LIST_ICONS[t].g, LIST_ICONS[t].b, 255));
+            rdpq_sprite_blit(s_money, px + PAD, y - 10, &(rdpq_blitparms_t){ .t0 = 12 * LIST_ICONS[t].tile, .width = 12, .height = 12 });
+        }
+        px += PAD + ICON + PAD; c++;
+    }
 }
 // A boss's portrait (assets/ui/tower/portraits.ci8.png, tools/portraits.py: 22x22, full colour, CI8) at x, y (its top left),
 // k its brightness in percent: the map's boss nodes and the Codex. Loaded with the map (or the Codex's page)
@@ -1385,7 +1424,7 @@ static void elite_chest(void)
         take_boon(b);
         if (BOONS[b].up) snprintf(s.chestLine, sizeof s.chestLine, "Elite chest: %s%s", BOONS[b].name, more);
         else snprintf(s.chestLine, sizeof s.chestLine, "Elite chest: %s Lv %d%s", BOONS[b].name, s.stacks[b], more);
-    } else snprintf(s.chestLine, sizeof s.chestLine, "Elite chest: +%d gold%s", gain_gold(CHEST_GOLD), more);
+    } else snprintf(s.chestLine, sizeof s.chestLine, "Elite chest: +%d" TOWER_GOLD "%s", gain_gold(CHEST_GOLD), more);
 #ifdef HLE_AUTOPLAY
     debugf("[chest] floor %d: %s (potions %d of %d)\n", s.floor, s.chestLine, character.healthPotions, tower_mod_max_potions());
 #endif
@@ -1768,6 +1807,7 @@ static bool tower_draft_update(bool left, bool right, bool up, bool down, bool c
 
 static int text_style(int x, int y, int w, rdpq_align_t align, int style, const char *str)
 {
+    if (strpbrk(str, TOWER_GOLD TOWER_EMBERS)) { tower_money_text(x, y, w, align, style, str); return 1; }     // (one line)
     return rdpq_text_printf(&(rdpq_textparms_t){ .align = align, .width = w, .wrap = WRAP_WORD, .style_id = style }, FONT_UNBALANCED, x, y, "%s", str).nlines;
 }
 
@@ -1843,10 +1883,10 @@ static void tower_draft_draw(void)
 
     char line[80];
     const int T = fit_my(200);      // (the header's three lines, the cards and Skip: 200 px)
-    snprintf(line, sizeof line, "Floor %d cleared   +%d Embers   +%d gold", s.floor, s.lastFloorEmbers, s.lastFloorGold);
+    snprintf(line, sizeof line, "Floor %d cleared   +%d" TOWER_EMBERS "   +%d" TOWER_GOLD, s.floor, s.lastFloorEmbers, s.lastFloorGold);
     text_style(0, T + 9, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
     if (s.circleCleared) {
-        snprintf(line, sizeof line, "Circle cleared: +%d Embers", CIRCLE_EMBERS);
+        snprintf(line, sizeof line, "Circle cleared: +%d" TOWER_EMBERS, CIRCLE_EMBERS);
         text_style(0, T + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_BLUE, line);
     } else if (s.chestLine[0]) text_style(0, T + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_BLUE, s.chestLine);     // (an Elite is never a circle's last)
     // the next floor on the third line (a new circle's night in red: its effect is on the map, its Guardian's page and Stats)
@@ -1935,15 +1975,15 @@ static void tower_draft_draw(void)
     // Skip, under the cards
     // A button of its own under the cards, framed like them: Down to it, Up back to the card
     bool skip = s.sel == s.nChoices;
-    const int bw = 160, bh = 16, by = y0 + ch + 4;
-    const int bx = SAFE_X1 - 68 - bw < (SCREEN_WIDTH - bw) / 2 - 16 ? SAFE_X1 - 68 - bw : (SCREEN_WIDTH - bw) / 2 - 16;     // (left of centre, the R hint beside it at any overscan)
+    const int bw = 132, bh = 16, by = y0 + ch + 4;     // (the Shop's Leave's width)
+    const int bx = SAFE_X1 - 68 - bw < (SCREEN_WIDTH - bw) / 2 ? SAFE_X1 - 68 - bw : (SCREEN_WIDTH - bw) / 2;     // (centred; left of it only where a large overscan would put the R hint on it)
     if (s.sel < s.nChoices) ui_hint(SAFE_X1, by + 12, UI_DETAILS_HINT);     // (beside Skip)
     flat_mode();
     rdpq_set_prim_color(RGBA32(0, 0, 0, UI_SHADE));
     rdpq_fill_rectangle(bx, by, bx + bw, by + bh);
     rdpq_set_prim_color(skip ? RGBA32(255, 215, 90, 255) : RGBA32(110, 100, 90, 255));
     ui_frame(bx - 2, by - 2, bx + bw + 2, by + bh + 2, 2);
-    snprintf(line, sizeof line, "Skip: +%d Embers, +%d gold", SKIP_EMBERS, gold_with(SKIP_GOLD));
+    snprintf(line, sizeof line, "Skip: +%d" TOWER_EMBERS "  +%d" TOWER_GOLD, SKIP_EMBERS, gold_with(SKIP_GOLD));
     text_style(bx, by + 12, bw, ALIGN_CENTER, skip ? FONT_STYLE_GOLD : FONT_STYLE_GREY, line);
 }
 
@@ -2518,6 +2558,7 @@ static void doc_skill(UiDoc *d, int k)
     if (!((s.forms >> k) & 1)) ui_doc_text(d, FONT_STYLE_GREY, "%s is bought at the Shrine (Unlocks).", BOONS[skill_form_card(k, SKILL_FORM_B)].name);
 }
 
+static const char *lc(const char *t);
 // a boon's, a skill card's, a "+" or a duo's page; its title and colour out
 static void doc_boon(UiDoc *d, int b, char *title, int tn, int *tstyle)
 {
@@ -2537,7 +2578,7 @@ static void doc_boon(UiDoc *d, int b, char *title, int tn, int *tstyle)
     ui_doc_row(d, bd->duo ? FONT_STYLE_GOLD : FAMILIES[bd->family].style, TIER_NAME[tier], "%s", line);
     if (is_learn(b) || is_form(b)) {      // the whole track
         int k = is_learn(b) ? b - BOON_LEARN_MOONBLADE : form_skill(b);
-        if (is_form(b)) { ui_doc_text(d, FONT_STYLE_WHITE, "%s", full_text(b)); ui_doc_text(d, FONT_STYLE_RED, "Locks out: %s", BOONS[rival_of(b)].name); ui_doc_gap(d); }
+        if (is_form(b)) { ui_doc_text(d, FONT_STYLE_WHITE, "%s", full_text(b)); ui_doc_text(d, FONT_STYLE_RED, "Locks out: %s, %s", BOONS[rival_of(b)].name, lc(BOONS[rival_of(b)].desc)); ui_doc_gap(d); }
         else ui_doc_text(d, FONT_STYLE_WHITE, knows(k) ? "Known: Lv %d of 5 now." : "Not learned yet: this card teaches it at Lv 1.", tower_skill_level(k));
         doc_skill(d, k);
         return;
@@ -2562,9 +2603,9 @@ static void doc_boon(UiDoc *d, int b, char *title, int tn, int *tstyle)
     ui_doc_text(d, FONT_STYLE_WHITE, "%s", full_text(b));
     // rivals: what it locks out, what locks it
     if (rival_of(b) >= 0) {
-        char rn[48]; rival_names(b, rn, sizeof rn);
         ui_doc_gap(d);
-        ui_doc_text(d, FONT_STYLE_RED, "Rival: %s. Taking one locks the other out for the run.", rn);
+        for (int k = 0, r; (r = rival_k(b, k)) >= 0; k++) ui_doc_text(d, FONT_STYLE_RED, "Locks out: %s, %s", BOONS[r].name, lc(BOONS[r].desc));
+        ui_doc_text(d, FONT_STYLE_GREY, "Taking one locks the other out for the run.");
         if (s.locked[b]) { ui_doc_icon(d, ICON_PADLOCK + 1); ui_doc_text(d, FONT_STYLE_RED, "Locked out this run: its rival was taken."); }
     }
     if (takes_slot(b)) {
@@ -3026,7 +3067,7 @@ static void map_draw(void)
     char line[96];
     int n = snprintf(line, sizeof line, "Floor %d", s.floor);
     if (s.circle > 1) n += snprintf(line + n, sizeof line - n, "   Ascension %d", s.circle - 1);
-    snprintf(line + n, sizeof line - n, "   Gold %d", s.gold);
+    snprintf(line + n, sizeof line - n, "   " TOWER_GOLD " %d", s.gold);
     text_style(0, map_top(), SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, line);
     if (s.night) { snprintf(line, sizeof line, "%s: %s", NIGHTS[s.night].name, NIGHTS[s.night].brief); text_style(0, map_top() + 13, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_RED, line); }
     if (cr < MAP_ROWS) {
@@ -3059,7 +3100,7 @@ static UiRect list_box(const char *title, bool gold)
     for (; title[n] && n < (int)sizeof t - 1; n++) t[n] = (char)toupper((unsigned char)title[n]);
     t[n] = 0;
     text(r.x0, r.y0 + UI_TITLE_DY, r.x1 - r.x0, ALIGN_CENTER, t);
-    if (gold) { char g[24]; snprintf(g, sizeof g, "Gold %d", s.gold); text_style(r.x0 + 8, r.y0 + UI_TITLE_DY, 120, ALIGN_LEFT, FONT_STYLE_GOLD, g); }
+    if (gold) { char g[24]; snprintf(g, sizeof g, TOWER_GOLD " %d", s.gold); text_style(r.x0 + 8, r.y0 + UI_TITLE_DY, 120, ALIGN_LEFT, FONT_STYLE_GOLD, g); }
     return r;
 }
 #define LIST_PITCH 15
@@ -3084,12 +3125,12 @@ static void rest_draw(void)
 {
     static const char *const TITLE[] = { [SCR_REST] = "Rest", [SCR_TEMPER] = "Temper", [SCR_RELEASE] = "Release a boon?", [SCR_SHOP_LEVEL] = "A level", [SCR_SHOP_PLUS] = "A \"+\"", [SCR_SHOP_RELEASE] = "Release" };
     static const char *const HEAD[] = { [SCR_REST] = "Choose one", [SCR_TEMPER] = "+1 level", [SCR_RELEASE] = "Free, with its levels",
-                                        [SCR_SHOP_LEVEL] = "", [SCR_SHOP_PLUS] = "150 gold", [SCR_SHOP_RELEASE] = "20 gold: a boon, with its levels" };
+                                        [SCR_SHOP_LEVEL] = "", [SCR_SHOP_PLUS] = "150" TOWER_GOLD, [SCR_SHOP_RELEASE] = "20" TOWER_GOLD ": a boon, with its levels" };
     bool shopList = s.scr >= SCR_SHOP_LEVEL, boonRows = s.scr == SCR_TEMPER || s.scr == SCR_SHOP_LEVEL || s.scr == SCR_SHOP_PLUS;
     UiRect r = list_box(TITLE[s.scr], shopList);
     const int T = r.y0;
     char line[80];
-    if (s.scr == SCR_SHOP_LEVEL) snprintf(line, sizeof line, "%d gold", shop_price(SHOP_LEVEL));     // (it rises each one bought)
+    if (s.scr == SCR_SHOP_LEVEL) snprintf(line, sizeof line, "%d" TOWER_GOLD, shop_price(SHOP_LEVEL));     // (it rises each one bought)
     text_style(0, T + 34, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, s.scr == SCR_SHOP_LEVEL ? line : HEAD[s.scr]);
     snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d", (double)character.health, (double)character.maxHealth, character.healthPotions);
     text_style(0, T + 47, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
@@ -3144,7 +3185,7 @@ static void shop_draw(void)
     char line[96];
     const int T = fit_my(204);      // (the header, the shelf, Leave and the line under it: 204 px)
     text(0, T + 10, SCREEN_WIDTH, ALIGN_CENTER, "SHOP");      // the menus' title row: its money left (as the Shrine's Embers)
-    snprintf(line, sizeof line, "Gold %d", s.gold);
+    snprintf(line, sizeof line, TOWER_GOLD " %d", s.gold);
     text_style(SAFE_X0, T + 10, 120, ALIGN_LEFT, FONT_STYLE_GOLD, line);
     snprintf(line, sizeof line, "Health %.0f/%.0f   Potions %d (max %d)", (double)character.health, (double)character.maxHealth, character.healthPotions, tower_mod_max_potions());
     text_style(0, T + 22, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);
@@ -3163,7 +3204,7 @@ static void shop_draw(void)
         int nl = card_text(x + 2, y0 + 27, CARD_NAME_W, CARD_PITCH, sold ? FONT_STYLE_GREY : NAME_STYLE[bd->tier], bd->name);
         card_text(x + 2, y0 + card_desc_y(nl), CARD_TEXT_W, CARD_PITCH, sold ? FONT_STYLE_GREY : FONT_STYLE_WHITE, bd->desc);
         if (sold) snprintf(line, sizeof line, "Sold");
-        else snprintf(line, sizeof line, "%d gold", shop_price(i));
+        else snprintf(line, sizeof line, "%d" TOWER_GOLD, shop_price(i));
         text_style(x, y0 + ch - 3, cw, ALIGN_CENTER, !shop_block(i)[0] ? FONT_STYLE_GOLD : FONT_STYLE_GREY, line);
     }
     // the services, two rows of three under the cards, then Leave
@@ -3172,9 +3213,10 @@ static void shop_draw(void)
                                                        [SHOP_MEND] = "Mend", [SHOP_RELEASE] = "Release" };
         int k = i - SHOP_LEVEL, x = x0 + (k % 3) * (cw + gap), y = y0 + ch + 7 + 19 * (k / 3);
         if ((s.shop.sold >> i) & 1) snprintf(line, sizeof line, "%s: sold", LABEL[i]);
-        else if (shop_price(i)) snprintf(line, sizeof line, "%s  %d", LABEL[i], shop_price(i));
+        else if (shop_price(i)) snprintf(line, sizeof line, "%s  %d" TOWER_GOLD, LABEL[i], shop_price(i));
         else snprintf(line, sizeof line, "%s  free", LABEL[i]);
-        button(x, y, cw, 15, s.shop.sel == i, !shop_block(i)[0], line);
+        button(x, y, cw, 15, s.shop.sel == i, !shop_block(i)[0], "");
+        text_style(x, y + 12, cw, ALIGN_CENTER, !shop_block(i)[0] ? s.shop.sel == i ? FONT_STYLE_GOLD : FONT_STYLE_WHITE : FONT_STYLE_GREY, line);     // (ui_button's label, with the gold icon)
     }
     const int bw = 132, by = y0 + ch + 7 + 38;
     button((SCREEN_WIDTH - bw) / 2, by, bw, 15, s.shop.sel == SHOP_LEAVE, true, "Leave");
@@ -3242,7 +3284,7 @@ static void event_draw(void)
         event_label(s.list[i], line, sizeof line);
         text_style(x, y, w, ALIGN_CENTER, row_ok(i) ? FONT_STYLE_WHITE : FONT_STYLE_GREY, line);
     }
-    snprintf(line, sizeof line, "Gold %d   Health %.0f/%.0f   Potions %d", s.gold, (double)character.health, (double)character.maxHealth, character.healthPotions);
+    snprintf(line, sizeof line, TOWER_GOLD " %d   Health %.0f/%.0f   Potions %d", s.gold, (double)character.health, (double)character.maxHealth, character.healthPotions);
     int fy = r.y1 - UI_FOOT_DY - 15;
     ui_track_foot(true);
     text_style(0, y + 4 > fy ? y + 4 : fy, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GREY, line);     // (never over the rows)
@@ -3666,7 +3708,7 @@ static void milestone_notice(int i)
 // ---- The Codex: a page a topic (tower_text.bin's text, segments split by '|': '#' a heading, '%' grey, '!' red,
 // '+' after a gap, '~' a new page, '@' the topic's own table here), read from ROM while it's built ----
 static const char *const CODEX_TITLE[CX_COUNT] = {
-    "The climb", "The map", "Fights and Elites", "Rests, Shops, Events", "Slots and levels", "Families", "Rivals", "\"+\" and duos",
+    "The climb", "The map", "Fights and Elites", "Rests, Shops, Events", "Slots and levels", "Families", "Blood boons", "Storm boons", "Moon boons", "Iron boons", "Shadow boons", "Hearth boons", "Rivals", "\"+\" and duos",
     "Skills", "Moon Blade Dance", "Halfmoon Slash", "Crescent Cleave", "Elite affixes", "Gold", "Embers and the Shrine", "Offerings",
     "Milestones", "Pacts", "Nights", "The Tower's Heart",
 };
@@ -3714,6 +3756,19 @@ static void codex_gen(UiDoc *d, int k)
             ui_doc_icon(d, (uint8_t)(f + 1));
             ui_doc_text(d, FAMILIES[f].style, "%s: %s", FAMILIES[f].name, line);
             if (m) ui_doc_text(d, own ? FAMILIES[f].style : FONT_STYLE_GREY, "%s %s", own ? "Its pack:" : "Its pack (Shrine):", pk);
+        }
+        break; }
+    case CX_FAM0 ... CX_RIVALS - 1: {     // a family's boons in full, laid out as the Shrine's pack Details
+        int f = k - CX_FAM0;
+        TowerSave sv; tower_load(&sv);
+        bool own = s.active ? family_open(f) : (sv.unlocks >> f) & 1;
+        for (int pk = 0; pk < 2; pk++) for (int b = 0; b < BOON_COUNT; b++) if (BOONS[b].family == f && takes_slot(b) && !BOONS[b].pack == !pk) {
+            char r[24]; snprintf(r, sizeof r, "%s", TIER_NAME[BOONS[b].tier]);
+            ui_doc_gap(d); ui_doc_keep(d);
+            ui_doc_icon(d, DOC_BOON | b);
+            ui_doc_row(d, pk && !own ? FONT_STYLE_GREY : NAME_STYLE[BOONS[b].tier], r, "%s  (max Lv %d)%s", BOONS[b].name, BOONS[b].maxStacks, pk && !own ? "  (Shrine pack)" : "");
+            ui_doc_text(d, FONT_STYLE_WHITE, "%s", full_text(b));
+            if (rival_of(b) >= 0) { char rn[48]; rival_names(b, rn, sizeof rn); ui_doc_text(d, FONT_STYLE_RED, "Rival: %s", rn); }
         }
         break; }
     case CX_RIVALS:
@@ -4904,7 +4959,7 @@ int tower_test_map(void)
             FIT(272, "Floor %d   Ascension %d   Gold %d", 123, 19, 99999);
             FIT(272, "Floor %d cleared   +%d Embers   +%d gold", 123, 999, 999);
             FIT(272, "Choose a Boon   Next: floor %d", 124);
-            FIT(160, "Skip: +%d Embers, +%d gold", SKIP_EMBERS, 99);
+            FIT(132 - 2 * 16, "Skip: +%d  +%d", SKIP_EMBERS, 99);     // (and its two icons, 16 each)
             FIT(272, "Shop   Gold %d", 99999);
             FIT(272, "Health %d/%d   Potions %d (max %d)", 999, 999, 15, 15);
             FIT(272, "Gold %d   Health %d/%d   Potions %d", 99999, 999, 999, 15);
@@ -5788,6 +5843,7 @@ const char *tower_test_gallery(int k)
     STEP("draft: an Elite's chest (the longest line)", gallery_draft(BOON_CRUSHING_BLOWS_PLUS, BOON_PHANTOM_STEP_PLUS, MINOR_CARD(PB_BULWARK), 2, false);
          snprintf(s.chestLine, sizeof s.chestLine, "Elite chest: %s, +1 potion", BOONS[BOON_CRUSHING_BLOWS_PLUS].name))
     STEP("details: Iron Skin (rivals)", gallery_draft(BOON_RIPOSTE, BOON_IRON_SKIN, BOON_BERSERKER, 1, false); gallery_details())
+    STEP("details: Bloodthirst (its rival's effect)", gallery_draft(BOON_BLOODTHIRST, BOON_IRON_SKIN, BOON_RALLY, 0, false); gallery_details())
     STEP("details: Full Moon Dance 1", gallery_draft(BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE, BOON_RALLY, 0, false); gallery_details())
     STEP("details: Full Moon Dance 2", gallery_draft(BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE, BOON_RALLY, 0, false); gallery_details(); gal_press('A'))
     STEP("details: Full Moon Dance 3", gallery_draft(BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE, BOON_RALLY, 0, false); gallery_details(); gal_press('A'); gal_press('A'))
@@ -5812,6 +5868,24 @@ const char *tower_test_gallery(int k)
     STEP("confirm: Event", gallery_map(NODE_EVENT, 0, 0, false); gallery_confirm(0))
     STEP("confirm: Guardian Unbound, Starfall", gallery_map(NODE_FIGHT, 0, 2, false); s.map.row = MAP_ROWS - 2; s.map.path[s.map.row] = 1; s.map.sel = 1; gallery_confirm(0))
     STEP("codex: Fights and Elites, the bosses' page", gallery_map(NODE_FIGHT, 0, TOWER_SHADOWBORN, false); tower_codex_open(CX_FIGHTS); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(ui_details()->pg.pages - 1))
+    STEP("codex: Blood boons, page 1", tower_codex_open(CX_FAM0 + 0); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(0 < ui_details()->pg.pages ? 0 : ui_details()->pg.pages - 1))
+    STEP("codex: Blood boons, page 2", tower_codex_open(CX_FAM0 + 0); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(1 < ui_details()->pg.pages ? 1 : ui_details()->pg.pages - 1))
+    STEP("codex: Blood boons, page 3", tower_codex_open(CX_FAM0 + 0); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(2 < ui_details()->pg.pages ? 2 : ui_details()->pg.pages - 1))
+    STEP("codex: Storm boons, page 1", tower_codex_open(CX_FAM0 + 1); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(0 < ui_details()->pg.pages ? 0 : ui_details()->pg.pages - 1))
+    STEP("codex: Storm boons, page 2", tower_codex_open(CX_FAM0 + 1); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(1 < ui_details()->pg.pages ? 1 : ui_details()->pg.pages - 1))
+    STEP("codex: Storm boons, page 3", tower_codex_open(CX_FAM0 + 1); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(2 < ui_details()->pg.pages ? 2 : ui_details()->pg.pages - 1))
+    STEP("codex: Moon boons, page 1", tower_codex_open(CX_FAM0 + 2); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(0 < ui_details()->pg.pages ? 0 : ui_details()->pg.pages - 1))
+    STEP("codex: Moon boons, page 2", tower_codex_open(CX_FAM0 + 2); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(1 < ui_details()->pg.pages ? 1 : ui_details()->pg.pages - 1))
+    STEP("codex: Moon boons, page 3", tower_codex_open(CX_FAM0 + 2); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(2 < ui_details()->pg.pages ? 2 : ui_details()->pg.pages - 1))
+    STEP("codex: Iron boons, page 1", tower_codex_open(CX_FAM0 + 3); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(0 < ui_details()->pg.pages ? 0 : ui_details()->pg.pages - 1))
+    STEP("codex: Iron boons, page 2", tower_codex_open(CX_FAM0 + 3); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(1 < ui_details()->pg.pages ? 1 : ui_details()->pg.pages - 1))
+    STEP("codex: Iron boons, page 3", tower_codex_open(CX_FAM0 + 3); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(2 < ui_details()->pg.pages ? 2 : ui_details()->pg.pages - 1))
+    STEP("codex: Shadow boons, page 1", tower_codex_open(CX_FAM0 + 4); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(0 < ui_details()->pg.pages ? 0 : ui_details()->pg.pages - 1))
+    STEP("codex: Shadow boons, page 2", tower_codex_open(CX_FAM0 + 4); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(1 < ui_details()->pg.pages ? 1 : ui_details()->pg.pages - 1))
+    STEP("codex: Shadow boons, page 3", tower_codex_open(CX_FAM0 + 4); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(2 < ui_details()->pg.pages ? 2 : ui_details()->pg.pages - 1))
+    STEP("codex: Hearth boons, page 1", tower_codex_open(CX_FAM0 + 5); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(0 < ui_details()->pg.pages ? 0 : ui_details()->pg.pages - 1))
+    STEP("codex: Hearth boons, page 2", tower_codex_open(CX_FAM0 + 5); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(1 < ui_details()->pg.pages ? 1 : ui_details()->pg.pages - 1))
+    STEP("codex: Hearth boons, page 3", tower_codex_open(CX_FAM0 + 5); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(2 < ui_details()->pg.pages ? 2 : ui_details()->pg.pages - 1))
     STEP("shop: 99999 gold, the longest cards", s.draftOpen = false; shop_open(); s.shop.card[0] = BOON_SANGUINE_FLASK; s.shop.card[1] = BOON_SHADES_MERCY; s.shop.card[2] = BOON_CRUSHING_BLOWS; s.shop.pact = PACT_CARD(PB_WOUNDED, PC_EXPOSED); s.scrOpenMs -= 2000)
     STEP("shop: on the pact", s.shop.sel = SHOP_PACT)
     STEP("shop: on Potion, 15 held", s.shop.sel = SHOP_POTION)
