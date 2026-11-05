@@ -1,6 +1,6 @@
 # Pandemonium
 
-[![Pandemonium trailer](https://img.youtube.com/vi/K9z3uv20E2k/maxresdefault.jpg)](https://www.youtube.com/watch?v=K9z3uv20E2k)
+Gameplay trailer: https://www.youtube.com/watch?v=K9z3uv20E2k
 
 <img width="1000" alt="Pandemonium cover art" src="metadata/cover.jpg">
 
