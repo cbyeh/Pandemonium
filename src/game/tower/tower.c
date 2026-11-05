@@ -258,7 +258,7 @@ static const int TIER_PRICE[3] = { 60, 110, 180 };
 typedef enum { NIGHT_NONE, NIGHT_BLOOD_MOON, NIGHT_IRON, NIGHT_STARFALL, NIGHT_COUNT } Night;
 static const struct { const char *name, *desc; float embers; const char *brief; } NIGHTS[NIGHT_COUNT] = {     // (brief: one line on the map)
     [NIGHT_NONE]       = { "", "", 1.0f, "" },
-    [NIGHT_BLOOD_MOON] = { "Blood Moon", "Bosses hit 12% harder", 1.5f, "blows +12%" },
+    [NIGHT_BLOOD_MOON] = { "Blood Moon", "Bosses hit 12% harder", 1.3f, "blows +12%" },     // (Embers x1.3, was 1.5: the same risk as the others now)
     [NIGHT_IRON]       = { "Iron Night", "Bosses +25% health", 1.3f, "bosses +25% health" },
     [NIGHT_STARFALL]   = { "Starfall",   "Skills recharge 30% faster; bosses hit 15% harder", 1.2f, "skills 30% faster, blows +15%" },
 };
@@ -473,6 +473,7 @@ static struct {
     bool firstCleared;              // its first Guardian fell: the Offerings are spent
     bool hearthUsed, milestonePotion;
     int8_t notice;                  // a milestone just reached (MS_ + 1): its notice over the draft
+    uint8_t minorCircle;            // the circle a minor blessing was last taken in (one a circle; 0 none)
     char chestLine[48];             // an Elite's chest and second potion, on the draft's second line
     uint8_t heat;                   // the Heat dial this climb (0-HEAT_MAX), set at the Tower menu before it
     // draft
@@ -1637,7 +1638,7 @@ void tower_draft_open(void)
     // The rest by rarity, a pact now and then; once the boons run out, a minor blessing and pacts
     bool minor = false;
     while (s.nChoices < DRAFT_CHOICES) {
-        if (n == 0 && !minor) { minor = true; s.choices[s.nChoices++] = MINOR_CARD(rng_next() % (PB_VITALITY + 1)); continue; }
+        if (n == 0 && !minor && s.minorCircle != s.circle) { minor = true; s.choices[s.nChoices++] = MINOR_CARD(rng_next() % (PB_VITALITY + 1)); continue; }     // (one taken a circle: then pacts)
         if (n == 0 || (int)(rng_next() % 100) < PACT_CHANCE) { s.choices[s.nChoices] = roll_pact(s.choices, s.nChoices); s.nChoices++; continue; }
         s.choices[s.nChoices++] = pick_card(pool, &n, famHeld);
     }
@@ -1725,6 +1726,7 @@ void tower_draft_pick(int index)
     } else if (index >= 0 && index < s.nChoices && is_minor(s.choices[index])) {
         int b = s.choices[index] - MINOR_CARD0;
         s.halfBless[b]++;
+        s.minorCircle = (uint8_t)s.circle;
         if (b == PB_VITALITY) { character.health += 6.0f; sync_max_health(); }
 #ifdef HLE_AUTOPLAY
         debugf("[minor] took %s (%d held): damage x%.2f, taken x%.2f, max health %.0f\n", MINOR_NAME[b], s.halfBless[b],
@@ -2583,7 +2585,7 @@ static void doc_card(UiDoc *d, int card, char *title, int tn, int *tstyle)
         snprintf(title, tn, "%s", MINOR_NAME[b]); *tstyle = FONT_STYLE_GOLD;
         ui_doc_text(d, FONT_STYLE_WHITE, "%s for the run: half of %s's blessing, with no curse. It takes no slot and stacks (held: %d).", MINOR_DESC[b], BLESSINGS[b].name, s.halfBless[b]);
         ui_doc_gap(d);
-        ui_doc_text(d, FONT_STYLE_GREY, "It comes once no boon is left for your build.");
+        ui_doc_text(d, FONT_STYLE_GREY, "It comes once no boon is left for your build, one a circle.");
     } else if (card >= BOON_COUNT) doc_pact(d, card, title, tn, tstyle);
     else doc_boon(d, card, title, tn, tstyle);
 }
@@ -4978,6 +4980,10 @@ int tower_test_shop(void)
       bool fx = mb == PB_MIGHT ? fabsf(tower_mod_damage_dealt() / dd - 1.04f) < 0.002f : mb == PB_BULWARK ? fabsf(tower_mod_damage_taken() / dt - 0.97f) < 0.002f : fabsf(tower_mod_max_health() - mh - 6.0f) < 0.01f;
       CHECK(minor == 1 && mb <= PB_VITALITY && s.halfBless[mb] == h0 + 1 && c1 == c0 && s.gold == before && fx,
             "no boon left: one minor blessing card (%d, %s), half a blessing, no curse, no gold", minor, MINOR_NAME[mb]); }
+    { s.draftOpen = false; int again = 0, next = 0;      // one a circle: none again this circle (pacts fill), one in the next
+      for (int k = 0; k < 50; k++) { tower_draft_open(); for (int i = 0; i < s.nChoices; i++) again += is_minor(s.choices[i]); s.draftOpen = false; }
+      s.circle++; tower_draft_open(); for (int i = 0; i < s.nChoices; i++) next += is_minor(s.choices[i]); s.draftOpen = false; s.circle--;
+      CHECK(!again && next == 1, "a minor blessing taken: none again in its circle (%d in 50 drafts), one in the next (%d)", again, next); }
     s.draftOpen = false;
     RUN4(52);
     CHECK(s.gold == 0, "a new run starts with no gold (%d)", s.gold);

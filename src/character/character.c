@@ -1228,7 +1228,7 @@ static const int   MBD_WAVES = 5;
 #define SHATTER_DMG 1.75f           // its crosses' damage (Lv 4's 1.5: the stagger build stayed -11..-13% with any stagger a cross, its breaks capped by the bosses' moves)
 #endif
 #ifndef FULL_MOON_HIT
-#define FULL_MOON_HIT 1.0f          // Full Moon's slash, on Lv 3's (phase 2: 1.15 -> 1.0, the safest form under Twin Moon)
+#define FULL_MOON_HIT 1.05f         // Full Moon's slash, on Lv 3's (phase 2: 1.15 -> 1.0 -> 1.05: the Halfmoon forms a little over the Cleave's)
 #endif
 // The skills' levels and Lv 5 forms (docs/design/TOWER_ROGUELIKE.md section 6; outside the Tower Lv 1):
 // Moon Blade Dance Lv 2 crosses 1.5, Lv 3 7 of them, Lv 4 a 12 s cooldown; Full Moon Dance 9 crosses
