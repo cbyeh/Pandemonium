@@ -2254,6 +2254,8 @@ static void shop_pay(int i, const char *what)
 static void shop_buy(int i);
 static void shop_take(int i);
 static void shop_ask(const char *name, int price, const char *effect);
+static void leave_ask(void);
+static bool s_leaveAsk;     // the confirm up is Leave's (a Shop's or an Event's), not a purchase's
 static void shop_open(void)
 {
     BoonId pool[BOON_COUNT]; int n = 0, famHeld[FAM_COUNT + 1];
@@ -2305,13 +2307,7 @@ static void shop_open(void)
 static void shop_buy(int i)
 {
     const char *why = shop_block(i);
-    if (i == SHOP_LEAVE) {
-#ifdef HLE_AUTOPLAY
-        debugf("[shop] left with %d gold\n", s.gold);
-#endif
-        tower_map_open();
-        return;
-    }
+    if (i == SHOP_LEAVE) { leave_ask(); return; }
     if (why[0]) {
 #ifdef HLE_AUTOPLAY
         debugf("[shop] %s: can't (%s), gold %d\n", SHOP_NAMES[i], why, s.gold);
@@ -2347,6 +2343,7 @@ static void shop_ask(const char *name, int price, const char *effect)
     snprintf(t, sizeof t, "Buy %s for %d gold?", name, price);
     ui_confirm_open(p, t, FONT_STYLE_GOLD, "Buy");
     p->owner = UI_OWNER_TOWER;
+    s_leaveAsk = false;
 #ifdef HLE_AUTOPLAY
     debugf("[buy] confirm: %s (screen %d, item %d, row %d, gold %d)\n", t, s.scr, s.shop.sel, s.listSel, s.gold);
 #endif
@@ -2794,9 +2791,27 @@ static void list_take(int v)
 static bool s_pauseReq;
 bool tower_take_pause_request(void) { bool r = s_pauseReq; s_pauseReq = false; return r; }
 
+// Leaving a Shop, or an Event before its choice, asks first (Leave / Back, the cursor on Back): what's inside is
+// seen once entered, so it can't go back to the map (a free look, then another node); a stray B loses nothing
+static void leave_ask(void)
+{
+    UiPanel *p = ui_details();
+    UiDoc *d = ui_panel_doc(p);
+    bool shop = s.scr == SCR_SHOP;
+    ui_doc_clear(d);
+    ui_doc_text(d, FONT_STYLE_WHITE, "It's gone once you leave.");
+    ui_confirm_open(p, shop ? "Leave the Shop?" : "Leave without choosing?", FONT_STYLE_WHITE, "Leave");
+    p->owner = UI_OWNER_TOWER;
+    s_leaveAsk = true;
+#ifdef HLE_AUTOPLAY
+    debugf("[leave] confirm: %s (gold %d)\n", shop ? "Shop" : EVENTS[s.event].name, s.gold);
+#endif
+}
+bool tower_leave_asking(void) { return s_leaveAsk && ui_details()->open && ui_details()->confirm; }
+
 // B goes back a level everywhere and never enters anything: the map's B opens the pause menu (the screen
-// behind it), the confirm screen's B returns to the map, a Shop's B leaves it (its Leave), an Event's is
-// its Leave (or Continue), a Rest's first screen returns to the map with the Rest still to choose, Temper
+// behind it), the confirm screen's B returns to the map, a Shop's B (and an Event's before its choice) asks
+// Leave's confirm (leave_ask), an Event's result Continue, a Rest's first screen returns to the map with the Rest still to choose, Temper
 // back to the Rest, Release keeps every boon, a Shop's list back to its shelf. The draft ignores B (its
 // cards come up under a fight's mashed attack: B is the sword in the Classic layout). R: Details
 static int list_per_page(void);
@@ -2815,9 +2830,18 @@ bool tower_between_update(bool left, bool right, bool up, bool down, bool confir
     if (!s.scr || get_ticks_ms() - s.scrOpenMs < DRAFT_INPUT_DELAY_MS) return false;    // (as the draft: no press taken unseen)
     if (dp->open && dp->confirm && s.scr != SCR_CONFIRM) {     // a gold purchase's confirm: Buy pays, B or Back the screen as it was
         int r = ui_panel_input(dp, up, down, left, right, confirm, back, false);
-        if (r == UI_PANEL_ENTER) { if (s.scr == SCR_SHOP) shop_take(s.shop.sel); else list_take(s.list[s.listSel]); }
+        bool leave = s_leaveAsk;
+        if (r != UI_PANEL_STAY) s_leaveAsk = false;
+        if (r == UI_PANEL_ENTER && leave) {
 #ifdef HLE_AUTOPLAY
-        else if (r == UI_PANEL_CLOSED) debugf("[buy] closed: nothing bought, gold %d, screen %d item %d row %d\n", s.gold, s.scr, s.shop.sel, s.listSel);
+            if (s.scr == SCR_SHOP) debugf("[shop] left with %d gold\n", s.gold);
+            else debugf("[event] %s: left, nothing chosen\n", EVENTS[s.event].name);
+#endif
+            tower_map_open();
+        }
+        else if (r == UI_PANEL_ENTER) { if (s.scr == SCR_SHOP) shop_take(s.shop.sel); else list_take(s.list[s.listSel]); }
+#ifdef HLE_AUTOPLAY
+        else if (r == UI_PANEL_CLOSED) debugf("[%s] closed: nothing %s, gold %d, screen %d item %d row %d\n", leave ? "leave" : "buy", leave ? "left" : "bought", s.gold, s.scr, s.shop.sel, s.listSel);
 #endif
         return false;
     }
@@ -2859,11 +2883,12 @@ bool tower_between_update(bool left, bool right, bool up, bool down, bool confir
             debugf("[rest] release: none (B)\n");
 #endif
             tower_map_open();
-        } else if (s.scr == SCR_EVENT) {                                    // Leave, or Continue
+        } else if (s.scr == SCR_EVENT) {                                    // Continue, or (before a choice) Leave's confirm
 #ifdef HLE_AUTOPLAY
-            debugf("[event] B: %s\n", s.eventDone ? "Continue" : "Leave");
+            debugf("[event] B: %s\n", s.eventDone ? "Continue" : "Leave?");
 #endif
-            tower_map_open();
+            if (s.eventDone) tower_map_open();
+            else leave_ask();
         }
         return false;
     }
@@ -2879,6 +2904,7 @@ bool tower_between_update(bool left, bool right, bool up, bool down, bool confir
     int v = s.list[s.listSel];
     if (s.scr == SCR_EVENT) {
         if (s.eventDone) tower_map_open();
+        else if (v == EVENTS[s.event].choices - 1) leave_ask();     // Leave: asked, as B
         else event_take(v);
     } else if (shopList) {
         if (v < 0) { s.scr = SCR_SHOP; return false; }
@@ -4670,8 +4696,18 @@ static int walk_circle(bool drafts)
             MCHECK((t == NODE_REST && s.scr == SCR_REST) || (t == NODE_SHOP && s.scr == SCR_SHOP) || (t == NODE_EVENT && s.scr == SCR_EVENT),
                    "a node that isn't a fight opens its own screen (node %d, screen %d)", t, s.scr);
             int g = s.gold;
-            if (t == NODE_SHOP) { test_press('B'); s_walkShops++; MCHECK(s.gold == g, "B leaves a Shop, nothing bought"); }
-            else if (t == NODE_EVENT) { test_press('A'); s_walkEventGold += s.gold - g; test_press('A'); s_walkEvents++; }   // its first choice, then Continue
+            if (t == NODE_SHOP) {
+                test_press('B');
+                MCHECK(tower_leave_asking() && s.scr == SCR_SHOP && ui_panel_row(ui_details()) == 1, "a Shop's B: Leave's confirm, on Back (screen %d)", s.scr);
+                test_press('U'); test_press('A');
+                s_walkShops++; MCHECK(s.gold == g && !tower_leave_asking(), "its Leave: the Shop left, nothing bought");
+            }
+            else if (t == NODE_EVENT) {     // its first choice it can take, then Continue (only Leave: its confirm, Up, Leave)
+                test_press('A');
+                if (tower_leave_asking()) { test_press('U'); test_press('A'); }
+                else { s_walkEventGold += s.gold - g; test_press('A'); }
+                s_walkEvents++;
+            }
             else {
                 int how = s_walkRestBack++ % 4;
                 if (how == 0 || how == 2) {    // a Rest's B, or its Back row (A alone): the map, the Rest still to choose; then in again
@@ -5087,10 +5123,21 @@ int tower_test_shop(void)
       debugf("[shop] 6 visits with 0-75 gold, every item pressed: lowest gold %d, %d presses refused\n", least, refused);
       CHECK(least >= 0, "gold never below 0 (%d)", least); }
     // B leaves (the map, nothing bought), from the shelf
-    s.gold = 300; shop_open(); g = s.gold; test_press('B');
-    CHECK(tower_map_is_open() && s.gold == g, "B leaves the Shop: the map, gold kept");
+    // Leave asks first (B or the Leave button): B or Back on it keeps the Shop, its Leave the map
+    s.gold = 300; shop_open(); s.shop.sel = 2; g = s.gold; test_press('B');
+    CHECK(tower_leave_asking() && s.scr == SCR_SHOP && ui_panel_row(ui_details()) == 1, "the Shop's B: Leave's confirm, on Back");
+    test_press('B');
+    CHECK(!ui_details()->open && !tower_leave_asking() && s.scr == SCR_SHOP && s.shop.sel == 2, "B on it: still the Shop, the cursor where it was");
+    test_press('B'); test_press('A');
+    CHECK(!ui_details()->open && !tower_leave_asking() && s.scr == SCR_SHOP && s.gold == g, "its Back row (A): still the Shop");
+    test_press('B'); test_press('U'); test_press('A');
+    CHECK(tower_map_is_open() && s.gold == g, "Leave on it: the map, gold kept");
     shop_open(); s.shop.sel = SHOP_LEAVE; test_press('A');
-    CHECK(tower_map_is_open(), "Leave (A): the map");
+    CHECK(tower_leave_asking() && s.scr == SCR_SHOP, "the Leave button (A): its confirm too");
+    test_press('A');
+    CHECK(s.scr == SCR_SHOP && !ui_details()->open, "A on Back (a mashed A): still the Shop");
+    test_buy();
+    CHECK(tower_map_is_open(), "Leave, then its Leave: the map");
     // a full bar: the cards hold no new boon (a duo only when one is ready)
     RUN4(55);
     take_boon(BOON_VIGOR); take_boon(BOON_EMBER_EDGE); take_boon(BOON_FLEETFOOT); take_boon(BOON_RIPOSTE); take_boon(BOON_RALLY);
@@ -5147,6 +5194,14 @@ int tower_test_events(void)
         for (int k = 0; k < 4 && s.listSel < i; k++) test_press('D');
         test_press('A');
         bool leave = i == EVENTS[e].choices - 1, ok = s.eventDone && s.listN == 1;
+        if (leave) {    // Leave asks: A on Back and B on it keep the Event, B asks too, its Leave the map
+            ok = tower_leave_asking() && ui_panel_row(ui_details()) == 1 && s.scr == SCR_EVENT && !s.eventDone;
+            test_press('A'); ok &= !ui_details()->open && s.scr == SCR_EVENT && s.listSel == i;
+            test_press('B'); ok &= tower_leave_asking();
+            test_press('B'); ok &= !ui_details()->open && s.scr == SCR_EVENT && !s.eventDone;
+            test_press('B'); test_press('U'); test_press('A'); ok &= tower_map_is_open() && !tower_leave_asking();
+            snprintf(s.eventResult, sizeof s.eventResult, "(left by its confirm)");
+        }
         if (leave) ok &= s.gold == g && character.healthPotions == p && stacks_sum() == st && curses_sum() == cu && character.maxHealth == mh && character.health == hp && !s.prisoner;
         else switch (e) {
         case EV_ALTAR:    ok &= fabsf(character.maxHealth - 0.85f * mh) < 0.01f && stacks_sum() == st + 1; break;

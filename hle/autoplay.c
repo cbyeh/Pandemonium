@@ -175,6 +175,14 @@ void hle_tower_screen(joypad_inputs_t *in, joypad_buttons_t *pressed, int frame)
     if (now != scr) { scr = now; since = 0; debugf("[shopwalk] screen %d up (frame %d, VI %d)\n", now, frame, SCR_VI()); }
     if (++since < 60 || (since - 60) % 15) return;      // past the screen's input delay
     #define PRESS(f) do { pressed->f = 1; in->btn.f = 1; } while (0)
+    extern bool tower_leave_asking(void);
+    static int la;
+    if (tower_leave_asking()) {     // Leave's confirm (a Shop's B, an Event's Leave): Up to Leave, then A
+        if (la++ % 2 == 0) PRESS(d_up); else PRESS(a);
+        debugf("[shopwalk] leave confirm: %s (frame %d, VI %d)\n", la % 2 ? "Up" : "A on Leave", frame, SCR_VI());
+        return;
+    }
+    la = 0;
     if (now == SCR_EVENT) {
 #if defined(HLE_EVENT_CHOICE) && HLE_EVENT_CHOICE > 0
         if (!tower_event_done() && tower_list_sel() < HLE_EVENT_CHOICE - 1) { PRESS(d_down); return; }
@@ -1152,7 +1160,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #define HLE_NAV_MODE 0
 #endif
         extern int tower_screen(void), tower_map_row(void), tower_map_sel(void), tower_map_next(int), tower_list_sel(void), tower_shop_sel(void), tower_floor(void), tower_draft_selected(void), tower_gold(void);
-        extern bool tower_active(void), tower_between_open(void), tower_draft_is_open(void), tower_event_done(void);
+        extern bool tower_active(void), tower_between_open(void), tower_draft_is_open(void), tower_event_done(void), tower_leave_asking(void);
         extern const char *audio_music_now(void); extern int menu_controller_test_state(int *);
         enum { S_MAP = 1, S_REST, S_TEMPER, S_RELEASE, S_SHOP, S_EVENT = 9, S_CONFIRM = 10, N_SHOP = 4, N_EVENT = 3, N_REST = 5, N_ELITE = 2 };
         static int phase, t0, k, pass, fail, entry = -99, mapsSeen, lastRow = -9, sawShop, sawEvent, sawRest, sawElite, fights;
@@ -1237,8 +1245,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
             else if (now == S_SHOP) {      // Mend's confirm (gold and hurt for it): B or its Back row cancels, then Buy
                 MUSIC("a Shop"); extern void tower_test_set_gold(int); tower_test_set_gold(999); character.health = character.maxHealth * 0.5f; shopGold = 999;
-                snprintf(seq, sizeof seq, aOnly ? ">vvAAA^AvA" : "vrB>vABAvAB"); }
-            else if (now == S_EVENT) { MUSIC("an Event"); snprintf(seq, sizeof seq, aOnly ? "vvvA..A" : "rBB"); }     // (a result waits 0.75 s for Continue's press)
+                snprintf(seq, sizeof seq, aOnly ? ">vvAAA^AvAAA^A" : "vrB>vABAvABBB^A"); }     // (then Leave's confirm: cancelled, asked again, Up, Leave)
+            else if (now == S_EVENT) { MUSIC("an Event"); snprintf(seq, sizeof seq, aOnly ? "vvvAAA^A" : "rBBBB^A"); }     // (Leave's confirm the same way)
             else if (now == S_REST) { MUSIC("a Rest"); snprintf(seq, sizeof seq, aOnly ? "AA" : "BAAvABrB^^AB"); }
             else seq[0] = 0;
         }
@@ -1277,12 +1285,17 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                     if (k == cancel) CHECK(!dp->open && sc == S_SHOP && tower_shop_sel() == 7 && tower_gold() == shopGold, "%s cancels: nothing paid, the cursor on Mend (gold %d)", aOnly ? "its Back row (A)" : "B", tower_gold());
                     if (k == toBuy) CHECK(dp->open && dp->button == 0, "%s: on Buy", aOnly ? "Up" : "Down");
                     if (k == buy) CHECK(!dp->open && sc == S_SHOP && tower_gold() == shopGold - 50, "Buy: Mend paid (gold %d -> %d)", shopGold, tower_gold());
-                    if (!seq[k]) CHECK(sc == S_MAP, "the Shop's %s: left, the map (%d)", c == 'B' ? "B" : "Leave", sc);
+                    int L = (int)strlen(seq);
+                    if (k == L - 4 || k == L - 2) CHECK(tower_leave_asking() && dp->button == 1 && sc == S_SHOP, "the Shop's %s: Leave's confirm, on Back", aOnly ? "Leave (A)" : "B");
+                    if (k == L - 3) CHECK(!dp->open && sc == S_SHOP && tower_gold() == shopGold - 50, "%s on it: still the Shop", aOnly ? "its Back row (A)" : "B");
+                    if (!seq[k]) CHECK(sc == S_MAP, "Leave's Leave: the Shop left, the map (%d)", sc);
                 } else if (entry == S_EVENT) {
                     if (c == 'r') CHECK(det, "the Event's R: Details open");
                     if (c == 'B' && k == 2) CHECK(!det && sc == S_EVENT, "B closes them: still the Event (%d)", sc);
-                    if (c == 'B' && k == 3) CHECK(sc == S_MAP, "the Event's B: Leave, the map (%d)", sc);
-                    if (c == 'A' && !seq[k]) CHECK(sc == S_MAP, "Leave (A), then Continue (A): the map (%d)", sc);
+                    bool aOnly = HLE_NAV_MODE == 2; UiPanel *dp = ui_details(); int L = (int)strlen(seq);
+                    if (k == L - 4 || k == L - 2) CHECK(tower_leave_asking() && dp->button == 1 && sc == S_EVENT, "the Event's %s: Leave's confirm, on Back", aOnly ? "Leave (A)" : "B");
+                    if (k == L - 3) CHECK(!dp->open && sc == S_EVENT && !tower_event_done(), "%s on it: still the Event, nothing chosen", aOnly ? "its Back row (A)" : "B");
+                    if (!seq[k]) CHECK(sc == S_MAP, "Leave's Leave: the Event left, the map (%d)", sc);
                 } else if (entry == S_REST) {
                     bool aOnly = HLE_NAV_MODE == 2;
                     if (!aOnly && k == 1) CHECK(sc == S_MAP && tower_map_row() == expectRow, "the Rest's B: the map, the Rest still to choose");
