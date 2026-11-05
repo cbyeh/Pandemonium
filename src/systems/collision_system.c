@@ -370,8 +370,9 @@ void collision_update(void)
         float push[3];
         float n[3];
 
-        float pushR = boss->phaseIndex == DRAGON_BOSS_PHASE && dragon_boss_push_radius() > 0.0f ? dragon_boss_push_radius() : bossRadius;
-        bodyHitboxCollision = circle_vs_circle_push_xz(
+        if (boss->phaseIndex == DRAGON_BOSS_PHASE) dragon_boss_rush_hit(boss);     // (the rush's hit before its push: where he stands now)
+        float dr = boss->phaseIndex == DRAGON_BOSS_PHASE ? dragon_boss_push_radius() : 0.0f, pushR = dr > 0.0f ? dr : bossRadius;
+        bodyHitboxCollision = dr >= 0.0f && circle_vs_circle_push_xz(
             charX,
             charZ,
             charRadius,

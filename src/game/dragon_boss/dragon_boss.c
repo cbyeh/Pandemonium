@@ -345,7 +345,11 @@ static void tail_tip(float e[3])        // the end of the crystal blade (dragon_
 }
 float dragon_boss_push_radius(void)
 {
-    return s.ready && (s.state == DG_CHARGE || s.state == DG_SWIPE) && s.step == 1 && !s.hitDone ? 16.0f : 0.0f;     // (the torso is drawn 17 round; the swipe charge's rush too)
+    // the charge's and the swipe charge's rush: no push until its body (as drawn) has met the player (-1), then out to
+    // 16 (just inside the torso, drawn 17 round): its head and neck led the push and edged him aside before the body
+    // reached him, so it passed him by luck. Else its hit capsule's (0)
+    if (!s.ready || (s.state != DG_CHARGE && s.state != DG_SWIPE) || s.step != 1) return 0.0f;
+    return s.hitDone ? 16.0f : -1.0f;
 }
 int dragon_boss_tail_volumes(float a[][3], float b[][3], float r[])
 {
@@ -2110,6 +2114,34 @@ static float tail_sweep_gap(void)     // < PLAYER_R: a hit
     return g;
 }
 
+// The charge's and the swipe charge's hit, the body (and the raking paw) as drawn: tested in the move and again by
+// collision_update just before its push, against where the player stands before it (this frame's rig): the push
+// can't move him out of the rush's path before the body reaching him is tested
+#ifdef HLE_LOG_HITGAP     // test aid: the health the rush's hit took (0 inside a roll's i-frames)
+#define RUSH_DAMAGE(nm, d) do { float h0_ = character.health; character_apply_damage(d); \
+    debugf("[rushhit] %s: player state %d, health lost %.1f\n", nm, (int)character_get_state(), (double)(h0_ - character.health)); } while (0)
+#else
+#define RUSH_DAMAGE(nm, d) character_apply_damage(d)
+#endif
+static float swipe_leg_gap(void);
+void dragon_boss_rush_hit(Boss *b)
+{
+    if (!s.ready || s.step != 1 || s.hitDone) return;
+    if (s.state == DG_CHARGE) {
+        if (body_gap() < PLAYER_R) { s.hitDone = true; HB_HIT(HB_CHARGE, body_gap() - 8.0f); RUSH_DAMAGE("charge", 28.0f); }
+    } else if (s.state == DG_SWIPE && s.t >= 0.12f) {
+        // the paw and the body as drawn, when they meet the player (the body was SHOVE_R, 8 more); (HB_HIT re-measures its gap on the drawn player)
+        float g = fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap());
+        if (g >= PLAYER_R) return;
+#ifdef HLE_LOG_HITGAP     // test aid: which drawn part meets the drawn player as the swipe charge lands (< 0 inside him)
+        { hle_sb_mesh = true; float pg = s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, bg = body_gap(); hle_sb_mesh = false;
+          float dx = b->pos[0] - character.pos[0], dz = b->pos[2] - character.pos[2];
+          debugf("[swipehit] paw %.1f body %.1f (drawn, off the player's drawn body) t %.2f dist %.1f\n", (double)pg, (double)bg, (double)s.t, (double)sqrtf(dx * dx + dz * dz)); }
+#endif
+        s.hitDone = true; HB_HIT(HB_CHARGE, fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap()) - 8.0f); RUSH_DAMAGE("swipe", 24.0f); screen_shake_set_shake_mag(5.0f);
+    }
+}
+
 static void hits_after_rig(Boss *b, float dt)
 {
     if (s.state == DG_TAIL && s.step == 1) {
@@ -2123,7 +2155,7 @@ static void hits_after_rig(Boss *b, float dt)
     } else if (s.state == DG_CHARGE && s.step == 1) {
         // the body as drawn, when it meets the player (it was SHOVE_R: the shove landed 7-11 before the body reached them)
         HB_TOUCH(HB_CHARGE, body_gap() - 8.0f);
-        if (!s.hitDone && body_gap() < PLAYER_R) { s.hitDone = true; HB_HIT(HB_CHARGE, body_gap() - 8.0f); character_apply_damage(28.0f); }
+        dragon_boss_rush_hit(b);
     } else tailPrevOk = false;
     if (s.cone.on) {
         s.cone.t += dt;
@@ -3112,17 +3144,8 @@ static void swipe_update(Boss *b, float dt)
         float st = SPEED * dt;
         bool moved = s.sg < s.range && move_by(b, s.F[0] * st, s.F[2] * st);
         if (moved) s.sg += st;
-        if (s.t >= 0.12f && !s.hitDone) {
-            // the paw and the body as drawn, when they meet the player (the body was SHOVE_R, 8 more); (HB_HIT re-measures its gap on the drawn player)
-            float g = fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap());
-            HB_TOUCH(HB_CHARGE, g - 8.0f);
-            #ifdef HLE_LOG_HITGAP     // test aid: which drawn part meets the drawn player as the swipe charge lands (< 0 inside him)
-            if (g < PLAYER_R) { hle_sb_mesh = true; float pg = s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, bg = body_gap(); hle_sb_mesh = false;
-                                float dx = b->pos[0] - character.pos[0], dz = b->pos[2] - character.pos[2];
-                                debugf("[swipehit] paw %.1f body %.1f (drawn, off the player's drawn body) t %.2f dist %.1f\n", (double)pg, (double)bg, (double)s.t, (double)sqrtf(dx * dx + dz * dz)); }
-#endif
-            if (g < PLAYER_R) { s.hitDone = true; HB_HIT(HB_CHARGE, fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap()) - 8.0f); character_apply_damage(24.0f); screen_shake_set_shake_mag(5.0f); }
-        }
+        if (s.t >= 0.12f && !s.hitDone) HB_TOUCH(HB_CHARGE, fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap()) - 8.0f);
+        dragon_boss_rush_hit(b);
         if (s.t >= RAKE && s.t - dt < RAKE) screen_shake_set_shake_mag(3.0f);
         if ((!moved && s.t > RAKE) || s.t > 1.4f) { s.step = 2; s.t = 0.0f; sfx_step(); s.tailV += side * 3.0f; }
     } else {
