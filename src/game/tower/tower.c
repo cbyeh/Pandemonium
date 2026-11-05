@@ -847,6 +847,9 @@ static void map_generate(void)
         s_mapTries++;
         for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = roll_node();
         for (int l = 0; l < MAP_LANES; l++) s.map.type[5][l] = NODE_REST;
+#ifdef HLE_TEST_TOWER_NAV   // test aid: row 2 all Events (every mode's walk meets one; the rules still hold above it)
+        for (int l = 0; l < MAP_LANES; l++) s.map.type[1][l] = NODE_EVENT;
+#endif
     } while (!map_rules_ok() && s_mapTries < 1000);
     if (!map_rules_ok()) {      // (never seen in 1,000 maps) Fights, and the Shop the rules ask for
         for (int r = 1; r <= 4; r++) for (int l = 0; l < MAP_LANES; l++) s.map.type[r][l] = NODE_FIGHT;
