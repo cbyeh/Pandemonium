@@ -1110,8 +1110,8 @@ const char *tower_title_badge(void) { return tower_milestone_reached(MS_HEART) ?
 #define HB_UNLOCK_ALL 1     // every pack and B form, the best floor held at 25 (events and affixes all open, no milestone after 20)
 #endif
 extern int hb_plan, hb_route, hb_skill_pref; extern uint32_t hb_seed; int hb_unlock_all = HB_UNLOCK_ALL;
-enum { HP_SWORD, HP_STORM, HP_FMD, HP_STAGGER, HP_TWIN, HP_FULLMOON, HP_CSTORM, HP_LONGCLEAVE, HP_BLOOD, HP_BERSERK, HP_COUNT };
-static const char *const HP_NAMES[HP_COUNT] = { "sword", "storm", "fmd", "stagger", "twin", "fullmoon", "cstorm", "longcleave", "blood", "berserk" };
+enum { HP_SWORD, HP_STORM, HP_FMD, HP_STAGGER, HP_TWIN, HP_FULLMOON, HP_CSTORM, HP_LONGCLEAVE, HP_BLOOD, HP_BERSERK, HP_SHADOW, HP_COUNT };
+static const char *const HP_NAMES[HP_COUNT] = { "sword", "storm", "fmd", "stagger", "twin", "fullmoon", "cstorm", "longcleave", "blood", "berserk", "shadow" };
 static const struct { int8_t skill, form, fam; BoonId key[7]; uint8_t w[7]; } HPLAN[HP_COUNT] = {
     [HP_SWORD]   = { -1, 0, FAM_HEARTH, { BOON_EMBER_EDGE, BOON_IRON_SKIN, BOON_VIGOR, BOON_HEMORRHAGE, BOON_STORM_BLADE, BOON_UNBROKEN, BOON_EMBER_EDGE_PLUS }, { 95, 70, 65, 60, 70, 60, 80 } },
     [HP_STORM]   = { -1, 0, FAM_STORM, { BOON_STORM_BLADE, BOON_STATIC, BOON_THUNDERCLAP, BOON_OVERCHARGE, BOON_CONDUCTOR, BOON_EMBER_EDGE, BOON_STORM_BLADE_PLUS }, { 110, 95, 95, 70, 55, 70, 90 } },
@@ -1123,6 +1123,8 @@ static const struct { int8_t skill, form, fam; BoonId key[7]; uint8_t w[7]; } HP
     [HP_LONGCLEAVE] = { 2, 2, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY_PLUS, BOON_VIGOR }, { 100, 85, 60, 60, 45, 85, 50 } },
     [HP_BLOOD]   = { -1, 0, FAM_BLOOD, { BOON_BLOODTHIRST, BOON_RALLY, BOON_RED_THIRST, BOON_HEMORRHAGE, BOON_BLOOD_PACT, BOON_SANGUINE_FLASK, BOON_BLOODTHIRST_PLUS }, { 105, 100, 75, 70, 70, 55, 85 } },
     [HP_BERSERK] = { -1, 0, FAM_BLOOD, { BOON_BERSERKER, BOON_RED_THIRST, BOON_BLOODTHIRST, BOON_RALLY, BOON_LAST_STAND, BOON_HEMORRHAGE, BOON_EMBER_EDGE }, { 120, 85, 80, 75, 70, 60, 60 } },
+    // phase 2 (proposal 12): the Shadow family as a plan, perfect dodges (the bot's rolls land the hit 0.17 s in: often in the 0.2 s window)
+    [HP_SHADOW]  = { -1, 0, FAM_SHADOW, { BOON_RIPOSTE, BOON_SHADOW_EDGE, BOON_PHANTOM_STEP, BOON_EVASION, BOON_VANISH, BOON_FLEETFOOT, BOON_RIPOSTE_PLUS }, { 110, 100, 95, 80, 85, 70, 90 } },
 };
 static int hb_generic(BoonId b)
 {
@@ -1138,7 +1140,11 @@ static int hb_key_w(int plan, int b) { for (int i = 0; i < 7; i++) if (HPLAN[pla
 int hb_card_score(int c)
 {
     int plan = hb_plan % HP_COUNT;
+#ifdef MINOR_CARD0
+    if (is_minor(c)) return 20;     // half a blessing, no curse (above Skip's 15)
+#else
     if (c == GOLD_CARD) return 12;
+#endif
     if (c >= BOON_COUNT) {      // a pact
         int bl = (c - BOON_COUNT) / PC_COUNT, cu = (c - BOON_COUNT) % PC_COUNT;
         int v = bl == PB_MIGHT || bl == PB_BULWARK ? 30 : bl == PB_VITALITY ? 25 : bl == PB_STAGGERED ? (plan == HP_STAGGER ? 30 : 10) : 15;
@@ -1204,6 +1210,9 @@ void tower_begin_run(uint32_t seed)
 #ifdef HLE_HUMAN_BOT        // test aid: the bot's run: its seed, every pack and B form (unlock-all mode, the best floor held at 25)
     if (hb_seed) s.rng = hb_seed;
     if (hb_unlock_all) { s.packs = (1 << FAM_COUNT) - 1; s.forms = (1 << SKILL_COUNT) - 1; TowerSave tb; tower_load(&tb); tb.bestFloor = 25; save_controller_set_tower(&tb); }
+#if defined(HB_HEAT) && defined(HEAT_MAX)
+    { TowerSave th; tower_load(&th); th.heat = (uint8_t)((th.heat & 0xF0) | HB_HEAT); save_controller_set_tower(&th); }     // the Heat dial for its climbs
+#endif
     hb_skill_pref = HPLAN[hb_plan % HP_COUNT].skill;
     debugf("[hbrun] start: seed %08lx plan %s route %d unlock %d\n", (unsigned long)s.rng, HP_NAMES[hb_plan % HP_COUNT], hb_route, hb_unlock_all);
 #endif
@@ -2247,15 +2256,20 @@ static void shop_open(void)
                         // plan, a level of its best boon, more potions to the max with what's left
     {
         int g0 = s.gold;
-        if (character.health < 0.55f * character.maxHealth && !shop_block(SHOP_MEND)[0]) shop_buy(SHOP_MEND);
-        while (character.healthPotions < 3 && !shop_block(SHOP_POTION)[0]) shop_buy(SHOP_POTION);
+        // (shop_take: the purchase itself, past the player's confirm since 950cbd7)
+        if (character.health < 0.55f * character.maxHealth && !shop_block(SHOP_MEND)[0]) shop_take(SHOP_MEND);
+        while (character.healthPotions < 3 && !shop_block(SHOP_POTION)[0]) shop_take(SHOP_POTION);
         int c = -1, cv = 39;
         for (int i = SHOP_CARD0; i <= SHOP_CARD2; i++) if (!shop_block(i)[0]) { int v = hb_card_score(s.shop.card[i]); if (v > cv) { cv = v; c = i; } }
-        if (c >= 0) shop_buy(c);
-        if (!shop_block(SHOP_LEVEL)[0]) { int8_t t[LIST_MAX]; int n = level_targets(t, LIST_MAX), bi = -1, bv = 49;
+        if (c >= 0) shop_take(c);
+        // levels of its best boons (or its skill), again while they're worth it and it keeps enough for a potion (phase 2: the level sells again, dearer)
+        for (int guard = 0; guard < 8 && !shop_block(SHOP_LEVEL)[0] && s.gold >= shop_price(SHOP_LEVEL) + 40; guard++) {
+            int8_t t[LIST_MAX]; int n = level_targets(t, LIST_MAX), bi = -1, bv = 49;
             for (int i = 0; i < n; i++) { int v = hb_card_score(t[i]); if (v > bv) { bv = v; bi = i; } }
-            if (bi >= 0) { char nm[40]; snprintf(nm, sizeof nm, "%s", BOONS[t[bi]].name); shop_pay(SHOP_LEVEL, nm); take_boon((BoonId)t[bi]); } }
-        while (character.healthPotions < tower_mod_max_potions() && s.gold >= PRICE_POTION + 40 && !shop_block(SHOP_POTION)[0]) shop_buy(SHOP_POTION);
+            if (bi < 0) break;
+            char nm[40]; snprintf(nm, sizeof nm, "%s", BOONS[t[bi]].name); shop_pay(SHOP_LEVEL, nm); take_boon((BoonId)t[bi]);
+        }
+        while (character.healthPotions < tower_mod_max_potions() && s.gold >= PRICE_POTION + 40 && !shop_block(SHOP_POTION)[0]) shop_take(SHOP_POTION);
         debugf("[hbshop] floor %d circle %d: gold %d -> %d\n", s.floor, s.circle, g0, s.gold);
     }
 #endif
