@@ -2,6 +2,23 @@
 
 Status (2026-11-01): the user's answers are in (section 17); the remaining calls were made by the game-theory check (section 14). Ready for approval to build, stage by stage.
 
+Phase 2 balance (2026-11-04, the user's approved items from the balance audit, /tmp/balance_audit/REPORT.md; Tower only, Story/Bonus and Lv 1 skills untouched):
+- **Potions:** a fallen boss's potion only up to the run's max (Rests, the Merchant and Deep Flask still go past it, up to 15).
+- **Skills by risk:** Full Moon Dance 9 crosses of 1.75 (was 10 of 2), Full Moon x1.0 (was x1.15), Twin Moon's second slash 45% (was 40%).
+- **Shop:** a level again and again in a visit, 70 then +30 each, and its list holds the known skills below Lv 4.
+- **Minor blessing:** a complete build's card is a minor blessing (Minor Might +4% damage, Minor Bulwark -3% taken, Minor Vitality +6 max health: half a pact's blessing, no curse, no slot, stacking), not +40 gold.
+- **Nights:** Blood Moon blows +12% (was 20), Starfall +15% (was 10).
+- **Elites:** x2 Embers (was 1.5), a second potion up to the max, and a chest (a slotted boon's next level or its "+", else 50 gold), named on the draft.
+- **Iron Tide:** also keeps a staggered boss down 1.5 s longer.
+- **Vampiric:** heals 15% when paired with another affix (25% alone).
+- **Heat dial:** a Tower menu row, 0-10; each step +10% boss health and blows and +10% Embers. Saved in `_pad[27]` (low nibble; the high nibble is the best Heat a circle was cleared at), shown in Stats, on the death line and in the Codex. The menu's two flavour lines give way to it at the default overscan.
+- **Pilgrim's Purse:** Minor Might and Minor Bulwark for the climb (was 60 gold).
+- **Shrine pacing:** every Shrine price x3; milestones at 25, 40 and 60 (were 20, 30 and 50; 10, 75 and 100 are unchanged); Kindling's Offering opens at 25.
+- **Random Lv 5 forms:** a skill at Lv 4 leads the next draft with one form, A or B at random once B is bought; a skipped form can come back as either in a later skill card.
+- **Shadow family:** has its own bot plan (plan 10).
+
+Measured before and after in the REPORT's phase-2 section.
+
 Stage 1 built (2026-11-01, pre-release v1.1-beta.1): 5 slots with levels, families on the cards and their weighting, the slot line, Stats > Build, the Shrine's Boon Packs in `_pad[24..25]`. Calls made while building it:
 - Section 7's tables hold 18 existing and 17 new boons (35), not 40 / 19 new. Hearth's two are held back: **Quick Draught** speeds up a drink the game doesn't have (a potion heals at once) and **Prospector** needs gold (stage 4); so 15 new boons in five packs, and the ladder sells five (120-280). (Stage 4: Prospector and the Hearth pack are in, six packs.)
 - The skills keep today's Learn and "+" cards (stage 5 turns them into levels): no slot, a "Skill" tag. Moon Mastery is a Moon boon now, in a slot, offered once a skill is known (as Lunar Tide, Eclipse and Waxing Moon); Conductor once something calls lightning.
@@ -95,9 +112,9 @@ The balance case, on the agreed metric: the player's 352 resources (150 health, 
 | Milestone | Reward | Why it stays modest |
 |---|---|---|
 | Floor 10 | The Teal Cloak (the skin's own unlock, as before) | a skin |
-| Floor 20 | Kindling joins the Offerings | an option, still paid for |
-| Floor 30 | every climb starts with one more potion | about the Spare Flask's 68 HP, free: 19% of a fresh climb's resources, about 5% of a floor-30 climb's |
-| Floor 50 | the Climber's Sigil, a relic (-6% damage taken, +15 max health), worn from Shrine > Relics, not sold | a relic like the others (two effects of their size); one relic is worn |
+| Floor 25 (was 20) | Kindling joins the Offerings | an option, still paid for |
+| Floor 40 (was 30) | every climb starts with one more potion | about the Spare Flask's 68 HP, free: 19% of a fresh climb's resources, about 5% of a floor-30 climb's |
+| Floor 60 (was 50) | the Climber's Sigil, a relic (-6% damage taken, +15 max health), worn from Shrine > Relics, not sold | a relic like the others (two effects of their size); one relic is worn |
 | Floor 75 | a Codex page (lore) and the title Tower-Breaker, on the Tower menu | none |
 | Floor 100 | Sunforged: the player's skills in gold and white, on or off in Settings > Skins (Story and Bonus too) | looks only |
 
