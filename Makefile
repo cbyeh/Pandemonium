@@ -146,8 +146,6 @@ $(OBJDIR)/game/tower/tower.o $(OBJDIR)/controllers/menu_controller.o $(OBJDIR)/u
 # the Offerings' and the milestones' code (+15 KB) paid for, so the Tower's low point stays over 450 KB at 4 MB
 $(OBJDIR)/scenes/guardian/guardian_ending.o $(OBJDIR)/scenes/guardian/guardian_cutscene_phase1.o $(OBJDIR)/scenes/guardian/guardian_cutscene_phase2.o \
 $(OBJDIR)/scenes/opening_credits/opening_credits_scene.o $(OBJDIR)/scenes/title/title_scene.o $(OBJDIR)/utilities/save_controller.o: N64_CFLAGS += -Os
-# The dev overlay and the debug drawing (DEV_MODE and test aids only), for size: phase 2's code (+5 KB) left the Tower's low point 3 KB over 450
-$(OBJDIR)/dev/dev.o $(OBJDIR)/dev/debug_draw.o: N64_CFLAGS += -Os
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(dir $@)
