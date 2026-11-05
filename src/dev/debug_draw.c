@@ -460,6 +460,8 @@ static bool hb_proposals(T3DViewport *vp, Boss *b)
           for (int i = 0; i < n; i++) { t |= scu_capsule_vs_capsule_f(a[i], q[i], r[i] + ex, xa, xb, 6.0f); }
           hb_freeze(t, "charge shove", 4); }
         for (int i = 0; i < n; i++) hb_seg(vp, a[i], q[i], r[i] + (prop ? 0.0f : ex), Y);
+        extern float dragon_boss_push_radius(void);     // the circle its body pushes the player out to (white: the hit capsule's, or the rush's)
+        if (n > 0) { float c[3] = { b->pos[0], b->pos[1], b->pos[2] }, pr = dragon_boss_push_radius(); hb_disc(vp, c, pr > 0.0f ? pr : k->radius, 2.0f, RGBA32(255, 255, 255, 255)); }
         return n > 0;
     } else if (b->phaseIndex == 3) {     // (e) the Fallen Warrior: the Triangle Slam's area (kept)
         extern bool hle_fk_tri(float t[3][2], float *y, int *step); float t[3][2], y; int st;

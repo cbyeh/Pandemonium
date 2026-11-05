@@ -345,7 +345,7 @@ static void tail_tip(float e[3])        // the end of the crystal blade (dragon_
 }
 float dragon_boss_push_radius(void)
 {
-    return s.ready && s.state == DG_CHARGE && s.step == 1 && !s.hitDone ? 16.0f : 0.0f;     // (the torso is drawn 17 round)
+    return s.ready && (s.state == DG_CHARGE || s.state == DG_SWIPE) && s.step == 1 && !s.hitDone ? 16.0f : 0.0f;     // (the torso is drawn 17 round; the swipe charge's rush too)
 }
 int dragon_boss_tail_volumes(float a[][3], float b[][3], float r[])
 {
@@ -3113,9 +3113,15 @@ static void swipe_update(Boss *b, float dt)
         bool moved = s.sg < s.range && move_by(b, s.F[0] * st, s.F[2] * st);
         if (moved) s.sg += st;
         if (s.t >= 0.12f && !s.hitDone) {
-            float g = fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap() - (SHOVE_R - PLAYER_R));
+            // the paw and the body as drawn, when they meet the player (the body was SHOVE_R, 8 more); (HB_HIT re-measures its gap on the drawn player)
+            float g = fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap());
             HB_TOUCH(HB_CHARGE, g - 8.0f);
-            if (g < PLAYER_R) { s.hitDone = true; HB_HIT(HB_CHARGE, fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap() - (SHOVE_R - PLAYER_R)) - 8.0f); character_apply_damage(24.0f); screen_shake_set_shake_mag(5.0f); }
+            #ifdef HLE_LOG_HITGAP     // test aid: which drawn part meets the drawn player as the swipe charge lands (< 0 inside him)
+            if (g < PLAYER_R) { hle_sb_mesh = true; float pg = s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, bg = body_gap(); hle_sb_mesh = false;
+                                float dx = b->pos[0] - character.pos[0], dz = b->pos[2] - character.pos[2];
+                                debugf("[swipehit] paw %.1f body %.1f (drawn, off the player's drawn body) t %.2f dist %.1f\n", (double)pg, (double)bg, (double)s.t, (double)sqrtf(dx * dx + dz * dz)); }
+#endif
+            if (g < PLAYER_R) { s.hitDone = true; HB_HIT(HB_CHARGE, fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap()) - 8.0f); character_apply_damage(24.0f); screen_shake_set_shake_mag(5.0f); }
         }
         if (s.t >= RAKE && s.t - dt < RAKE) screen_shake_set_shake_mag(3.0f);
         if ((!moved && s.t > RAKE) || s.t > 1.4f) { s.step = 2; s.t = 0.0f; sfx_step(); s.tailV += side * 3.0f; }
@@ -3838,7 +3844,7 @@ void dragon_boss_draw(Boss* b)
 // test aid: the charge's hit as it tests the body (each drawn part's radius; before 2026-11-04 the shove added SHOVE_R - PLAYER_R)
 int hle_dragon_charge_vols(float a[][3], float b[][3], float r[], float *extra)
 {
-    if (!s.ready || s.state != DG_CHARGE || s.step != 1) return 0;
+    if (!s.ready || (s.state != DG_CHARGE && s.state != DG_SWIPE) || s.step != 1) return 0;     // (the charge's and the swipe charge's rush)
     int n = 0;
     const float *t[4] = { s.chest, s.spine[0], s.spine[1], s.hips };
     for (int i = 0; i < 3; i++) { memcpy(a[n], t[i], 12); memcpy(b[n], t[i + 1], 12); r[n++] = 17.0f; }
