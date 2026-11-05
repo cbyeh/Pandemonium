@@ -901,6 +901,17 @@ static void boss_attacks_handle_flip_attack(Boss* boss, float dt)
     if (sphereWindow != lastSphereWindow) {
         boss->currentAttackHasHit = false;
         lastSphereWindow = sphereWindow;
+        // The burst is an area with nothing drawn: a dust ring and a jolt on the floor where its ball is, as it opens
+        if (sphereWindow != 0) {
+            float bx = boss->pos[0] - cosf(boss->rot[1]) * SPHERE_OFFSET;
+            float bz = boss->pos[2] - sinf(boss->rot[1]) * SPHERE_OFFSET;
+            dust_particles_fx_spawn_burst(bx, boss->flipAttackStartPos[1], bz, 0.4f + 0.4f * (float)sphereWindow);
+            screen_shake_set_shake_mag(2.0f + 2.0f * (float)sphereWindow);
+#ifdef HLE_LOG_HITGAP
+            debugf("[flipfx] f%d w%d t %.2f at %.1f %.1f player %.1f off\n", hle_hg_frame, sphereWindow, (double)boss->stateTimer, (double)bx, (double)bz,
+                   (double)sqrtf((character.pos[0] - bx) * (character.pos[0] - bx) + (character.pos[2] - bz) * (character.pos[2] - bz)));
+#endif
+        }
     }
 
     // Apply radial damage once per window

@@ -340,6 +340,10 @@ static void tail_tip(float e[3])        // the end of the crystal blade (dragon_
     norm3(d);
     mad3(e, s.tl[NTAIL], d, 16.0f);
 }
+float dragon_boss_push_radius(void)
+{
+    return s.ready && s.state == DG_CHARGE && s.step == 1 && !s.hitDone ? 16.0f : 0.0f;     // (the torso is drawn 17 round)
+}
 int dragon_boss_tail_volumes(float a[][3], float b[][3], float r[])
 {
     if (!s.ready || s.state == DG_INTRO || s.state == DG_DEAD) return 0;
@@ -2111,9 +2115,9 @@ static void hits_after_rig(Boss *b, float dt)
         HB_TOUCH(HB_WHIP, g - 8.0f);
         if (g < PLAYER_R && !s.hitDone) { s.hitDone = true; HB_HIT2(HB_WHIP, g - 8.0f, fminf(tail_gap(), body_gap()) - 8.0f); character_apply_damage(22.0f); }
     } else if (s.state == DG_CHARGE && s.step == 1) {
-        // the body as drawn (it was a flat 25 round the head-hips line, wider than the neck and head)
+        // the body as drawn, when it meets the player (it was SHOVE_R: the shove landed 7-11 before the body reached them)
         HB_TOUCH(HB_CHARGE, body_gap() - 8.0f);
-        if (!s.hitDone && body_gap() < SHOVE_R) { s.hitDone = true; HB_HIT(HB_CHARGE, body_gap() - 8.0f); character_apply_damage(28.0f); }
+        if (!s.hitDone && body_gap() < PLAYER_R) { s.hitDone = true; HB_HIT(HB_CHARGE, body_gap() - 8.0f); character_apply_damage(28.0f); }
     } else tailPrevOk = false;
     if (s.cone.on) {
         s.cone.t += dt;
@@ -3825,7 +3829,7 @@ void dragon_boss_draw(Boss* b)
 }
 
 #ifdef HLE_HB_PROPOSALS
-// test aid: the charge's shove as it tests the body (each drawn part's radius; the shove adds SHOVE_R - PLAYER_R)
+// test aid: the charge's hit as it tests the body (each drawn part's radius; before 2026-11-04 the shove added SHOVE_R - PLAYER_R)
 int hle_dragon_charge_vols(float a[][3], float b[][3], float r[], float *extra)
 {
     if (!s.ready || s.state != DG_CHARGE || s.step != 1) return 0;
@@ -3835,7 +3839,7 @@ int hle_dragon_charge_vols(float a[][3], float b[][3], float r[], float *extra)
     for (int i = 0; i < NNECK; i++) { memcpy(a[n], s.neck[i], 12); memcpy(b[n], s.neck[i + 1], 12); r[n++] = (11.0f - i * 1.2f) * 0.9f; }
     memcpy(a[n], s.head, 12); mad3(b[n], s.head, s.hz, 26.0f); r[n++] = 6.0f;
     for (int k = 0; k < 4; k++) { memcpy(a[n], s.shoulder[k], 12); memcpy(b[n], s.foot[k], 12); r[n++] = 6.0f; }
-    *extra = SHOVE_R - PLAYER_R;
+    *extra = 0.0f;
     return n;
 }
 #endif

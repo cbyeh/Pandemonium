@@ -25,5 +25,8 @@ void dragon_boss_free(void);
 // crystal blade at its end), n segments a[i]-b[i], r[i] round; 0 when it isn't in the fight
 int dragon_boss_tail_volumes(float a[][3], float b[][3], float r[]);
 #define DRAGON_TAIL_VOLUMES 8
+// The radius its body pushes the player out to (0: its hit capsule's): the charge's rush pushes only by its
+// drawn torso, so the body meets the player before he's shoved aside (the hit is the drawn body's)
+float dragon_boss_push_radius(void);
 
 #endif

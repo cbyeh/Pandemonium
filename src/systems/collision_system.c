@@ -370,13 +370,14 @@ void collision_update(void)
         float push[3];
         float n[3];
 
+        float pushR = boss->phaseIndex == DRAGON_BOSS_PHASE && dragon_boss_push_radius() > 0.0f ? dragon_boss_push_radius() : bossRadius;
         bodyHitboxCollision = circle_vs_circle_push_xz(
             charX,
             charZ,
             charRadius,
             bossX,
             bossZ,
-            bossRadius,
+            pushR,
             push,
             n
         );
