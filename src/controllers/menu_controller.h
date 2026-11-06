@@ -31,8 +31,7 @@ typedef enum {
     MENU_MAIN_RUN,      // Tower runs only
     MENU_MAIN_RESTART,
     MENU_MAIN_SETTINGS,
-    MENU_MAIN_CONTROLS,
-    MENU_MAIN_CODEX,    // Tower runs only (after Controls: the rows above keep their places)
+    MENU_MAIN_CODEX,    // Tower runs only (Controls: in Settings)
     MENU_MAIN_QUIT,
     MENU_MAIN_COUNT
 } MainMenuOption;

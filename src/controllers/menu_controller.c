@@ -160,7 +160,6 @@ static const char* mainMenuOptions[MENU_MAIN_COUNT] = {
     "Stats",
     "Restart",
     "Settings",
-    "Controls",
     "Codex",
     "Main Menu",
 };
@@ -566,13 +565,6 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
                     settingsHubReturnMenu = parentMenu;
                     settingsHubReturnSelectedOption = parentSelectedOption;
                     currentMenu = MENU_SETTINGS;
-                    selectedOption = 0;
-                    break;
-
-                case MENU_MAIN_CONTROLS:
-                    parentMenu = MENU_MAIN;
-                    parentSelectedOption = MENU_MAIN_CONTROLS;
-                    currentMenu = MENU_CONTROLS;
                     selectedOption = 0;
                     break;
 

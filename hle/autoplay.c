@@ -925,10 +925,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         static const Visit PAUSE[] = {
             { "Pause", "", MENU_MAIN, false }, { "Pause Settings", "3", MENU_SETTINGS, false }, { "Pause Audio", "30", MENU_AUDIO, false },
             { "Pause Video", "31", MENU_VIDEO, false }, { "Pause Overscan", "311", 100, false }, { "Pause Settings Controls", "32", MENU_CONTROLS, false },
-            { "Pause Controls", "4", MENU_CONTROLS, false }, { NULL, NULL, 0, false } };     // (no Skins: the pause Settings hide them)
+            { NULL, NULL, 0, false } };     // (no Skins: the pause Settings hide them)
         static const Visit TPAUSE[] = {
-            { "Tower Pause", "", MENU_MAIN, false }, { "Stats", "1", MENU_RUN, false }, { "Tower Pause Codex", "5", MENU_CODEX, 'd' },
-            { "Tower Pause Settings", "3", MENU_SETTINGS, false }, { "Tower Pause Controls", "4", MENU_CONTROLS, false }, { NULL, NULL, 0, false } };
+            { "Tower Pause", "", MENU_MAIN, false }, { "Stats", "1", MENU_RUN, false }, { "Tower Pause Codex", "4", MENU_CODEX, 'd' },
+            { "Tower Pause Settings", "3", MENU_SETTINGS, false }, { "Tower Pause Settings Controls", "32", MENU_CONTROLS, false }, { NULL, NULL, 0, false } };
         static const char *const GAME[] = { "Story", "Bonus", "Tower" };
         static int phase, t0, vi, lvl, sub, game, pass, fail;
         static int at[8];       // the row taken at each level of the path
@@ -1480,10 +1480,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_STATS_SEQ     // another walk through the pause menu (S, D/L/R, A, B)
             static const char seq[] = HLE_STATS_SEQ;
 #else
-            static const char seq[] = "SDARRRRRLDDADBBDDDADDAB";
+            static const char seq[] = "SDARRRRRLDDADBBDDABB";
 #endif   // pause, Stats, Right x4 (the full bar: Stats 1-3, Build 1-2), Right on the last (stays), Left (Build 1),
-         // Down x2 (a row), A (its Details), Down (it stays open), B closes it, B (the pause menu, on Stats), down to Controls, its Back
-         // (A), B closes the pause menu
+         // Down x2 (a row), A (its Details), Down (it stays open), B closes it, B (the pause menu, on Stats), down to Settings, A, B
+         // back to the pause menu, B closes it
             if (t >= (step ? 60 : 300) && seq[step]) {
                 char c = seq[step];
                 extern bool tower_active(void);
@@ -1910,7 +1910,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     }
 #endif
 #ifdef HLE_TEST_QUIT
-    // Pause mid-fight > Main Menu (4 down: Resume, Restart, Settings, Controls, Main Menu) > A:
+    // Pause mid-fight > Main Menu (3 down: Resume, Restart, Settings, Main Menu) > A:
     // back at the title, then into the fight again
     {
         static int start = -1, again = 0;
@@ -1922,7 +1922,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         }
         int t = frame - start;
         if (t == 60) { pressed->start = 1; in->btn.start = 1; }
-        if (t == 80 || t == 90 || t == 100 || t == 110) pressed->d_down = 1;
+        if (t == 80 || t == 90 || t == 100) pressed->d_down = 1;
         if (t == 125) { pressed->a = 1; in->btn.a = 1; }
         if (t == 160) debugf("[quit] after Main Menu: boss %s, title menu %s\n", boss ? "still there" : "gone", menu_controller_is_active() ? "open" : "closed");
         if (t > 200 && t < 1400 && t % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
@@ -2334,7 +2334,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 else if (v == V_KILL) boss_apply_damage(boss, boss->maxHealth * 2.0f);
                 else pressed->start = 1;
             }
-            int downs = v == V_RESTART && !restarted ? 1 : 4;     // Resume, Restart, Settings, Controls, Main Menu
+            int downs = v == V_RESTART && !restarted ? 1 : 3;     // Resume, Restart, Settings, Main Menu
             if (v != V_DIE && v != V_KILL) {
                 if (t > 180 && t <= 180 + downs * 10 && (t - 180) % 10 == 0) pressed->d_down = 1;
                 if (t == 200 + downs * 10) {
@@ -3147,7 +3147,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         Boss *boss = boss_get_instance();
         bool combat = boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL;
         int t = frame - t0;
-        // pause menu: Resume, Restart, Settings, Controls / settings: Audio, Video, Controls, Skills, Skin, Back
+        // pause menu: Resume, Restart, Settings, Main Menu / settings: Audio, Video, Controls, Skills, Skin, Back
         // O = open the pause menu, C = close it (both wait until it took effect)
         static const char seq[] = "ODDADDDABBC";
         switch (phase) {
