@@ -48,6 +48,7 @@ int hle_build_breaks;       // (HLE_DUMMY_BUILD) casts broken by a blow
 // Openings (HLE_TEST_DUMMY): time a Bonus boss spends not attacking, and how many such gaps
 float hle_open_time, hle_open_cur, hle_open_dmg;
 int hle_open_gaps;
+bool hle_roll_in;       // test aid (HLE_HOLY_ROLLIN): roll toward the boss this frame
 bool hle_open_now;      // the boss is between attacks this frame (the bot playtest strikes then)
 void hle_open_tick(bool open, float dt)
 {
@@ -2809,6 +2810,14 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
               character.stamina = character_get_max_stamina();
 #endif
             }
+#endif
+#ifndef HLE_HOLY_ROLL_Y
+#define HLE_HOLY_ROLL_Y 70
+#endif
+#ifdef HLE_HOLY_ROLLIN    // test aid: a roll toward the boss when the Holy Slam's fire says (skill_fx)
+            { extern bool hle_roll_in; static int still;      // (then stands a second where the roll left it: no walking back out into the fire)
+              if (hle_roll_in) { hle_roll_in = false; still = 60; pressed->a = 1; in->btn.a = 1; in->stick_x = 0; in->stick_y = HLE_HOLY_ROLL_Y; }
+              else if (still > 0) { still--; in->stick_x = 0; in->stick_y = 0; } }     // (70 in toward it, -70 away: HLE_HOLY_ROLL_Y)
 #endif
 #ifdef HLE_DUMMY_ROLL     // roll every 0.7 s: some catch a blow right at the start (a perfect dodge)
             { static int k; if (++k % 42 == 0) { pressed->a = 1; in->btn.a = 1; } }

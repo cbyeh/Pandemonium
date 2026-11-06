@@ -132,6 +132,7 @@ void character_update(void);
 void character_update_cinematic(void);
 
 CharacterState character_get_state(void);
+bool character_invulnerable(void);     // rolling in its i-frames, or down
 void character_set_state(CharacterState state);
 
 void character_reset_button_state(void);

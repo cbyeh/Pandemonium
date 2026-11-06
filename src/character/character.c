@@ -3516,6 +3516,8 @@ void character_draw_ui(void)
     // Scene should call character_ui_draw() during the final 2D UI pass.
 }
 
+bool character_invulnerable(void) { return character_is_invulnerable(); }
+
 void character_apply_damage(float amount)
 {
     if (amount <= 0.0f || characterState == CHAR_STATE_DEAD) return;   // the death screen's attacks still in flight: harmless
