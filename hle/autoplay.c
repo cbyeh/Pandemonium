@@ -1439,6 +1439,10 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                     if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1; else if (c == 'L') pressed->d_left = 1;
                     else if (c == 'R') pressed->d_right = 1; else if (c == 'A') { pressed->a = 1; in->btn.a = 1; } else if (c == 'B') { pressed->b = 1; in->btn.b = 1; }
                     else if (c == 'r') { pressed->z = 1; in->btn.z = 1; }
+                    else if (c == 'y' || c == 'z') {     // only on a purchase's confirm: Up onto Buy (y), A (z)
+                        UiPanel *cp = ui_details();
+                        if (cp->open && cp->confirm) { if (c == 'y') pressed->d_up = 1; else { pressed->a = 1; in->btn.a = 1; } }
+                    }
                     debugf("[stats] title step %c at frame %d\n", c, frame);
                     step++; t0 = frame;
                 }
