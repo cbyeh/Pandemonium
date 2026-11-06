@@ -1604,8 +1604,7 @@ static void holyslam_update(Boss *b, float dt)
         if (!s.hitDone && clip >= W_DN[0] - 0.08f) s.hitDone = true;    // as it comes down
         if (clip >= 2.02f) {
             float o[3] = { b->pos[0], s.groundY + 4.0f, b->pos[2] };
-            skill_fx_spawn_fire_ring_hostile(o, 105.0f, FK_FELT(45.0f));     // a ring of fire rolling out (the user's call, was two crimson half rings)
-            skill_fx_spawn_pillar_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
+            skill_fx_spawn_fire_spread_hostile(o, 105.0f, FK_FELT(45.0f));     // fire in bursts out from the blow (the user's call: was two crimson half rings and a pillar)
             {   // where the blade bites
                 float base[3], tip[3], cx = b->pos[0] - fm_sinf(b->rot[1]) * 22.0f, cz = b->pos[2] + fm_cosf(b->rot[1]) * 22.0f;
                 if (sword_segment(base, tip)) { cx = tip[0]; cz = tip[2]; }

@@ -54,8 +54,9 @@ void skill_fx_spawn_burst_hostile(const float pos[3], float yaw);
 void skill_fx_spawn_burst_warn(const float pos[3], float yaw);
 void skill_fx_spawn_pillar_hostile(const float pos[3]);
 void skill_fx_spawn_arc_hostile(const float pos[3], float yaw, float radius, float damage);
-// The Holy Slam's blast: a full ring rolling out to `radius`, drawn as fire (one hit, as an arc's)
-void skill_fx_spawn_fire_ring_hostile(const float pos[3], float radius, float damage);
+// The Holy Slam's fire: bursts spreading out from `pos` to `radius`, each band hurting (`damage`,
+// once a slam) only while it flares, then harmless embers: dodged by rolling in through one
+void skill_fx_spawn_fire_spread_hostile(const float pos[3], float radius, float damage);
 void skill_fx_spawn_wave_hostile(SkillWaveShape shape, const float pos[3], const float vel[3],
                                  float damage, int hits, float hitInterval, float life, bool pillarOnEnd);
 // One crescent flying along `vel`, its blade turned `roll` from level (one hit)

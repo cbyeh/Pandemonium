@@ -27,7 +27,7 @@ static void dir_basis(const float v[3], float d[3], float s[3], float u[3]);
 
 #define SKILL_FX_MAX 48     // the Shackled Sun's spiral has 20 embers in the air; with Crescent Storm's 8 blades and bursts 39 were alive at once (Ares)
 
-typedef enum { FX_NONE, FX_ARC, FX_WAVE, FX_PILLAR, FX_BURST, FX_CROWN } FxType;
+typedef enum { FX_NONE, FX_ARC, FX_WAVE, FX_PILLAR, FX_BURST, FX_CROWN, FX_FIRESPREAD } FxType;
 
 typedef struct {
     FxType type;
@@ -44,7 +44,6 @@ typedef struct {
     bool  pillarOnEnd;
     bool  hostile;          // hits the player (Fallen Knight) instead of the boss
     bool  warn;             // a hostile burst marking where a hit will land: drawn red
-    bool  fire;             // an arc drawn as a ring of flames (the Holy Slam's blast)
     float scale;            // a wave's size (hit and drawn), 1 by default
     float delay;            // charging where it was spawned: still, harmless and growing until then
     float homing;           // turn rate toward the player (an orb), 0 once it has committed
@@ -55,7 +54,6 @@ typedef struct {
 
 static bool s_spawnHostile;     // palette/target for effects spawned now
 static bool s_spawnWarn;        // a warning burst (skill_fx_spawn_burst_warn)
-static bool s_spawnFire;        // a ring of flames (skill_fx_spawn_fire_ring_hostile)
 static float s_spawnRoll;       // a crescent's tilt, for waves spawned now
 static float s_spawnPoise = -1.0f;   // for the next spawn only (skill_fx_next_poise)
 static float s_spawnScale = 1.0f, s_spawnDelay, s_spawnHoming;     // for the next spawn only (skill_fx_next_shape)
@@ -89,7 +87,6 @@ static SkillFx* fx_alloc(FxType type)
             s_fx[i].type = type;
             s_fx[i].hostile = s_spawnHostile;
             s_fx[i].warn = s_spawnWarn;
-            s_fx[i].fire = s_spawnFire;
 #ifdef HLE_LOG_HITGAP
             { extern int hle_hg_boss_state(void); s_fx[i].hgSt = (int8_t)hle_hg_boss_state(); }
 #endif
@@ -232,12 +229,25 @@ void skill_fx_spawn_arc_hostile(const float pos[3], float yaw, float radius, flo
     s_spawnHostile = false;
 }
 
-void skill_fx_spawn_fire_ring_hostile(const float pos[3], float radius, float damage)
+// The Holy Slam's fire: SPREAD_N bursts out from the blow, SPREAD_GAP apart, each a band
+// radius / SPREAD_N wide (about a roll's reach); a band hurts only while it flares (SPREAD_HURT),
+// then its flames die (by SPREAD_FLAME) to harmless embers (SPREAD_EMBER): roll in through it
+#define SPREAD_N     4
+#define SPREAD_GAP   0.35f
+#define SPREAD_HURT  0.2f
+#define SPREAD_FLAME 0.4f
+#define SPREAD_EMBER 0.6f
+void skill_fx_spawn_fire_spread_hostile(const float pos[3], float radius, float damage)
 {
-    s_spawnFire = true;
-    s_spawnHalf = T3D_PI;       // all the way round: one hit wherever the player is in it
-    skill_fx_spawn_arc_hostile(pos, 0.0f, radius, damage);
-    s_spawnFire = false;
+    s_spawnHostile = true;
+    SkillFx *f = fx_alloc(FX_FIRESPREAD);
+    s_spawnHostile = false;
+    if (!f) return;
+    memcpy(f->pos, pos, sizeof(f->pos));
+    f->radius = radius;
+    f->damage = damage;
+    f->hitsLeft = 1;        // one burn a slam, whichever band catches the player
+    f->life = (SPREAD_N - 1) * SPREAD_GAP + SPREAD_FLAME + SPREAD_EMBER;
 }
 
 void skill_fx_spawn_wave_hostile(SkillWaveShape shape, const float pos[3], const float vel[3],
@@ -403,6 +413,30 @@ static bool arc_meets_tail(const SkillFx *f, float contact[3])
             return true;
         }
     return false;
+}
+
+/** A burst of the Holy Slam's fire flaring catches one on the floor in its band */
+static void update_spread_hit(SkillFx *f)
+{
+    if (f->hitsLeft <= 0 || character.pos[1] > f->pos[1] + 2.0f) return;     // (one in the air clears it)
+    float dx = character.pos[0] - f->pos[0], dz = character.pos[2] - f->pos[2];
+    float d = sqrtf(dx * dx + dz * dz), w = f->radius / SPREAD_N, rr = character.capsuleCollider.radius;
+#ifdef HLE_HOLY_ROLLIN   // test aid: roll in toward the middle 0.1 s before the player's band flares (the dodge)
+    { extern bool hle_roll_in; int kp = (int)(d / w); float when = kp * SPREAD_GAP - 0.1f;
+      if (kp > 0 && kp < SPREAD_N && f->hitTimer == 0.0f && f->age >= when) { f->hitTimer = 1.0f; hle_roll_in = true; debugf("[spread] roll in from %.0f out (burst %d)\n", (double)d, kp); } }     // (hitTimer: once a slam)
+#endif
+    for (int k = 0; k < SPREAD_N; k++) {
+        float t = f->age - k * SPREAD_GAP;
+        if (t < 0.0f || t > SPREAD_HURT || d < k * w || d > (k + 1) * w + (k == SPREAD_N - 1 ? rr : 0.0f)) continue;     // the band the body's middle is in: one burst to dodge (the outer edge with the body's width)
+        bool dodged = character_invulnerable();     // rolled through it: the next bursts can still burn (roll in, not out)
+#if defined(HLE_FK_TRACE) || defined(HLE_FK_HITLOG)
+        if (!dodged || f->hitTimer < 2.0f) { if (dodged) f->hitTimer = 2.0f;     // (a dodge logged once)
+          debugf("[spread] %s: burst %d (%.0f..%.0f out), player %.0f out, %.2f s into it\n", dodged ? "dodged" : "BURNT", k, (double)(k * w), (double)((k + 1) * w), (double)d, (double)t); }
+#endif
+        if (!dodged) f->hitsLeft = 0;
+        character_apply_damage(f->damage);          // (a roll's start: its perfect dodge)
+        return;
+    }
 }
 
 static void update_arc_hit(SkillFx *f, Boss *b)
@@ -608,6 +642,8 @@ void skill_fx_update(float dt)
             update_wave_hit(f, b, dt);
         } else if (f->type == FX_ARC) {
             update_arc_hit(f, b);
+        } else if (f->type == FX_FIRESPREAD) {
+            update_spread_hit(f);
         }
         if (f->age >= f->life) {
             if (f->type == FX_WAVE && (f->shape == SKILL_WAVE_X || f->shape == SKILL_WAVE_SLASH)) {
@@ -1062,37 +1098,56 @@ static void draw_fire_trail(void)
     s_drawHostile = hostile;
 }
 
-/** The Holy Slam's blast as fire: spreading from the middle, rings of flame tongues out to its
- *  front (the fire trail's colours and flicker), the inner ones lower, embers on the floor between
- *  them; fading as the arc does */
-static void draw_fire_ring(const SkillFx *f)
+/** The Holy Slam's fire: each burst a band flaring up from the floor (the fire trail's colours
+ *  and flicker: tongues at its outer edge and through its middle, a glow on the floor between),
+ *  dying down to a few small dull embers that fade (harmless: flat, sparse, dim) */
+static void draw_fire_spread(const SkillFx *f)
 {
-    enum { N = 48, RINGS = 3, CHUNK = 33 };    // vertices round the front: tongue, trough, ... (build_ribbon takes up to 34)
-    static float top[N + 1][3], base[N + 1][3], in[N + 1][3];
-    static uint32_t ct[N + 1], cb[N + 1], ci[N + 1];
+    enum { NMAX = 49, CHUNK = 33 };     // build_ribbon takes up to 34
+    static float top[NMAX][3], base[NMAX][3], in[NMAX][3];
+    static uint32_t ct[NMAX], cb[NMAX], ci[NMAX];
     bool hostile = s_drawHostile;
     s_drawHostile = false;      // fire's own colours
-    float R0 = arc_radius(f), a = fade(f, 0.0f, 0.4f), y = f->pos[1] - 3.7f;     // (spawned 4 over the floor, as the arcs)
-    float H0 = 14.0f * (1.0f - 0.5f * fminf(1.0f, f->age / f->life));
-    for (int r = 0; r < RINGS; r++) {
-        float k = 1.0f - (float)r / RINGS, R = R0 * k, Ri = R0 * (k - 1.0f / RINGS), H = H0 * (0.5f + 0.5f * k);
-        int n = (int)(N * k) & ~1;      // fewer tongues on the smaller rings, as far apart (even: tongue, trough)
-        if (n < 8) n = 8;
-        float ae = a * (0.55f + 0.45f * k);     // the embers dimmer toward the middle
-        for (int v = 0; v <= n; v++) {
-            float th = 2.0f * T3D_PI * v / n + r * 0.4f, cx = fm_cosf(th), sz = fm_sinf(th), ph = v * 1.93f + r * 2.7f;
-            float h = (v & 1) ? H * (0.62f + 0.38f * fm_sinf(s_fireT * 14.0f + ph) * fm_sinf(s_fireT * 5.3f + ph * 0.7f) + 0.25f) : H * 0.3f;
-            base[v][0] = f->pos[0] + cx * R; base[v][1] = y; base[v][2] = f->pos[2] + sz * R;
-            top[v][0] = base[v][0]; top[v][1] = y + h; top[v][2] = base[v][2];
-            in[v][0] = f->pos[0] + cx * Ri; in[v][1] = y; in[v][2] = f->pos[2] + sz * Ri;
-            cb[v] = rgba(255, 130, 30, a);
-            ct[v] = rgba(230, 50, 12, (v & 1) ? 0.0f : a * 0.35f);
-            ci[v] = rgba(200, 60, 15, ae * 0.5f);
+    float y = f->pos[1] - 3.7f, w = f->radius / SPREAD_N;      // (spawned 4 over the floor, as the arcs)
+    for (int k = 0; k < SPREAD_N; k++) {
+        float t = f->age - k * SPREAD_GAP;
+        if (t < 0.0f) break;
+        if (t < SPREAD_FLAME) {     // the flames: up fast, held while it hurts, then down
+            float e = t < 0.08f ? t / 0.08f : t < SPREAD_HURT ? 1.0f : 1.0f - (t - SPREAD_HURT) / (SPREAD_FLAME - SPREAD_HURT);
+            for (int ring = 0; ring < 2; ring++) {      // its outer edge, then its middle (lower)
+                float R = ring ? (k + 0.5f) * w : (k + 1) * w, Ri = ring ? k * w : (k + 0.5f) * w, H = (ring ? 9.0f : 14.0f) * e;
+                int n = 8 + (int)(40.0f * R / f->radius); n &= ~1;     // tongues about as far apart on every ring (even: tongue, trough)
+                for (int v = 0; v <= n; v++) {
+                    float th = 2.0f * T3D_PI * v / n + k * 0.4f + ring * 0.2f, cx = fm_cosf(th), sz = fm_sinf(th), ph = v * 1.93f + k * 2.7f + ring;
+                    float h = (v & 1) ? H * (0.62f + 0.38f * fm_sinf(s_fireT * 14.0f + ph) * fm_sinf(s_fireT * 5.3f + ph * 0.7f) + 0.25f) : H * 0.3f;
+                    base[v][0] = f->pos[0] + cx * R; base[v][1] = y; base[v][2] = f->pos[2] + sz * R;
+                    top[v][0] = base[v][0]; top[v][1] = y + h; top[v][2] = base[v][2];
+                    in[v][0] = f->pos[0] + cx * Ri; in[v][1] = y; in[v][2] = f->pos[2] + sz * Ri;
+                    cb[v] = rgba(255, 130, 30, e);
+                    ct[v] = rgba(230, 50, 12, (v & 1) ? 0.0f : e * 0.35f);
+                    ci[v] = rgba(220, 80, 20, e * 0.45f);
+                }
+                for (int v = 0; v < n; v += CHUNK - 1) {
+                    int m = n + 1 - v < CHUNK ? n + 1 - v : CHUNK;
+                    build_ribbon(&base[v], &in[v], &cb[v], &ci[v], m);      // the glow on the floor, in to the next ring
+                    build_ribbon(&top[v], &base[v], &ct[v], &cb[v], m);     // the flames
+                }
+            }
         }
-        for (int v = 0; v < n; v += CHUNK - 1) {
-            int m = n + 1 - v < CHUNK ? n + 1 - v : CHUNK;
-            build_ribbon(&base[v], &in[v], &cb[v], &ci[v], m);      // the embers on the floor, in to the next ring
-            build_ribbon(&top[v], &base[v], &ct[v], &cb[v], m);     // the flames
+        float te = t - SPREAD_HURT;      // the embers: from as it stops hurting, small, flat and dull, fading out
+        if (te > 0.0f && te < SPREAD_FLAME - SPREAD_HURT + SPREAD_EMBER) {
+            float ea = fminf(1.0f, te / 0.1f) * fminf(1.0f, (SPREAD_FLAME - SPREAD_HURT + SPREAD_EMBER - te) / SPREAD_EMBER);
+            int n = 3 + 3 * k, b0 = build_reserve(n * 3, n);     // sparse: a few to a band
+            uint32_t c = rgba(170, 45, 10, ea * 0.8f);
+            for (int i = 0; i < n; i++) {
+                uint32_t h = (uint32_t)(i * 2654435761u + k * 40503u);     // fixed scatter
+                float th = (h & 1023) * (2.0f * T3D_PI / 1024.0f), r = (k + ((h >> 10) & 255) / 256.0f) * w;
+                float px = f->pos[0] + fm_cosf(th) * r, pz = f->pos[2] + fm_sinf(th) * r, s = 0.8f;
+                build_vert((float[3]){ px - s, y + 0.2f, pz - s }, c);
+                build_vert((float[3]){ px + s, y + 0.2f, pz - s * 0.3f }, c);
+                build_vert((float[3]){ px, y + 0.2f, pz + s }, c);
+                build_tri(b0 + i * 3, b0 + i * 3 + 1, b0 + i * 3 + 2);
+            }
         }
     }
     s_drawHostile = hostile;
@@ -1174,7 +1229,8 @@ void skill_fx_draw(void)
         s_drawHostile = f->hostile;
         s_drawPlayer = !f->hostile;
         switch (f->type) {
-            case FX_ARC:    if (f->fire) draw_fire_ring(f); else draw_arc(f); break;
+            case FX_ARC:    draw_arc(f); break;
+            case FX_FIRESPREAD: draw_fire_spread(f); break;
             case FX_WAVE:   if (f->shape == SKILL_WAVE_ORB) draw_orb(f); else if (f->shape != SKILL_WAVE_BLADE) draw_xwave(f); else draw_blade(f); break;
             case FX_PILLAR: draw_pillar(f); break;
             case FX_BURST:  draw_burst(f); break;
