@@ -55,23 +55,23 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_KINDLED_FLASK] = { "Kindled Flask", "Potions heal 25% more",        2, TIER_COMMON, FAM_HEARTH },
     [BOON_FLEETFOOT]     = { "Fleetfoot",     "Rolls cost 40% less stamina",  1, TIER_RARE, FAM_SHADOW },
     [BOON_SECOND_WIND]   = { "Second Wind",   "+40% stamina regen",     3, TIER_COMMON, FAM_SHADOW },
-    [BOON_MOON_MASTERY]  = { "Moon Mastery",  "Skill cooldowns -20%",         3, TIER_RARE, FAM_MOON },
-    [BOON_BLOODTHIRST]   = { "Bloodthirst",   "Sword hits heal 12% of base damage", 2, TIER_RARE, FAM_BLOOD },
+    [BOON_MOON_MASTERY]  = { "Moon Mastery",  "Skill cooldowns -20%",         4, TIER_RARE, FAM_MOON },
+    [BOON_BLOODTHIRST]   = { "Bloodthirst",   "Sword hits heal 12% of base damage", 3, TIER_RARE, FAM_BLOOD },
     [BOON_VIGOR]         = { "Vigor",         "+25 max health",               5, TIER_COMMON, FAM_IRON },
     [BOON_LAST_STAND]    = { "Last Stand",    "+40% damage below 30% health", 2, TIER_RARE, FAM_BLOOD },
     [BOON_UNBROKEN]      = { "Unbroken",      "Survive one killing blow a floor", 1, TIER_LEGENDARY, FAM_IRON },
-    [BOON_PHANTOM_STEP]  = { "Phantom Step",  "Easier dodges heal 2%", 1, TIER_RARE, FAM_SHADOW },
-    [BOON_RIPOSTE]       = { "Riposte",       "Perfect dodge: +50% damage", 1, TIER_RARE, FAM_SHADOW },
+    [BOON_PHANTOM_STEP]  = { "Phantom Step",  "Easier dodges heal 2%", 2, TIER_RARE, FAM_SHADOW },
+    [BOON_RIPOSTE]       = { "Riposte",       "Perfect dodge: +50% damage", 2, TIER_RARE, FAM_SHADOW },
     [BOON_CRUSHING_BLOWS]= { "Crushing Blows","Staggers last 50% longer",     1, TIER_RARE, FAM_IRON },
-    [BOON_EXECUTIONER]   = { "Executioner",   "Staggered bosses take +60%",   1, TIER_LEGENDARY, FAM_IRON },
+    [BOON_EXECUTIONER]   = { "Executioner",   "Staggered bosses take +60% (Lv 2: +90%)",   2, TIER_LEGENDARY, FAM_IRON },
     [BOON_STORM_BLADE]   = { "Storm Blade",   "Every 4th hit calls lightning", 1, TIER_LEGENDARY, FAM_STORM },
     [BOON_BLOOD_PACT]    = { "Blood Pact",    "+35% damage, potions -25%", 1, TIER_LEGENDARY, FAM_BLOOD },
-    [BOON_RALLY]         = { "Rally",         "Hit back to win lost health", 2, TIER_RARE, FAM_BLOOD },
+    [BOON_RALLY]         = { "Rally",         "Hit back to win lost health", 3, TIER_RARE, FAM_BLOOD },
     [BOON_HEMORRHAGE]    = { "Hemorrhage",    "Finishers bleed 4 over 3 s", 3, TIER_COMMON, FAM_BLOOD, 1 },
     [BOON_SANGUINE_FLASK]= { "Sanguine Flask","Potion: +25% damage 6 s", 1, TIER_RARE, FAM_BLOOD, 1 },
     [BOON_RED_THIRST]    = { "Red Thirst",    "+10% damage per 25% health lost", 3, TIER_COMMON, FAM_BLOOD, 1 },
-    [BOON_STATIC]        = { "Static",        "Storm Blade +1.5, or a bolt each 8th hit", 4, TIER_COMMON, FAM_STORM, 1 },
-    [BOON_THUNDERCLAP]   = { "Thunderclap",   "Combo finishers call lightning", 1, TIER_RARE, FAM_STORM, 1 },
+    [BOON_STATIC]        = { "Static",        "Storm Blade +1.5, or a bolt each 8th hit", 5, TIER_COMMON, FAM_STORM, 1 },
+    [BOON_THUNDERCLAP]   = { "Thunderclap",   "Combo finishers call lightning", 2, TIER_RARE, FAM_STORM, 1 },
     [BOON_CONDUCTOR]     = { "Conductor",     "Lightning fills the stagger meter", 1, TIER_RARE, FAM_STORM, 1 },
     [BOON_OVERCHARGE]    = { "Overcharge",    "A stagger: 5 hits call lightning", 1, TIER_LEGENDARY, FAM_STORM, 1 },
     [BOON_LUNAR_TIDE]    = { "Lunar Tide",    "Sword hits: cooldowns -0.3 s", 3, TIER_COMMON, FAM_MOON, 1 },
@@ -99,16 +99,8 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_EMBER_EDGE_PLUS]    = { "Ember Edge+",    "Finishers +25%",              1, TIER_RARE, FAM_HEARTH, PLUS(BOON_EMBER_EDGE) },
     [BOON_IRON_SKIN_PLUS]     = { "Iron Skin+",     "The first blow a floor deals half", 1, TIER_RARE, FAM_IRON, PLUS(BOON_IRON_SKIN) },
     [BOON_STORM_BLADE_PLUS]   = { "Storm Blade+",   "Lightning every 3rd hit",     1, TIER_RARE, FAM_STORM, PLUS(BOON_STORM_BLADE) },
-    [BOON_EXECUTIONER_PLUS]   = { "Executioner+",   "Staggered bosses take +90%",  1, TIER_RARE, FAM_IRON, PLUS(BOON_EXECUTIONER) },
     [BOON_CRUSHING_BLOWS_PLUS]= { "Crushing Blows+","No stagger drain 3 s after it rises", 1, TIER_RARE, FAM_IRON, PLUS(BOON_CRUSHING_BLOWS) },
-    [BOON_RIPOSTE_PLUS]       = { "Riposte+",       "Riposte lasts 4 s",           1, TIER_RARE, FAM_SHADOW, PLUS(BOON_RIPOSTE) },
     [BOON_UNBROKEN_PLUS]      = { "Unbroken+",      "When it saves you, heal 20%", 1, TIER_RARE, FAM_IRON, PLUS(BOON_UNBROKEN) },
-    [BOON_BLOODTHIRST_PLUS]   = { "Bloodthirst+",   "Heals 16% a level",           1, TIER_RARE, FAM_BLOOD, PLUS(BOON_BLOODTHIRST) },
-    [BOON_RALLY_PLUS]         = { "Rally+",         "Each hit wins back 1.5",      1, TIER_RARE, FAM_BLOOD, PLUS(BOON_RALLY) },
-    [BOON_PHANTOM_STEP_PLUS]  = { "Phantom Step+",  "Dodge window 0.31 s",         1, TIER_RARE, FAM_SHADOW, PLUS(BOON_PHANTOM_STEP) },
-    [BOON_STATIC_PLUS]        = { "Static+",        "Its lightning +50%",          1, TIER_RARE, FAM_STORM, PLUS(BOON_STATIC) },
-    [BOON_THUNDERCLAP_PLUS]   = { "Thunderclap+",   "Its lightning +50%",          1, TIER_RARE, FAM_STORM, PLUS(BOON_THUNDERCLAP) },
-    [BOON_MOON_MASTERY_PLUS]  = { "Moon Mastery+",  "Cooldowns -25% a level",      1, TIER_RARE, FAM_MOON, PLUS(BOON_MOON_MASTERY) },
     // Duos (section 8): Legendary, offered with a maxed boon of each family slotted; merged into one slot
     [BOON_CRIMSON_STORM]   = { "Crimson Storm",   "Bolts heal, or +25%", 1, TIER_LEGENDARY, FAM_BLOOD, DUO(FAM_STORM) },
     [BOON_THUNDERSTEP]     = { "Thunderstep",     "2 bolts each perfect dodge", 1, TIER_LEGENDARY, FAM_STORM, DUO(FAM_SHADOW) },
@@ -1164,16 +1156,16 @@ static const char *const HP_NAMES[HP_COUNT] = { "sword", "storm", "fmd", "stagge
 static const struct { int8_t skill, form, fam; BoonId key[7]; uint8_t w[7]; } HPLAN[HP_COUNT] = {
     [HP_SWORD]   = { -1, 0, FAM_HEARTH, { BOON_EMBER_EDGE, BOON_IRON_SKIN, BOON_VIGOR, BOON_HEMORRHAGE, BOON_STORM_BLADE, BOON_UNBROKEN, BOON_EMBER_EDGE_PLUS }, { 95, 70, 65, 60, 70, 60, 80 } },
     [HP_STORM]   = { -1, 0, FAM_STORM, { BOON_STORM_BLADE, BOON_STATIC, BOON_THUNDERCLAP, BOON_OVERCHARGE, BOON_CONDUCTOR, BOON_EMBER_EDGE, BOON_STORM_BLADE_PLUS }, { 110, 95, 95, 70, 55, 70, 90 } },
-    [HP_FMD]     = { 0, 1, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY_PLUS, BOON_IRON_SKIN }, { 100, 85, 60, 60, 45, 85, 50 } },
-    [HP_STAGGER] = { 0, 2, FAM_IRON, { BOON_EXECUTIONER, BOON_CRUSHING_BLOWS, BOON_HEAVY_HAND, BOON_ECLIPSE, BOON_MOON_MASTERY, BOON_EXECUTIONER_PLUS, BOON_CRUSHING_BLOWS_PLUS }, { 105, 95, 90, 85, 85, 90, 80 } },
-    [HP_TWIN]    = { 1, 1, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY_PLUS, BOON_IRON_SKIN }, { 100, 85, 60, 60, 50, 85, 50 } },
-    [HP_FULLMOON]= { 1, 2, FAM_IRON, { BOON_MOON_MASTERY, BOON_EXECUTIONER, BOON_CRUSHING_BLOWS, BOON_LUNAR_TIDE, BOON_ECLIPSE, BOON_HEAVY_HAND, BOON_MOON_MASTERY_PLUS }, { 100, 80, 75, 75, 70, 50, 85 } },
-    [HP_CSTORM]  = { 2, 1, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY_PLUS, BOON_IRON_SKIN }, { 100, 85, 60, 60, 45, 85, 50 } },
-    [HP_LONGCLEAVE] = { 2, 2, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY_PLUS, BOON_VIGOR }, { 100, 85, 60, 60, 45, 85, 50 } },
-    [HP_BLOOD]   = { -1, 0, FAM_BLOOD, { BOON_BLOODTHIRST, BOON_RALLY, BOON_RED_THIRST, BOON_HEMORRHAGE, BOON_BLOOD_PACT, BOON_SANGUINE_FLASK, BOON_BLOODTHIRST_PLUS }, { 105, 100, 75, 70, 70, 55, 85 } },
+    [HP_FMD]     = { 0, 1, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY, BOON_IRON_SKIN }, { 100, 85, 60, 60, 45, 85, 50 } },
+    [HP_STAGGER] = { 0, 2, FAM_IRON, { BOON_EXECUTIONER, BOON_CRUSHING_BLOWS, BOON_HEAVY_HAND, BOON_ECLIPSE, BOON_MOON_MASTERY, BOON_EXECUTIONER, BOON_CRUSHING_BLOWS_PLUS }, { 105, 95, 90, 85, 85, 90, 80 } },
+    [HP_TWIN]    = { 1, 1, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY, BOON_IRON_SKIN }, { 100, 85, 60, 60, 50, 85, 50 } },
+    [HP_FULLMOON]= { 1, 2, FAM_IRON, { BOON_MOON_MASTERY, BOON_EXECUTIONER, BOON_CRUSHING_BLOWS, BOON_LUNAR_TIDE, BOON_ECLIPSE, BOON_HEAVY_HAND, BOON_MOON_MASTERY }, { 100, 80, 75, 75, 70, 50, 85 } },
+    [HP_CSTORM]  = { 2, 1, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY, BOON_IRON_SKIN }, { 100, 85, 60, 60, 45, 85, 50 } },
+    [HP_LONGCLEAVE] = { 2, 2, FAM_MOON, { BOON_MOON_MASTERY, BOON_LUNAR_TIDE, BOON_WAXING_MOON, BOON_EMBER_EDGE, BOON_ECLIPSE, BOON_MOON_MASTERY, BOON_VIGOR }, { 100, 85, 60, 60, 45, 85, 50 } },
+    [HP_BLOOD]   = { -1, 0, FAM_BLOOD, { BOON_BLOODTHIRST, BOON_RALLY, BOON_RED_THIRST, BOON_HEMORRHAGE, BOON_BLOOD_PACT, BOON_SANGUINE_FLASK, BOON_BLOODTHIRST }, { 105, 100, 75, 70, 70, 55, 85 } },
     [HP_BERSERK] = { -1, 0, FAM_BLOOD, { BOON_BERSERKER, BOON_RED_THIRST, BOON_BLOODTHIRST, BOON_RALLY, BOON_LAST_STAND, BOON_HEMORRHAGE, BOON_EMBER_EDGE }, { 120, 85, 80, 75, 70, 60, 60 } },
     // phase 2 (proposal 12): the Shadow family as a plan, perfect dodges (the bot's rolls land the hit 0.17 s in: often in the 0.2 s window)
-    [HP_SHADOW]  = { -1, 0, FAM_SHADOW, { BOON_RIPOSTE, BOON_SHADOW_EDGE, BOON_PHANTOM_STEP, BOON_EVASION, BOON_VANISH, BOON_FLEETFOOT, BOON_RIPOSTE_PLUS }, { 110, 100, 95, 80, 85, 70, 90 } },
+    [HP_SHADOW]  = { -1, 0, FAM_SHADOW, { BOON_RIPOSTE, BOON_SHADOW_EDGE, BOON_PHANTOM_STEP, BOON_EVASION, BOON_VANISH, BOON_FLEETFOOT, BOON_RIPOSTE }, { 110, 100, 95, 80, 85, 70, 90 } },
 };
 static int hb_generic(BoonId b)
 {
@@ -1277,7 +1269,7 @@ void tower_begin_run(uint32_t seed)
     {
         static const BoonId FULL[TOWER_SLOTS] = { BOON_BLOODTHIRST, BOON_RALLY, BOON_PHANTOM_STEP, BOON_STATIC, BOON_EMBER_EDGE };
         for (int i = 0; i < TOWER_SLOTS; i++) while (s.stacks[FULL[i]] < BOONS[FULL[i]].maxStacks) take_boon(FULL[i]);
-        s.stacks[BOON_RALLY] = 1;       // (one below its max: the page shows "Lv 1/2")
+        s.stacks[BOON_RALLY] = 2;       // (one below its max: the page shows "Lv 2/3")
         s.skills = (1 << SKILL_COUNT) - 1;
         s.stacks[BOON_LEARN_MOONBLADE] = 2; s.stacks[BOON_LEARN_CLEAVE] = 1;
         s.stacks[BOON_LEARN_HALFMOON] = SKILL_LV_MAX; take_boon(BOON_TWIN_MOON);    // a form (its rival greyed)
@@ -1381,6 +1373,9 @@ int  tower_circle(void) { return s.circle; }
 TowerBoss tower_floor_boss(void) { return s.boss; }
 int  tower_run_embers(void) { return s.runEmbers; }
 int  tower_boon_stacks(BoonId b) { return (s.active && b < BOON_COUNT) ? s.stacks[b] : 0; }
+// Static: its bolts +1.5 a level to Lv 4; Lv 5 (the old Static+) its and Storm Blade's bolts x1.5
+static int static_lv(void) { int n = tower_boon_stacks(BOON_STATIC); return n < 4 ? n : 4; }
+static float static_amp(void) { return tower_boon_stacks(BOON_STATIC) >= 5 ? 1.5f : 1.0f; }
 
 static int floor_embers(void)
 {
@@ -4061,14 +4056,14 @@ float tower_mod_stagger_time(void)
 float tower_mod_stagger_damage(int kind)
 {
     if (!s.active) return 1.0f;
-    float add = (tower_boon_stacks(BOON_EXECUTIONER) ? (tower_boon_stacks(BOON_EXECUTIONER_PLUS) ? 0.9f : 0.6f) : 0.0f) + 0.15f * bl(PB_STAGGERED);
+    float add = (tower_boon_stacks(BOON_EXECUTIONER) >= 2 ? 0.9f : tower_boon_stacks(BOON_EXECUTIONER) ? 0.6f : 0.0f) + 0.15f * bl(PB_STAGGERED);
     if (kind == TOWER_HIT_SKILL && tower_boon_stacks(BOON_ECLIPSE)) { add += 0.5f; BFX("Eclipse: skill hit on a staggered boss +50%%\n"); }
     return 1.0f + fminf(STAGGER_BONUS_CAP, add);
 }
 float tower_mod_perfect_window(void)
 {
     if (!tower_boon_stacks(BOON_PHANTOM_STEP)) return 0.2f;
-    return tower_boon_stacks(BOON_PHANTOM_STEP_PLUS) ? 0.31f : 0.28f;   // (still inside a moving roll's 0.32 s of invincibility)
+    return tower_boon_stacks(BOON_PHANTOM_STEP) >= 2 ? 0.31f : 0.28f;   // (still inside a moving roll's 0.32 s of invincibility)
 }
 
 // A bolt to fall `delay` s from now on the boss (Thunderstep, Skyfall); tower_tick drops it
@@ -4083,11 +4078,11 @@ void tower_on_perfect_dodge(void)
     if (!s.active) return;
     if (tower_boon_stacks(BOON_PHANTOM_STEP)) character.health = fminf(character.maxHealth, character.health + character.maxHealth * 0.02f);
     extern double nowS;
-    double window = tower_boon_stacks(BOON_RIPOSTE_PLUS) ? 4.0 : 2.5;
+    double window = tower_boon_stacks(BOON_RIPOSTE) >= 2 ? 4.0 : 2.5;
     if (tower_boon_stacks(BOON_RIPOSTE)) s.riposteUntil = nowS + window;
     if (tower_boon_stacks(BOON_SHADES_MERCY)) { s.mercyUntil = nowS + window; BFX("Shade's Mercy: %.1f s of Rally at 60%%\n", window); }
     if (tower_boon_stacks(BOON_THUNDERSTEP)) {      // two of Storm Blade's bolts, 0.3 s apart
-        float bolt = (STORM_BOLT + STATIC_BOLT * tower_boon_stacks(BOON_STATIC)) * (tower_boon_stacks(BOON_STATIC_PLUS) ? 1.5f : 1.0f);
+        float bolt = (STORM_BOLT + STATIC_BOLT * static_lv()) * static_amp();
         queue_bolt(bolt, 0.0); queue_bolt(bolt, 0.3);
         BFX("Thunderstep: a perfect dodge calls 2 bolts of %.0f\n", (double)bolt);
     }
@@ -4110,8 +4105,8 @@ float tower_on_sword_hit(bool finisher)
         s.berserkHits = tower_berserk() && nowS - s.berserkAt <= BERSERK_GAP ? s.berserkHits + 1 : tower_berserk();
         s.berserkAt = nowS;
     }
-    int st = tower_boon_stacks(BOON_STATIC);
-    float bolt = 0.0f, amp = tower_boon_stacks(BOON_STATIC_PLUS) ? 1.5f : 1.0f, storm = (STORM_BOLT + STATIC_BOLT * st) * amp;
+    int st = static_lv();
+    float bolt = 0.0f, amp = static_amp(), storm = (STORM_BOLT + STATIC_BOLT * st) * amp;
     bool sb = tower_boon_stacks(BOON_STORM_BLADE) && s.hitCount % (tower_boon_stacks(BOON_STORM_BLADE_PLUS) ? 3 : 4) == 0;   // Storm Blade+: every 3rd
     if (sb) {
         bolt += storm;
@@ -4130,7 +4125,7 @@ float tower_on_sword_hit(bool finisher)
         BFX("Overcharge: lightning on hit %d (%.0f), %d left\n", s.hitCount, (double)storm, s.overcharge);
     }
     if (finisher && tower_boon_stacks(BOON_THUNDERCLAP)) {
-        float tc = THUNDERCLAP_BOLT * (tower_boon_stacks(BOON_THUNDERCLAP_PLUS) ? 1.5f : 1.0f);
+        float tc = THUNDERCLAP_BOLT * (tower_boon_stacks(BOON_THUNDERCLAP) >= 2 ? 1.5f : 1.0f);
         bolt += tc; BFX("Thunderclap: the finisher calls lightning (%.0f)\n", (double)tc);
     }
     int hm = tower_boon_stacks(BOON_HEMORRHAGE);
@@ -4260,10 +4255,10 @@ float tower_mod_stamina_empty(void) { return 1.0f + 0.4f * tower_boon_stacks(BOO
 float tower_mod_stamina_regen(void) { return (1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND)) * (has_relic(RELIC_STAMINA) ? 1.2f : 1.0f); }
 float tower_mod_skill_cooldown(void)
 {
-    return (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * powf_int(tower_boon_stacks(BOON_MOON_MASTERY_PLUS) ? 0.75f : 0.8f, tower_boon_stacks(BOON_MOON_MASTERY))
+    return (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * powf_int(0.8f, tower_boon_stacks(BOON_MOON_MASTERY) < 3 ? tower_boon_stacks(BOON_MOON_MASTERY) : 3) * (tower_boon_stacks(BOON_MOON_MASTERY) >= 4 ? 0.421875f / 0.512f : 1.0f)
            * ((s.active && s.night == NIGHT_STARFALL) ? 0.7f : 1.0f);
 }
-float tower_mod_lifesteal(void) { return (tower_boon_stacks(BOON_BLOODTHIRST_PLUS) ? 0.16f : 0.12f) * tower_boon_stacks(BOON_BLOODTHIRST) + 0.03f * has_relic(RELIC_VAMPIRIC); }   // of a hit before boons: it no longer grows with the damage multiplier
+float tower_mod_lifesteal(void) { return (0.12f * (tower_boon_stacks(BOON_BLOODTHIRST) < 2 ? tower_boon_stacks(BOON_BLOODTHIRST) : 2) + (tower_boon_stacks(BOON_BLOODTHIRST) >= 3 ? 0.08f : 0.0f)) + 0.03f * has_relic(RELIC_VAMPIRIC); }   // of a hit before boons: it no longer grows with the damage multiplier
 
 // Rally, at Bloodborne's pace in our numbers: lost health stays winnable 1 s, then drains away
 // over 4 s; each hit wins back what it dealt before damage boons (a sword hit 4: about four hits for a typical blow,
@@ -4289,7 +4284,7 @@ void tower_on_boss_hurt(float dealt)
     if (s.rally <= 0.0f || dealt <= 0.0f) return;
     extern double nowS;
     // Rally's rate (Rally+: each hit counts 1.5x its base), and Shade's Mercy's 60% in Riposte's window
-    float ratio = tower_boon_stacks(BOON_RALLY_PLUS) ? 3.0f * RALLY_RATIO : tower_boon_stacks(BOON_RALLY) >= 2 ? 2.0f * RALLY_RATIO : tower_boon_stacks(BOON_RALLY) ? RALLY_RATIO : 0.0f;
+    float ratio = RALLY_RATIO * tower_boon_stacks(BOON_RALLY);     // (Lv 3: three eighths, the old Rally+)
     bool mercy = tower_boon_stacks(BOON_SHADES_MERCY) && nowS < s.mercyUntil;
     if (mercy) ratio += 0.6f;
     if (ratio <= 0.0f) return;
@@ -4593,8 +4588,8 @@ int tower_test_stage2(void)
     CHECK(!duos_offerable(), "one maxed boon: no duo (%d)", duos_offerable());
     take_boon(BOON_THUNDERCLAP); take_boon(BOON_CONDUCTOR);
     CHECK(!duos_offerable(), "three maxed Storm boons (one family): no duo (%d)", duos_offerable());
-    take_boon(BOON_BLOODTHIRST);
-    CHECK(!offerable(BOON_CRIMSON_STORM), "Bloodthirst Lv 1 of 2 (not maxed): no Crimson Storm");
+    take_boon(BOON_BLOODTHIRST); take_boon(BOON_BLOODTHIRST);
+    CHECK(!offerable(BOON_CRIMSON_STORM), "Bloodthirst Lv 2 of 3 (not maxed): no Crimson Storm");
     take_boon(BOON_BLOODTHIRST);
     CHECK(offerable(BOON_CRIMSON_STORM) && duos_offerable() == 1, "Bloodthirst maxed + Storm Blade: Crimson Storm, the only duo (%d)", duos_offerable());
     s.packs = 1 << FAM_BLOOD;
@@ -4611,12 +4606,12 @@ int tower_test_stage2(void)
     take_boon(BOON_CRIMSON_STORM);
     CHECK(slots_used() == 4 && s.slot[sBt] == BOON_CRIMSON_STORM + 1 && !s.slot[sSb] && s.merged[sBt][0] == BOON_BLOODTHIRST + 1 && s.merged[sBt][1] == BOON_STORM_BLADE + 1,
           "the duo merges Bloodthirst and Storm Blade into one slot and opens the other (%d used)", slots_used());
-    CHECK(s.stacks[BOON_BLOODTHIRST] == 2 && s.stacks[BOON_STORM_BLADE] == 1 && !offerable(BOON_CRIMSON_STORM) && offerable(BOON_HEMORRHAGE),
+    CHECK(s.stacks[BOON_BLOODTHIRST] == 3 && s.stacks[BOON_STORM_BLADE] == 1 && !offerable(BOON_CRIMSON_STORM) && offerable(BOON_HEMORRHAGE),
           "both stay at their max, the duo once, a new boon fits again");
     { s.hitCount = 0; float b4 = 0; for (int i = 0; i < 4; i++) b4 = tower_on_sword_hit(false);
       CHECK(b4 == 6.0f, "merged Storm Blade still calls lightning on hit 4 (%.0f)", (double)b4); }
     { character.maxHealth = 200.0f; character.health = 100.0f; float d = tower_on_lightning(6.0f, false);
-      CHECK(d == 6.0f && fabsf(character.health - 100.0f - 0.5f * 0.24f * 6.0f) < 0.01f, "Crimson Storm: a bolt of 6 heals 0.72 with Bloodthirst Lv 2 (%.2f, bolt %.1f)", (double)(character.health - 100.0f), (double)d); }
+      CHECK(d == 6.0f && fabsf(character.health - 100.0f - 0.5f * 0.32f * 6.0f) < 0.01f, "Crimson Storm: a bolt of 6 heals 0.96 with Bloodthirst Lv 3 (%.2f, bolt %.1f)", (double)(character.health - 100.0f), (double)d); }
     { char l[TOWER_BUILD_ROWS][40], r[TOWER_BUILD_ROWS][12]; int st[TOWER_BUILD_ROWS], cd[TOWER_BUILD_ROWS];
       int n = tower_build_rows(l, r, st, cd, TOWER_BUILD_ROWS); bool duoRow = false, both = false; int lock = 0;
       for (int i = 0; i < n; i++) { duoRow |= !strcmp(l[i], "Crimson Storm") && !strcmp(r[i], "Duo"); both |= strstr(l[i], "Bloodthirst + Storm Blade") != NULL;
@@ -4672,24 +4667,24 @@ int tower_test_stage2(void)
     RUN(27); MAX(BOON_STORM_BLADE); take_boon(BOON_STORM_BLADE_PLUS);
     { int n = 0; s.hitCount = 0; for (int i = 0; i < 9; i++) n += tower_on_sword_hit(false) > 0.0f;
       CHECK(n == 3, "Storm Blade+: every 3rd hit (%d bolts in 9)", n); }
-    RUN(27); MAX(BOON_EXECUTIONER); take_boon(BOON_EXECUTIONER_PLUS);
-    CHECK(fabsf(tower_mod_stagger_damage(TOWER_HIT_SWORD) - 1.9f) < 0.001f, "Executioner+: +90%%");
-    RUN(27); MAX(BOON_PHANTOM_STEP); take_boon(BOON_PHANTOM_STEP_PLUS);
-    CHECK(fabsf(tower_mod_perfect_window() - 0.31f) < 0.001f, "Phantom Step+: 0.31 s");
-    RUN(27); s.skills = 1; float cd0 = tower_mod_skill_cooldown(); MAX(BOON_MOON_MASTERY); float cd3 = tower_mod_skill_cooldown(); take_boon(BOON_MOON_MASTERY_PLUS);
-    CHECK(fabsf(cd3 / cd0 - 0.512f) < 0.001f && fabsf(tower_mod_skill_cooldown() / cd0 - 0.421875f) < 0.001f, "Moon Mastery Lv 3 x0.512, + x0.422 (%.3f)", (double)(tower_mod_skill_cooldown() / cd0));
-    RUN(27); MAX(BOON_BLOODTHIRST); take_boon(BOON_BLOODTHIRST_PLUS);
-    CHECK(fabsf(tower_mod_lifesteal() - 0.32f) < 0.001f, "Bloodthirst+: 16%% a level (%.2f)", (double)tower_mod_lifesteal());
+    RUN(27); MAX(BOON_EXECUTIONER);
+    CHECK(fabsf(tower_mod_stagger_damage(TOWER_HIT_SWORD) - 1.9f) < 0.001f, "Executioner Lv 2: +90%%");
+    RUN(27); MAX(BOON_PHANTOM_STEP);
+    CHECK(fabsf(tower_mod_perfect_window() - 0.31f) < 0.001f, "Phantom Step Lv 2: 0.31 s");
+    RUN(27); s.skills = 1; float cd0 = tower_mod_skill_cooldown(); for (int k = 0; k < 3; k++) take_boon(BOON_MOON_MASTERY); float cd3 = tower_mod_skill_cooldown(); take_boon(BOON_MOON_MASTERY);
+    CHECK(fabsf(cd3 / cd0 - 0.512f) < 0.001f && fabsf(tower_mod_skill_cooldown() / cd0 - 0.421875f) < 0.001f, "Moon Mastery Lv 3 x0.512, Lv 4 x0.422 (%.3f)", (double)(tower_mod_skill_cooldown() / cd0));
+    RUN(27); MAX(BOON_BLOODTHIRST);
+    CHECK(fabsf(tower_mod_lifesteal() - 0.32f) < 0.001f, "Bloodthirst Lv 3: 32%% (%.2f)", (double)tower_mod_lifesteal());
     RUN(27); MAX(BOON_IRON_SKIN); take_boon(BOON_IRON_SKIN_PLUS);
     { float a = tower_mod_blow(20.0f), b = tower_mod_blow(20.0f); tower_next_floor(); float c = tower_mod_blow(20.0f);
       CHECK(a == 10.0f && b == 20.0f && c == 10.0f, "Iron Skin+: the floor's first blow half (%.0f %.0f, next floor %.0f)", (double)a, (double)b, (double)c); }
     RUN(27); MAX(BOON_UNBROKEN); character.maxHealth = 150.0f; take_boon(BOON_UNBROKEN_PLUS);
     CHECK(fabsf(tower_mod_unbroken_heal() - 0.2f * character.maxHealth) < 0.01f, "Unbroken+: heals 20%%");
-    RUN(27); MAX(BOON_STATIC); take_boon(BOON_STATIC_PLUS);
+    RUN(27); MAX(BOON_STATIC);
     { float w = 0; s.hitCount = 0; for (int i = 0; i < 8; i++) w += tower_on_sword_hit(false);
-      CHECK(fabsf(w - 1.5f * (6.0f + STATIC_BOLT * 3)) < 0.01f, "Static+ (Lv 4, no Storm Blade): the 8th hit's bolt x1.5 (%.1f)", (double)w); }
-    RUN(27); MAX(BOON_THUNDERCLAP); take_boon(BOON_THUNDERCLAP_PLUS);
-    CHECK(tower_on_sword_hit(true) == 1.5f * THUNDERCLAP_BOLT, "Thunderclap+: the finisher's bolt x1.5");
+      CHECK(fabsf(w - 1.5f * (6.0f + STATIC_BOLT * 3)) < 0.01f, "Static Lv 5 (no Storm Blade): the 8th hit's bolt x1.5 (%.1f)", (double)w); }
+    RUN(27); MAX(BOON_THUNDERCLAP);
+    CHECK(tower_on_sword_hit(true) == 1.5f * THUNDERCLAP_BOLT, "Thunderclap Lv 2: the finisher's bolt x1.5");
     RUN(28); MAX(BOON_CRUSHING_BLOWS); MAX(BOON_STORM_BLADE); take_boon(BOON_ANVIL_OF_STORMS);
     CHECK(tower_on_lightning(6.0f, true) == 12.0f && tower_on_lightning(6.0f, false) == 6.0f, "Anvil of Storms: x2 on a staggered boss only");
     RUN(29); MAX(BOON_RALLY); s.skills = 1; MAX(BOON_MOON_MASTERY); take_boon(BOON_BLOOD_MOON_RITE);
@@ -5038,7 +5033,7 @@ int tower_test_map(void)
     list_open(SCR_RELEASE); test_press('D'); test_press('D'); test_press('A');
     MCHECK(character.maxHealth == mh0 && character.health == mh0 && !s.stacks[BOON_VIGOR], "Release Vigor Lv 5: max health %.0f -> %.0f (%.0f, health %.0f)", (double)(mh0 + 125.0f), (double)mh0, (double)character.maxHealth, (double)character.health);
     RUN(42);
-    while (s.stacks[BOON_BLOODTHIRST] < 2) take_boon(BOON_BLOODTHIRST);
+    while (s.stacks[BOON_BLOODTHIRST] < BOONS[BOON_BLOODTHIRST].maxStacks) take_boon(BOON_BLOODTHIRST);
     take_boon(BOON_STORM_BLADE); take_boon(BOON_CRIMSON_STORM);
     list_open(SCR_RELEASE); test_press('D'); test_press('A');
     MCHECK(!s.stacks[BOON_CRIMSON_STORM] && !s.stacks[BOON_BLOODTHIRST] && !s.stacks[BOON_STORM_BLADE] && !slots_used(), "Release a duo: all three gone (%d slots used)", slots_used());
@@ -5217,7 +5212,8 @@ int tower_test_shop(void)
     take_boon(BOON_VIGOR); take_boon(BOON_EMBER_EDGE); take_boon(BOON_FLEETFOOT); take_boon(BOON_RIPOSTE); take_boon(BOON_RALLY);
     shop_open();
     CHECK(s.shop.card[0] < 0 && s.shop.card[1] < 0 && s.shop.card[2] < 0 && !strcmp(shop_block(0), "No new boon fits"), "a full bar: no card fits");
-    while (s.stacks[BOON_RALLY] < 2) take_boon(BOON_RALLY);
+    while (s.stacks[BOON_RALLY] < BOONS[BOON_RALLY].maxStacks) take_boon(BOON_RALLY);
+    while (s.stacks[BOON_RIPOSTE] < BOONS[BOON_RIPOSTE].maxStacks) take_boon(BOON_RIPOSTE);
     shop_open();
     CHECK(s.shop.card[0] == BOON_SHADES_MERCY && s.shop.card[1] < 0 && shop_price(0) == 180, "a full bar with a duo ready: the duo, 180 (%d)", s.shop.card[0]);
     // the cards' family weighting, as a draft's: two Storm boons slotted, a Storm Rare about twice as often
@@ -5845,8 +5841,8 @@ const char *tower_test_gallery(int k)
     STEP("draft: the longest pacts", gallery_draft(PACT_CARD(PB_WOUNDED, PC_EXPOSED), PACT_CARD(PB_LAST_BREATH, PC_WEAKNESS), PACT_CARD(PB_STAGGERED, PC_IMPAIRED), 2, false))
     STEP("draft: rivals", gallery_draft(BOON_RIPOSTE, BOON_IRON_SKIN, BOON_BERSERKER, 1, false))
     STEP("draft: levels (pips)", gallery_draft(BOON_EMBER_EDGE, BOON_LEARN_MOONBLADE, BOON_VIGOR, 0, false))
-    STEP("draft: pluses and a minor blessing", gallery_draft(BOON_CRUSHING_BLOWS_PLUS, BOON_PHANTOM_STEP_PLUS, MINOR_CARD(PB_VITALITY), 2, false))
-    STEP("draft: an Elite's chest (the longest line)", gallery_draft(BOON_CRUSHING_BLOWS_PLUS, BOON_PHANTOM_STEP_PLUS, MINOR_CARD(PB_BULWARK), 2, false);
+    STEP("draft: pluses and a minor blessing", gallery_draft(BOON_CRUSHING_BLOWS_PLUS, BOON_UNBROKEN_PLUS, MINOR_CARD(PB_VITALITY), 2, false))
+    STEP("draft: an Elite's chest (the longest line)", gallery_draft(BOON_CRUSHING_BLOWS_PLUS, BOON_UNBROKEN_PLUS, MINOR_CARD(PB_BULWARK), 2, false);
          snprintf(s.chestLine, sizeof s.chestLine, "Elite chest: %s, +1 potion", BOONS[BOON_CRUSHING_BLOWS_PLUS].name))
     STEP("details: Iron Skin (rivals)", gallery_draft(BOON_RIPOSTE, BOON_IRON_SKIN, BOON_BERSERKER, 1, false); gallery_details())
     STEP("details: Bloodthirst (its rival's effect)", gallery_draft(BOON_BLOODTHIRST, BOON_IRON_SKIN, BOON_RALLY, 0, false); gallery_details())
@@ -5858,7 +5854,7 @@ const char *tower_test_gallery(int k)
     STEP("details: Shade's Mercy (a duo held)", gallery_draft(BOON_SHADES_MERCY, BOON_STALWART, BOON_RALLY, 0, false); gallery_details())
     STEP("details: Stalwart (new)", gallery_draft(BOON_SHADES_MERCY, BOON_STALWART, BOON_RALLY, 1, false); gallery_details())
     STEP("details: a pact", gallery_draft(PACT_CARD(PB_WOUNDED, PC_EXPOSED), PACT_CARD(PB_LAST_BREATH, PC_WEAKNESS), PACT_CARD(PB_STAGGERED, PC_IMPAIRED), 0, false); gallery_details())
-    STEP("details: a minor blessing", gallery_draft(BOON_CRUSHING_BLOWS_PLUS, BOON_PHANTOM_STEP_PLUS, MINOR_CARD(PB_BULWARK), 2, false); gallery_details())
+    STEP("details: a minor blessing", gallery_draft(BOON_CRUSHING_BLOWS_PLUS, BOON_UNBROKEN_PLUS, MINOR_CARD(PB_BULWARK), 2, false); gallery_details())
     STEP("map: Elite Relentless Smouldering Shackled Sun, Starfall", gallery_map(NODE_ELITE, (1 << AFX_RELENTLESS) | (1 << AFX_SMOULDERING), TOWER_SHACKLED_SUN, false))
     STEP("map: the jailer, Swift Ironclad", gallery_map(NODE_FIGHT, (1 << AFX_SWIFT) | (1 << AFX_IRONCLAD), TOWER_FALLEN_KNIGHT, true))
     STEP("map: Blood Moon", s.night = NIGHT_BLOOD_MOON; gallery_map(NODE_SHOP, 0, 0, false))
@@ -5908,7 +5904,7 @@ const char *tower_test_gallery(int k)
     STEP("codex: Milestones, page 2", ui_panel_close(ui_details()); tower_codex_open(CX_MILESTONES); ui_details()->owner = UI_OWNER_TOWER; ui_details()->pg.page = (int8_t)(1 < ui_details()->pg.pages ? 1 : ui_details()->pg.pages - 1))
     STEP("shop: R on A level", s.shop.sel = SHOP_LEVEL; gallery_details())
     STEP("shop: a level's list", list_open(SCR_SHOP_LEVEL))
-    STEP("shop: a +'s list", s.stacks[BOON_RALLY] = 2; s.stacks[BOON_EMBER_EDGE] = 5; list_open(SCR_SHOP_PLUS))
+    STEP("shop: a +'s list", s.stacks[BOON_RALLY] = 3; s.stacks[BOON_EMBER_EDGE] = 5; list_open(SCR_SHOP_PLUS))
     STEP("shop: Release's list", list_open(SCR_SHOP_RELEASE); s.listSel = 0)
     STEP("shop: R on Release's duo", list_open(SCR_SHOP_RELEASE); s.listSel = 0; gallery_details())
     STEP("event 1", gallery_event(EV_ALTAR, false)) STEP("event 1 result", gallery_event(EV_ALTAR, true))

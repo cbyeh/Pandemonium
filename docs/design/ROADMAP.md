@@ -53,8 +53,8 @@ Until a skill is known the first card is a Learn card; after that a third of the
 
 | Boon | Family | Tier | Max Lv | Effect |
 |---|---|---|---|---|
-| Bloodthirst | Blood | Rare | 2 | sword hits (not skills or lightning) heal 12% a level of their base damage (before damage boons) |
-| Rally | Blood | Rare | 2 | hitting back wins back the health just lost, each hit an eighth of its base (a sword hit 0.5; Lv 2 a quarter, held 1.5 s; Rally+ three eighths) |
+| Bloodthirst | Blood | Rare | 3 | sword hits (not skills or lightning) heal 12% a level of their base damage (before damage boons); Lv 3 +8% (32%, the old Bloodthirst+) |
+| Rally | Blood | Rare | 3 | hitting back wins back the health just lost, each hit an eighth of its base a level (a sword hit 0.5; Lv 2 a quarter, held 1.5 s; Lv 3 three eighths, the old Rally+) |
 | Blood Pact | Blood | Legendary | 1 | +35% damage, potions -25% |
 | Last Stand | Blood | Rare | 2 | +40% damage a level below 30% health |
 | Hemorrhage (pack) | Blood | Common | 3 | the combo's 3rd hit bleeds 4 a level over 3 s (ticks every 0.5 s, a quarter of a hit's flash, no flinch, no healing) |
@@ -62,11 +62,11 @@ Until a skill is known the first card is a Learn card; after that a third of the
 | Red Thirst (pack) | Blood | Common | 3 | +10% damage a level per full 25% of health missing |
 | Berserker (pack, stage 6) | Blood | Legendary | 1 | below half health: a blow that doesn't knock you down doesn't flinch you or break a wind-up, each sword hit in a row +8% to +40% (a blow or 2 s ends it), no potions; Iron Skin's rival |
 | Storm Blade | Storm | Legendary | 1 | every 4th hit calls lightning (+6; was +12, best in every build) |
-| Static (pack) | Storm | Common | 4 | Storm Blade's bolt +1.5 a level; without it, every 8th hit a bolt of 6 (+1.5 a level above 1) (stage 6: was +3; the Storm build was +21% over the builds' mean, now +4%) |
-| Thunderclap (pack) | Storm | Rare | 1 | the combo's 3rd hit calls lightning (+6; stage 6: was +8) |
+| Static (pack) | Storm | Common | 5 | Storm Blade's bolt +1.5 a level; without it, every 8th hit a bolt of 6 (+1.5 a level above 1) (stage 6: was +3; the Storm build was +21% over the builds' mean, now +4%) |
+| Thunderclap (pack) | Storm | Rare | 2 | the combo's 3rd hit calls lightning (+6; stage 6: was +8); Lv 2 +50% (9, the old Thunderclap+) |
 | Conductor (pack) | Storm | Rare | 1 | lightning fills the stagger meter like a sword hit (offered once something calls lightning) |
 | Overcharge (pack) | Storm | Legendary | 1 | a stagger: the next 5 hits each call Storm Blade's bolt (6, +3 a Static level) |
-| Moon Mastery | Moon | Rare | 3 | skill cooldowns -20% a level (x0.8 each) |
+| Moon Mastery | Moon | Rare | 4 | skill cooldowns -20% a level to Lv 3 (x0.8 each); Lv 4 x0.42 in all (the old Moon Mastery+) |
 | Lunar Tide (pack) | Moon | Common | 3 | sword hits cut skill cooldowns 0.3 s a level |
 | Eclipse (pack) | Moon | Rare | 1 | a skill's hit on a staggered boss +50% |
 | Waxing Moon (pack) | Moon | Rare | 1 | a skill cast: sword hits +15% for 4 s |
@@ -74,11 +74,11 @@ Until a skill is known the first card is a Learn card; after that a third of the
 | Vigor | Iron | Common | 5 | +25 max health |
 | Unbroken | Iron | Legendary | 1 | survive one killing blow a floor |
 | Crushing Blows | Iron | Rare | 1 | a staggered boss stays down 50% longer |
-| Executioner | Iron | Legendary | 1 | staggered bosses take +60% |
+| Executioner | Iron | Legendary | 2 | staggered bosses take +60% (Lv 2 +90%, the old Executioner+) |
 | Heavy Hand (pack) | Iron | Common | 3 | the combo's 3rd hit fills the stagger meter 20% more a level |
 | Stalwart (pack) | Iron | Rare | 1 | blows over 20% of max health (after damage taken) deal 25% less |
-| Phantom Step | Shadow | Rare | 1 | easier perfect dodges (0.28 s window), each heals 2% |
-| Riposte | Shadow | Rare | 1 | +50% damage for 2.5 s after a perfect dodge |
+| Phantom Step | Shadow | Rare | 2 | easier perfect dodges (0.28 s window; Lv 2 0.31 s, the old Phantom Step+), each heals 2% |
+| Riposte | Shadow | Rare | 2 | +50% damage for 2.5 s after a perfect dodge (Lv 2 4 s, the old Riposte+) |
 | Fleetfoot | Shadow | Rare | 1 | rolls cost 40% less stamina |
 | Second Wind | Shadow | Common | 3 | +40% stamina regen a level; the 2.5 s wait after the bar empties is cut the same way |
 | Shadow Edge (pack) | Shadow | Common | 4 | +8% damage a level for 2 s after any roll |
@@ -109,12 +109,12 @@ Not built yet: Hearth's pack (Quick Draught needs a drinking time, which potions
 
 **Rivals, "+" and duos** (tower-rogue stage 2):
 - **Rivals:** taking one locks the other out for the run (never offered after, never on one draft together): Riposte / Iron Skin, Blood Pact / Kindled Flask, Storm Blade / Executioner, Last Stand / Vigor, Bloodthirst / Moon Mastery, Vanish / Unbroken, Berserker / Iron Skin (stage 6: Iron Skin locks out both). The card names the rival ("Locks out"); Build lists the locked ones, greyed.
-- **"+"** (Rare, no slot, offered once its boon is at its max; Build shows "Lv 5/5+"): Ember Edge+ finishers +25%; Iron Skin+ the first blow a floor deals half; Storm Blade+ every 3rd hit; Executioner+ +90%; Crushing Blows+ no stagger drain for 3 s after the boss rises; Riposte+ 4 s; Unbroken+ heals 20% when it saves you; Bloodthirst+ 16% a level; Rally+ each hit wins back 1.5x its base (6 a sword hit); Phantom Step+ 0.31 s window; Static+ Storm Blade's and Static's bolts +50%; Thunderclap+ its bolt +50% (9); Moon Mastery+ -25% a level. Second Wind+ is held back (a potion is drunk at once).
+- **"+"** (Rare, no slot, offered once its boon is at its max; Build shows "Lv 5/5+"): only the five that add an effect: Ember Edge+ finishers +25%; Iron Skin+ the first blow a floor deals half; Storm Blade+ every 3rd hit; Crushing Blows+ no stagger drain for 3 s after the boss rises; Unbroken+ heals 20% when it saves you. Second Wind+ is held back (a potion is drunk at once). 2026-11-05 (the user's call): the eight that only raised numbers are their boon's last level now, worth the same (Executioner Lv 2 +90%, Riposte Lv 2 4 s, Bloodthirst Lv 3 32%, Rally Lv 3 three eighths, Phantom Step Lv 2 0.31 s, Static Lv 5 bolts +50%, Thunderclap Lv 2 9, Moon Mastery Lv 4 x0.42); a duo needs that level.
 - **Duos** (Legendary): offered once a maxed boon of each of its two families is slotted and both families' packs are bought (Hearth has none yet: open). Taking one merges those two (the first maxed of each family) into one slot, both still at their max, and opens the other slot; Build shows the duo and its two boons.
 
 | Duo | Families | Effect |
 |---|---|---|
-| Crimson Storm | Blood + Storm | lightning heals half a sword hit's Bloodthirst rate of its damage (0.72 a bolt of 6 at Lv 2); no Bloodthirst: lightning +25% |
+| Crimson Storm | Blood + Storm | lightning heals half a sword hit's Bloodthirst rate of its damage (0.96 a bolt of 6 at Lv 3); no Bloodthirst: lightning +25% |
 | Thunderstep | Storm + Shadow | a perfect dodge calls two of Storm Blade's bolts (6, +3 a Static level), 0.3 s apart |
 | Blood Moon Rite | Blood + Moon | a skill cast costs 3% of max health (never the last 1), skill hits +40% |
 | Iron Tide | Iron + Moon | a stagger resets every skill cooldown |
