@@ -2162,6 +2162,12 @@ static void hits_after_rig(Boss *b, float dt)
         // (the user's call: what strikes hurts; under 20 taken: character_apply_damage's knockdown)
         float g = 1e9f;
         for (int k = 0; k < 2; k++) g = fminf(g, fminf(axis_dist_seg(s.shoulder[k], s.foot[k]) - 6.0f, axis_dist_pt(s.foot[k]) - 7.0f));
+#if defined(HLE_SHOW_HURTBOX) && !defined(HLE_STRIKES_OFF)
+        { extern void hle_strike_vol(const float *, const float *, float); for (int k = 0; k < 2; k++) { hle_strike_vol(s.shoulder[k], s.foot[k], 6.0f); hle_strike_vol(s.foot[k], s.foot[k], 7.0f); } }     // test aid: the forefeet while they can hit
+#endif
+#ifdef HLE_STRIKES_OFF
+        g = 1e9f;
+#endif
 #ifdef HLE_TOUCH_UNDER     // test aid: the player set where the first forefoot comes down, as it does
         if (s.t < 0.02f) { character.pos[0] = s.foot[0][0]; character.pos[2] = s.foot[0][2]; }
 #endif

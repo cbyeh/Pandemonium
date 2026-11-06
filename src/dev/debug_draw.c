@@ -314,6 +314,14 @@ void debug_draw_capsule_vs_aabb_list(
 #include "game/boss/boss.h"
 #include "camera_controller.h"
 int hle_hb_frame;     // the autoplay frame, shown as a barcode (bottom left) to match shots to logs
+// Test aid: the bosses' strikes live this frame (they can hit now), set by the moves, drawn cyan and cleared
+static float s_sva[8][3], s_svb[8][3], s_svr[8]; static int s_svn;
+void hle_strike_vol(const float a[3], const float b[3], float r)
+{
+    if (s_svn >= 8) return;
+    for (int m = 0; m < 3; m++) { s_sva[s_svn][m] = a[m]; s_svb[s_svn][m] = b[m]; } s_svr[s_svn++] = r;
+    static int last = -1; if (hle_hb_frame != last) { last = hle_hb_frame; debugf("[strikevol] f%d\n", hle_hb_frame); }
+}
 // to the screen, unless it is behind or right at the camera (there the projection wraps round)
 static bool hb_proj(T3DViewport *vp, const float w[3], T3DVec3 *out)
 {
@@ -511,6 +519,8 @@ void hle_hurtbox_draw(T3DViewport *vp)
 #ifdef HLE_HB_PROPOSALS
 player:
 #endif
+    for (int i = 0; i < s_svn; i++) { T3DVec3 p0 = {{ s_sva[i][0], s_sva[i][1], s_sva[i][2] }}, p1 = {{ s_svb[i][0], s_svb[i][1], s_svb[i][2] }}; hb_capsule(vp, &p0, &p1, s_svr[i], RGBA32(40, 230, 255, 255), false); }
+    s_svn = 0;
     const CapsuleCollider *c = &character.capsuleCollider;
     T3DVec3 a = {{ character.pos[0] + c->localCapA.v[0], character.pos[1] + c->localCapA.v[1], character.pos[2] + c->localCapA.v[2] }};
     T3DVec3 b = {{ character.pos[0] + c->localCapB.v[0], character.pos[1] + c->localCapB.v[1], character.pos[2] + c->localCapB.v[2] }};

@@ -502,12 +502,17 @@ static void dive_update(Boss *b, float dt)
             // call: what strikes hurts; under 20 taken: character_apply_damage's knockdown); the landing's own below
             float pa[3], pb[3];
             for (int m = 0; m < 3; m++) { pa[m] = character.pos[m] + character.capsuleCollider.localCapA.v[m]; pb[m] = character.pos[m] + character.capsuleCollider.localCapB.v[m]; }
+#ifndef HLE_STRIKES_OFF
+#ifdef HLE_SHOW_HURTBOX
+            if (!s.hitDone) { extern void hle_strike_vol(const float *, const float *, float); hle_strike_vol(was, b->pos, SUN_R); }     // test aid: the body while it can hit
+#endif
             if (!s.hitDone && scu_capsule_vs_capsule_f(was, b->pos, SUN_R, pa, pb, character.capsuleCollider.radius)) {
                 s.hitDone = true; character_apply_damage(hurt(5.0f / 1.55f));      // 5 taken (6 unshackled; boss_damage_scale 1.55), as the Fallen Warrior's grazes
 #ifdef HLE_TEST_DUMMY
                 debugf("[touch] sun dive body\n");
 #endif
             }
+#endif
         }
         if (b->pos[1] <= s.groundY + REST_H) {
             b->pos[1] = s.groundY + REST_H;

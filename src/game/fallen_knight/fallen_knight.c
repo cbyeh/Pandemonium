@@ -599,6 +599,9 @@ static void melee_check(Boss *b, float t0, float t1, float damage)
     if (s.hitDone) return;
     float base[3], tip[3];
     if (!sword_segment(base, tip)) return;
+#ifdef HLE_SHOW_HURTBOX
+    { extern void hle_strike_vol(const float *, const float *, float); hle_strike_vol(base, tip, 2.0f); }     // test aid: the blade while it can hit
+#endif
     const float *p = character.pos;
     const T3DVec3 *a = &character.capsuleCollider.localCapA, *c = &character.capsuleCollider.localCapB;
     float pa[3] = { p[0] + a->v[0], p[1] + a->v[1], p[2] + a->v[2] };
@@ -645,6 +648,9 @@ static void melee_check(Boss *b, float t0, float t1, float damage)
 #endif
 static void blade_graze(Boss *b, float t0, float t1)
 {
+#ifdef HLE_STRIKES_OFF     // test aid: as before the grazes (the before shots)
+    (void)b; (void)t0; (void)t1; return;
+#endif
     bool hd = s.hitDone, st = s.striking;
     s.hitDone = s.grazed;
     melee_check(b, t0, t1, FK_FELT(FK_GRAZE));
