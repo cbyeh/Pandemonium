@@ -4752,9 +4752,9 @@ static int walk_circle(bool drafts)
         test_press('B');
         MCHECK(tower_take_pause_request() && s.scr == SCR_MAP && s.map.row == row0, "the map's B: the pause menu, nothing entered");
         test_press('r');
-        MCHECK(ui_details()->open && !ui_details()->confirm && s.map.row == row0, "the map's R: the node's Details");
+        MCHECK(ui_details()->open && !ui_details()->confirm && s.map.row == row0, "the map's Z: the node's Details");
         test_press('r');
-        MCHECK(!ui_details()->open && s.scr == SCR_MAP, "R again closes them");
+        MCHECK(!ui_details()->open && s.scr == SCR_MAP, "Z again closes them");
         test_press('A');
         MCHECK(s.scr == SCR_CONFIRM && ui_details()->open && ui_details()->confirm && ui_details()->pg.pages == 1 && s.map.row == row0,
                "A: the node's page (one page: %d), not entered", ui_details()->pg.pages);

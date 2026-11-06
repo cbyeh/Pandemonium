@@ -85,7 +85,7 @@ static bool lastLeftPressed = false;
 static bool lastRightPressed = false;
 static bool lastAPressed = false;
 static bool lastBPressed = false;
-static bool lastRPressed = false;      // R: Details (no layout moves it)
+static bool lastRPressed = false;      // Z: Details (no layout moves it)
 static bool lastStickUp = false;
 static bool lastStickDown = false;
 static bool lastStickLeft = false;
@@ -482,8 +482,8 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
     lastStickUp = stickUp; lastStickDown = stickDown; lastStickLeft = stickLeft; lastStickRight = stickRight;
     bool aJustPressed = aPressed && !lastAPressed;
     bool bJustPressed = bPressed && !lastBPressed;
-    bool rJustPressed = btn.r && !lastRPressed;
-    lastRPressed = btn.r;
+    bool rJustPressed = btn.z && !lastRPressed;
+    lastRPressed = btn.z;
 
     lastUpPressed = upPressed;
     lastDownPressed = downPressed;
@@ -1594,7 +1594,7 @@ void menu_controller_toggle(void)
     if (menuActive) {
         joypad_rumble_stop();
         // the press that opened it (Start, or B on the Tower's map) isn't a press in it
-        lastAPressed = btn.a; lastBPressed = btn.b; lastRPressed = btn.r;
+        lastAPressed = btn.a; lastBPressed = btn.b; lastRPressed = btn.z;
         lastUpPressed = btn.d_up; lastDownPressed = btn.d_down; lastLeftPressed = btn.d_left; lastRightPressed = btn.d_right;
 
         GameState state = scene_get_game_state();

@@ -80,18 +80,18 @@ void ui_row(int x, int w, int y, bool on, const char *label);   // a centred row
 //   Shop) take the screen's size; their cards and buttons the same black. Its title: uppercase, white, centred on its first row, UI_EVEN under the box's top (a pager's
 //   corners on that row too). Rows: a list's cursor is ui_select_box; a row of buttons (Enter | Back, the Shop's,
 //   Skip) is ui_button. Colours: white, grey (can't be chosen, or a hint), gold (owned, money, set), red
-//   (why not), the families' own. The footer: the box's last row (UI_FOOT_DY over its bottom), "Details (R)"
+//   (why not), the families' own. The footer: the box's last row (UI_FOOT_DY over its bottom), "Details (Z)"
 //   right-aligned in grey only where A takes, buys or enters something and R has more to read (the draft's cards, the
 //   map's nodes, the Shop, a Rest's, Temper's, Release's and an Event's rows); a row's line of help over it, centred grey.
 //   Input: D-pad and stick move, A takes the row, B goes back a level (the Tower's draft ignores B: it's the
 //   sword in the Classic layout), every screen has a Back row (or Leave, Keep them all, Continue, Resume) A alone
 //   reaches. Paged screens (Stats/Build, the Codex, a Details panel, the long lists): Left/Right turn the pages and
 //   never move a cursor sideways, B is Back, A opens or takes the row (a Codex topic, a Build row's Details), no R and
-//   no "(R)" in them. A Details panel closes with B (or R, or A on its Back row). Lists whose Left/Right change a value
+//   no "(Z)" in them. A Details panel closes with B (or Z, or A on its Back row). Lists whose Left/Right change a value
 //   (Audio's volumes, Controls) aren't paged. Every purchase (Embers or gold) opens a confirm first (ui_confirm_open:
 //   "Buy <name> for <price> Embers?", its effect, Buy / Back with Back under the cursor; B cancels); a refund (an
 //   Offering taken back), equipping an owned relic and a free row take effect at once; too little money shows its red
-//   refusal and no confirm. No button letters in any prompt: "Enter", "Back", "Close", "Continue" ("Details (R)").
+//   refusal and no confirm. No button letters in any prompt: "Enter", "Back", "Close", "Continue" ("Details (Z)").
 #define UI_TITLE_DY 16
 #define UI_SHADE    180     // the menus' black (its alpha), everywhere
 #define UI_FOOT_DY  6
@@ -123,11 +123,11 @@ void ui_frame(int x0, int y0, int x1, int y1, int t);     // a frame t px wide i
 void ui_select_box(int x0, int y0, int x1, int y1);
 // a framed button (gold when it's under the cursor, grey text when it can't be taken); y its top, h its height
 void ui_button(int x, int y, int w, int h, bool on, bool ok, const char *label);
-// a small grey hint ("Details (R)") ending at x (right-aligned), y its baseline
+// a small grey hint ("Details (Z)") ending at x (right-aligned), y its baseline
 void ui_hint(int xRight, int y, const char *s);
-#define UI_DETAILS_HINT "Details (R)"
+#define UI_DETAILS_HINT "Details (Z)"
 #ifdef HLE_AUTOPLAY
-extern int ui_test_r_drawn;             // test aid: strings drawn with "(R)" in them (none in a paged screen)
+extern int ui_test_z_drawn;             // test aid: strings drawn with "(Z)" in them (none in a paged screen)
 #endif
 
 typedef struct {

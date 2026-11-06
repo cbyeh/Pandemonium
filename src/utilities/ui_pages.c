@@ -13,7 +13,7 @@
 
 static bool s_measuring, s_foot;
 #ifdef HLE_AUTOPLAY
-int ui_test_r_drawn;
+int ui_test_z_drawn;
 #endif
 static UiRect s_trk[2]; static bool s_trkAny[2];
 static UiRect s_lastBox;
@@ -63,7 +63,7 @@ rdpq_textmetrics_t ui_textf(const rdpq_textparms_t *parms, uint8_t font, float x
     if (n > (int)sizeof buf - 1) n = sizeof buf - 1;
     int len = n;
 #ifdef HLE_AUTOPLAY
-    if (!s_measuring && strstr(buf, "(R)")) ui_test_r_drawn++;     // (the paged menus' self-check: no "(R)" in them)
+    if (!s_measuring && strstr(buf, "(Z)")) ui_test_z_drawn++;     // (the paged menus' self-check: no "(Z)" in them)
 #endif
     rdpq_paragraph_t *p = rdpq_paragraph_build(parms, font, buf, &len);     // (on the heap: a word cut with an ellipsis can't overrun it)
     ui_track((int)(x + p->bbox.x0), (int)(y + p->bbox.y0), (int)(x + p->bbox.x1 + 0.99f), (int)(y + p->bbox.y1 + 0.99f));

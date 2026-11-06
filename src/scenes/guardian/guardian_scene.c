@@ -1450,7 +1450,7 @@ static void scene_tower_draft_update(void)
 {
     bool l = btn.d_left || joypad.stick_x < -40, r = btn.d_right || joypad.stick_x > 40, a = btn.a;
     bool u = btn.d_up || joypad.stick_y > 40, d = btn.d_down || joypad.stick_y < -40;
-    bool b = btn.b, rr = btn.r;     // (B back a level, R Details; the menus' buttons are the same in every layout)
+    bool b = btn.b, rr = btn.z;     // (B back a level, Z Details; the menus' buttons are the same in every layout)
     bool fight = tower_between_update(l && !s_towerLastL, r && !s_towerLastR, u && !s_towerLastU, d && !s_towerLastD, a && !s_towerLastA, b && !s_towerLastB, rr && !s_towerLastRB);
     s_towerLastL = l; s_towerLastR = r; s_towerLastA = a; s_towerLastU = u; s_towerLastD = d; s_towerLastB = b; s_towerLastRB = rr;
     if (tower_take_pause_request()) { menu_controller_open_pause(MENU_MAIN_RUN); return; }     // the map's B: the pause menu, on Stats
