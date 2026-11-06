@@ -493,10 +493,22 @@ static void dive_update(Boss *b, float dt)
         if (s.t >= 1.1f) { s.diveTarget[0] = character.pos[0]; s.diveTarget[1] = character.pos[2]; s.step = 1; s.t = 0.0f;
                            skill_fx_spawn_burst_warn((float[3]){ s.diveTarget[0], s.groundY, s.diveTarget[1] }, 0.0f); }
     } else if (s.step == 1) {
-        if (s.t >= 0.35f) { s.step = 2; s.t = 0.0f; rushCh = sfx(SCENE1_SFX_SUN_RUSH, 1.0f); }    // the drop
+        if (s.t >= 0.35f) { s.step = 2; s.t = 0.0f; s.hitDone = false; rushCh = sfx(SCENE1_SFX_SUN_RUSH, 1.0f); }    // the drop
     } else {
+        float was[3] = { b->pos[0], b->pos[1], b->pos[2] };
         move_toward(b, s.diveTarget[0], s.diveTarget[1], 200.0f, dt);
         b->pos[1] -= 260.0f * dt;
+        {   // the falling sun itself, over the frame's path: a light blow, a flinch, no knockdown (the user's
+            // call: what strikes hurts; under 20 taken: character_apply_damage's knockdown); the landing's own below
+            float pa[3], pb[3];
+            for (int m = 0; m < 3; m++) { pa[m] = character.pos[m] + character.capsuleCollider.localCapA.v[m]; pb[m] = character.pos[m] + character.capsuleCollider.localCapB.v[m]; }
+            if (!s.hitDone && scu_capsule_vs_capsule_f(was, b->pos, SUN_R, pa, pb, character.capsuleCollider.radius)) {
+                s.hitDone = true; character_apply_damage(hurt(5.0f / 1.55f));      // 5 taken (6 unshackled; boss_damage_scale 1.55), as the Fallen Warrior's grazes
+#ifdef HLE_TEST_DUMMY
+                debugf("[touch] sun dive body\n");
+#endif
+            }
+        }
         if (b->pos[1] <= s.groundY + REST_H) {
             b->pos[1] = s.groundY + REST_H;
             float dx, dz;

@@ -99,6 +99,7 @@ static struct {
     float t;                // time in state
     int step;               // events fired in the state / combo index
     bool hitDone;           // the current swing already connected
+    bool grazed;            // the current swing's blade already grazed the player (blade_graze)
     bool striking;          // inside a swing's damage window this frame
     float groundY, velY;
     float moveX, moveZ;     // roll / jump drift
@@ -449,6 +450,7 @@ static void enter(FkState st)
     if (st == FK_CHASE) s.pickJit = ((int)(rand_custom_u32() % 41) - 20) * 0.01f;
     s.step = 0;
     s.hitDone = false;
+    s.grazed = false;
     s.windK = 0.0f;
     s.holdT = 0.0f;
 #ifdef HLE_FK_LOG   // test aid: each move as it starts
@@ -633,6 +635,23 @@ static void melee_check(Boss *b, float t0, float t1, float damage)
 #ifdef HLE_TEST_DUMMY
     debugf("[fk] hit by clip %d at %.2f s\n", s.anim, (double)clip);
 #endif
+}
+
+// A swing whose blow is an effect (blades, crescents, beams, a triangle, fire) still hurts where
+// its drawn blade touches, a little, once a swing (the user's call: every swing hits); its own flag,
+// so the move's effects and the stagger meter's mid-strike keep as they were
+#ifndef FK_GRAZE
+#define FK_GRAZE 5.0f       // taken (token: ~+3 points of the fight's cost on the dummy; 10 was ~+5)
+#endif
+static void blade_graze(Boss *b, float t0, float t1)
+{
+    bool hd = s.hitDone, st = s.striking;
+    s.hitDone = s.grazed;
+    melee_check(b, t0, t1, FK_FELT(FK_GRAZE));
+#ifdef HLE_TEST_DUMMY
+    if (s.hitDone && !s.grazed) debugf("[graze] st %d step %d clip %d\n", s.state, s.step, s.anim);
+#endif
+    s.grazed = s.hitDone; s.hitDone = hd; s.striking = st;
 }
 
 static bool clip_done(void)
@@ -1365,6 +1384,7 @@ static void cleave_update(Boss *b, float dt)
         }
     }
     if (s.t >= RELEASE - 0.06f && s.t - dt < RELEASE - 0.06f) swing_sfx();     // peaking as it rips up
+    if (s.anim == FKA_CLEAVE) blade_graze(b, 0.8f, 1.1f);      // the rip up out of the floor
     if (s.step < 5 && s.t >= RELEASE + s.step * GAP) {
         float o[3], dx, dz;
         cleave_point(b, s.step, o, &dx, &dz);
@@ -1407,6 +1427,7 @@ static void halfmoon_update(Boss *b, float dt)
 static void beam_swing(int k)
 {
     play(k ? FKA_ATTACK2 : FKA_ATTACK1, true);
+    s.grazed = false;
     t3d_anim_set_time(&s.anims[s.anim], WIN[k][0] - 0.05f);
     t3d_anim_set_speed(&s.anims[s.anim], 1.2f);
 }
@@ -1423,6 +1444,7 @@ static void moonblade_update(Boss *b, float dt)
     if (s.velY < -60.0f) s.velY = -60.0f;
     b->pos[1] += s.velY * dt;
     face_player(b, dt, 6.0f);
+    if (s.anim == FKA_ATTACK1 || s.anim == FKA_ATTACK2) { int k = s.anim == FKA_ATTACK2; blade_graze(b, WIN[k][0], WIN[k][1]); }    // its cuts (high in the air: rarely within reach)
     // the crosses come slower and further apart than the player's own: readable, dodgeable
     if (s.step >= 1 && s.step <= 5 && s.t >= 0.55f + (s.step - 1) * 0.55f) {
         float o[3] = { b->pos[0], b->pos[1] + 20.0f, b->pos[2] };
@@ -1481,6 +1503,7 @@ static void splitter_update(Boss *b, float dt)
     float clip = clip_time();
     swing_pace(0.0f, w[0], 0.55f);
     if (clip < w[0] && swing_tracks(0.35f)) face_player(b, dt, 3.0f);     // then the aim holds (early: it flies): sidestep it
+    blade_graze(b, w[0], w[1]);
     if (!s.hitDone && clip >= w[0]) {
         s.hitDone = true;
         float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
@@ -1490,7 +1513,7 @@ static void splitter_update(Boss *b, float dt)
         screen_shake_set_shake_mag(3.0f);
     }
     if (s.hitDone && (clip >= w[1] || clip_done())) {
-        if (s.step < 3) { s.step++; s.hitDone = false; play(clips[s.step - 1], true); }
+        if (s.step < 3) { s.step++; s.hitDone = false; s.grazed = false; play(clips[s.step - 1], true); }
         else recover(FK_QUICK_REC, false);
     }
 }
@@ -1534,6 +1557,7 @@ static void trislam_update(Boss *b, float dt)
         // stone as it raises the blade and held a moment longer
         face_player(b, dt, 3.0f);
         swing_pace(DN_FROM, W_DN[0], 1.0f);
+        blade_graze(b, W_DN[0], W_DN[1]);       // the slam itself, where the blade comes down
         if (s.t <= dt) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);
         { static float was; if (clip >= 1.95f && was < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.9f); was = clip; }     // its onset on the bite (clip - dt missed it when the clip ran fast)
         if (clip >= 2.02f) {    // the blade meets the floor: mark the triangle where the player stands
@@ -1602,6 +1626,7 @@ static void holyslam_update(Boss *b, float dt)
             if (s.t >= 1.0f) { play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], W_DN[0] - 0.08f); s.blendT = s.blendDur = 0.1f; s.windK = 1.0f; }
         } else swing_pace(DN_FROM, W_DN[0], 1.5f);
         if (!s.hitDone && clip >= W_DN[0] - 0.08f) s.hitDone = true;    // as it comes down
+        if (s.anim == FKA_CHARGED) blade_graze(b, W_DN[0] - 0.08f, W_DN[1]);     // the slam itself, where the blade comes down
         if (clip >= 2.02f) {
             float o[3] = { b->pos[0], s.groundY + 4.0f, b->pos[2] };
             skill_fx_spawn_fire_spread_hostile(o, 105.0f, FK_FELT(45.0f));     // fire in bursts out from the blow (the user's call: was two crimson half rings and a pillar)

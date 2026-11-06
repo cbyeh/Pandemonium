@@ -2157,6 +2157,20 @@ static void hits_after_rig(Boss *b, float dt)
         HB_TOUCH(HB_CHARGE, body_gap() - 8.0f);
         dragon_boss_rush_hit(b);
     } else tailPrevOk = false;
+    if (s.state == DG_CONE && s.step == 1 && s.t < 0.25f && !s.hitDone) {
+        // the cone's forefeet coming down out of its rear, as drawn: a light blow, a flinch, no knockdown
+        // (the user's call: what strikes hurts; under 20 taken: character_apply_damage's knockdown)
+        float g = 1e9f;
+        for (int k = 0; k < 2; k++) g = fminf(g, fminf(axis_dist_seg(s.shoulder[k], s.foot[k]) - 6.0f, axis_dist_pt(s.foot[k]) - 7.0f));
+#ifdef HLE_TOUCH_UNDER     // test aid: the player set where the first forefoot comes down, as it does
+        if (s.t < 0.02f) { character.pos[0] = s.foot[0][0]; character.pos[2] = s.foot[0][2]; }
+#endif
+        if (g < PLAYER_R) { s.hitDone = true; HB_HIT(HB_LAND, g - 8.0f); character_apply_damage(5.0f / 1.5f);      // 5 taken, as the Fallen Warrior's grazes (boss_damage_scale 1.5)
+#ifdef HLE_TEST_DUMMY
+            debugf("[touch] cone forefeet\n");
+#endif
+        }
+    }
     if (s.cone.on) {
         s.cone.t += dt;
         if (s.cone.t < CONE_GROW + CONE_HOLD) {
