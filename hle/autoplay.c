@@ -301,6 +301,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_SHOW_HURTBOX
     { extern int hle_hb_frame; hle_hb_frame = frame; }
 #endif
+#ifdef HLE_TEXT_CHECK_SELFTEST
+    { extern void hle_textcheck_selftest(void); if (frame == 100) hle_textcheck_selftest(); }
+#endif
+#ifdef HLE_TEXT_CHECK     // every 600 frames: the bad strings so far (0: none)
+    { extern int hle_textcheck_bad; if (frame % 600 == 0) debugf("[textcheck] %d bad so far (frame %d)\n", hle_textcheck_bad, frame); }
+#endif
 #ifdef HLE_TEST_DIRTY_HEAP  // test aid: freed heap left full of garbage (finds memory used before it is set)
     if (frame == 400 || frame == 900) {
         void *p[64]; int n = 0;

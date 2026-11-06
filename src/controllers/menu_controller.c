@@ -1066,6 +1066,9 @@ static void row_fit(int x, int w, int y, const char *label)
 // a list row with its 12 px icon at its left (the Tower's lists: tower_list_icon by the name icon; NULL none), its text after it
 static void menu_row_icon(UiRect r, int y, bool sel, int style, const char *left, const char *right, const char *icon)
 {
+#ifdef HLE_TEXT_CHECK     // test aid: a menu row never blank (the Heat row's was, 2026-11-06)
+    if (!left || !left[0]) { extern int hle_textcheck_bad; if (hle_textcheck_bad++ < 20) debugf("[textcheck] BAD: an empty menu row (menu %d, y %d)\n", currentMenu, y); }
+#endif
     int x = MB_X(r), w = MB_W(r);
     if (sel) ui_select_box(x - 4, y - 12, x + w + 4, y + 4);
     if (icon && !ui_measuring()) tower_list_icon(icon, x, y - 10);     // (2 px clear of the box above and below)
@@ -1076,6 +1079,9 @@ static void menu_row_icon(UiRect r, int y, bool sel, int style, const char *left
 // a list's row: centred (right NULL), or a name left and its state right; y its baseline
 static void menu_row(UiRect r, int y, bool sel, int style, const char *left, const char *right)
 {
+#ifdef HLE_TEXT_CHECK     // test aid: a menu row never blank (the Heat row's was, 2026-11-06)
+    if (!left || !left[0]) { extern int hle_textcheck_bad; if (hle_textcheck_bad++ < 20) debugf("[textcheck] BAD: an empty menu row (menu %d, y %d)\n", currentMenu, y); }
+#endif
     int x = MB_X(r), w = MB_W(r);
     if (!right) {
         row_fit(x, w, y, left);
