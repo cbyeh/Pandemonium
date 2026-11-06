@@ -1604,8 +1604,7 @@ static void holyslam_update(Boss *b, float dt)
         if (!s.hitDone && clip >= W_DN[0] - 0.08f) s.hitDone = true;    // as it comes down
         if (clip >= 2.02f) {
             float o[3] = { b->pos[0], s.groundY + 4.0f, b->pos[2] };
-            skill_fx_spawn_arc_hostile(o, b->rot[1], 105.0f, FK_FELT(45.0f));
-            skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 105.0f, FK_FELT(45.0f));
+            skill_fx_spawn_fire_ring_hostile(o, 105.0f, FK_FELT(45.0f));     // a ring of fire rolling out (the user's call, was two crimson half rings)
             skill_fx_spawn_pillar_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
             {   // where the blade bites
                 float base[3], tip[3], cx = b->pos[0] - fm_sinf(b->rot[1]) * 22.0f, cz = b->pos[2] + fm_cosf(b->rot[1]) * 22.0f;
@@ -1697,7 +1696,7 @@ static void plunge_update(Boss *b, float dt)
 {
     // Leaping plunge: AttackCharged's crouch (the sword drawn back low), a leap at where the player
     // stood as it left (the aim held: step aside), the sword raised overhead at the top, then
-    // driven down as it lands: a ring of force where it bites, and a moment wrenching it free
+    // driven down as it lands: the floor cracks where it bites, and a moment wrenching it free
     const float CROUCH = 0.7f, VY = 95.0f, G = 190.0f, FLIGHT = 2.0f * VY / G, DOWN = 0.16f;
     float clip = clip_time();
     if (s.step == 0) {
@@ -1732,9 +1731,6 @@ static void plunge_update(Boss *b, float dt)
             if (sword_segment(base, tip)) { o[0] = tip[0]; o[2] = tip[2]; }     // where the blade bites
             boss_ground_crush_spawn_varied(o[0], s.groundY + 0.25f, o[2], FK_CRACK, b->rot[1]);
             floor_fire_slam(o[0], s.groundY, o[2], 9.0f);
-            float dmg = s.hitDone ? 0.0f : 10.0f;       // the blade itself already struck: the ring doesn't again
-            skill_fx_spawn_arc_hostile(o, b->rot[1], 20.0f, dmg);
-            skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 20.0f, dmg);
             screen_shake_set_shake_mag(10.0f);
             sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);
             s.step = 2; s.t = 0.0f;

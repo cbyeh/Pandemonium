@@ -44,6 +44,7 @@ typedef struct {
     bool  pillarOnEnd;
     bool  hostile;          // hits the player (Fallen Knight) instead of the boss
     bool  warn;             // a hostile burst marking where a hit will land: drawn red
+    bool  fire;             // an arc drawn as a ring of flames (the Holy Slam's blast)
     float scale;            // a wave's size (hit and drawn), 1 by default
     float delay;            // charging where it was spawned: still, harmless and growing until then
     float homing;           // turn rate toward the player (an orb), 0 once it has committed
@@ -54,6 +55,7 @@ typedef struct {
 
 static bool s_spawnHostile;     // palette/target for effects spawned now
 static bool s_spawnWarn;        // a warning burst (skill_fx_spawn_burst_warn)
+static bool s_spawnFire;        // a ring of flames (skill_fx_spawn_fire_ring_hostile)
 static float s_spawnRoll;       // a crescent's tilt, for waves spawned now
 static float s_spawnPoise = -1.0f;   // for the next spawn only (skill_fx_next_poise)
 static float s_spawnScale = 1.0f, s_spawnDelay, s_spawnHoming;     // for the next spawn only (skill_fx_next_shape)
@@ -87,6 +89,7 @@ static SkillFx* fx_alloc(FxType type)
             s_fx[i].type = type;
             s_fx[i].hostile = s_spawnHostile;
             s_fx[i].warn = s_spawnWarn;
+            s_fx[i].fire = s_spawnFire;
 #ifdef HLE_LOG_HITGAP
             { extern int hle_hg_boss_state(void); s_fx[i].hgSt = (int8_t)hle_hg_boss_state(); }
 #endif
@@ -227,6 +230,14 @@ void skill_fx_spawn_arc_hostile(const float pos[3], float yaw, float radius, flo
     s_spawnHostile = true;
     skill_fx_spawn_arc(pos, yaw, radius, damage);
     s_spawnHostile = false;
+}
+
+void skill_fx_spawn_fire_ring_hostile(const float pos[3], float radius, float damage)
+{
+    s_spawnFire = true;
+    s_spawnHalf = T3D_PI;       // all the way round: one hit wherever the player is in it
+    skill_fx_spawn_arc_hostile(pos, 0.0f, radius, damage);
+    s_spawnFire = false;
 }
 
 void skill_fx_spawn_wave_hostile(SkillWaveShape shape, const float pos[3], const float vel[3],
@@ -1051,6 +1062,42 @@ static void draw_fire_trail(void)
     s_drawHostile = hostile;
 }
 
+/** The Holy Slam's blast as fire: spreading from the middle, rings of flame tongues out to its
+ *  front (the fire trail's colours and flicker), the inner ones lower, embers on the floor between
+ *  them; fading as the arc does */
+static void draw_fire_ring(const SkillFx *f)
+{
+    enum { N = 48, RINGS = 3, CHUNK = 33 };    // vertices round the front: tongue, trough, ... (build_ribbon takes up to 34)
+    static float top[N + 1][3], base[N + 1][3], in[N + 1][3];
+    static uint32_t ct[N + 1], cb[N + 1], ci[N + 1];
+    bool hostile = s_drawHostile;
+    s_drawHostile = false;      // fire's own colours
+    float R0 = arc_radius(f), a = fade(f, 0.0f, 0.4f), y = f->pos[1] - 3.7f;     // (spawned 4 over the floor, as the arcs)
+    float H0 = 14.0f * (1.0f - 0.5f * fminf(1.0f, f->age / f->life));
+    for (int r = 0; r < RINGS; r++) {
+        float k = 1.0f - (float)r / RINGS, R = R0 * k, Ri = R0 * (k - 1.0f / RINGS), H = H0 * (0.5f + 0.5f * k);
+        int n = (int)(N * k) & ~1;      // fewer tongues on the smaller rings, as far apart (even: tongue, trough)
+        if (n < 8) n = 8;
+        float ae = a * (0.55f + 0.45f * k);     // the embers dimmer toward the middle
+        for (int v = 0; v <= n; v++) {
+            float th = 2.0f * T3D_PI * v / n + r * 0.4f, cx = fm_cosf(th), sz = fm_sinf(th), ph = v * 1.93f + r * 2.7f;
+            float h = (v & 1) ? H * (0.62f + 0.38f * fm_sinf(s_fireT * 14.0f + ph) * fm_sinf(s_fireT * 5.3f + ph * 0.7f) + 0.25f) : H * 0.3f;
+            base[v][0] = f->pos[0] + cx * R; base[v][1] = y; base[v][2] = f->pos[2] + sz * R;
+            top[v][0] = base[v][0]; top[v][1] = y + h; top[v][2] = base[v][2];
+            in[v][0] = f->pos[0] + cx * Ri; in[v][1] = y; in[v][2] = f->pos[2] + sz * Ri;
+            cb[v] = rgba(255, 130, 30, a);
+            ct[v] = rgba(230, 50, 12, (v & 1) ? 0.0f : a * 0.35f);
+            ci[v] = rgba(200, 60, 15, ae * 0.5f);
+        }
+        for (int v = 0; v < n; v += CHUNK - 1) {
+            int m = n + 1 - v < CHUNK ? n + 1 - v : CHUNK;
+            build_ribbon(&base[v], &in[v], &cb[v], &ci[v], m);      // the embers on the floor, in to the next ring
+            build_ribbon(&top[v], &base[v], &ct[v], &cb[v], m);     // the flames
+        }
+    }
+    s_drawHostile = hostile;
+}
+
 /** The Fallen Warrior's landing crown: a ring spreading out over the floor, a circle of spikes
  *  rising from it, pointed, leaning out; fading as it spreads (no hit) */
 static void draw_crown(const SkillFx *f)
@@ -1127,7 +1174,7 @@ void skill_fx_draw(void)
         s_drawHostile = f->hostile;
         s_drawPlayer = !f->hostile;
         switch (f->type) {
-            case FX_ARC:    draw_arc(f); break;
+            case FX_ARC:    if (f->fire) draw_fire_ring(f); else draw_arc(f); break;
             case FX_WAVE:   if (f->shape == SKILL_WAVE_ORB) draw_orb(f); else if (f->shape != SKILL_WAVE_BLADE) draw_xwave(f); else draw_blade(f); break;
             case FX_PILLAR: draw_pillar(f); break;
             case FX_BURST:  draw_burst(f); break;
