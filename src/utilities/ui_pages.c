@@ -123,6 +123,8 @@ int ui_text_lines_cs(const char *s, int w, int cs) { return lines_cs(s, w, cs); 
 
 void ui_doc_clear(UiDoc *d) { d->used = 0; d->n = 0; d->pages = 1; d->tallest = 0; d->start[0] = 0; d->start[1] = 0; d->pendingGap = d->pendingBreak = d->pendingKeep = false; d->pendingIcon = 0; }
 int (*ui_icon_hook)(uint16_t icon, int x, int y, bool draw, int *h);
+void (*ui_money_hook)(int x, int y, int w, rdpq_align_t align, int style, const char *s);
+static bool money(const char *s) { return ui_money_hook && strpbrk(s, "\x01\x02"); }
 static int icon_w(uint16_t icon) { return icon && ui_icon_hook ? ui_icon_hook(icon, 0, 0, false, NULL) : 0; }
 static int icon_h(uint16_t icon) { int h = 0; if (icon && ui_icon_hook) ui_icon_hook(icon, 0, 0, false, &h); return h; }    // (0: a line's)
 
@@ -223,9 +225,12 @@ void ui_doc_draw(const UiDoc *d, int page, int x, int y, int w)
         if (d->row[i].gap && i > d->start[page]) y += pitch / 2;
         int in = icon_w(d->row[i].icon);
         if (in && !d->row[i].cont) ui_icon_hook(d->row[i].icon, x, y, true, NULL);
-        int k = rdpq_text_printf(&(rdpq_textparms_t){ .width = row_w(d, i, w), .wrap = WRAP_WORD, .style_id = d->row[i].style },
-                                 FONT_UNBALANCED, x + in, y, "%s", d->text + d->row[i].l).nlines;
-        if (d->row[i].r >= 0)
+        int k = 1;
+        if (money(d->text + d->row[i].l)) ui_money_hook(x + in, y, row_w(d, i, w), ALIGN_LEFT, d->row[i].style, d->text + d->row[i].l);
+        else k = rdpq_text_printf(&(rdpq_textparms_t){ .width = row_w(d, i, w), .wrap = WRAP_WORD, .style_id = d->row[i].style },
+                                  FONT_UNBALANCED, x + in, y, "%s", d->text + d->row[i].l).nlines;
+        if (d->row[i].r >= 0 && money(d->text + d->row[i].r)) ui_money_hook(x + w - UI_RIGHT_W, y, UI_RIGHT_W, ALIGN_RIGHT, d->row[i].style, d->text + d->row[i].r);
+        else if (d->row[i].r >= 0)
             rdpq_text_printf(&(rdpq_textparms_t){ .width = UI_RIGHT_W, .align = ALIGN_RIGHT, .style_id = d->row[i].style },
                              FONT_UNBALANCED, x + w - UI_RIGHT_W, y, "%s", d->text + d->row[i].r);
         int rh = (k < 1 ? 1 : k) * pitch;
@@ -451,7 +456,8 @@ void ui_panel_draw(const UiPanel *p)
         char n[24]; snprintf(n, sizeof n, "%s%d/%d%s", p->pg.page ? "< " : "", p->pg.page + 1, p->pg.pages, p->pg.page < p->pg.pages - 1 ? " >" : "");
         rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = b.tw, .style_id = FONT_STYLE_GREY }, FONT_UNBALANCED, b.tx, b.bodyEnd, "%s", n);
     }
-    rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = b.tw, .wrap = WRAP_WORD, .style_id = p->titleStyle }, FONT_UNBALANCED, b.tx, b.title, "%s", p->title);
+    if (money(p->title)) ui_money_hook(b.tx, b.title, b.tw, ALIGN_CENTER, p->titleStyle, p->title);
+    else rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = b.tw, .wrap = WRAP_WORD, .style_id = p->titleStyle }, FONT_UNBALANCED, b.tx, b.title, "%s", p->title);
     if (p->doc) ui_doc_draw(p->doc, p->pg.page, b.tx, b.body, b.tw);
     if (p->confirm) for (int i = 0; i < 2; i++) ui_row(b.tx, b.tw, b.foot - 16 * (1 - i), p->button == i, i ? "Back" : p->yes ? p->yes : "Enter");
     else ui_row(b.tx, b.tw, b.foot, true, "Back");

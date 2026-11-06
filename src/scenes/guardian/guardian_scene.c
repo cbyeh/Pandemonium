@@ -2618,8 +2618,12 @@ void scene_draw(T3DViewport *viewport)
                 .width = SCREEN_WIDTH,
             }, FONT_UNBALANCED, 0, SCREEN_HEIGHT / 2 - 12, "%s", "You Died");
             if (s_tower) {
-                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = SCREEN_WIDTH, .style_id = FONT_STYLE_GOLD },
-                                 FONT_UNBALANCED, 0, SCREEN_HEIGHT / 2 + 2, "%s", tower_death_summary());
+                // its two lines: the first with the Embers icon (tower_money_text draws one line)
+                char l1[96]; const char *sum = tower_death_summary(), *nl = strchr(sum, '\n');
+                snprintf(l1, sizeof l1, "%.*s", nl ? (int)(nl - sum) : (int)strlen(sum), sum);
+                tower_money_text(0, SCREEN_HEIGHT / 2 + 2, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, l1);
+                if (nl) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = SCREEN_WIDTH, .style_id = FONT_STYLE_GOLD },
+                                         FONT_UNBALANCED, 0, SCREEN_HEIGHT / 2 + 2 + ui_line_pitch(), "%s", nl + 1);
             }
 
             // Delay restart prompt so rapid gameplay A-mashing doesn't instantly restart.

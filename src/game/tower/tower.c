@@ -653,9 +653,11 @@ bool tower_list_icon(const char *name, int x, int y)
     return false;
 }
 // A line with the gold and Embers icons (the Codex's 12 px Gold and Embers icons) where it has TOWER_GOLD / TOWER_EMBERS:
-// counters, prices, rewards. Its own copy of the list sheet (1.7 KB): the lists' is freed each frame outside them
+// counters, prices, rewards. Its own copy of the list sheet (1.7 KB), freed once nothing has drawn it for a few frames
+// (tower_money_idle, each frame from the menus' update: none in a fight's HUD)
 static sprite_t *s_money;
-void tower_money_free(void) { if (s_money) { gpu_wait(); sprite_free(s_money); s_money = NULL; } }
+static int s_moneyIdle;
+void tower_money_idle(void) { if (s_money && ++s_moneyIdle > 3) { gpu_wait(); sprite_free(s_money); s_money = NULL; } }
 static int seg_end(const char *s, int n)     // the pen's x after n bytes of s (its trailing spaces too)
 {
     if (n <= 0) return 0;
@@ -664,9 +666,10 @@ static int seg_end(const char *s, int n)     // the pen's x after n bytes of s (
     rdpq_paragraph_free(p);
     return w;
 }
+__attribute__((constructor)) static void money_hook_init(void) { extern void (*ui_money_hook)(int, int, int, rdpq_align_t, int, const char *); ui_money_hook = tower_money_text; }
 void tower_money_text(int x, int y, int w, rdpq_align_t align, int style, const char *str)
 {
-    enum { ICON = 12, PAD = 2 };
+    enum { ICON = 12, PAD = 1 };
     int total = 0;
     for (const char *c = str; *c; ) {
         int n = (int)strcspn(c, TOWER_GOLD TOWER_EMBERS);
@@ -681,6 +684,7 @@ void tower_money_text(int x, int y, int w, rdpq_align_t align, int style, const 
         if (!*c) break;
         int t = list_icon_find(*c == TOWER_GOLD[0] ? "Gold" : "Embers and the Shrine");
         if (!s_money) s_money = sprite_load("rom:/ui/tower/list_icons.i4.sprite");
+        s_moneyIdle = 0;
         if (s_money && t >= 0 && !ui_measuring()) {
             icon_mode();
             rdpq_set_prim_color(RGBA32(LIST_ICONS[t].r, LIST_ICONS[t].g, LIST_ICONS[t].b, 255));
@@ -2388,7 +2392,7 @@ static void shop_ask(const char *name, int price, const char *effect)
     ui_doc_clear(d);
     ui_doc_text(d, FONT_STYLE_WHITE, "%s", effect);
     ui_doc_gap(d);
-    ui_doc_text(d, FONT_STYLE_GREY, "Gold %d -> %d", s.gold, s.gold - price);
+    ui_doc_text(d, FONT_STYLE_GREY, TOWER_GOLD " %d -> %d", s.gold, s.gold - price);
     snprintf(t, sizeof t, "Buy %s for %d gold?", name, price);
     ui_confirm_open(p, t, FONT_STYLE_GOLD, "Buy");
     p->owner = UI_OWNER_TOWER;
@@ -2704,7 +2708,7 @@ static void doc_node(UiDoc *d, int r, int l, bool enter, char *title, int tn, in
     case NODE_SHOP:
         snprintf(title, tn, "%sShop", pre);
         ui_doc_text(d, FONT_STYLE_WHITE, "Three new boons or duos, a level, a \"+\", a pact, potions, Mend (heal 35%%) and Release, for gold.");
-        ui_doc_text(d, FONT_STYLE_GOLD, "Gold %d. No fight.", s.gold);
+        ui_doc_text(d, FONT_STYLE_GOLD, TOWER_GOLD " %d. No fight.", s.gold);
         break;
     case NODE_EVENT:
         snprintf(title, tn, "%sEvent", pre);
@@ -2773,7 +2777,7 @@ static bool details_cursor_impl(bool open)
         else if (i == SHOP_PACT) doc_pact(d, s.shop.pact, t, sizeof t, &st);
         else {
             static const char *const NM[SHOP_ITEMS] = { [SHOP_LEVEL] = "A level", [SHOP_PLUS] = "A \"+\"", [SHOP_POTION] = "Potion", [SHOP_MEND] = "Mend", [SHOP_RELEASE] = "Release" };
-            snprintf(t, sizeof t, "%s: %d gold", NM[i], shop_price(i));
+            snprintf(t, sizeof t, "%s: %d" TOWER_GOLD, NM[i], shop_price(i));
             if (i == SHOP_LEVEL) { ui_doc_text(d, FONT_STYLE_WHITE, "+1 level on a slotted boon below its max (a duo has none). You choose it from:"); doc_targets(d, tg, level_targets(tg, LIST_MAX)); }
             else if (i == SHOP_PLUS) { ui_doc_text(d, FONT_STYLE_WHITE, "A maxed boon's \"+\", its top level. You choose it from:"); doc_targets(d, tg, plus_targets(tg, LIST_MAX)); }
             else if (i == SHOP_POTION) ui_doc_text(d, FONT_STYLE_WHITE, "+1 potion: %d each up to the run's most (%d), then past it up to %d at %d, %d more for each further one in a visit. Each fight won gives one too, up to the run's most.", PRICE_POTION, tower_mod_max_potions(), POTION_CAP, PRICE_POTION_PAST, PRICE_POTION_PAST_UP);
@@ -3213,7 +3217,7 @@ static void shop_draw(void)
                                                        [SHOP_MEND] = "Mend", [SHOP_RELEASE] = "Release" };
         int k = i - SHOP_LEVEL, x = x0 + (k % 3) * (cw + gap), y = y0 + ch + 7 + 19 * (k / 3);
         if ((s.shop.sold >> i) & 1) snprintf(line, sizeof line, "%s: sold", LABEL[i]);
-        else if (shop_price(i)) snprintf(line, sizeof line, "%s  %d" TOWER_GOLD, LABEL[i], shop_price(i));
+        else if (shop_price(i)) snprintf(line, sizeof line, "%s %d" TOWER_GOLD, LABEL[i], shop_price(i));     // (one space: 3 digits and the icon fit the button)
         else snprintf(line, sizeof line, "%s  free", LABEL[i]);
         button(x, y, cw, 15, s.shop.sel == i, !shop_block(i)[0], "");
         text_style(x, y + 12, cw, ALIGN_CENTER, !shop_block(i)[0] ? s.shop.sel == i ? FONT_STYLE_GOLD : FONT_STYLE_WHITE : FONT_STYLE_GREY, line);     // (ui_button's label, with the gold icon)
@@ -3250,17 +3254,17 @@ static void event_label(int i, char *out, int n)
     switch (e) {
     case EV_ALTAR:    snprintf(out, n, "Give %.0f max health: a Rare boon", (double)(0.15f * character.maxHealth)); break;
     case EV_GRAVE:
-        if (i == 0) snprintf(out, n, "Take %d gold: -%.0f health", gold_with(GRAVE_GOLD), (double)(GRAVE_HURT * character.health));
-        else snprintf(out, n, "Pray for %d gold: +%.0f health", GRAVE_PRAYER, (double)fminf(REST_HEAL * character.maxHealth, character.maxHealth - character.health));
+        if (i == 0) snprintf(out, n, "Take %d" TOWER_GOLD ": -%.0f health", gold_with(GRAVE_GOLD), (double)(GRAVE_HURT * character.health));
+        else snprintf(out, n, "Pray for %d" TOWER_GOLD ": +%.0f health", GRAVE_PRAYER, (double)fminf(REST_HEAL * character.maxHealth, character.maxHealth - character.health));
         break;
     case EV_MIRROR:   snprintf(out, n, "A boon +1 level, and a curse"); break;
-    case EV_MERCHANT: if (i == 0) snprintf(out, n, "1 potion for %d gold", MERCHANT_POTION); else snprintf(out, n, "2 potions for a Rare boon"); break;
+    case EV_MERCHANT: if (i == 0) snprintf(out, n, "1 potion for %d" TOWER_GOLD, MERCHANT_POTION); else snprintf(out, n, "2 potions for a Rare boon"); break;
     case EV_POOL:     snprintf(out, n, i == 0 ? "A potion: learn a new skill" : "A potion: a skill +1 level"); break;
     case EV_PRISONER: snprintf(out, n, "Free it: your next Fight is an Elite"); break;
-    case EV_BONES:    snprintf(out, n, "Pay %d gold: %d back, half the time", BONES_STAKE, gold_with(BONES_WIN)); break;
+    case EV_BONES:    snprintf(out, n, "Pay %d" TOWER_GOLD ": %d back, half the time", BONES_STAKE, gold_with(BONES_WIN)); break;
     case EV_BRAZIER:
-        if (i == 0) snprintf(out, n, "Bank %d Embers: -%.0f health", BRAZIER_EMBERS * s.circle, (double)(BRAZIER_HURT * character.health));
-        else snprintf(out, n, "%d gold: half a blessing, %s", BRAZIER_FEED, BLESSINGS[s.eventPick].name);
+        if (i == 0) snprintf(out, n, "Bank %d" TOWER_EMBERS ": -%.0f health", BRAZIER_EMBERS * s.circle, (double)(BRAZIER_HURT * character.health));
+        else snprintf(out, n, "%d" TOWER_GOLD ": half a blessing, %s", BRAZIER_FEED, BLESSINGS[s.eventPick].name);
         break;
     }
 }
@@ -3511,7 +3515,7 @@ void tower_stats_doc(UiDoc *d)
     if (tower_circle() > 1) ui_doc_row(d, FONT_STYLE_RED, NULL, "Ascension %d", tower_circle() - 1);
     if (s.night) ui_doc_text(d, FONT_STYLE_RED, "%s", night_line(s.night, nl, sizeof nl));
     if (s.heat) ui_doc_text(d, FONT_STYLE_RED, "Heat %d: bosses +%d%% health and blows, Embers +%d%%", s.heat, (int)(HEAT_STEP * 100 * s.heat + 0.5f), (int)(HEAT_STEP * 100 * s.heat + 0.5f));
-    ui_doc_row(d, FONT_STYLE_GOLD, NULL, "Gold %d   Embers this run %d", s.gold, s.runEmbers);
+    ui_doc_row(d, FONT_STYLE_GOLD, NULL, TOWER_GOLD " %d   " TOWER_EMBERS " +%d this run", s.gold, s.runEmbers);
     ui_doc_text(d, FONT_STYLE_GREY, "Seed %08lX", (unsigned long)s.seed);
     if (s.offers) ui_doc_text(d, FONT_STYLE_WHITE, "Offerings: %s", tower_offers_line());
     int e = tower_relic_equipped();
@@ -3618,7 +3622,7 @@ void tower_details_shrine(int kind, int i)
         snprintf(t, sizeof t, "%s", UPGRADES[i].name);
         ui_doc_text(d, FONT_STYLE_WHITE, "%s a level, for every climb (the Tower only).", UPGRADES[i].desc);
         ui_doc_text(d, FONT_STYLE_GOLD, "Lv %d of %d now.", lv, UPG_MAX_LEVEL);
-        if (c >= 0) ui_doc_text(d, tower_embers() >= c ? FONT_STYLE_WHITE : FONT_STYLE_RED, "Next level: %d Embers (you hold %d).", c, tower_embers());
+        if (c >= 0) ui_doc_text(d, tower_embers() >= c ? FONT_STYLE_WHITE : FONT_STYLE_RED, "Next level: %d" TOWER_EMBERS "   (you hold %d)", c, tower_embers());
         else ui_doc_text(d, FONT_STYLE_GREY, "At its max.");
     } else if (kind == TOWER_SHRINE_RELIC) {
         if (i < 0) { snprintf(t, sizeof t, "No relic"); ui_doc_text(d, FONT_STYLE_WHITE, "Climb with no relic: no blessing, no curse."); }
@@ -3631,7 +3635,7 @@ void tower_details_shrine(int kind, int i)
             if (tower_relic_equipped() == i) ui_doc_text(d, FONT_STYLE_GOLD, "Worn. A takes it off.");
             else if (tower_relic_owned(i)) ui_doc_text(d, FONT_STYLE_WHITE, "Owned. A wears it.");
             else if (i == RELIC_SIGIL) ui_doc_text(d, FONT_STYLE_GREY, "Not sold: it's yours once you reach floor %d.", MILESTONES[MS_SIGIL].floor);
-            else ui_doc_text(d, tower_embers() >= RELIC_COST ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d Embers (you hold %d). A buys and wears it.", RELIC_COST, tower_embers());
+            else ui_doc_text(d, tower_embers() >= RELIC_COST ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d" TOWER_EMBERS "   (you hold %d)", RELIC_COST, tower_embers()), ui_doc_text(d, FONT_STYLE_WHITE, "A buys and wears it.");
         }
     } else if (kind == TOWER_SHRINE_UNLOCK) {
         int f = pack_family(i), k = pack_form(i), c = tower_pack_cost(i);
@@ -3660,7 +3664,7 @@ void tower_details_shrine(int kind, int i)
         }
         ui_doc_gap(d);
         if (c < 0) ui_doc_text(d, FONT_STYLE_GREY, "Owned.");
-        else ui_doc_text(d, tower_embers() >= c ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d Embers (you hold %d)%s.", c, tower_embers(), f >= 0 ? "; each pack bought raises the next one's price" : "");
+        else { ui_doc_text(d, tower_embers() >= c ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d" TOWER_EMBERS "   (you hold %d)", c, tower_embers()); if (f >= 0) ui_doc_text(d, FONT_STYLE_GREY, "Each pack bought raises the next one's price."); }
     } else if (kind == TOWER_SHRINE_OFFERING) {
         snprintf(t, sizeof t, "%s", OFFERINGS[i].name);
         ui_doc_text(d, FONT_STYLE_WHITE, "%s", full_text(TXT_OFFER + i));
@@ -3671,12 +3675,12 @@ void tower_details_shrine(int kind, int i)
         if (why[0]) ui_doc_text(d, FONT_STYLE_RED, "%s.", why);
         else if (tower_offer_set(i)) ui_doc_text(d, FONT_STYLE_GOLD, "Set aside. A takes it back: %d Embers returned.", c);
         else if (tower_offers_held() >= OFFER_MAX) ui_doc_text(d, FONT_STYLE_RED, "Two are set aside: take one back first.");
-        else ui_doc_text(d, tower_embers() >= c ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d Embers (you hold %d)%s.", c, tower_embers(), tower_offers_held() ? ": a second Offering costs 50 more" : "");
+        else { ui_doc_text(d, tower_embers() >= c ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d" TOWER_EMBERS "   (you hold %d)", c, tower_embers()); if (tower_offers_held()) ui_doc_text(d, FONT_STYLE_GREY, "A second Offering costs 50 more."); }
     } else {
         snprintf(t, sizeof t, "Nightfarer");
         ui_doc_text(d, FONT_STYLE_WHITE, "A skin: a tracker's winged helm and blue coat. It changes nothing in a fight.");
         if (tower_nightfarer_owned()) ui_doc_text(d, FONT_STYLE_GREY, "Owned: worn from Settings > Skin.");
-        else ui_doc_text(d, tower_embers() >= NIGHTFARER_COST ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d Embers (you hold %d).", NIGHTFARER_COST, tower_embers());
+        else ui_doc_text(d, tower_embers() >= NIGHTFARER_COST ? FONT_STYLE_WHITE : FONT_STYLE_RED, "%d" TOWER_EMBERS "   (you hold %d)", NIGHTFARER_COST, tower_embers());
     }
     text_free();
     ui_panel_open(p, t, st, false);
@@ -3805,7 +3809,7 @@ static void codex_gen(UiDoc *d, int k)
     case CX_OFFERINGS: {
         for (int i = 0; i < OFF_COUNT; i++) {
             bool open = best >= OFFERINGS[i].floor;
-            char r[16]; if (open) snprintf(r, sizeof r, "%d", OFFERINGS[i].price); else snprintf(r, sizeof r, "floor %d", OFFERINGS[i].floor);
+            char r[16]; if (open) snprintf(r, sizeof r, "%d" TOWER_EMBERS, OFFERINGS[i].price); else snprintf(r, sizeof r, "floor %d", OFFERINGS[i].floor);
             ui_doc_row(d, open ? FONT_STYLE_WHITE : FONT_STYLE_GREY, r, "%s: %s", OFFERINGS[i].name, lc(OFFERINGS[i].brief));
         }
         const char *now = tower_offers_line();
@@ -3897,8 +3901,8 @@ const char* tower_death_summary(void)
     int boons = 0;
     for (int b = 0; b < BOON_COUNT; b++) boons += s.stacks[b];
     for (int b = 0; b < PB_COUNT; b++) boons += s.bless[b];
-    if (s.heat) snprintf(line, sizeof line, "Floor %d   Heat %d   +%d Embers (%d)\n%d boon%s taken   Seed %08lX", s.floor, s.heat, s.runEmbers, tower_embers(), boons, boons == 1 ? "" : "s", (unsigned long)s.seed);
-    else snprintf(line, sizeof line, "Floor %d   +%d Embers (%d)\n%d boon%s taken   Seed %08lX", s.floor, s.runEmbers, tower_embers(), boons, boons == 1 ? "" : "s", (unsigned long)s.seed);
+    if (s.heat) snprintf(line, sizeof line, "Floor %d   Heat %d   +%d" TOWER_EMBERS "  (%d)\n%d boon%s taken   Seed %08lX", s.floor, s.heat, s.runEmbers, tower_embers(), boons, boons == 1 ? "" : "s", (unsigned long)s.seed);
+    else snprintf(line, sizeof line, "Floor %d   +%d" TOWER_EMBERS "  (%d)\n%d boon%s taken   Seed %08lX", s.floor, s.runEmbers, tower_embers(), boons, boons == 1 ? "" : "s", (unsigned long)s.seed);
     return line;
 }
 uint32_t tower_seed(void) { return s.seed; }
@@ -4951,6 +4955,8 @@ int tower_test_map(void)
             static const char *const ONE[] = { "+ (top level)", "Skill: no slot", "Lv 4 -> 5", "New: slot 5/5", "Merges:", "Locks out", "No slot", "Sold", "99999 gold",
                                                "A level  999", "A \"+\"  999", "Pact  999", "Potion  999", "Mend  999", "Release  999", "Release: sold", "A \"+\": sold" };
             for (unsigned k = 0; k < sizeof ONE / sizeof ONE[0]; k++) if (ui_text_lines(ONE[k], k >= 7 ? CARD_W : CARD_FOOT_W) > 1 && cardBad++ < 30) debugf("[map] FAIL: \"%s\" is wider than its card\n", ONE[k]);
+            static const char *const SVC[] = { "A level 999", "A \"+\" 999", "Potion 999", "Mend 99", "Release 99" };     // (Mend and Release: fixed prices, 2 digits)
+            for (unsigned k = 0; k < sizeof SVC / sizeof SVC[0]; k++) if (ui_text_width(SVC[k]) + 14 > CARD_W - 4 && cardBad++ < 30) debugf("[map] FAIL: \"%s\" and its gold icon are wider than its button\n", SVC[k]);     // (the Shop's services: a price and its 14 px icon)
         }
         // every one-line text inside its room: the map's lines and the screens' rows, with 5-digit gold, floor 123, Ascension 19
         {
@@ -5618,7 +5624,7 @@ int tower_test_offerings(void)
         for (int a = 0; a < OFF_COUNT; a++) { int w = ui_text_width(OFFERINGS[a].brief); if (w > wBrief) wBrief = w; }
         int wTwo = ui_text_width("Two are set aside: take one back first"), wRec = ui_text_width("Best floor 255   Embers 65535");
         snprintf(l, sizeof l, "%s, %s", OFFERINGS[OFF_CANDLE].name, OFFERINGS[OFF_PURSE].name); int wTower = ui_text_width(l);
-        int wRow = ui_text_width("Scholar's Candle") + 8 + ui_text_width("105");
+        int wRow = ui_text_width("Scholar's Candle") + 8 + ui_text_width("105") + 14;     // (the price's Embers icon)
         CHECK(wPair <= 240 && wBrief <= 240 && wTwo <= 240 && wRow <= 224 && wRec <= 200 && wTower <= 200,
               "one-line texts: Offerings head %d, briefs %d, the full line %d, a row %d (of 240 / 224); the Tower menu's records %d, pair %d (of 200)", wPair, wBrief, wTwo, wRow, wRec, wTower);
         debugf("[offer] widths: Offerings head %d, briefs %d, full %d, row %d of 240; Tower menu records %d, pair %d of 200\n", wPair, wBrief, wTwo, wRow, wRec, wTower);

@@ -389,7 +389,7 @@ static void buy_ask(const char *name, int cost, const char *effect)
     ui_doc_clear(d);
     ui_doc_text(d, FONT_STYLE_WHITE, "%s", effect);
     ui_doc_gap(d);
-    ui_doc_text(d, FONT_STYLE_GREY, "Embers %d -> %d", tower_embers(), tower_embers() - cost);
+    ui_doc_text(d, FONT_STYLE_GREY, TOWER_EMBERS " %d -> %d", tower_embers(), tower_embers() - cost);
     snprintf(t, sizeof t, "Buy %s for %d Embers?", name, cost);
     ui_confirm_open(p, t, FONT_STYLE_GOLD, "Buy");
     p->owner = UI_OWNER_MENU;
@@ -1003,7 +1003,7 @@ void menu_controller_update(void)
     if (currentMenu != MENU_CONTROLS || !menuActive) controls_icons(false);
     if (!tower_active() && (currentMenu != MENU_CODEX || !menuActive)) tower_icons_free();     // (the emblems: a climb's, or the Codex's)
     if (!menuActive || !list_icons_menu(currentMenu)) tower_list_icons_free();
-    if (!menuActive && !tower_between_open()) tower_money_free();      // (the gold and Embers icons: none in a fight's HUD)
+    tower_money_idle();      // (the gold and Embers icons, freed once no screen draws them)
     menu_controller_update_for_state(
         scene_get_game_state(),
         scene_is_cutscene_active()
@@ -1015,7 +1015,7 @@ void menu_controller_update_title(void)
     if (currentMenu != MENU_CONTROLS || !menuActive) controls_icons(false);
     if (!tower_active() && (currentMenu != MENU_CODEX || !menuActive)) tower_icons_free();     // (the emblems: a climb's, or the Codex's)
     if (!menuActive || !list_icons_menu(currentMenu)) tower_list_icons_free();
-    if (!menuActive && !tower_between_open()) tower_money_free();      // (the gold and Embers icons: none in a fight's HUD)
+    tower_money_idle();      // (the gold and Embers icons, freed once no screen draws them)
     menu_controller_update_for_state(
         GAME_STATE_TITLE,
         false
@@ -1079,7 +1079,7 @@ static void menu_row_icon(UiRect r, int y, bool sel, int style, const char *left
     if (icon && !ui_measuring()) tower_list_icon(icon, x, y - 10);     // (2 px clear of the box above and below)
     const int in = 16;      // (every row's text, None and Back too, in one column after the icons)
     rdpq_text_printf(&(rdpq_textparms_t){ .width = w - UI_RIGHT_W - in, .style_id = style }, FONT_UNBALANCED, x + in, y, "%s", left);
-    if (right && right[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W + 40, .style_id = style }, FONT_UNBALANCED, x + w - UI_RIGHT_W - 40, y, "%s", right);
+    if (right && right[0]) tower_money_text(x + w - UI_RIGHT_W - 40, y, UI_RIGHT_W + 40, ALIGN_RIGHT, style, right);     // (a price: its Embers icon)
 }
 // a list's row: centred (right NULL), or a name left and its state right; y its baseline
 static void menu_row(UiRect r, int y, bool sel, int style, const char *left, const char *right)
@@ -1093,7 +1093,7 @@ static void menu_row(UiRect r, int y, bool sel, int style, const char *left, con
     }
     if (sel) ui_select_box(x - 4, y - 12, x + w + 4, y + 4);
     rdpq_text_printf(&(rdpq_textparms_t){ .width = w - UI_RIGHT_W, .style_id = style }, FONT_UNBALANCED, x, y, "%s", left);
-    if (right[0]) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_RIGHT, .width = UI_RIGHT_W + 40, .style_id = style }, FONT_UNBALANCED, x + w - UI_RIGHT_W - 40, y, "%s", right);
+    if (right[0]) tower_money_text(x + w - UI_RIGHT_W - 40, y, UI_RIGHT_W + 40, ALIGN_RIGHT, style, right);
 }
 // a row's line of help over the footer (one line: the box ends under it; its room kept when a row has none)
 static void menu_help(UiRect r, int style, const char *s)
@@ -1314,13 +1314,13 @@ static void menu_body(UiRect r0)
             if (i < MENU_SHRINE_UPGRADES) {
                 int c = tower_upgrade_cost((UpgradeId)i);
                 snprintf(name, sizeof name, "%s %d/%d", tower_upgrade_name((UpgradeId)i), tower_upgrade_level((UpgradeId)i), UPG_MAX_LEVEL);
-                if (c < 0) snprintf(right, sizeof right, "max"); else snprintf(right, sizeof right, "%d", c);
+                if (c < 0) snprintf(right, sizeof right, "max"); else snprintf(right, sizeof right, "%d" TOWER_EMBERS, c);
             } else if (i == MENU_SHRINE_RELIC) {
                 snprintf(name, sizeof name, "Relics");
                 snprintf(right, sizeof right, "%s", tower_relic_name(tower_relic_equipped()));      // the one worn
             } else if (i == MENU_SHRINE_NIGHTFARER) {
                 snprintf(name, sizeof name, "Nightfarer (skin)");
-                if (tower_nightfarer_cost() < 0) snprintf(right, sizeof right, "owned"); else snprintf(right, sizeof right, "%d", tower_nightfarer_cost());
+                if (tower_nightfarer_cost() < 0) snprintf(right, sizeof right, "owned"); else snprintf(right, sizeof right, "%d" TOWER_EMBERS, tower_nightfarer_cost());
             } else if (i == MENU_SHRINE_PACKS) {
                 int own = 0;
                 for (int k = 0; k < tower_pack_count(); k++) own += tower_pack_owned(k);
@@ -1356,7 +1356,7 @@ static void menu_body(UiRect r0)
             else if (packs) {
                 name = tower_pack_name(i);
                 if (tower_pack_owned(i)) right = "owned";
-                else { snprintf(cost, sizeof cost, "%d", tower_pack_cost(i)); right = cost; grey = tower_embers() < tower_pack_cost(i); }
+                else { snprintf(cost, sizeof cost, "%d" TOWER_EMBERS, tower_pack_cost(i)); right = cost; grey = tower_embers() < tower_pack_cost(i); }
             } else if (relics) {
                 int k = i - 1;      // row 0: None
                 name = tower_relic_name(k);
@@ -1364,7 +1364,7 @@ static void menu_body(UiRect r0)
                 else if (k >= 0 && !tower_relic_owned(k) && tower_relic_cost(k) == -2) {      // a milestone's, not sold
                     snprintf(cost, sizeof cost, "floor %d", tower_relic_floor(k)); right = cost; grey = true;
                 } else if (k >= 0 && !tower_relic_owned(k)) {
-                    snprintf(cost, sizeof cost, "%d", tower_relic_cost(k)); right = cost;
+                    snprintf(cost, sizeof cost, "%d" TOWER_EMBERS, tower_relic_cost(k)); right = cost;
                     grey = tower_embers() < tower_relic_cost(k);       // can't afford it yet
                 }
             } else if (i == SKIN_COUNT) {      // Sunforged, the floor-100 reward: the skills' colours
@@ -1406,7 +1406,7 @@ static void menu_body(UiRect r0)
                 int c = tower_offer_price(i);
                 if (set) snprintf(right, sizeof right, "set");
                 else if (why[0]) { snprintf(right, sizeof right, "locked"); grey = true; }
-                else { snprintf(right, sizeof right, "%d", c); grey = held >= 2 || tower_embers() < c; }
+                else { snprintf(right, sizeof right, "%d" TOWER_EMBERS, c); grey = held >= 2 || tower_embers() < c; }
             }
             menu_row_icon(r, y, i == selectedOption, set ? FONT_STYLE_GOLD : grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE, name, right, i == rows - 1 ? NULL : name);
         }

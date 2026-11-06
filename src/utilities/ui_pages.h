@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <rdpq_text.h>     // (rdpq_align_t, for ui_money_hook: some files include this before libdragon.h)
 
 // One way to show more text than fits (the pause menu's Stats and Build pages, the Tower's screens, the
 // R Details panel; a Codex can reuse all of it as is). The style is the Stats pages' (main 83f1c7b, b5ecdae):
@@ -49,6 +50,8 @@ void ui_doc_icon(UiDoc *d, uint16_t icon);  // the next row has this icon left o
 // draws an icon at x (y a row's baseline) when draw, and returns its width with the gap after it (0: none); *h (if not
 // NULL) its height under the row's top, a row at least that tall. The Tower's icons (tower.c sets it before it fills a doc)
 extern int (*ui_icon_hook)(uint16_t icon, int x, int y, bool draw, int *h);
+// a row or panel title with the "\x01"/"\x02" money markers is drawn by this (the Tower's tower_money_text: one line, its icons)
+extern void (*ui_money_hook)(int x, int y, int w, rdpq_align_t align, int style, const char *s);
 int  ui_doc_layout(UiDoc *d, int w, int h);     // returns the pages (1 at least)
 void ui_doc_draw(const UiDoc *d, int page, int x, int y, int w);     // y: the first line's baseline
 int  ui_line_pitch(void);               // the font's line pitch (FONT_UNBALANCED)
