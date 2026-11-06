@@ -1,5 +1,7 @@
 # Pandemonium
 
+Gameplay trailer: https://www.youtube.com/watch?v=K9z3uv20E2k
+
 <img width="1000" alt="Pandemonium cover art" src="metadata/cover.jpg">
 
 ## Story
@@ -115,7 +117,6 @@ Guardian Unbound (the Guardian's second form), plus three **Bonus** fights on th
 <img width="1311" height="939" alt="screen shot 1" src="screenshot-3.png">
 
 ## Build
-The Gomo Sounds effects aren't in the repo (their license forbids sharing the files). Get the [Dark Fantasy Soulslike SFX Pack](https://mauriciopazp.itch.io/dark-fantasy-soulslike-sfx-pack) and run `tools/pack_sfx.py path/to/Dark_Fantasy_Soulslike_SFX_Pack.zip` (with numpy and `ffmpeg`) before the first build.
 - Install libdragon (preview)
 - Install Tiny3D (main)
 - run make file
