@@ -1475,12 +1475,6 @@ static void update_skill(float dt)
             if (full) skill_fx_next_arc_half(T3D_PI);       // all round
             skill_fx_spawn_arc((float[3]){ character.pos[0], character.pos[1] + 10.0f, character.pos[2] },
                                yaw, radius, HALFMOON_DAMAGE * (skill_lv(SKILL_HALFMOON_SLASH) >= 3 ? 1.2f : 1.0f) * (full ? FULL_MOON_HIT : 1.0f) * share);
-            if (weapon_echo()) {    // Lunar Requiem: a second, smaller crescent inside it (40%, no stagger of its own)
-                skill_fx_next_poise(0.0f);
-                if (full) skill_fx_next_arc_half(T3D_PI);
-                skill_fx_spawn_arc((float[3]){ character.pos[0], character.pos[1] + 10.0f, character.pos[2] },
-                                   yaw, radius * 0.65f, 0.4f * HALFMOON_DAMAGE * (skill_lv(SKILL_HALFMOON_SLASH) >= 3 ? 1.2f : 1.0f) * (full ? FULL_MOON_HIT : 1.0f) * share);
-            }
             screen_shake_set_shake_mag(skillStep ? 8.0f : 14.0f);
             character_play_swing();
             audio_play_scene_sfx_dist(SCENE1_SFX_BLADE_SLASH, skillStep ? 0.7f : 1.0f, 0.0f);
@@ -3551,7 +3545,7 @@ void character_apply_damage(float amount)
             && actionTimer * currentActionDuration <= tower_mod_perfect_window()) {
             s_perfectThisRoll = true;
             tower_on_perfect_dodge();
-            weapon_on_perfect_dodge();     // (Mare Tranquillitatis)
+            weapon_on_perfect_dodge();     // (Mare Requiem)
             game_time_slowmo(0.45f, 0.35f);
             character.stamina = fminf(character.maxStamina, character.stamina + PERFECT_DODGE_STAMINA);
             if (tower_boon_stacks(BOON_EVASION)) {      // the roll's stamina back too

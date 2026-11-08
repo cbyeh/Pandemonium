@@ -1386,11 +1386,11 @@ static void menu_body(UiRect r0)
                 else if (!weapon_available(id) || !weapon_cost(id)) { snprintf(right, sizeof right, "floor %d", weapon_floor(id)); grey = true; }
                 else { snprintf(right, sizeof right, "%d" TOWER_EMBERS, weapon_cost(id)); grey = tower_embers() < weapon_cost(id); }
             }
-            menu_row_icon(r, y, i == selectedOption, grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE, id >= 0 ? weapon_name(id) : "Back", right, NULL);
+            menu_row_icon(r, y, i == selectedOption, grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE, id >= 0 ? weapon_name(id) : "Back", right, id >= 0 ? weapon_name(id) : NULL);
         }
         int sel = weapon_at_row(selectedOption) >= 0 ? weapon_at_row(selectedOption) : WPN_COUNT;
         bool poor = sel < WPN_COUNT && !weapon_owned(sel) && weapon_available(sel) && tower_embers() < weapon_cost(sel);
-        const char *desc = sel >= WPN_COUNT ? "" : !weapon_available(sel) ? (weapon_cost(sel) ? "Found deeper in the Tower" : "Yours at the Tower's summit") : weapon_desc(sel);
+        const char *desc = sel >= WPN_COUNT ? "" : !weapon_available(sel) ? "Found deeper in the Tower" : weapon_desc(sel);
         menu_help(r, poor ? FONT_STYLE_RED : FONT_STYLE_GREY, poor ? "Not enough Embers" : desc);
     } else if (currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS) {
         // a list: name on the left, its state on the right, what the hovered one does below

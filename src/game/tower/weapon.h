@@ -12,10 +12,9 @@ typedef enum {     // (the ids are saved: new ones go at the end; the Armory lis
     WPN_LUNAR_EDGE,     // Lunar Edge: lighter swings, stronger skills, moonlight (1: in v1.1-beta's saves)
     WPN_NUBIUM,         // Mare Nubium: light, quick, cheap swings, lighter hits
     WPN_FRIGORIS,       // Mare Frigoris: heavy, slow, breaks stances
-    WPN_TRANQUIL,       // Mare Tranquillitatis: perfect dodges pay
+    WPN_TRANQUIL,       // Mare Requiem (was Tranquillitatis): perfect dodges pay
     WPN_SOLS_BANE,      // Sol's Bane: the Shackled Sun's hunter, fire halved
     WPN_SHADOWSLAYER,   // Shadowslayer: Shadowborne's hunter, its flames and beams halved
-    WPN_LUNAR_REQUIEM,  // Lunar Requiem: the floor-100 reward, the Lunar Edge's skills without its cost, a second crescent
     WPN_COUNT
 } WeaponId;
 
@@ -36,8 +35,7 @@ float weapon_poise_mult(int kind);  // its stagger build-up
 float weapon_swing_speed(void);     // sword swings' speed (their clips and windows)
 float weapon_stamina_mult(void);    // a swing's stamina
 float weapon_taken_mult(int dmgKind);   // a blow on the player (DMG_*)
-bool weapon_echo(void);             // Halfmoon Slash's second, smaller crescent
-void weapon_on_perfect_dodge(void); // Mare Tranquillitatis' refund
-void weapon_apply(void);            // the equipped one's look: the blade's colour, the skills' palette (boot, a slot loaded, equip)
+void weapon_on_perfect_dodge(void); // Mare Requiem's refund
+void weapon_apply(void);            // the equipped one's look: the blade's colour (boot, a slot loaded, equip)
 
 #endif

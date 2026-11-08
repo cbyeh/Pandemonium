@@ -771,16 +771,15 @@ The user's design: swords bought in the Shrine's Armory once the best floor reac
 | Sword | Trade | Unlock | Look | Status |
 |---|---|---|---|---|
 | Knight's Sword | none | owned | the skin's | done |
-| Lunar Edge | sword swings and finishers x0.8, skills x1.3 | floor 25, 1500 Embers | moonlit blue blade (the whole sword material, hilt too); skills in a saturated moon-blue, a little denser | done |
+| Lunar Edge | sword swings and finishers x0.8, skills x1.3 | floor 25, 1500 Embers | moonlit blue blade, lit by itself (the whole sword material, hilt too); the skills keep their own colours (the user's call: no moonlight palette) | done |
 | Mare Nubium | swings 20% faster, 25% less stamina, -25% a hit | floor 10, 600 | pale silver (one colour, close to steel: no thinner blade or trail yet) | done |
 | Mare Frigoris | swings 15% slower, +40% stagger (sword hits), -10% | floor 15, 900 | icy blue (one colour: no broader blade yet) | done |
-| Mare Tranquillitatis | a perfect dodge: 25% stamina back, skills -1 s; -10% | floor 30, 1800 | pale sea-green | done |
+| Mare Requiem (was Mare Tranquillitatis) | a perfect dodge: 25% stamina back, skills -1 s; -10% | floor 30, 1800 | pale sea-green | done |
 | Sol's Bane | +30% on the Shackled Sun, fire taken halved (the Sun's flare, rings, crosses, embers and orbs; Smouldering's flames; the Fallen Warrior's fire trail and Holy Slam fire), -10% elsewhere | floor 40, 2000 | dark bronze-iron (one colour: the gold edge and eclipse guard need the sword model split) | done |
-| Shadowslayer | +30% on Shadowborne, its flames, fireballs, orbs, beam and cone halved, -10% elsewhere | floor 50, 2500 | blackened (one colour) | done |
-| Lunar Requiem | skills x1.3, no swing cost, Halfmoon Slash an inner crescent (65% reach, 40%, no stagger; with Twin Moon each slash has one) | floor 100, owned there (never a bit) | white-blue, lit by itself, moonlight skills | done |
+| Shadowslayer | +30% on Shadowborne, its flames, fireballs, orbs, beam and cone halved, -10% elsewhere | floor 50, 2500 | blackened (one colour); on the Black Swordsman a cold white edge | done |
 
-The Armory lists them by floor (weapon_at_row); the ids are saved, so new swords go at the end (Lunar Edge stays 1, as v1.1-beta saved it). Settings > Sword (title only, as Skins) opens the same Armory. The Codex's last page, The Armory, lists every sword from the table.
+The Armory lists them by floor (weapon_at_row); the ids are saved, so new swords go at the end (Lunar Edge stays 1, as v1.1-beta saved it). Settings > Sword (title only, as Skins) opens the same Armory; a sword equipped either way holds in every mode (checked: Lunar Edge equipped at the Tower's Armory, the Story's Guardian took its x0.80). Each row has a 12 px sword icon in its blade's colour (tools/list12_grids.py 'sword'). Lunar Requiem (floor 100) was cut, the user's call. The Codex's last page, The Armory, lists every sword from the table.
 
-Checked (HLE_LOG_WEAPON, every sword forced): Nubium swings 0.694 s for 0.833, 13.5 stamina for 18, x0.75; Frigoris 0.980 s, x0.9, the stagger x1.40 on sword hits only; Tranquillitatis x0.9, 4 perfect dodges paid (HLE_DUMMY_ROLL); Sol's Bane x1.3 on the Sun, x0.9 on the Fallen Warrior, fire taken x0.5 (both); Shadowslayer x1.3 on Shadowborne, x0.9 elsewhere, its flames x0.5, the Fallen Warrior's fire x1.0; Requiem skills x1.3, swings x1.0, the inner crescent 11.2 of the main 28. HLE_TEST_MENUS 196/0 with the Armory and Settings > Sword.
+Checked (HLE_LOG_WEAPON, every sword forced): Nubium swings 0.694 s for 0.833, 13.5 stamina for 18, x0.75; Frigoris 0.980 s, x0.9, the stagger x1.40 on sword hits only; Tranquillitatis x0.9, 4 perfect dodges paid (HLE_DUMMY_ROLL); Sol's Bane x1.3 on the Sun, x0.9 on the Fallen Warrior, fire taken x0.5 (both); Shadowslayer x1.3 on Shadowborne, x0.9 elsewhere, its flames x0.5, the Fallen Warrior's fire x1.0 HLE_TEST_MENUS 196/0 with the Armory and Settings > Sword.
 
 Checked (Lunar Edge): `HLE_LOG_WEAPON` sword hits x0.800, finishers x0.800, skills x1.300 (the Knight's x1.000); the user's save (floor 36, 2270 Embers): the Armory lists it at 1500, the confirm buys it (770 left), equipped, and a reboot loads it equipped; HLE_TEST_MENUS 192/0 with the Armory visited, no bad string (HLE_TEXT_CHECK).

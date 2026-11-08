@@ -24,6 +24,7 @@ static float GU = GLTF * MODEL_SCALE;
 typedef struct { uint8_t r, g, b, set; } SkinColor;
 #define C(r, g, b) { r, g, b, 1 }
 static bool s_bladeGlow;     // the equipped sword's blade lit by itself (Lunar Edge, Lunar Requiem)
+static SkinColor s_bladeEdge;     // the equipped sword's colour on the Dragonslayer's edges (Shadowslayer: its own, cold white)
 static SkinColor s_bladeTint;     // the equipped sword's colour (character_skin_set_blade): over the skin's sword, or the Dragonslayer's edges
 
 enum { CLOTH_NONE, CLOTH_CLOAK, CLOTH_HAIR, CLOTH_PLUME };
@@ -844,7 +845,7 @@ __attribute__((noinline, optimize("Os"))) static void acc_dragonslayer(SkinColor
         static const int F[6][4] = { {0,1,3,2}, {4,6,7,5}, {0,4,5,1}, {2,3,7,6}, {0,2,6,4}, {1,5,7,3} }; \
         for (int f = 0; f < 6; f++) proc_mesh_quad(v[F[f][0]], v[F[f][1]], v[F[f][2]], v[F[f][3]], col, false); } while (0)
     const uint32_t steel = proc_rgb(178, 178, 176), core = proc_rgb(22, 22, 24), dark = proc_rgb(40, 30, 26);
-    const uint32_t edge = s_bladeTint.set ? proc_rgb(s_bladeTint.r, s_bladeTint.g, s_bladeTint.b) : steel;     // the equipped sword's colour on its silver (weapon.c)
+    const uint32_t edge = s_bladeEdge.set ? proc_rgb(s_bladeEdge.r, s_bladeEdge.g, s_bladeEdge.b) : steel;     // the equipped sword's colour on its silver (weapon.c)
     (void)iron;
     OBOX(-1.15f, -0.8f, 0.2f, 0.2f, steel);                    // pommel cap
     OBOX(-0.8f, 0.7f, 0.14f, 0.14f, dark);                     // wrapped grip
@@ -993,11 +994,11 @@ static void rerecord(void)
     *s_block = character_skin_record(s_model, s_skel);
 }
 
-void character_skin_set_blade(bool set, bool glow, uint8_t r, uint8_t g, uint8_t b)
+void character_skin_set_blade(bool set, bool glow, uint8_t r, uint8_t g, uint8_t b, uint8_t er, uint8_t eg, uint8_t eb)
 {
-    SkinColor c = { r, g, b, set };
-    if (c.set == s_bladeTint.set && glow == s_bladeGlow && (!set || (c.r == s_bladeTint.r && c.g == s_bladeTint.g && c.b == s_bladeTint.b))) return;
-    s_bladeTint = c; s_bladeGlow = glow;
+    SkinColor c = { r, g, b, set }, e = { er, eg, eb, set };
+    if (!memcmp(&c, &s_bladeTint, sizeof c) && !memcmp(&e, &s_bladeEdge, sizeof e) && glow == s_bladeGlow) return;
+    s_bladeTint = c; s_bladeEdge = e; s_bladeGlow = glow;
     rerecord();
 }
 

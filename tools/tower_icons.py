@@ -249,6 +249,11 @@ LIST12 = [  # (the row's name, list12_grids' key, tint; None: Families' three, e
     ("Milestones", "codex: Milestones", GOLD), ("Pacts", "Brand of Wrath", PACT), ("Nights", "codex: Nights", (190, 145, 255)),
     ("The Tower's Heart", "codex: The Tower's Heart", (235, 110, 85)),
 ] + [(f, "emblem " + f, FAM_RGB[k]) for k, f in enumerate(["Blood", "Storm", "Moon", "Iron", "Shadow", "Hearth"])]
+# the swords (weapon.c, its WEAPONS' names and blades; appended: the tiles above keep their places): the Armory's row
+# and Codex page in steel, each sword in its blade's colour (the Knight's in steel)
+LIST12 += [("Armory", "sword", STEEL), ("The Armory", "sword", STEEL), ("Knight's Sword", "sword", STEEL),
+           ("Lunar Edge", "sword", (120, 196, 255)), ("Mare Nubium", "sword", (214, 220, 232)), ("Mare Frigoris", "sword", (178, 214, 255)),
+           ("Mare Requiem", "sword", (150, 222, 200)), ("Sol's Bane", "sword", (205, 160, 90)), ("Shadowslayer", "sword", (150, 150, 175))]
 # the colour ones (the skills' own art at 12: the Codex's skill topics, the Unlocks' B forms)
 LIST12_RGBA = [("Moon Blade Dance", "skill", "moonblade"), ("Halfmoon Slash", "skill", "halfmoon"), ("Crescent Cleave", "skill", "cleave"),
                ("Shattering Dance", "form", "Shattering Dance"), ("Full Moon", "form", "Full Moon"), ("Long Cleave", "form", "Long Cleave")]

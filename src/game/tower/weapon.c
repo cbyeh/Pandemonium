@@ -6,7 +6,6 @@
 #include "game/boss/boss.h"
 #include "game/sun_boss/sun_boss.h"
 #include "game/dragon_boss/dragon_boss.h"
-#include "fx/skill_fx.h"
 
 static const struct {
     const char *name, *desc;
@@ -15,33 +14,32 @@ static const struct {
     float speed, stamina, poise;    // swings' speed, a swing's stamina, the stagger build-up of sword hits
     int hunt; float huntMult, otherMult;   // a hunter: its boss's phase (-1 none), its damage on it, elsewhere
     float fire, shadow;             // damage taken from fire, from Shadowborne's flames and beams
-    bool perfect, echo, glow, lunar;   // perfect dodges pay; a second crescent; the blade lit by itself; the skills in moonlight
+    bool perfect, glow;             // perfect dodges pay; the blade lit by itself
     uint8_t r, g, b;                // the blade (0, 0, 0: the skin's own)
+    uint8_t er, eg, eb;             // the Black Swordsman's slab edges (0, 0, 0: the blade's)
 } WEAPONS[WPN_COUNT] = {
     [WPN_KNIGHT]        = { "Knight's Sword", "The all-rounder", 0, 0,
-                            1.0f, 1.0f, 1.0f, 1.0f, 1.0f, -1, 1.0f, 1.0f, 1.0f, 1.0f, false, false, false, false, 0, 0, 0 },
+                            1.0f, 1.0f, 1.0f, 1.0f, 1.0f, -1, 1.0f, 1.0f, 1.0f, 1.0f, false, false, 0, 0, 0, 0, 0, 0 },
     [WPN_NUBIUM]        = { "Mare Nubium", "Swings 20% faster, 25% less stamina, -25% a hit", 10, 600,
-                            0.75f, 1.0f, 1.2f, 0.75f, 1.0f, -1, 1.0f, 1.0f, 1.0f, 1.0f, false, false, false, false, 214, 220, 232 },
+                            0.75f, 1.0f, 1.2f, 0.75f, 1.0f, -1, 1.0f, 1.0f, 1.0f, 1.0f, false, false, 214, 220, 232, 0, 0, 0 },
     [WPN_FRIGORIS]      = { "Mare Frigoris", "Swings 15% slower, +40% stagger, -10% damage", 15, 900,
-                            0.9f, 0.9f, 0.85f, 1.0f, 1.4f, -1, 1.0f, 1.0f, 1.0f, 1.0f, false, false, false, false, 178, 214, 255 },
+                            0.9f, 0.9f, 0.85f, 1.0f, 1.4f, -1, 1.0f, 1.0f, 1.0f, 1.0f, false, false, 178, 214, 255, 0, 0, 0 },
     [WPN_LUNAR_EDGE]    = { "Lunar Edge", "Sword swings -20%, skills +30%", 25, 1500,
-                            0.8f, 1.3f, 1.0f, 1.0f, 1.0f, -1, 1.0f, 1.0f, 1.0f, 1.0f, false, false, true, true, 120, 196, 255 },
-    [WPN_TRANQUIL]      = { "Mare Tranquillitatis", "Perfect dodges: stamina back, skills sooner; -10% damage", 30, 1800,
-                            0.9f, 0.9f, 1.0f, 1.0f, 1.0f, -1, 1.0f, 1.0f, 1.0f, 1.0f, true, false, false, false, 150, 222, 200 },
+                            0.8f, 1.3f, 1.0f, 1.0f, 1.0f, -1, 1.0f, 1.0f, 1.0f, 1.0f, false, true, 120, 196, 255, 0, 0, 0 },
+    [WPN_TRANQUIL]      = { "Mare Requiem", "Perfect dodges: stamina back, skills sooner; -10% damage", 30, 1800,
+                            0.9f, 0.9f, 1.0f, 1.0f, 1.0f, -1, 1.0f, 1.0f, 1.0f, 1.0f, true, false, 150, 222, 200, 0, 0, 0 },
     [WPN_SOLS_BANE]     = { "Sol's Bane", "+30% on the Shackled Sun, fire halved, -10% elsewhere", 40, 2000,
-                            1.0f, 1.0f, 1.0f, 1.0f, 1.0f, SUN_BOSS_PHASE, 1.3f, 0.9f, 0.5f, 1.0f, false, false, false, false, 132, 112, 82 },
+                            1.0f, 1.0f, 1.0f, 1.0f, 1.0f, SUN_BOSS_PHASE, 1.3f, 0.9f, 0.5f, 1.0f, false, false, 132, 112, 82, 0, 0, 0 },
     [WPN_SHADOWSLAYER]  = { "Shadowslayer", "+30% on Shadowborne, its flames halved, -10% elsewhere", 50, 2500,
-                            1.0f, 1.0f, 1.0f, 1.0f, 1.0f, DRAGON_BOSS_PHASE, 1.3f, 0.9f, 1.0f, 0.5f, false, false, false, false, 64, 64, 76 },
-    [WPN_LUNAR_REQUIEM] = { "Lunar Requiem", "Skills +30%, an inner crescent on Halfmoon Slash", 100, 0,
-                            1.0f, 1.3f, 1.0f, 1.0f, 1.0f, -1, 1.0f, 1.0f, 1.0f, 1.0f, false, true, true, true, 196, 228, 255 },
-};
-#define PERFECT_STAMINA 0.25f   // Mare Tranquillitatis: of max stamina back
+                            1.0f, 1.0f, 1.0f, 1.0f, 1.0f, DRAGON_BOSS_PHASE, 1.3f, 0.9f, 1.0f, 0.5f, false, false, 64, 64, 76, 225, 232, 245 },
+    };
+#define PERFECT_STAMINA 0.25f   // Mare Requiem: of max stamina back
 #define PERFECT_COOLDOWN 1.0f   //   and every skill's cooldown this much sooner
 
 static bool valid(int id) { return id >= 0 && id < WPN_COUNT; }
 int weapon_at_row(int row)
 {
-    static const uint8_t ORDER[WPN_COUNT] = { WPN_KNIGHT, WPN_NUBIUM, WPN_FRIGORIS, WPN_LUNAR_EDGE, WPN_TRANQUIL, WPN_SOLS_BANE, WPN_SHADOWSLAYER, WPN_LUNAR_REQUIEM };
+    static const uint8_t ORDER[WPN_COUNT] = { WPN_KNIGHT, WPN_NUBIUM, WPN_FRIGORIS, WPN_LUNAR_EDGE, WPN_TRANQUIL, WPN_SOLS_BANE, WPN_SHADOWSLAYER };
     return row >= 0 && row < WPN_COUNT ? ORDER[row] : -1;
 }
 static bool owned_t(const TowerSave *t, int id)
@@ -94,7 +92,6 @@ float weapon_poise_mult(int kind) { return kind == TOWER_HIT_SWORD || kind == TO
 float weapon_swing_speed(void) { return W.speed; }
 float weapon_stamina_mult(void) { return W.stamina; }
 float weapon_taken_mult(int dmgKind) { return dmgKind == DMG_FIRE ? W.fire : dmgKind == DMG_SHADOW ? W.shadow : 1.0f; }
-bool  weapon_echo(void) { return W.echo; }
 void  weapon_on_perfect_dodge(void)
 {
     if (!W.perfect) return;
@@ -112,7 +109,8 @@ void weapon_apply(void)
 #ifdef HLE_AUTOPLAY
     debugf("[weapon] equipped: %s\n", WEAPONS[e].name);
 #endif
-    character_skin_set_blade(WEAPONS[e].r | WEAPONS[e].g | WEAPONS[e].b, WEAPONS[e].glow, WEAPONS[e].r, WEAPONS[e].g, WEAPONS[e].b);
-    skill_fx_set_lunar(WEAPONS[e].lunar);
+    const bool own = WEAPONS[e].er | WEAPONS[e].eg | WEAPONS[e].eb;     // (its slab edges: their own colour, or the blade's)
+    character_skin_set_blade(WEAPONS[e].r | WEAPONS[e].g | WEAPONS[e].b, WEAPONS[e].glow, WEAPONS[e].r, WEAPONS[e].g, WEAPONS[e].b,
+                             own ? WEAPONS[e].er : WEAPONS[e].r, own ? WEAPONS[e].eg : WEAPONS[e].g, own ? WEAPONS[e].eb : WEAPONS[e].b);
 }
 #undef W

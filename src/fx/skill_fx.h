@@ -21,7 +21,6 @@ void skill_fx_update(float dt);
 void skill_fx_draw(void);
 // The player's skills in Sunforged gold (the floor-100 reward) or today's cyan
 void skill_fx_set_palette(bool sunforged);
-void skill_fx_set_lunar(bool lunar);     // the player's skills in moonlight (Lunar Edge; Sunforged over it)
 bool skill_fx_palette(void);
 
 // Halfmoon Slash: a 180-degree crescent that grows out to `radius` in front of
