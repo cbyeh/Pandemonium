@@ -23,6 +23,7 @@ static float GU = GLTF * MODEL_SCALE;
 
 typedef struct { uint8_t r, g, b, set; } SkinColor;
 #define C(r, g, b) { r, g, b, 1 }
+static bool s_bladeGlow;     // the equipped sword's blade lit by itself (Lunar Edge, Lunar Requiem)
 static SkinColor s_bladeTint;     // the equipped sword's colour (character_skin_set_blade): over the skin's sword, or the Dragonslayer's edges
 
 enum { CLOTH_NONE, CLOTH_CLOAK, CLOTH_HAIR, CLOTH_PLUME };
@@ -957,7 +958,7 @@ rspq_block_t* character_skin_record(const T3DModel *model, const T3DSkeleton *sk
     for (int i = 0; i < NM; i++) tint(MATS[i], cols[i], &saved[i]);
     // The equipped sword's blade (weapon.c) lit by itself, its texture times its colour: it glows in the dark
     // halls without a new glow (the Lunar Edge's moonlit blue); restored after the record, as the tints
-    T3DMaterial *swm = s_bladeTint.set ? t3d_model_get_material(model, "sword") : NULL;
+    T3DMaterial *swm = s_bladeTint.set && s_bladeGlow ? t3d_model_get_material(model, "sword") : NULL;
     uint64_t swCombiner = swm ? swm->colorCombiner : 0;
 #ifdef HLE_AUTOPLAY
     if (swm) debugf("[blade] sword material: texture %s, combiner %016llx\n", swm->textureA.texPath ? swm->textureA.texPath : "(none)", (unsigned long long)swCombiner);
@@ -992,11 +993,11 @@ static void rerecord(void)
     *s_block = character_skin_record(s_model, s_skel);
 }
 
-void character_skin_set_blade(bool set, uint8_t r, uint8_t g, uint8_t b)
+void character_skin_set_blade(bool set, bool glow, uint8_t r, uint8_t g, uint8_t b)
 {
     SkinColor c = { r, g, b, set };
-    if (c.set == s_bladeTint.set && (!set || (c.r == s_bladeTint.r && c.g == s_bladeTint.g && c.b == s_bladeTint.b))) return;
-    s_bladeTint = c;
+    if (c.set == s_bladeTint.set && glow == s_bladeGlow && (!set || (c.r == s_bladeTint.r && c.g == s_bladeTint.g && c.b == s_bladeTint.b))) return;
+    s_bladeTint = c; s_bladeGlow = glow;
     rerecord();
 }
 

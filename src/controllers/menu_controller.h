@@ -53,6 +53,7 @@ typedef enum {
     MENU_SETTINGS_CONTROLS,
     MENU_SETTINGS_SKILLS,
     MENU_SETTINGS_SKIN,
+    MENU_SETTINGS_SWORD,    // A: the Armory (title only, as the skins)
     MENU_SETTINGS_BACK,
     MENU_SETTINGS_COUNT
 } SettingsMenuOption;

@@ -153,6 +153,7 @@ float character_get_damage_flash_ratio(void);
 
 // External API to apply damage to the character.
 void character_apply_damage(float amount);
+void character_apply_damage_kind(float amount, int kind);     // a blow of a kind (weapon.h DMG_*): fire, Shadowborne's flames
 
 // Health potion API.
 int character_get_health_potion_count(void);

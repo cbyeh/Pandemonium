@@ -23,7 +23,7 @@ typedef enum {
 const char* character_skin_name(int id);
 int  character_skin_get(void);
 void character_skin_set(int id);              // re-records the knight's draw block
-void character_skin_set_blade(bool set, uint8_t r, uint8_t g, uint8_t b);   // the equipped sword's colour over the skin's (weapon.c), its slab's edges on the Black Swordsman
+void character_skin_set_blade(bool set, bool glow, uint8_t r, uint8_t g, uint8_t b);   // the equipped sword's colour over the skin's (weapon.c), its slab's edges on the Black Swordsman
 
 // Used by character.c
 rspq_block_t* character_skin_record(const T3DModel *model, const T3DSkeleton *skel);

@@ -1,3 +1,5 @@
+#include "weapon.h"
+#include "game/sun_boss/sun_boss.h"
 #include <libdragon.h>
 #include "gpu_frame.h"
 #include <t3d/t3d.h>
@@ -434,7 +436,7 @@ static void update_spread_hit(SkillFx *f)
           debugf("[spread] %s: burst %d (%.0f..%.0f out), player %.0f out, %.2f s into it\n", dodged ? "dodged" : "BURNT", k, (double)(k * w), (double)((k + 1) * w), (double)d, (double)t); }
 #endif
         if (!dodged) f->hitsLeft = 0;
-        character_apply_damage(f->damage);          // (a roll's start: its perfect dodge)
+        character_apply_damage_kind(f->damage, DMG_FIRE);          // (a roll's start: its perfect dodge; the Holy Slam's fire)
         return;
     }
 }
@@ -466,7 +468,7 @@ static void update_arc_hit(SkillFx *f, Boss *b)
 #ifdef HLE_LOG_MOVES     // test aid: a hostile wave's hit (the [hit] after it is this one)
         debugf("[fxhit] wave\n");
 #endif
-        character_apply_damage(f->damage);
+        character_apply_damage_kind(f->damage, b && b->phaseIndex == SUN_BOSS_PHASE ? DMG_FIRE : DMG_PLAIN);     // (the Sun's rings: fire)
         return;
     }
     float a[3], c[3];
@@ -594,7 +596,7 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
 #ifdef HLE_LOG_HITGAP
         hle_hg_key(f); hle_hg_hit(hle_hg_fxname(f->shape, false, f->hgSt));
 #endif
-        character_apply_damage(f->damage);
+        character_apply_damage_kind(f->damage, b && b->phaseIndex == SUN_BOSS_PHASE ? DMG_FIRE : DMG_PLAIN);     // (the Sun's crosses, embers and orbs: fire)
     } else {
         if (!sphere_hits_boss(b, c, r, contact)) return;
 #ifdef HLE_LOG_SKILLHIT     // test aid: where the cross or blade was drawn when it hit, against the boss's body

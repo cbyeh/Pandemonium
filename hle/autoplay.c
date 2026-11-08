@@ -926,7 +926,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             { "Shrine", "21", MENU_SHRINE, 'c' }, { "Relics", "215", MENU_RELICS, 'c' }, { "Unlocks", "217", MENU_UNLOCKS, 'c' }, { "Armory", "218", MENU_ARMORY, false },
             { "Offerings", "22", MENU_OFFERINGS, 'c' }, { "Codex", "23", MENU_CODEX, 'd' }, { "Nightfarer", "21", MENU_SHRINE, 'n' }, { "Load Game", "3", MENU_LOAD_GAME, false },
             { "Settings", "4", MENU_SETTINGS, false }, { "Audio", "40", MENU_AUDIO, false }, { "Video", "41", MENU_VIDEO, false },
-            { "Overscan", "411", 100, false }, { "Controls", "42", MENU_CONTROLS, false }, { "Skins", "44", MENU_SKINS, false },
+            { "Overscan", "411", 100, false }, { "Controls", "42", MENU_CONTROLS, false }, { "Skins", "44", MENU_SKINS, false }, { "Settings Sword", "45", MENU_ARMORY, false },
             { "Credits", "5", MENU_CREDITS, false }, { NULL, NULL, 0, false } };
         static const Visit PAUSE[] = {
             { "Pause", "", MENU_MAIN, false }, { "Pause Settings", "3", MENU_SETTINGS, false }, { "Pause Audio", "30", MENU_AUDIO, false },

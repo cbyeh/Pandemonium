@@ -1,3 +1,4 @@
+#include "weapon.h"
 #include <libdragon.h>
 #include "gpu_frame.h"
 #include <t3d/t3d.h>
@@ -1046,9 +1047,9 @@ static inline float get_attack_duration(int comboIndex)
 
     if (animIdx >= 0 && animIdx < character.animationCount && character.animations[animIdx]) {
         float len = t3d_anim_get_length(character.animations[animIdx]);
-        return (len > 0.0f) ? len : 0.9f;
+        return ((len > 0.0f) ? len : 0.9f) / weapon_swing_speed();     // (a sword's swing speed: Mare Nubium, Mare Frigoris)
     }
-    return 0.9f;
+    return 0.9f / weapon_swing_speed();
 }
 
 
@@ -1172,7 +1173,7 @@ static inline void try_start_attack(bool leftJustPressed)
     if (characterState == CHAR_STATE_NORMAL) {
         if (character.stamina <= 0.0f) return;
 
-        character_consume_stamina(STAMINA_COST_ATTACK);
+        character_consume_stamina(STAMINA_COST_ATTACK * weapon_stamina_mult());
 
         characterState = CHAR_STATE_ATTACKING;
         attackComboIndex = 1;
@@ -1182,6 +1183,9 @@ static inline void try_start_attack(bool leftJustPressed)
         character_reset_swing_sfx();
 
         currentActionDuration = get_attack_duration(1);
+#ifdef HLE_LOG_WEAPON
+        debugf("[wpnswing] duration %.3f s, stamina %.1f\n", (double)currentActionDuration, (double)(STAMINA_COST_ATTACK * weapon_stamina_mult()));
+#endif
         character.currentAttackHasHit = false;
 
         float yaw = character.rot[1];
@@ -1471,6 +1475,12 @@ static void update_skill(float dt)
             if (full) skill_fx_next_arc_half(T3D_PI);       // all round
             skill_fx_spawn_arc((float[3]){ character.pos[0], character.pos[1] + 10.0f, character.pos[2] },
                                yaw, radius, HALFMOON_DAMAGE * (skill_lv(SKILL_HALFMOON_SLASH) >= 3 ? 1.2f : 1.0f) * (full ? FULL_MOON_HIT : 1.0f) * share);
+            if (weapon_echo()) {    // Lunar Requiem: a second, smaller crescent inside it (40%, no stagger of its own)
+                skill_fx_next_poise(0.0f);
+                if (full) skill_fx_next_arc_half(T3D_PI);
+                skill_fx_spawn_arc((float[3]){ character.pos[0], character.pos[1] + 10.0f, character.pos[2] },
+                                   yaw, radius * 0.65f, 0.4f * HALFMOON_DAMAGE * (skill_lv(SKILL_HALFMOON_SLASH) >= 3 ? 1.2f : 1.0f) * (full ? FULL_MOON_HIT : 1.0f) * share);
+            }
             screen_shake_set_shake_mag(skillStep ? 8.0f : 14.0f);
             character_play_swing();
             audio_play_scene_sfx_dist(SCENE1_SFX_BLADE_SLASH, skillStep ? 0.7f : 1.0f, 0.0f);
@@ -2225,7 +2235,7 @@ static inline void progress_action_timers(float dt, KnockdownBreakawayReq breaka
             attackComboIndex++;
             attackQueued = false;
 
-            character_consume_stamina(STAMINA_COST_ATTACK);
+            character_consume_stamina(STAMINA_COST_ATTACK * weapon_stamina_mult());
 
             actionTimer = 0.0f;
             character_reset_swing_sfx();
@@ -2605,6 +2615,8 @@ static inline void update_animations(float speedRatio, CharacterState state, flo
             animSpeed = CLEAVE_RELEASE / cleave_release();       // a shorter wind-up (Lv 4), the same
         } else if (state == CHAR_STATE_ROLLING) {
             animSpeed = ROLL_ANIM_SPEED;
+        } else if (state == CHAR_STATE_ATTACKING) {
+            animSpeed = weapon_swing_speed();     // the clip with its duration (get_attack_duration)
         }
 
         if (fabsf(animSpeed - lastAnimSpeed) > 0.001f) {
@@ -3518,8 +3530,15 @@ void character_draw_ui(void)
 
 bool character_invulnerable(void) { return character_is_invulnerable(); }
 
+static int s_dmgKind = DMG_PLAIN;     // the blow's kind (character_apply_damage_kind): the hunters halve fire, Shadowborne's flames
+void character_apply_damage_kind(float amount, int kind) { s_dmgKind = kind; character_apply_damage(amount); s_dmgKind = DMG_PLAIN; }
+
 void character_apply_damage(float amount)
 {
+#ifdef HLE_LOG_WEAPON
+    if (s_dmgKind != DMG_PLAIN) debugf("[wpntaken] kind %d %.2f -> %.2f\n", s_dmgKind, (double)amount, (double)(amount * weapon_taken_mult(s_dmgKind)));
+#endif
+    amount *= weapon_taken_mult(s_dmgKind);
     if (amount <= 0.0f || characterState == CHAR_STATE_DEAD) return;   // the death screen's attacks still in flight: harmless
     amount *= boss_damage_scale();      // the Bonus bosses hit harder than their attacks' base numbers
     { Boss *b = boss_get_instance(); if (b) amount *= tower_elite_blow(b->health / fmaxf(b->maxHealth, 1.0f)); }     // (an Enraged Elite below half: +25%)
@@ -3532,6 +3551,7 @@ void character_apply_damage(float amount)
             && actionTimer * currentActionDuration <= tower_mod_perfect_window()) {
             s_perfectThisRoll = true;
             tower_on_perfect_dodge();
+            weapon_on_perfect_dodge();     // (Mare Tranquillitatis)
             game_time_slowmo(0.45f, 0.35f);
             character.stamina = fminf(character.maxStamina, character.stamina + PERFECT_DODGE_STAMINA);
             if (tower_boon_stacks(BOON_EVASION)) {      // the roll's stamina back too

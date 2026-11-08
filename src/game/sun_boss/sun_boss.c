@@ -1,3 +1,4 @@
+#include "weapon.h"
 #include <libdragon.h>
 #include "gpu_frame.h"
 #include <t3d/t3d.h>
@@ -596,7 +597,7 @@ static void flare_tick(float dt)
         hle_hg_m("Sun Flare (ring)", m, false);
         if (hit) { hle_hg_begin(); hle_hg_ring2("ring", s.flarePos, R - band, R, s.flarePos[1] - 6.0f, s.flarePos[1] + 12.0f); hle_hg_hit("Sun Flare (ring)"); } }
 #endif
-    if (hit) { s.flareHit = true; character_apply_damage(hurt(16.0f)); }
+    if (hit) { s.flareHit = true; character_apply_damage_kind(hurt(16.0f), DMG_FIRE); }
     if (s.flareAge > 0.55f) s.flareAge = -1.0f;
 }
 

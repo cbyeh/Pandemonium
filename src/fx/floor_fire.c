@@ -1,3 +1,4 @@
+#include "weapon.h"
 #include <libdragon.h>
 #include <t3d/t3d.h>
 #include <math.h>
@@ -104,7 +105,7 @@ void floor_fire_update(float dt)
 #ifdef HLE_HUMAN_BOT
         { extern int hb_src; hb_src = 1; }   // test aid: Smouldering's floor fire
 #endif
-        character_apply_damage(FF_DPS * FF_TICK / boss_damage_scale());
+        character_apply_damage_kind(FF_DPS * FF_TICK / boss_damage_scale(), DMG_FIRE);
         s_hitCd = FF_TICK;
         s_spent = f->patch;
         audio_play_scene_sfx_dist(SCENE1_SFX_FIRE, 0.6f * BONUS_SFX_VOL, 0.0f);    // (as the Fallen Warrior's fire: at the player)

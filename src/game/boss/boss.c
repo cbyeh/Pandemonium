@@ -852,9 +852,9 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
         amount *= tower_mod_damage_dealt() * tower_mod_damage_vs(boss->health / fmaxf(boss->maxHealth, 1.0f), boss->staggerT > 0.0f, kind);
     }
 #ifdef HLE_LOG_WEAPON     // test aid: each hit's kind and its damage before and after the sword's trade
-    debugf("[wpn] kind %d %.3f -> %.3f (sword %d)\n", kind, (double)amount, (double)(amount * weapon_damage_mult(kind)), weapon_equipped());
+    debugf("[wpn] kind %d %.3f -> %.3f (sword %d) poise x%.2f\n", kind, (double)amount, (double)(amount * weapon_damage_mult(kind, boss->phaseIndex)), weapon_equipped(), (double)weapon_poise_mult(kind));
 #endif
-    amount *= weapon_damage_mult(kind);     // the equipped sword's trade (weapon.c): every mode, the stagger meter as the blow's
+    amount *= weapon_damage_mult(kind, boss->phaseIndex);     // the equipped sword's trade (weapon.c): every mode, the stagger meter as the blow's
     if (boss->staggerT > 0.0f) amount *= tower_mod_stagger_damage(kind);     // staggered: only boons make hits land harder (added, capped)
 #ifdef HLE_HUMAN_BOT    // test aid: the human-like bot's hits land for this much more (it swings about half the metric's 148 a minute, held by stamina;
                         // x2 brings its Story Guardian kill to the metric's cost). Damage only: the stagger meter and healing go by the hit
@@ -872,7 +872,7 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
     if (boss->staggerT <= 0.0f) {      // the stagger meter
         // from the blow itself, not the damage: the same hits fill the same share on every floor,
         // whatever the damage boons
-        boss->poise = fminf(1.0f, boss->poise + poise * tower_mod_poise() * boss_poise_scale(boss));
+        boss->poise = fminf(1.0f, boss->poise + poise * tower_mod_poise() * boss_poise_scale(boss) * weapon_poise_mult(kind));     // (Mare Frigoris: +40%)
         boss->poiseIdleT = 0.0f;
     }
 

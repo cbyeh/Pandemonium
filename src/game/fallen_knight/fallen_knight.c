@@ -1,3 +1,4 @@
+#include "weapon.h"
 #include <libdragon.h>
 #include "gpu_frame.h"
 #include <t3d/t3d.h>
@@ -1792,7 +1793,7 @@ static void fire_update(float dt)
       for (int i = 0; i < n; i++) if (P[i][1] - s.groundY < 12.0f) g = fminf(g, skill_fx_fire_trail_gap(P[i]));
       extern void hle_hg_gaps(const char *, float, float); hle_hg_begin(); hle_hg_gaps("flames", g, skill_fx_fire_trail_gap(character.pos) - character.capsuleCollider.radius); hle_hg_hit("FW fire trail"); }
 #endif
-    character_apply_damage(FK_FELT(8.0f));
+    character_apply_damage_kind(FK_FELT(8.0f), DMG_FIRE);
     s.fireHitT = 1.0f;
     sfx_at(SCENE1_SFX_FIRE, 0.6f, character.pos[0], character.pos[2]);
 }

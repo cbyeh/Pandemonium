@@ -145,7 +145,9 @@ static void codex_open_menu(MenuState from, int option)
 }
 static bool main_row_hidden(int i) { return (i == MENU_MAIN_RUN || i == MENU_MAIN_CODEX) && !tower_active(); }    // (Tower runs only)
 // Settings from a pause menu: no Skills or Skin rows (the user's call: they're the title's; Sunforged's toggle with the skins)
-static bool settings_row_hidden(int i) { return (i == MENU_SETTINGS_SKILLS || i == MENU_SETTINGS_SKIN) && settingsHubReturnMenu != MENU_TITLE; }
+static bool settings_row_hidden(int i) { return (i == MENU_SETTINGS_SKILLS || i == MENU_SETTINGS_SKIN || i == MENU_SETTINGS_SWORD) && settingsHubReturnMenu != MENU_TITLE; }
+static int armoryReturnMenu = MENU_SHRINE, armoryReturnOption = MENU_SHRINE_ARMORY;     // where the Armory goes back to (the Shrine, or Settings)
+static int armory_row_of(int id) { for (int r = 0; r < WPN_COUNT; r++) if (weapon_at_row(r) == id) return r; return 0; }
 static bool row_hidden(int i) { return currentMenu == MENU_MAIN ? main_row_hidden(i) : currentMenu == MENU_SETTINGS && settings_row_hidden(i); }
 static int run_rows_on_page(void)
 {
@@ -180,6 +182,7 @@ static const char* settingsMenuOptions[MENU_SETTINGS_COUNT] = {
     "Controls",
     "Skills: %s",
     "Skin: %s",           // A: the Skins list
+    "Sword: %s",          // A: the Armory (its swords, bought and equipped)
     "Back",
 };
 
@@ -405,7 +408,7 @@ static void buy_take(void)
     if (currentMenu == MENU_SHRINE && i < MENU_SHRINE_UPGRADES) ok = tower_upgrade_buy((UpgradeId)i);
     else if (currentMenu == MENU_SHRINE && i == MENU_SHRINE_NIGHTFARER) ok = tower_nightfarer_buy();
     else if (currentMenu == MENU_RELICS) ok = tower_relic_select(i - 1);
-    else if (currentMenu == MENU_ARMORY) ok = weapon_select(i);
+    else if (currentMenu == MENU_ARMORY) ok = weapon_select(weapon_at_row(i));
     else if (currentMenu == MENU_UNLOCKS) ok = tower_pack_buy(i);
     else if (currentMenu == MENU_OFFERINGS) ok = !tower_offer_set(i) && tower_offer_toggle(i);
     if (ok) save_controller_save_settings();
@@ -650,6 +653,12 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
         if (aJustPressed && selectedOption == MENU_SETTINGS_SKIN) {
             currentMenu = MENU_SKINS;
             selectedOption = character_skin_get();
+            return;
+        }
+        if (aJustPressed && selectedOption == MENU_SETTINGS_SWORD) {
+            armoryReturnMenu = MENU_SETTINGS; armoryReturnOption = MENU_SETTINGS_SWORD;
+            currentMenu = MENU_ARMORY;
+            selectedOption = armory_row_of(weapon_equipped());
             return;
         }
         if ((leftJustPressed || rightJustPressed) && selectedOption == MENU_SETTINGS_SKILLS && settingsHubReturnMenu == MENU_TITLE) {
@@ -936,8 +945,9 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             currentMenu = MENU_UNLOCKS;
             selectedOption = 0;
         } else if (selectedOption == MENU_SHRINE_ARMORY && aJustPressed) {
+            armoryReturnMenu = MENU_SHRINE; armoryReturnOption = MENU_SHRINE_ARMORY;
             currentMenu = MENU_ARMORY;
-            selectedOption = weapon_equipped();      // on the one equipped
+            selectedOption = armory_row_of(weapon_equipped());      // on the one equipped
         } else if (aJustPressed && selectedOption < MENU_SHRINE_UPGRADES) {
             buy_ask(tower_upgrade_name((UpgradeId)selectedOption), tower_upgrade_cost((UpgradeId)selectedOption), tower_upgrade_desc((UpgradeId)selectedOption));
         }
@@ -952,12 +962,13 @@ static void menu_controller_update_for_state(GameState state, bool cutsceneActiv
             else if (tower_relic_select(k)) save_controller_save_settings();     // wear an owned one, or None
         }
     } else if (currentMenu == MENU_ARMORY) {
+        int id = weapon_at_row(selectedOption);
         if (bJustPressed || (aJustPressed && selectedOption == WPN_COUNT)) {
-            currentMenu = MENU_SHRINE;
-            selectedOption = MENU_SHRINE_ARMORY;
-        } else if (aJustPressed && selectedOption != weapon_equipped()) {
-            if (weapon_owned(selectedOption)) { if (weapon_select(selectedOption)) save_controller_save_settings(); }     // equip an owned one
-            else if (weapon_available(selectedOption)) buy_ask(weapon_name(selectedOption), weapon_cost(selectedOption), weapon_desc(selectedOption));
+            currentMenu = armoryReturnMenu;
+            selectedOption = armoryReturnOption;
+        } else if (aJustPressed && id >= 0 && id != weapon_equipped()) {
+            if (weapon_owned(id)) { if (weapon_select(id)) save_controller_save_settings(); }     // equip an owned one
+            else if (weapon_available(id) && weapon_cost(id) > 0) buy_ask(weapon_name(id), weapon_cost(id), weapon_desc(id));
         }
     } else if (currentMenu == MENU_UNLOCKS) {
         int back = tower_pack_count();
@@ -1282,6 +1293,7 @@ static void menu_body(UiRect r0)
             const char *arg = locked ? (character_skills_enabled() ? "ON (title only)" : "OFF (title only)")
                                      : (character_skills_enabled() ? "ON" : "OFF");
             if (i == MENU_SETTINGS_SKIN) arg = character_skin_name(character_skin_get());
+            if (i == MENU_SETTINGS_SWORD) arg = weapon_name(weapon_equipped());
             snprintf(optionText, sizeof(optionText), settingsMenuOptions[i], arg);
             menu_row(r, y, i == selectedOption, locked ? FONT_STYLE_GREY : FONT_STYLE_WHITE, optionText, NULL);
             y += P + 4;
@@ -1367,17 +1379,18 @@ static void menu_body(UiRect r0)
         for (int i = first; i < rows && i < first + per; i++, y += P) {
             char right[16] = "";
             bool grey = false;
-            if (i < WPN_COUNT) {
-                if (weapon_equipped() == i) snprintf(right, sizeof right, "equipped");
-                else if (weapon_owned(i)) snprintf(right, sizeof right, "owned");
-                else if (!weapon_available(i)) { snprintf(right, sizeof right, "floor %d", weapon_floor(i)); grey = true; }
-                else { snprintf(right, sizeof right, "%d" TOWER_EMBERS, weapon_cost(i)); grey = tower_embers() < weapon_cost(i); }
+            int id = weapon_at_row(i);
+            if (id >= 0) {
+                if (weapon_equipped() == id) snprintf(right, sizeof right, "equipped");
+                else if (weapon_owned(id)) snprintf(right, sizeof right, "owned");
+                else if (!weapon_available(id) || !weapon_cost(id)) { snprintf(right, sizeof right, "floor %d", weapon_floor(id)); grey = true; }
+                else { snprintf(right, sizeof right, "%d" TOWER_EMBERS, weapon_cost(id)); grey = tower_embers() < weapon_cost(id); }
             }
-            menu_row_icon(r, y, i == selectedOption, grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE, i < WPN_COUNT ? weapon_name(i) : "Back", right, NULL);
+            menu_row_icon(r, y, i == selectedOption, grey ? FONT_STYLE_GREY : FONT_STYLE_WHITE, id >= 0 ? weapon_name(id) : "Back", right, NULL);
         }
-        int sel = selectedOption;
+        int sel = weapon_at_row(selectedOption) >= 0 ? weapon_at_row(selectedOption) : WPN_COUNT;
         bool poor = sel < WPN_COUNT && !weapon_owned(sel) && weapon_available(sel) && tower_embers() < weapon_cost(sel);
-        const char *desc = sel >= WPN_COUNT ? "" : !weapon_available(sel) ? "Found deeper in the Tower" : weapon_desc(sel);
+        const char *desc = sel >= WPN_COUNT ? "" : !weapon_available(sel) ? (weapon_cost(sel) ? "Found deeper in the Tower" : "Yours at the Tower's summit") : weapon_desc(sel);
         menu_help(r, poor ? FONT_STYLE_RED : FONT_STYLE_GREY, poor ? "Not enough Embers" : desc);
     } else if (currentMenu == MENU_RELICS || currentMenu == MENU_SKINS || currentMenu == MENU_UNLOCKS) {
         // a list: name on the left, its state on the right, what the hovered one does below

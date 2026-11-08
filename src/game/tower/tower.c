@@ -6,6 +6,7 @@
 #include <stdlib.h>
 
 #include "tower.h"
+#include "weapon.h"
 #include "character.h"
 #include "character_skin.h"
 #include "globals.h"
@@ -130,7 +131,7 @@ static const char *const SKILL_LV_DESC[SKILL_COUNT][3] = {
 };
 // The Codex's pages (the Tower menu and the pause menu): each its text in tower_text.bin, and some its tables (codex_gen)
 enum { CX_CLIMB, CX_MAP, CX_FIGHTS, CX_STOPS, CX_SLOTS, CX_FAMILIES, CX_FAM0, CX_RIVALS = CX_FAM0 + FAM_COUNT, CX_PLUS, CX_SKILLS, CX_MBD, CX_HALFMOON, CX_CLEAVE,
-       CX_AFFIXES, CX_GOLD, CX_EMBERS, CX_OFFERINGS, CX_MILESTONES, CX_PACTS, CX_NIGHTS, CX_HEART, CX_COUNT };
+       CX_AFFIXES, CX_GOLD, CX_EMBERS, CX_OFFERINGS, CX_MILESTONES, CX_PACTS, CX_NIGHTS, CX_HEART, CX_ARMORY, CX_COUNT };
 #define OFFER_TXT 7         // (OFF_COUNT, below)
 // What each card does in full, for its Details panel (R), the affixes', the Offerings' and the Codex's pages (the numbers
 // are the code's): in ROM, rom:/ui/tower_text.bin, a text a line after its header line (every BoonId in order, then the
@@ -3709,7 +3710,7 @@ static void milestone_notice(int i)
 static const char *const CODEX_TITLE[CX_COUNT] = {
     "The climb", "The map", "Fights and Elites", "Rests, Shops, Events", "Slots and levels", "Families", "Blood boons", "Storm boons", "Moon boons", "Iron boons", "Shadow boons", "Hearth boons", "Rivals", "\"+\" and duos",
     "Skills", "Moon Blade Dance", "Halfmoon Slash", "Crescent Cleave", "Elite affixes", "Gold", "Embers and the Shrine", "Offerings",
-    "Milestones", "Pacts", "Nights", "The Tower's Heart",
+    "Milestones", "Pacts", "Nights", "The Tower's Heart", "The Armory",
 };
 int  tower_codex_count(void) { return CX_COUNT; }
 const char *tower_codex_title(int i) { return i >= 0 && i < CX_COUNT ? CODEX_TITLE[i] : ""; }
@@ -3825,6 +3826,18 @@ static void codex_gen(UiDoc *d, int k)
         for (int b = 0; b < PB_COUNT; b++) ui_doc_text(d, FONT_STYLE_GOLD, "%s: %s", BLESSINGS[b].name, BLESSINGS[b].desc);
         ui_doc_gap(d);
         for (int c = 0; c < PC_COUNT; c++) ui_doc_text(d, FONT_STYLE_RED, "%s: %s", CURSES[c].name, CURSES[c].desc);
+        break;
+    case CX_ARMORY:     // every sword by its floor: what it does, where it's found (weapon.c's numbers)
+        for (int r = 0; r < WPN_COUNT; r++) {
+            int id = weapon_at_row(r);
+            ui_doc_gap(d);
+            ui_doc_text(d, FONT_STYLE_GOLD, "%s", weapon_name(id));
+            ui_doc_text(d, FONT_STYLE_WHITE, "%s.", weapon_desc(id));
+            if (weapon_owned(id)) ui_doc_text(d, FONT_STYLE_GREY, "%s", weapon_equipped() == id ? "Yours, equipped." : "Yours.");
+            else if (!weapon_floor(id)) ui_doc_text(d, FONT_STYLE_GREY, "Yours from the start.");
+            else if (!weapon_cost(id)) ui_doc_text(d, FONT_STYLE_GREY, "Floor %d: yours there.", weapon_floor(id));
+            else ui_doc_text(d, FONT_STYLE_GREY, "Floor %d, then %d" TOWER_EMBERS " at the Shrine.", weapon_floor(id), weapon_cost(id));
+        }
         break;
     case CX_NIGHTS:
         for (int n = 1; n < NIGHT_COUNT; n++) {

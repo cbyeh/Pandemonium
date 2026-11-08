@@ -1,6 +1,7 @@
 #if defined(HLE_LOG_HITGAP) && !defined(HLE_LOG_HURTBOX)
 #define HLE_LOG_HURTBOX     // (its blows' gaps ride on these test aids)
 #endif
+#include "weapon.h"
 #include <libdragon.h>
 #include "gpu_frame.h"
 #include <t3d/t3d.h>
@@ -925,7 +926,7 @@ static void hazards_update(float dt)
 #ifdef HLE_HUMAN_BOT
         { extern int hb_src; if (!stream && !rain) hb_src = 2; }   // test aid: a lingering flame's tick
 #endif
-        character_apply_damage(stream ? 20.0f : rain ? 12.0f : f->ember ? 5.0f : 9.0f);
+        character_apply_damage_kind(stream ? 20.0f : rain ? 12.0f : f->ember ? 5.0f : 9.0f, DMG_SHADOW);     // (its flames: Shadowslayer halves them)
         s.fireCd = rain ? 1.2f : f->ember ? 0.5f : 0.4f;      // (a fireball's patch: 5 every 0.5 s)
         if (stream) s.hitDone = true;
     }
@@ -943,7 +944,7 @@ static void hazards_update(float dt)
         }
         bool hit = axis_dist_pt(o->p) < 4.5f + PLAYER_R;      // drawn 4.5 round (the chest point within 8 let some pass through)
         HB_TOUCH(HB_ORB, axis_dist_pt(o->p) - 4.5f - 8.0f);
-        if (hit) { HB_HIT(HB_ORB, axis_dist_pt(o->p) - 4.5f - 8.0f); character_apply_damage(12.0f); }
+        if (hit) { HB_HIT(HB_ORB, axis_dist_pt(o->p) - 4.5f - 8.0f); character_apply_damage_kind(12.0f, DMG_SHADOW); }
         if (hit || o->p[1] < s.groundY + 1.0f || o->age > 7.0f || !room_ok(o->p[0], o->p[2])) {
             o->on = false;
         }
@@ -965,7 +966,7 @@ static void hazards_update(float dt)
         memcpy(hgC, p, sizeof hgC);
 #endif
         HB_TOUCH(HB_BLAST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f);
-        if (burst_hits(p)) { HB_HIT(HB_BLAST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage(12.0f); }
+        if (burst_hits(p)) { HB_HIT(HB_BLAST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage_kind(12.0f, DMG_SHADOW); }
         screen_shake_set_shake_mag(3.0f);
     }
     for (int i = 0; i < BALL_MAX; i++) {
@@ -986,7 +987,7 @@ static void hazards_update(float dt)
         memcpy(hgC, p, sizeof hgC);
 #endif
         HB_TOUCH(HB_BALLBURST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f);
-        if (direct || burst_hits(p)) { HB_HIT(direct ? HB_BALL : HB_BALLBURST, direct ? axis_dist_pt(o->p) - 5.5f - 8.0f : sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage(12.0f); }
+        if (direct || burst_hits(p)) { HB_HIT(direct ? HB_BALL : HB_BALLBURST, direct ? axis_dist_pt(o->p) - 5.5f - 8.0f : sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage_kind(12.0f, DMG_SHADOW); }
         screen_shake_set_shake_mag(4.0f);
         sfx_at(SCENE1_SFX_BOSS_SMASH2, 1.0f, p[0], p[2]);     // (sfx_boom's)
     }
@@ -1006,7 +1007,7 @@ static void beam_at(const float to[3], float w, float dmg, bool blasts, float dt
     if (!audio_set_scene_sfx_dist(humCh, SCENE1_SFX_BEAM_HUM, bd)) humCh = audio_scene_sfx_pitch(audio_play_scene_sfx_dist(SCENE1_SFX_BEAM_HUM, BONUS_SFX_VOL, bd), tower_elite_pitch());     // (or stopped: all sounds stopped, its channel taken)
     humD = bd; humming = true;
     HB_TOUCH(HB_BEAM, bg - 8.0f);
-    if (!s.hitDone && bg < PLAYER_R) { HB_HIT(HB_BEAM, fminf(axis_dist_seg(s.mouth, to) - w, axis_dist_pt(to) - 9.0f) - 8.0f); character_apply_damage(dmg); s.hitDone = true; }
+    if (!s.hitDone && bg < PLAYER_R) { HB_HIT(HB_BEAM, fminf(axis_dist_seg(s.mouth, to) - w, axis_dist_pt(to) - 9.0f) - 8.0f); character_apply_damage_kind(dmg, DMG_SHADOW); s.hitDone = true; }
     if (!blasts) return;
     s.emit -= dt;
     if (s.emit <= 0.0f) { s.emit += 0.2f; blast_spawn(to); }
@@ -2188,7 +2189,7 @@ static void hits_after_rig(Boss *b, float dt)
                 HB_TOUCH(HB_CONE, fmaxf(fmaxf(d - CONE_L * k, side), -along) - 8.0f);
             }
 #endif
-            if (!s.cone.hit && cone_hits()) { s.cone.hit = true; HB_HIT(HB_CONE, 0.0f); character_apply_damage(18.0f); }
+            if (!s.cone.hit && cone_hits()) { s.cone.hit = true; HB_HIT(HB_CONE, 0.0f); character_apply_damage_kind(18.0f, DMG_SHADOW); }
         } else if (s.cone.t >= CONE_GROW + CONE_HOLD + CONE_FADE) s.cone.on = false;
     }
 }
