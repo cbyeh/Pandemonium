@@ -773,7 +773,7 @@ The user's design: swords bought in the Shrine's Armory once the best floor reac
 | Knight's Sword | none | owned | the skin's | done |
 | Lunar Edge | sword swings and finishers x0.8, skills x1.3 | floor 25, 1500 Embers | moonlit blue blade, lit by itself (the whole sword material, hilt too); the skills keep their own colours (the user's call: no moonlight palette) | done |
 | Mare Nubium | swings 20% faster, 25% less stamina, -25% a hit | floor 10, 600 | pale silver (one colour, close to steel: no thinner blade or trail yet) | done |
-| Mare Frigoris | swings 15% slower, +40% stagger (sword hits), -10% | floor 15, 900 | icy blue (one colour: no broader blade yet) | done |
+| Mare Frigoris | swings 15% slower, +40% stagger (sword hits); its -10% damage dropped (the user's call: the slower swing already cost ~15%, ~x1.31 the fight's cost before staggers) | floor 15, 900 | icy blue (one colour: no broader blade yet) | done |
 | Mare Requiem (was Mare Tranquillitatis) | a perfect dodge: 25% stamina back, skills -1 s; -10% | floor 30, 1800 | pale sea-green | done |
 | Sol's Bane | +30% on the Shackled Sun, fire taken halved (the Sun's flare, rings, crosses, embers and orbs; Smouldering's flames; the Fallen Warrior's fire trail and Holy Slam fire), -10% elsewhere | floor 40, 2000 | dark bronze-iron (one colour: the gold edge and eclipse guard need the sword model split) | done |
 | Shadowslayer | +30% on Shadowborne, its flames, fireballs, orbs, beam and cone halved, -10% elsewhere | floor 50, 2500 | blackened (one colour); on the Black Swordsman a cold white edge | done |
