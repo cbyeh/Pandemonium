@@ -1,3 +1,4 @@
+#include "weapon.h"
 #include <libdragon.h>
 #include <eepromfs.h>
 #include <stdint.h>
@@ -418,6 +419,7 @@ bool save_controller_load_settings(void) {
     // a skin this slot hasn't unlocked (an older save, before the unlocks) falls back to the Knight
     character_skin_set(save_progress_skin_unlocked(d, saved_skin(d)) ? saved_skin(d) : SKIN_KNIGHT);
     skill_fx_set_palette(save_progress_tower_best_floor(d) >= SAVE_SUNFORGED_FLOOR && (d->_pad[25] & 2));     // Sunforged (off by default)
+    weapon_apply();     // the slot's sword: its blade's colour, its skills' palette
 #ifdef HLE_AUTOPLAY
     debugf("[save] slot %d: best floor %d, _pad[25] %02x, Sunforged %s\n", s_active_slot, save_progress_tower_best_floor(d), d->_pad[25], skill_fx_palette() ? "on" : "off");
 #endif

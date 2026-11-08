@@ -24,6 +24,7 @@ typedef enum {
     MENU_UNLOCKS,       // Shrine > Unlocks: the families' new boons (Boon Packs) and the skills' B forms, bought here
     MENU_OFFERINGS,     // Tower > Offerings: gifts for the next climb, set aside here
     MENU_CODEX,         // Tower > Codex and the pause menu's (in a climb): a page a topic, paged (ui_pages)
+    MENU_ARMORY,        // Shrine > Armory: the swords (weapon.c), bought and equipped here
 } MenuState;
 
 typedef enum {
@@ -105,7 +106,8 @@ typedef enum {
 #define MENU_SHRINE_RELIC    (MENU_SHRINE_UPGRADES)       // A: the Relics list
 #define MENU_SHRINE_NIGHTFARER   (MENU_SHRINE_UPGRADES + 1)   // A: buy the Nightfarer skin
 #define MENU_SHRINE_PACKS    (MENU_SHRINE_UPGRADES + 2)   // A: the Boon Packs list (the unlock ladder)
-#define MENU_SHRINE_COUNT    (MENU_SHRINE_UPGRADES + 4)
+#define MENU_SHRINE_ARMORY   (MENU_SHRINE_UPGRADES + 3)   // A: the swords (weapon.c)
+#define MENU_SHRINE_COUNT    (MENU_SHRINE_UPGRADES + 5)
 
 typedef enum {
     MENU_ACTION_NONE = 0,

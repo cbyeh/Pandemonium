@@ -23,6 +23,7 @@ static float GU = GLTF * MODEL_SCALE;
 
 typedef struct { uint8_t r, g, b, set; } SkinColor;
 #define C(r, g, b) { r, g, b, 1 }
+static SkinColor s_bladeTint;     // the equipped sword's colour (character_skin_set_blade): over the skin's sword, or the Dragonslayer's edges
 
 enum { CLOTH_NONE, CLOTH_CLOAK, CLOTH_HAIR, CLOTH_PLUME };
 
@@ -842,6 +843,7 @@ __attribute__((noinline, optimize("Os"))) static void acc_dragonslayer(SkinColor
         static const int F[6][4] = { {0,1,3,2}, {4,6,7,5}, {0,4,5,1}, {2,3,7,6}, {0,2,6,4}, {1,5,7,3} }; \
         for (int f = 0; f < 6; f++) proc_mesh_quad(v[F[f][0]], v[F[f][1]], v[F[f][2]], v[F[f][3]], col, false); } while (0)
     const uint32_t steel = proc_rgb(178, 178, 176), core = proc_rgb(22, 22, 24), dark = proc_rgb(40, 30, 26);
+    const uint32_t edge = s_bladeTint.set ? proc_rgb(s_bladeTint.r, s_bladeTint.g, s_bladeTint.b) : steel;     // the equipped sword's colour on its silver (weapon.c)
     (void)iron;
     OBOX(-1.15f, -0.8f, 0.2f, 0.2f, steel);                    // pommel cap
     OBOX(-0.8f, 0.7f, 0.14f, 0.14f, dark);                     // wrapped grip
@@ -856,10 +858,10 @@ __attribute__((noinline, optimize("Os"))) static void acc_dragonslayer(SkinColor
         for (int sd = -1; sd <= 1; sd += 2) {   // the silver bevels, either side of the core
             BP(a0, S0, sd * HW, f * ET); BP(a1, L, sd * HW, f * ET);
             BP(b0, S0, sd * CW, f * TH); BP(b1, L, sd * CW, f * TH);
-            proc_mesh_quad(a0, a1, b1, b0, steel, false);
+            proc_mesh_quad(a0, a1, b1, b0, edge, false);
             BP(c0, L, sd * HW, f * ET); BP(tip, P, 0, 0); BP(ch, L + 0.75f, 0, f * TH);
             BP(c1, L, sd * CW, f * TH);
-            proc_mesh_quad(c0, tip, ch, c1, steel, false);     // the point's bevel
+            proc_mesh_quad(c0, tip, ch, c1, edge, false);      // the point's bevel
         }
         // the black core, a hair proud of the face, ending in a chevron
         BP(b0, S0, -CW, f * (TH + 0.01f)); BP(b1, L, -CW, f * (TH + 0.01f));
@@ -871,9 +873,9 @@ __attribute__((noinline, optimize("Os"))) static void acc_dragonslayer(SkinColor
     for (int sd = -1; sd <= 1; sd += 2) {       // the edges themselves, and up to the point
         float a0[3], a1[3], b0[3], b1[3], tip[3];
         BP(a0, S0, sd * HW, ET); BP(a1, L, sd * HW, ET); BP(b0, S0, sd * HW, -ET); BP(b1, L, sd * HW, -ET);
-        proc_mesh_quad(a0, a1, b1, b0, steel, false);
+        proc_mesh_quad(a0, a1, b1, b0, edge, false);
         BP(tip, P, 0, 0);
-        proc_mesh_tri(a1, tip, b1, steel, false);
+        proc_mesh_tri(a1, tip, b1, edge, false);
     }
     #undef OBOX
     #undef BP
@@ -949,10 +951,18 @@ rspq_block_t* character_skin_record(const T3DModel *model, const T3DSkeleton *sk
 
     // Tint, record, then restore: the Fallen Knight draws this model live with stock colours
     static const char *MATS[] = { "knight", "head", "cloth", "cloth2", "chainmail", "sword" };
-    const SkinColor cols[] = { s->armor, s->helm, s->cloth, s->plume, s->chain, s->sword };
+    const SkinColor cols[] = { s->armor, s->helm, s->cloth, s->plume, s->chain, s_bladeTint.set ? s_bladeTint : s->sword };
     enum { NM = sizeof MATS / sizeof MATS[0] };
     color_t saved[NM];
     for (int i = 0; i < NM; i++) tint(MATS[i], cols[i], &saved[i]);
+    // The equipped sword's blade (weapon.c) lit by itself, its texture times its colour: it glows in the dark
+    // halls without a new glow (the Lunar Edge's moonlit blue); restored after the record, as the tints
+    T3DMaterial *swm = s_bladeTint.set ? t3d_model_get_material(model, "sword") : NULL;
+    uint64_t swCombiner = swm ? swm->colorCombiner : 0;
+#ifdef HLE_AUTOPLAY
+    if (swm) debugf("[blade] sword material: texture %s, combiner %016llx\n", swm->textureA.texPath ? swm->textureA.texPath : "(none)", (unsigned long long)swCombiner);
+#endif
+    if (swm && swm->textureA.texPath) swm->colorCombiner = RDPQ_COMBINER1((TEX0, 0, PRIM, 0), (0, 0, 0, 1));
     uintptr_t hide = ((s->hidePlume || s->hood) ? 1 : 0) | (s->hideSword ? 2 : 0);
     gpu_block_begin();
     t3d_model_draw_custom(model, (T3DModelDrawConf){
@@ -965,6 +975,7 @@ rspq_block_t* character_skin_record(const T3DModel *model, const T3DSkeleton *sk
         T3DMaterial *m = t3d_model_get_material(model, MATS[i]);
         if (m) m->primColor = saved[i];
     }
+    if (swm) swm->colorCombiner = swCombiner;
     hood_build();
     acc_build();
     character_skin_reset_cloth();
@@ -979,6 +990,14 @@ static void rerecord(void)
     gpu_wait();   // the old block may still be queued for this frame
     rspq_block_free(*s_block);
     *s_block = character_skin_record(s_model, s_skel);
+}
+
+void character_skin_set_blade(bool set, uint8_t r, uint8_t g, uint8_t b)
+{
+    SkinColor c = { r, g, b, set };
+    if (c.set == s_bladeTint.set && (!set || (c.r == s_bladeTint.r && c.g == s_bladeTint.g && c.b == s_bladeTint.b))) return;
+    s_bladeTint = c;
+    rerecord();
 }
 
 void character_skin_set(int id)

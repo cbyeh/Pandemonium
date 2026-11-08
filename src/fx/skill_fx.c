@@ -722,6 +722,12 @@ static int s_skillPalette = HLE_SKILL_PALETTE;
 // Sunforged (the floor-100 reward, toggled in Skins): the save sets it; the test aid keeps it on
 void skill_fx_set_palette(bool sunforged) { s_skillPalette = sunforged || HLE_SKILL_PALETTE; }
 bool skill_fx_palette(void) { return s_skillPalette != 0; }
+// Moonlight (the Lunar Edge equipped, weapon.c): a saturated moon-blue to a bright blue (at LUNAR_MID) to white, a little
+// denser: today's skills are already a pale cyan-white, so a softer blue barely showed; the gold sparks silver-white. Sunforged, the floor-100 reward, wins over it
+static bool s_lunar;
+void skill_fx_set_lunar(bool lunar) { s_lunar = lunar; }
+static const uint8_t LUNAR_RAMP[3][3] = { { 30, 80, 255 }, { 100, 160, 255 }, { 230, 240, 255 } };
+#define LUNAR_MID 140
 // Sunforged: the waves' ramp, dark gold to saturated gold (at SUN_MID of 256) to white: through gold, not
 // a pale peach mix, so it stands out from the tan floor, and white soon enough to stand out from the Sun's orange
 static const uint8_t SUN_RAMP[3][3] = { { 235, 175, 45 }, { 255, 196, 45 }, { 255, 254, 250 } };
@@ -743,6 +749,17 @@ static inline uint32_t rgba(int r, int g, int b, float a)
             b = c0[2] + (((c1[2] - c0[2]) * u) >> 8);
             a *= a < 0.4f ? 1.6f : 1.3f;    // denser than the cyan: thinned amber reads brown over the dark and melts into tan and orange
         }
+    } else if (s_drawPlayer && s_lunar) {
+        if (r < 255) {          // the waves, by how white they are (as the Sunforged ramp)
+            int t = (r - 40) * 5 / 4;
+            t = t < 0 ? 0 : t > 256 ? 256 : t;
+            const uint8_t *c0 = LUNAR_RAMP[t >= LUNAR_MID], *c1 = LUNAR_RAMP[1 + (t >= LUNAR_MID)];
+            int u = t < LUNAR_MID ? t * 256 / LUNAR_MID : (t - LUNAR_MID) * 256 / (256 - LUNAR_MID);
+            r = c0[0] + (((c1[0] - c0[0]) * u) >> 8);
+            g = c0[1] + (((c1[1] - c0[1]) * u) >> 8);
+            b = c0[2] + (((c1[2] - c0[2]) * u) >> 8);
+            a *= 1.25f;
+        } else { r = 230; g = 236; b = 255; }      // the gold sparks: silver-white
     }
     int ai = (int)(a * 255.0f);
     ai = ai < 0 ? 0 : ai > 255 ? 255 : ai;

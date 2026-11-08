@@ -1,3 +1,4 @@
+#include "weapon.h"
 #include "boss.h"
 #include "boss_ai.h"
 #include "boss_anim.h"
@@ -850,6 +851,10 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
         if (!bossHitByBleed) tower_on_boss_hurt(amount);     // Rally: also by the hit before boons (after them, a blow came back in two hits deep in a run); a bleed wins back nothing
         amount *= tower_mod_damage_dealt() * tower_mod_damage_vs(boss->health / fmaxf(boss->maxHealth, 1.0f), boss->staggerT > 0.0f, kind);
     }
+#ifdef HLE_LOG_WEAPON     // test aid: each hit's kind and its damage before and after the sword's trade
+    debugf("[wpn] kind %d %.3f -> %.3f (sword %d)\n", kind, (double)amount, (double)(amount * weapon_damage_mult(kind)), weapon_equipped());
+#endif
+    amount *= weapon_damage_mult(kind);     // the equipped sword's trade (weapon.c): every mode, the stagger meter as the blow's
     if (boss->staggerT > 0.0f) amount *= tower_mod_stagger_damage(kind);     // staggered: only boons make hits land harder (added, capped)
 #ifdef HLE_HUMAN_BOT    // test aid: the human-like bot's hits land for this much more (it swings about half the metric's 148 a minute, held by stamina;
                         // x2 brings its Story Guardian kill to the metric's cost). Damage only: the stagger meter and healing go by the hit

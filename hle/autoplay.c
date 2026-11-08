@@ -923,7 +923,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         typedef struct { const char *name, *path; int menu; char r; } Visit;     // r: 'c' a purchase's confirm, 'd' a topic's Details
         static const Visit TITLE[] = {
             { "Title", "", MENU_TITLE, false }, { "Bonus", "1", MENU_BONUS, false }, { "Tower", "2", MENU_TOWER, false },
-            { "Shrine", "21", MENU_SHRINE, 'c' }, { "Relics", "215", MENU_RELICS, 'c' }, { "Unlocks", "217", MENU_UNLOCKS, 'c' },
+            { "Shrine", "21", MENU_SHRINE, 'c' }, { "Relics", "215", MENU_RELICS, 'c' }, { "Unlocks", "217", MENU_UNLOCKS, 'c' }, { "Armory", "218", MENU_ARMORY, false },
             { "Offerings", "22", MENU_OFFERINGS, 'c' }, { "Codex", "23", MENU_CODEX, 'd' }, { "Nightfarer", "21", MENU_SHRINE, 'n' }, { "Load Game", "3", MENU_LOAD_GAME, false },
             { "Settings", "4", MENU_SETTINGS, false }, { "Audio", "40", MENU_AUDIO, false }, { "Video", "41", MENU_VIDEO, false },
             { "Overscan", "411", 100, false }, { "Controls", "42", MENU_CONTROLS, false }, { "Skins", "44", MENU_SKINS, false },

@@ -763,3 +763,20 @@ Final QA pass (2026-11-03, before the beta): calls and what was measured.
 - **The boss's name title** in a Tower fight is held under the Floor/Ascension/night lines until its bar grows (it slid off the screen's top, cut after 0.4 s). Since ebdd30e the Story's and Bonus fights' title is held too, under the player's bars (the user's OK: a visual change only, TWO_RUNS 1:1).
 - **Story 1:1** (main e0a7988 vs the branch, Mupen): HLE_TEST_TWO_RUNS with its cutscenes the same 236 [2r] lines; the ending the same frames (109 at 1/60 s, 5 at 1/30); HLE_TEST_SKILL_DMG (with HLE_TEST_FREEZE_BOSS) the combo 4.0/8.0, Halfmoon 28.0, Cleave 12.5/13.8 cast for cast (one Cleave 11.2 on the branch: a tick by the frame's phase); the Guardian dummy 855/860 damage at 120 s. The -Os cold code in Ares (4 MB, TWO_RUNS with cutscenes): title 57.55/57.60 fps, phase 1 59.81/59.81, phase 2 58.43/58.57 (main/branch).
 - **Ares, 4 MB:** the climb's low point (RUN_CLIMB+STRIKE+TOPUP+SB_LAST, 7 floors, seeds 11/22/33, fresh folders) 459/455/468 KB; a Smouldering Sun on the dummy 59.2 fps mean (min 50.3); Crescent Storm in the Sun's spiral 17.5 ms a frame (Lv 1 Cleave 17.4), 39 effects at most.
+
+## Swords (the Armory, 2026-11-08)
+
+The user's design: swords bought in the Shrine's Armory once the best floor reaches theirs, one equipped, used in every mode (Story, Bonus, the Tower), each a trade-off; the Knight's Sword stays the all-rounder. Kept in the Tower save's `weaponsOwned` (bit id - 1) and `weapon` (the equipped id) bytes, reserved in October and never used before (old saves read the Knight's). Code: `src/game/tower/weapon.c` (the table), `boss_apply_hit` (the damage, after the Tower's boons, before stagger damage; the stagger meter goes by the blow), `character_skin_set_blade` (the blade's colour, unlit: its texture times its colour; on the Black Swordsman the Dragonslayer's silver edges), `skill_fx_set_lunar` (the player's skills in moonlight; Sunforged wins over it).
+
+| Sword | Trade | Unlock | Look | Status |
+|---|---|---|---|---|
+| Knight's Sword | none | owned | the skin's | done |
+| Lunar Edge | sword swings and finishers x0.8, skills x1.3 | floor 25, 1500 Embers | moonlit blue blade (the whole sword material, hilt too); skills in a saturated moon-blue, a little denser | done |
+| Mare Nubium | swings 20% faster, 25% less stamina, -25% a hit | floor 10, 600 | thin silver-grey, faint white trail | planned |
+| Mare Frigoris | swings 15% slower, +40% stagger, -10% | floor 15, 900 | broad frost-white | planned |
+| Mare Tranquillitatis | a perfect dodge: 25% stamina back, skills -1 s; -10% | floor 30, 1800 | pale sea-green | planned |
+| Sol's Bane | +30% on the Shackled Sun, fire taken halved, -10% elsewhere | floor 40, 2000 | dark iron, pale-gold edge, eclipse-ring guard | planned |
+| Shadowslayer | +30% on Shadowborne, its flames and beams halved, -10% elsewhere | floor 50, 2500 | blackened, cold white edge | planned |
+| Lunar Requiem | skills x1.3, no swing cost, crescents an extra smaller wave | floor 100, free | brighter white-blue Lunar Edge | planned |
+
+Checked (Lunar Edge): `HLE_LOG_WEAPON` sword hits x0.800, finishers x0.800, skills x1.300 (the Knight's x1.000); the user's save (floor 36, 2270 Embers): the Armory lists it at 1500, the confirm buys it (770 left), equipped, and a reboot loads it equipped; HLE_TEST_MENUS 192/0 with the Armory visited, no bad string (HLE_TEXT_CHECK).
