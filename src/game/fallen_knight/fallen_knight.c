@@ -70,6 +70,12 @@ enum { FIN_SLASH, FIN_DELAY, FIN_THRUST };
 // The fire lunge: the full one from far off (any distance), a quicker short one, or a leap back
 // away from the player and then the full one
 enum { LUNGE_FULL, LUNGE_SHORT, LUNGE_BACK };
+#ifndef FK_LUNGE_STEER
+#define FK_LUNGE_STEER 2.5f   // the skim's turn toward the player, rad/s
+#endif
+#ifndef FK_LUNGE_STEER_FOR
+#define FK_LUNGE_STEER_FOR 70.0f  // how far into the skim it still turns (then straight); a strafe can't outrun it, a roll can
+#endif
 #define FIRE_MAX   24       // points along one lunge's fire trail, at most (spaced to fit)
 #define FIRE_LIFE  1.4f     // each stretch burns this long, then smoke: out in the order it was lit
 
@@ -118,7 +124,7 @@ static struct {
     float queuedAt;         // since when (kept off 2 s, it takes a move that reaches instead)
     float lastUsed[11];     // when each move last came (choose: the longer ago, the likelier)
     int lungeKind;          // LUNGE_*
-    float lungeO[2], lungeLen, lungeGone, fireGap;     // the skim: from, how far, how far so far, between its flames
+    float lungeO[2], lungeLen, lungeGone, fireGap, lungeMax, lungeP;     // the skim: its last flame, how far, how far so far, between its flames, the most it may stretch to
     int fireLit;            // fire trail points lit along this skim
     float fireHitT;         // until the trail can hurt again
     bool heavy;             // spent (after Holy Slam): hunched, sword down; else just breathing
@@ -1724,6 +1730,9 @@ static void fire_update(float dt)
     if (character.pos[1] - s.groundY > 6.0f || !skill_fx_fire_trail_touches(character.pos, character.capsuleCollider.radius)) return;
     character_apply_damage(FK_FELT(8.0f));
     s.fireHitT = 1.0f;
+#ifdef HLE_LOG_LUNGE
+    debugf("[lunge] fire burns the player at %d ms\n", (int)get_ticks_ms());
+#endif
     sfx_at(SCENE1_SFX_FIRE, 0.6f, character.pos[0], character.pos[2]);
 }
 
@@ -1740,6 +1749,7 @@ static void lunge_update(Boss *b, float dt)
     const float DRAW_AT = 0.55f, LUNGE_END = 0.95f;     // the clip: drawn back by 0.55 s, then the thrust and its stride
     const float TELL = s.lungeKind == LUNGE_SHORT ? 0.5f : s.lungeKind == LUNGE_BACK ? 0.6f : 0.85f, LOCK = TELL * 0.65f;
     const float SPEED = s.lungeKind == LUNGE_SHORT ? 170.0f : 240.0f, HOP = 3.5f;
+    const float STEER = FK_LUNGE_STEER, STEER_STOP = 25.0f, STEER_FOR = FK_LUNGE_STEER_FOR, STRETCH = 1.35f;     // the skim's turn (rad/s), straight after its first STEER_FOR and for its last 25, at most 1.35x as far as planned
     float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
     if (s.step == 0) {          // the leap back
         const float VY = 70.0f, G = 190.0f, BACK = 150.0f;
@@ -1777,7 +1787,8 @@ static void lunge_update(Boss *b, float dt)
             s.lungeLen = fmaxf(8.0f, fminf(d, ahead > 0.0f ? ahead : d) - 18.0f);   // short of where you were: the blade reaches on
             if (s.lungeKind == LUNGE_SHORT) s.lungeLen = fminf(s.lungeLen, 80.0f);
             s.lungeO[0] = b->pos[0]; s.lungeO[1] = b->pos[2]; s.lungeGone = 0.0f; s.fireLit = 0;
-            s.fireGap = fmaxf(8.0f, s.lungeLen / (FIRE_MAX - 1));
+            s.lungeMax = s.lungeLen * STRETCH; s.lungeP = 0.0f;
+            s.fireGap = fmaxf(8.0f, s.lungeMax / (FIRE_MAX - 2));
             s.step = 2; s.t = 0.0f;
             swing_sfx();
             sfx(SCENE1_SFX_FIRE, 0.8f);     // its launch (the boss's)
@@ -1792,22 +1803,34 @@ static void lunge_update(Boss *b, float dt)
         }
         return;
     }
-    if (s.step == 2) {          // the skim
+    if (s.step == 2) {          // the skim, still turning on you (capped) until its last stretch: a curve you can see
         s.striking = true;
+        if (s.lungeLen - s.lungeGone > STEER_STOP && s.lungeGone < STEER_FOR) {
+            face_player(b, dt, STEER);
+            fx = -fm_sinf(b->rot[1]); fz = fm_cosf(b->rot[1]);
+            float dx, dz, d = to_player(b, &dx, &dz);      // and as far as you are now, short of you, up to its stretch
+            s.lungeLen = fminf(s.lungeMax, fmaxf(s.lungeGone + STEER_STOP, s.lungeGone + d - 18.0f));
+            if (s.lungeKind == LUNGE_SHORT) s.lungeLen = fminf(s.lungeLen, 80.0f * STRETCH);
+        }
         float want = fminf(SPEED * dt, s.lungeLen - s.lungeGone), x0 = b->pos[0], z0 = b->pos[2];
         if (dt > 0.0f) move(b, fx * want / dt, fz * want / dt, dt);
         float went = sqrtf((b->pos[0] - x0) * (b->pos[0] - x0) + (b->pos[2] - z0) * (b->pos[2] - z0));
         if (went < want * 0.5f) s.lungeLen = s.lungeGone;      // a wall: it stops there
         s.lungeGone += went;
-        b->pos[1] = s.groundY + HOP * sinf(T3D_PI * clamp01f(s.lungeGone / fmaxf(1.0f, s.lungeLen)));
-        clip_to(DRAW_AT + (LUNGE_END - DRAW_AT) * clamp01f(s.lungeGone / fmaxf(1.0f, s.lungeLen)), dt);    // the thrust, the legs stepping through, as far as it has gone
-        for (int lit = (int)(s.lungeGone / s.fireGap); s.fireLit < lit; ) {     // a flame each fireGap along its path
+        s.lungeP = fmaxf(s.lungeP, clamp01f(s.lungeGone / fmaxf(1.0f, s.lungeLen)));     // never back (its length can grow as it steers)
+        b->pos[1] = s.groundY + HOP * sinf(T3D_PI * s.lungeP);
+        clip_to(DRAW_AT + (LUNGE_END - DRAW_AT) * s.lungeP, dt);    // the thrust, the legs stepping through, as far as it has gone
+        for (;;) {      // a flame each fireGap along the path it took
+            float ex = b->pos[0] - s.lungeO[0], ez = b->pos[2] - s.lungeO[1], e = sqrtf(ex * ex + ez * ez);
+            if (e < s.fireGap) break;
+            s.lungeO[0] += ex / e * s.fireGap; s.lungeO[1] += ez / e * s.fireGap;
             s.fireLit++;
-            fire_light(b, s.lungeO[0] + fx * s.fireLit * s.fireGap, s.lungeO[1] + fz * s.fireLit * s.fireGap);
+            fire_light(b, s.lungeO[0], s.lungeO[1]);
         }
         melee_check(b, DRAW_AT + 0.06f, 1e9f, FK_FELT(33.0f));     // once the blade is on its way out: 33 taken
         if (s.lungeGone >= s.lungeLen - 1e-3f) {
-            if (s.lungeGone - s.fireLit * s.fireGap > 2.0f) fire_light(b, b->pos[0], b->pos[2]);     // the trail right up to where it stops
+            { float ex = b->pos[0] - s.lungeO[0], ez = b->pos[2] - s.lungeO[1];
+              if (ex * ex + ez * ez > 4.0f) fire_light(b, b->pos[0], b->pos[2]); }     // the trail right up to where it stops
             b->pos[1] = s.groundY;
             landT = 0.0f;
             sfx(SCENE1_SFX_BOSS_LAND1, 0.6f);

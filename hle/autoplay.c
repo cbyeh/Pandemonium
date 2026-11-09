@@ -1582,8 +1582,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 extern int hle_fk_commit; int now = hle_fk_commit;
 #endif
                 static int seen, left, side = 1;
-                if (now != seen) { seen = now; left = HLE_DUMMY_SIDESTEP; side = -side; }
-                if (left > 0) {
+#ifndef HLE_SIDESTEP_DELAY    // (frames after the commit before the step: a late one)
+#define HLE_SIDESTEP_DELAY 0
+#endif
+                if (now != seen) { seen = now; left = HLE_DUMMY_SIDESTEP + HLE_SIDESTEP_DELAY; side = -side; }
+                if (left > HLE_DUMMY_SIDESTEP) left--;
+                else if (left > 0) {
                     left--;
                     float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz) + 1e-3f;
                     float wx = -dz / d * side, wz = dx / d * side, ya = cameraAngleX;     // square to the boss (the stick from world as in HLE_DUMMY_ORBIT)
@@ -1613,7 +1617,17 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
               float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
               in->stick_y = d < HLE_DUMMY_KEEP - 15.0f ? -70 : d > HLE_DUMMY_KEEP + 15.0f ? 70 : 0;
 #ifndef HLE_DUMMY_KEEP_STILL    // (or only in and out while the boss isn't attacking: no strafe)
-              in->stick_x = 45;
+#ifndef HLE_KEEP_STRAFE
+#define HLE_KEEP_STRAFE 45
+#endif
+              in->stick_x = HLE_KEEP_STRAFE;
+#ifdef HLE_KEEP_PERP      // (and no in or out while the boss attacks: square to it, sideways only)
+              { extern bool hle_open_now; if (!hle_open_now) in->stick_y = 0; }
+#endif
+#ifdef HLE_KEEP_REVERSE   // the Fallen Warrior: strafe the other way this many frames after a swing commits its aim (for 45)
+              { extern int hle_fk_commit; static int seen, t = -1; if (hle_fk_commit != seen) { seen = hle_fk_commit; t = 0; }
+                if (t >= 0 && t++ >= HLE_KEEP_REVERSE) { if (t < HLE_KEEP_REVERSE + 45) in->stick_x = -HLE_KEEP_STRAFE; else t = -1; } }
+#endif
 #else
               { extern bool hle_open_now; if (!hle_open_now) in->stick_y = 0; }
 #endif

@@ -24,6 +24,12 @@
 // ---- Tuning ----
 #define SUN_R          14.0f           // world radius of the eye
 #define HOVER_H        24.0f           // centre height above the floor (in sword reach)
+#ifndef SUN_RAM_STEER
+#define SUN_RAM_STEER  1.2f            // the ram's turn on the player as it charges (rad/s), over its first SUN_RAM_STEER_FOR of the lane
+#endif
+#ifndef SUN_RAM_STEER_FOR
+#define SUN_RAM_STEER_FOR 0.6f
+#endif
 #define REST_H         12.0f           // resting on the floor after a dive
 #define DROP_H         140.0f          // starts up in the ceiling
 #define INTRO_TIME     3.0f
@@ -115,7 +121,7 @@ static struct {
     float inhale, dark;     // eased tells: it draws its corona in (the flare), it goes dark (the eclipse)
     float flareAge, flarePos[3], flareYaw;  // the flare's ring (< 0: none), timed as skill_fx draws it
     bool flareHit;
-    float ramFrom[2], ramLen;   // the tackle's lane (along s.strikeDir)
+    float ramFrom[2], ramLen, ramU;   // the tackle's lane (along s.strikeDir, turning on the player early: ramFrom is where it is now), how far along
     int ramLeft;
     float rainTell;         // the rain's tell: its chains rattle and it throbs twice (s)
     float ecPos[3][6][2];   // the eclipse's marks, by wave
@@ -597,7 +603,7 @@ static void ram_update(Boss *b, float dt)
         }
         float hy = s.t < WIND - LOCK ? HOVER_H + 4.0f : HOVER_H - 6.0f;    // rears as it pulls back, then dips: the eye at the player's height
         b->pos[1] += (s.groundY + hy - b->pos[1]) * fminf(1.0f, dt * 4.0f);
-        if (s.t >= WIND) { s.step = 1; s.t = 0.0f; s.hitDone = false; s.ramFrom[0] = b->pos[0]; s.ramFrom[1] = b->pos[2];
+        if (s.t >= WIND) { s.step = 1; s.t = 0.0f; s.hitDone = false; s.ramFrom[0] = b->pos[0]; s.ramFrom[1] = b->pos[2]; s.ramU = 0.0f;
                            rushCh = sfx(SCENE1_SFX_SUN_RUSH, 1.0f); screen_shake_set_shake_mag(5.0f);     // (its cast in it)
                            // charging, its body shoves the player where the eye meets it (not 4 out
                            // from it, the sword's margin): no shove without the hit
@@ -606,6 +612,14 @@ static void ram_update(Boss *b, float dt)
         // out of the gate at full speed, easing to a stop at the lane's end
         float T = s.ramLen / SPEED * 1.4f, k = clamp01(s.t / T), u = s.ramLen * sinf(k * T3D_PI * 0.5f);
         float was[3] = { b->pos[0], b->pos[1], b->pos[2] };
+        if (s.ramU < s.ramLen * SUN_RAM_STEER_FOR) {     // early on it still bends toward the player (capped): a strafe can't slip it
+            float want = atan2f(dx, dz), da = remainderf(want - s.aim, 2.0f * T3D_PI), m = SUN_RAM_STEER * dt;
+            s.aim += fmaxf(-m, fminf(m, da));
+            s.ramFrom[0] = b->pos[0] - sinf(s.aim) * s.ramU; s.ramFrom[1] = b->pos[2] - cosf(s.aim) * s.ramU;    // the lane on from here
+            s.strikeDir[0] = sinf(s.aim); s.strikeDir[1] = cosf(s.aim);
+            b->rot[1] = s.aim;
+        }
+        s.ramU = u;
         float tx = s.ramFrom[0] + s.strikeDir[0] * u, tz = s.ramFrom[1] + s.strikeDir[1] * u;
         move_toward(b, tx, tz, 1e4f, dt);
         bool blocked = fabsf(b->pos[0] - tx) + fabsf(b->pos[2] - tz) > 0.5f;    // a wall: it stops there
