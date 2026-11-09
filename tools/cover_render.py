@@ -126,6 +126,8 @@ def hero(p):
     hw = 0.22 + (top - y) * 0.16
     wrap = 0.14 * clip01(np.abs(x) / hw) ** 2   # the sides curl forward round the body
     zc = -0.15 - 0.07 * (top - y) + wrap + (0.008 + 0.035 * (top - y)) * np.sin(x * 17 + 0.6 * np.sin(x * 9)) + 0.006 * np.sin(x * 47)
+    s = clip01((1.3 - y) / 0.55); s = s * s * (3 - 2 * s)
+    zc = zc - 0.075 * s    # draped out over the faulds (their lames poked through), eased in so it creases nowhere
     m = np.stack([np.abs(x) - hw, np.maximum(y - top, bot - y), np.abs(z - zc) - 0.01], 1)
     parts.append(((length(np.maximum(m, 0)) + np.minimum(m.max(1), 0)) * 0.6, CLOTH))
     hand, tip = V(0.47, 0.9, 0.11), V(1.05, 0.06, 0.62)
