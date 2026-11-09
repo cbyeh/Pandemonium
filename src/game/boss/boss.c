@@ -1,3 +1,4 @@
+#include "weapon.h"
 #include "boss.h"
 #include "boss_ai.h"
 #include "boss_anim.h"
@@ -183,6 +184,31 @@ static void boss_update_transforms(Boss* boss)
     float p[3] = { boss->pos[0], boss->pos[1], boss->pos[2] };
     float sc[3] = { boss->scale[0], boss->scale[1], boss->scale[2] };
     t3d_mat4fp_from_srt_euler(mat, sc, boss->rot, p);
+
+    // The Guardian's (and Unbound's) combo leap and flip attack jump in the clip, not by moving its
+    // origin: the hit capsule goes with the drawn body, its top end by the waist (over the 21 it
+    // stands at), its bottom end by the lowest of the feet and head (the flip turns it over; 1 over
+    // the origin standing: the drawn feet reach 1-13 under their bones, the capsule 11), and over
+    // the floor with them as they rise (none of it before the leap)
+    if (boss->phaseIndex <= 2) {
+        float A[3] = { 0.0f, 10.0f, 0.0f }, B[3] = { 0.0f, 40.0f, 0.0f };
+        T3DVec3 w, h, f0, f1;
+        if (boss->mode == BOSS_MODE_COMBAT && (boss->state == BOSS_STATE_COMBO_ATTACK || boss->state == BOSS_STATE_FLIP_ATTACK) &&
+            boss_get_bone_world_pos(boss, boss->waistBoneIndex, &w) && boss_get_bone_world_pos(boss, boss->headBoneIndex, &h)) {
+            static const void *sk; static int foot[2];
+            if (sk != boss->skeleton) { sk = boss->skeleton; foot[0] = t3d_skeleton_find_bone((T3DSkeleton*)sk, "Foot-Left"); foot[1] = t3d_skeleton_find_bone((T3DSkeleton*)sk, "Foot-Right"); }
+            const T3DVec3 *lo = &h;
+            if (boss_get_bone_world_pos(boss, foot[0], &f0) && f0.v[1] < lo->v[1]) lo = &f0;
+            if (boss_get_bone_world_pos(boss, foot[1], &f1) && f1.v[1] < lo->v[1]) lo = &f1;
+            float up = fmaxf(0.0f, w.v[1] - boss->pos[1] - 21.0f), k = fminf(1.0f, up * 0.1f);
+            B[1] += up;
+            A[1] = fminf(B[1], A[1] + fmaxf(0.0f, lo->v[1] - boss->pos[1] - 1.0f));
+            A[0] = k * (lo->v[0] - boss->pos[0]); A[2] = k * (lo->v[2] - boss->pos[2]);
+            B[0] = k * (w.v[0] - boss->pos[0]);   B[2] = k * (w.v[2] - boss->pos[2]);
+        }
+        memcpy(boss->capsuleCollider.localCapA.v, A, sizeof A);
+        memcpy(boss->capsuleCollider.localCapB.v, B, sizeof B);
+    }
 
     boss_update_shadow_mat(boss);
 }
@@ -561,7 +587,7 @@ static void boss_poise_update(Boss* boss, float dt)
 {
     if (boss->staggerT > 0.0f) {
         boss->staggerT -= dt;
-        if (boss->staggerT <= 0.0f) { boss->staggerT = 0.0f; boss->poise = 0.0f;
+        if (boss->staggerT <= 0.0f) { boss->staggerT = 0.0f; boss->poise = 0.0f; tower_on_stagger_end();
 #ifdef HLE_AUTOPLAY
             debugf("[stagger] over at %.1f s\n", (double)gameTime);
 #endif
@@ -578,6 +604,7 @@ static void boss_poise_update(Boss* boss, float dt)
     boss->poiseIdleT += rec;
     if (boss->poise >= 1.0f) {
         if (boss_try_stagger(boss)) {
+            tower_on_stagger();     // (Overcharge)
             screen_shake_set_shake_mag(8.0f);
             audio_play_scene_sfx_dist(SCENE1_SFX_BOSS_SMASH2, 0.9f, 0.0f);
             game_time_hitstop(0.12f);           // the stance breaks: a beat of stillness, then a moment of slow motion
@@ -588,7 +615,7 @@ static void boss_poise_update(Boss* boss, float dt)
         }
         return;
     }
-    if (boss->poiseIdleT > POISE_KEEP_S) boss->poise = fmaxf(0.0f, boss->poise - POISE_DRAIN * rec);
+    if (boss->poiseIdleT > POISE_KEEP_S && !tower_poise_drain_held()) boss->poise = fmaxf(0.0f, boss->poise - POISE_DRAIN * tower_mod_poise_drain() * rec);   // (Relentless: 2x)
 }
 
 bool boss_try_stagger(Boss* boss)
@@ -617,12 +644,15 @@ void boss_update(Boss* boss)
     if (!boss) return;
     boss_sync_max_health(boss);
     boss_poise_update(boss, deltaTime);
+#ifdef HLE_HUMAN_BOT     // test aid: the human-like bot learns each move's timing from its start
+    { static int last = -1; if (boss->phaseIndex <= 2 && (int)boss->state != last) { last = boss->state; extern void hb_move(int, int); hb_move(boss->phaseIndex, boss->state); } }
+#endif
 #ifdef HLE_LOG_MOVES     // test aid: the Guardian's and Unbound's moves as they start ([hit]: the hits after)
     { static int last = -1; if (boss->phaseIndex <= 2 && (int)boss->state != last) { last = boss->state; debugf("[move] %d\n", last); } }
 #endif
     if (boss->phaseIndex <= 2)      // the Guardian's and Unbound's: a blow's live part, or the barrage in the air
         boss->striking = boss->handAttackColliderActive || boss->sphereAttackColliderActive || boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE;
-#ifdef HLE_TEST_DUMMY   // test aid: the Guardian's and Unbound's openings (time not attacking), like the Bonus bosses'
+#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT) || defined(HLE_HUMAN_BOT)   // test aid: the Guardian's and Unbound's openings (time not attacking), like the Bonus bosses'
     if (boss->phaseIndex <= 2 && boss->mode == BOSS_MODE_COMBAT) { extern void hle_open_tick(bool, float); hle_open_tick(!boss->isAttacking, deltaTime); }
 #endif
 #ifdef HLE_TEST_FREEZE_BOSS
@@ -802,33 +832,51 @@ void boss_apply_damage(Boss* boss, float amount)
     boss_apply_hit(boss, amount, amount / POISE_DAMAGE);
 }
 
-bool bossHitBySword;
+bool bossHitBySword, bossHitBySkill, bossHitByBleed, bossHitByFinisher;
 
 void boss_apply_hit(Boss* boss, float amount, float poise)
 {
     if (!boss || amount <= 0.0f) return;
     if (boss->mode != BOSS_MODE_COMBAT) return;
     // its weight, before any boon: the damage or the stance damage, whichever is the more (a plain sword hit: 4 and 4)
-    boss->hitWeight = fmaxf(amount, poise * POISE_DAMAGE) / 4.0f;
-    boss->hitSeq++;
+    if (!bossHitByBleed) {      // (a bleed's tick: no flinch)
+        boss->hitWeight = fmaxf(amount, poise * POISE_DAMAGE) / 4.0f;
+        boss->hitSeq++;
+    }
 
+    int kind = bossHitBySword ? (bossHitByFinisher ? TOWER_HIT_FINISHER : TOWER_HIT_SWORD) : bossHitBySkill ? TOWER_HIT_SKILL : TOWER_HIT_OTHER;
     if (tower_active()) {     // Tower run: damage boons and upgrades, and Bloodthirst's lifesteal (sword hits)
         if (tower_hit_impaired()) return;      // the Impaired curse: this one does nothing
         if (bossHitBySword) character.health = fminf(character.maxHealth, character.health + amount * tower_mod_lifesteal());   // sword hits only, before boons
-        tower_on_boss_hurt(amount);     // Rally: also by the hit before boons (after them, a blow came back in two hits deep in a run)
-        amount *= tower_mod_damage_dealt() * tower_mod_damage_vs(boss->health / fmaxf(boss->maxHealth, 1.0f), boss->staggerT > 0.0f);
+        if (!bossHitByBleed) tower_on_boss_hurt(amount);     // Rally: also by the hit before boons (after them, a blow came back in two hits deep in a run); a bleed wins back nothing
+        amount *= tower_mod_damage_dealt() * tower_mod_damage_vs(boss->health / fmaxf(boss->maxHealth, 1.0f), boss->staggerT > 0.0f, kind);
     }
-    if (boss->staggerT > 0.0f) amount *= tower_mod_stagger_damage();     // staggered: only boons make hits land harder
+#ifdef HLE_LOG_WEAPON     // test aid: each hit's kind and its damage before and after the sword's trade
+    debugf("[wpn] kind %d %.3f -> %.3f (sword %d) poise x%.2f\n", kind, (double)amount, (double)(amount * weapon_damage_mult(kind, boss->phaseIndex)), weapon_equipped(), (double)weapon_poise_mult(kind));
+#endif
+    amount *= weapon_damage_mult(kind, boss->phaseIndex);     // the equipped sword's trade (weapon.c): every mode, the stagger meter as the blow's
+    if (boss->staggerT > 0.0f) amount *= tower_mod_stagger_damage(kind);     // staggered: only boons make hits land harder (added, capped)
+#ifdef HLE_HUMAN_BOT    // test aid: the human-like bot's hits land for this much more (it swings about half the metric's 148 a minute, held by stamina;
+                        // x2 brings its Story Guardian kill to the metric's cost). Damage only: the stagger meter and healing go by the hit
+#ifndef HB_DMG_K
+#define HB_DMG_K 2.0f
+#endif
+    amount *= HB_DMG_K;
+    { extern float hb_dealt; hb_dealt += amount; }
+#endif
     boss->health -= amount;
+#if defined(HLE_HUMAN_BOT) && (defined(HLE_DUMMY_BUILD) || defined(HB_HOLD))
+    if (boss->health < 1.0f) boss->health = 1.0f;     // test aid: the bench's boss never falls (its health is held in a band)
+#endif
     if (boss->health < 0.0f) boss->health = 0.0f;
     if (boss->staggerT <= 0.0f) {      // the stagger meter
         // from the blow itself, not the damage: the same hits fill the same share on every floor,
         // whatever the damage boons
-        boss->poise = fminf(1.0f, boss->poise + poise * tower_mod_poise() * boss_poise_scale(boss));
+        boss->poise = fminf(1.0f, boss->poise + poise * tower_mod_poise() * boss_poise_scale(boss) * weapon_poise_mult(kind));     // (Mare Frigoris: +40%)
         boss->poiseIdleT = 0.0f;
     }
 
-    boss->damageFlashTimer = 0.25f;
+    boss->damageFlashTimer = bossHitByBleed ? fmaxf(boss->damageFlashTimer, 0.0625f) : 0.25f;     // a bleed's tick: a quarter of a hit's flash
 
     if (boss->health <= 0.0f) {
         boss->state = BOSS_STATE_DEAD;
@@ -848,12 +896,10 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
     }
 }
 
-void boss_init(Boss* boss)
+// The Guardian's model, its two skeletons and its clips (boss_init; the Tower drops them on a Bonus floor and
+// loads them again for the next Guardian or Unbound floor: about 85 KB the Bonus fights never drew from)
+static void boss_model_load(Boss* boss)
 {
-    if (!boss) return;
-
-    sword_trail_instance_init(sword_trail_get_boss());
-
     T3DModel* bossModel = t3d_model_load("rom:/boss/boss_anim.t3dm");
     gpu_log_model("guardian", bossModel);
     boss->model = bossModel;
@@ -941,6 +987,45 @@ void boss_init(Boss* boss)
     boss->currentAnimState = BOSS_ANIM_KNEEL;
     t3d_anim_set_playing(animations[BOSS_ANIM_KNEEL], true);
 
+
+    boss->handRightBoneIndex = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, "Hand-Right");
+    boss->waistBoneIndex = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, "Waist");
+    boss->headBoneIndex = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, "Head");
+    boss->lowerLegLeftBoneIndex = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, "LowerLeg-Left");
+    boss->lowerLegRightBoneIndex = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, "LowerLeg-Right");
+
+}
+void boss_tower_release_model(Boss* boss)
+{
+    if (!boss || !boss->model) return;
+    gpu_wait();
+    boss_render_forget_model();     // its recorded blocks and the flash tint's cached materials point into the model
+    boss_render_forget_flash();
+    boss_anim_forget_model();       // the breathing pose's clone of its skeleton
+    T3DAnim** anims = (T3DAnim**)boss->animations;
+    if (anims) {
+        for (int i = 0; i < boss->animationCount; i++) if (anims[i]) { t3d_anim_destroy(anims[i]); free_uncached(anims[i]); }
+        free_uncached(anims);
+        boss->animations = NULL;
+    }
+    if (boss->skeletonBlend) { t3d_skeleton_destroy((T3DSkeleton*)boss->skeletonBlend); free(boss->skeletonBlend); boss->skeletonBlend = NULL; }
+    if (boss->skeleton) { t3d_skeleton_destroy((T3DSkeleton*)boss->skeleton); free(boss->skeleton); boss->skeleton = NULL; }
+    t3d_model_free((T3DModel*)boss->model);
+    boss->model = NULL;
+}
+void boss_tower_ensure_model(Boss* boss)
+{
+    if (boss && !boss->model) boss_model_load(boss);
+}
+
+void boss_init(Boss* boss)
+{
+    if (!boss) return;
+
+    sword_trail_instance_init(sword_trail_get_boss());
+
+    boss_model_load(boss);
+
     if (!s_bossShadowModel) {
         s_bossShadowModel = t3d_model_load("rom:/blob_shadow/shadow.t3dm");
     }
@@ -971,12 +1056,6 @@ void boss_init(Boss* boss)
     boss->capsuleCollider.localCapB.v[2] = 0.0f;
 
     boss->capsuleCollider.radius = 20.0f;
-
-    boss->handRightBoneIndex = t3d_skeleton_find_bone(skeleton, "Hand-Right");
-    boss->waistBoneIndex = t3d_skeleton_find_bone(skeleton, "Waist");
-    boss->headBoneIndex = t3d_skeleton_find_bone(skeleton, "Head");
-    boss->lowerLegLeftBoneIndex = t3d_skeleton_find_bone(skeleton, "LowerLeg-Left");
-    boss->lowerLegRightBoneIndex = t3d_skeleton_find_bone(skeleton, "LowerLeg-Right");
 
     boss->handAttackCollider.localCapA.v[0] = 0.0f;
     boss->handAttackCollider.localCapA.v[1] = 0.0f;

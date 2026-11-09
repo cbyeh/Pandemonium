@@ -1,0 +1,99 @@
+# The Tower's long texts, one a line (src/game/tower/tower.c's TXT_ keys, in order): every BoonId, the six affixes, the seven Offerings, then the Codex's pages (segments split by '|': '#' a heading, '%' grey, '!' red, '+' after a gap, '~' a new page, '@' the page's table). No line breaks inside a text.
+Your damage +15% a level at Lv 1-3, then +10% a level at Lv 4-5 (+65% at Lv 5).
+Damage taken -15% a level at Lv 1-2, and -10% more at Lv 3 (about -35% in all).
++3 to the run's most potions a level, and 3 potions now (15 at most).
+Potions heal 25% more a level (a potion heals 45% of max health before boons).
+Rolls cost 40% less stamina.
+Stamina refills 40% faster a level, and an empty bar waits less before it refills.
+Skill cooldowns -20% a level to Lv 3 (x0.8 each: x0.51 at Lv 3), and Lv 4 cuts 18% more (x0.42). Offered once a skill is known.
+Each sword hit heals 12% a level of its base damage, and Lv 3 adds 8% (32% in all; a sword hit of 4 heals 1.3 at Lv 3). Skills and lightning don't heal.
++25 max health a level, and 25 health at once.
+Below 30% health your damage is +40% a level.
+Once a floor, a killing blow leaves you at 1 health instead.
+Perfect dodges are easier: the first 0.28 s of a roll count (0.20 without it; Lv 2: 0.31 s). Each perfect dodge heals 2% of max health.
+A perfect dodge gives +50% damage for 2.5 s (Lv 2: 4 s).
+A staggered boss stays down 50% longer.
+A staggered boss takes +60% damage (Lv 2: +90%). The stagger bonuses add up, +100% at most.
+Every 4th sword hit calls a bolt of lightning on the boss (6 damage).
+Your damage +35%, and potions heal 25% less.
+Health a blow takes can be won back by hitting the boss: each hit wins back an eighth of its base damage a level (Lv 3: three eighths, a sword hit 1.5). It waits 1 s (Lv 2-3: 1.5 s), then drains away over 4 s.
+The combo's 3rd hit makes the boss bleed 4 a level over 3 s (a tick every 0.5 s); another finisher adds to it. It heals nothing.
+Drinking a potion gives +25% damage for 6 s.
++10% damage a level for every full 25% of your health missing.
+With Storm Blade: its bolts +1.5 a level to Lv 4. Without it: every 8th sword hit calls a bolt of its own (6, +1.5 a level above Lv 1, to Lv 4). Lv 5: Storm Blade's and Static's bolts deal +50%.
+The combo's 3rd hit calls a bolt of lightning (6; Lv 2: 9).
+Lightning fills the boss's stagger meter as a sword hit does. Offered once something calls lightning.
+When the boss is staggered, your next 5 sword hits each call lightning.
+Each sword hit takes 0.3 s a level off every skill cooldown. Offered once a skill is known.
+A skill's hit on a staggered boss deals +50% (the stagger bonuses add up, +100% at most).
+Each skill cast gives the sword +15% damage for 4 s.
+The combo's 3rd hit fills the stagger meter 20% more a level.
+A blow that would take over 20% of your max health deals 25% less.
+Any roll gives +8% damage a level for 2 s.
+A perfect dodge gives the roll's stamina back.
+After 3 perfect dodges on a floor, the next blow that lands deals nothing (once a floor).
++20% gold a level, from every source: fights, Skip, chests and the Events.
+Below half health: a blow that doesn't knock you down can't flinch you or break a skill's wind-up; each sword hit in a row +8% damage, up to +40% (a blow taken or 2 s without a hit ends the streak); and no potions.
+Leap and send 5 crosses round you (0.8 each, about 4 a cast; they fill the stagger meter like one sword hit). Cooldown 15 s.
+Charge 2 s, then a wide slash in front (28). A blow during the charge breaks it. Cooldown 45 s.
+5 blades fly out in a fan, each hitting up to 4 times (about 13 a cast). Cooldown 18 s.
+9 crosses of 1.75 each (about 16 a cast); the first five keep Lv 1's stagger.
+7 crosses of 1.75, each filling the stagger meter like two thirds of a sword hit: the heart of a stagger build.
+A second slash 0.35 s after the first, the same arc at 45% of its damage and stagger.
+The slash all the way round you, x1.05 damage, 60% stagger; blows don't break its charge or slash (their damage still lands).
+3 more blades follow the middle three 0.3 s behind, at 70% damage (8 blades a cast).
+Blades fly 1.6x as far and hit 6 times, in a narrower fan, to hit from range.
+The combo's 3rd hit deals +25%.
+The first blow each floor deals half.
+Storm Blade's lightning comes every 3rd hit (was every 4th).
+When a staggered boss rises, its stagger meter doesn't drain for 3 s.
+When Unbroken saves you, you also heal 20% of max health.
+With Bloodthirst, each bolt of lightning heals at half its rate (of the bolt's damage); without it, bolts deal +25%.
+A perfect dodge calls two bolts on the boss, 0.3 s apart (Storm Blade's, with Static's bonus).
+Each skill cast costs 3% of max health (never the last of it), and skills' hits deal +40%.
+When the boss is staggered, every skill cooldown is ready again, and it stays down 1.5 s longer.
+A perfect dodge opens Riposte's window (2.5 s); hits in it win back 60% of their base of the health blows took (on top of Rally's share).
+Lightning on a staggered boss deals double.
+A perfect dodge takes 2 s off every skill cooldown.
+Each potion drunk: +10 max health for the floor (up to +30) and -40% damage taken for 4 s.
+A skill's first hit each cast calls Storm Blade's pillar on the boss (6).
+footwork, breathers and cooldowns 20% faster; strikes keep their timing.
++30% health, a stagger bar 30% longer.
+below half health, blows +25%, shorter breathers.
+its stagger drains 2x, it rises in 2.5 s, shorter breathers.
+heals 25% of the health its blows take (15% beside another affix).
+slams and dives leave fire for 2-3 s.
+Start the next climb with one more potion, and its most potions one higher: a Shop sells one further.
++10 max health for the whole climb. A potion heals a share of max health, so each one heals a little more too.
+Start the next climb with Minor Might and Minor Bulwark: +4% damage and -3% damage taken for the whole climb, no curse.
++25% damage until the first circle is cleared, when its Guardian Unbound falls.
+The climb's first draft holds two skill cards: choose which skill to learn, or a level of the one you know. Nothing with Skills off.
+The climb's first Rest heals 40% of max health on top of whatever you take there.
+Start the next climb holding a random Common boon at Lv 1, in a slot (never Deep Flask). Release it at a Rest if it doesn't suit you.
+Each floor is one fight. Fall, and the climb ends: its gold and boons are lost, its Embers kept.|A circle is one map, from the Guardian to Guardian Unbound. Each circle the bosses grow stronger, and so do you, through the fifth.|#Your belt|A fallen boss gives a potion, up to your most. Health isn't given back between floors.
+Seven rows, three lanes, from the bottom up. The Guardian opens a circle and Guardian Unbound ends it, after a Rest on every lane. Your path holds 4 to 6 fights.|#Moving|Left and Right pick a node. A shows its page, A again enters, B goes back. B on the map: the pause menu.|#Nodes|Fight: a Bonus boss.|!Elite: a stronger one, for a richer draft.|Event: a choice. Shop: spend gold. Rest: heal, Temper or potions.
+A Fight is a Bonus boss, met once a circle while any are left; only they come as Elites.|!Elites: x1.25 health and an affix, two from the fourth circle.|They pay a Rare-or-better draft, x1.5 gold, x2 Embers, a second potion and a chest (a slotted boon's next level, or its "+"); with two affixes, a duo if one is ready.|#The bosses|@
+#Rest|Heal 40%, Temper a level, or +2 potions. Then Release a boon if you wish, free.|#Shop|Each item once a visit; a level again and again, each one dearer:|@|#Events|A choice on the way; you can always walk on. None comes twice in a climb while others wait, and more wait deeper in.
+Five slots. A new boon takes one at Lv 1; the same card again is its next level.|Full, drafts offer only what you hold: levels, "+", duos, skills and pacts; with nothing left, a minor blessing (one a circle), then pacts.|Release frees one: free at a Rest, 20 gold at a Shop.|%Skills and pacts take none.
+Every boon is of a family: its emblem on the card, its name in the family's colour. Hold two of a family and its boons come twice as often.|@
+Each boon of the family in full: its tier, its most levels, what it does, its rival.|@
+Each boon of the family in full: its tier, its most levels, what it does, its rival.|@
+Each boon of the family in full: its tier, its most levels, what it does, its rival.|@
+Each boon of the family in full: its tier, its most levels, what it does, its rival.|@
+Each boon of the family in full: its tier, its most levels, what it does, its rival.|@
+Each boon of the family in full: its tier, its most levels, what it does, its rival.|@
+Take one, and its rival is locked out for the climb, even if you release it. A skill's two forms are rivals too.|@
+#"+"|A boon at its most can rise once more: its "+". No slot.|#Duos|With a maxed boon of each of two families, their duo can come. It merges both into one slot (both keep working) and opens the other.|%It goes only as a whole, and needs both families' packs.|@
+Learned only in the climb. The Learn card is Lv 1, the same card again the next level, up to Lv 4. Then a draft offers one of its two forms, by chance; pass it by and a later draft may offer either. Take one, lose the other.|Until one is known, every draft leads with a Learn card; then one in three holds a skill card.|%Each skill's second form is bought at the Shrine.
+@
+@
+@
+Named on the map and over the health bar; the boss's body, timing and sound tell the rest.|@
+For this climb only, lost when it ends.|@
+Banked as each boss falls, and kept for good.|@|#The Shrine|Upgrades for every climb. Relics: one worn a climb. Unlocks: new boons and the skills' second forms.|%Offerings and Milestones: their own pages.
+Gifts for the next climb only, from the Tower's menu: two at most, the second 50 Embers more. Prices never rise.|Used as the climb starts. Quit before its first Guardian falls and they wait for the next climb; fall, and they're spent.|@
+Your best floor earns these, for good.|@
+A blessing bound to a curse, for the climb. No slot: they stack without end. Every Shop holds one, free: the curse is the price.|@
+From the second circle, each circle has a night: a burden, and more Embers.|@
+The Demon King raised the Tower from his throne's own stone.|Every knight who fell in it still keeps its halls: hollow armour, made whole each time someone climbs.|The bosses are never slain. The Tower lets them sleep, and wakes them stronger.|%You have climbed further than any knight before you.
+#Swords|Bought at the Shrine's Armory once your best floor reaches theirs (or from Settings > Sword on the title). One is held, in every fight: the Story, the Bonus fights and the Tower. Each trades something: the Knight's Sword trades nothing.|@

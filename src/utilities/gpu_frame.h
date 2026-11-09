@@ -13,6 +13,9 @@
 #define GPU_FRAMES 2
 
 extern rspq_queue_t *g_drawQueue;   // being recorded, or NULL
+// Set it and the next frame hands back what the draw queues grew to: they keep their biggest frame's
+// size, and a screen drawn over the hall (the Tower's map, its draft) outgrew the fights by 16 KB a queue
+extern bool g_gpuTrimQueues;
 extern const T3DFrustum *g_viewFrustum;     // the frame's view (set by the scene that draws), or NULL
 
 static inline void gpu_block_begin(void) { if (g_drawQueue) rspq_queue_switch(NULL); rspq_block_begin(); }

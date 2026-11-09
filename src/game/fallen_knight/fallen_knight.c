@@ -1,3 +1,4 @@
+#include "weapon.h"
 #include <libdragon.h>
 #include "gpu_frame.h"
 #include <t3d/t3d.h>
@@ -22,6 +23,8 @@ float fw_closecam_head[3], fw_closecam_yaw;
 #include "fx/screen_shake.h"
 #include "../boss/environmental_mechanics/boss_ground_crush.h"
 #include "controllers/audio_controller.h"
+#include "game/tower/tower.h"
+#include "fx/floor_fire.h"
 #include "controllers/camera_controller.h"
 #include "../../scenes/guardian/guardian_scene_sfx.h"
 #include "../../scenes/guardian/guardian_scene_bounds.h"
@@ -103,6 +106,7 @@ static struct {
     float t;                // time in state
     int step;               // events fired in the state / combo index
     bool hitDone;           // the current swing already connected
+    bool grazed;            // the current swing's blade already grazed the player (blade_graze)
     bool striking;          // inside a swing's damage window this frame
     float groundY, velY;
     float moveX, moveZ;     // roll / jump drift
@@ -442,6 +446,9 @@ static void enter(FkState st)
 #ifdef HLE_LOG_POP
     pop_mark(s.anim, -1, s.state, st);
 #endif
+#ifdef HLE_HUMAN_BOT     // test aid: the human-like bot learns each move's timing from its start
+    { extern void hb_move(int, int); hb_move(FALLEN_KNIGHT_PHASE, st); }
+#endif
 #ifdef HLE_LOG_MOVES     // test aid: each move as it starts (the hits after it are its: [hit])
     debugf("[move] %d\n", st);
 #endif
@@ -450,6 +457,7 @@ static void enter(FkState st)
     if (st == FK_CHASE) s.pickJit = ((int)(rand_custom_u32() % 41) - 20) * 0.01f;
     s.step = 0;
     s.hitDone = false;
+    s.grazed = false;
     s.windK = 0.0f;
     s.holdT = 0.0f;
 #ifdef HLE_FK_LOG   // test aid: each move as it starts
@@ -463,14 +471,14 @@ static void sfx(int id, float vol)
 {
     Boss *b = boss_get_instance();
     float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
-    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+    audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz)), tower_elite_pitch());     // (Swift: higher)
 }
 // A ranged move's impact, heard from where it lands (from the boss, one by the player at range
 // was faint or silent)
 static void sfx_at(int id, float vol, float x, float z)
 {
     float dx = character.pos[0] - x, dz = character.pos[2] - z;
-    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+    audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz)), tower_elite_pitch());     // (Swift: higher)
 }
 static void swing_sfx(void) { sfx(SCENE1_SFX_SWING_BOSS, 1.0f); }
 // The intro's sounds, heard from the cutscene camera (the player stands 160 off, near silent)
@@ -478,7 +486,7 @@ static void sfx_cam(int id, float vol)
 {
     Boss *b = boss_get_instance();
     float dx = customCamPos.v[0] - b->pos[0], dz = customCamPos.v[2] - b->pos[2];     // (the cutscene camera as it moves)
-    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+    audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz)), tower_elite_pitch());     // (Swift: higher)
 }
 
 static void quat_rotate(const T3DQuat *q, const float v[3], float out[3]);
@@ -563,6 +571,13 @@ static void pop_sample(float dt, float yaw)
 }
 #endif
 
+#ifdef HLE_LOG_HITGAP     // test aid: each blow's reach and what was drawn when it landed
+extern void hle_hg_vol(const char *, const float *, const float *, float), hle_hg_begin(void), hle_hg_seg(const char *, const float *, const float *, float);
+extern void hle_hg_hit(const char *), hle_hg_fixed(const char *, bool), hle_hg_m(const char *, const float *, bool), hle_hg_mesh(const char *, const T3DModel *, const T3DSkeleton *, const T3DMat4FP *, int);
+extern float hle_hg_r(int), hle_hg_mesh_seg(const float *, const float *), skill_fx_fire_trail_gap(const float *);
+extern int hle_hg_player_pts(const float (**p)[3]);
+extern T3DModel *characterModel;
+#endif
 static bool sword_segment(float base[3], float tip[3])
 {
     if (s.swordBone < 0) return false;
@@ -591,11 +606,18 @@ static void melee_check(Boss *b, float t0, float t1, float damage)
     if (s.hitDone) return;
     float base[3], tip[3];
     if (!sword_segment(base, tip)) return;
+#ifdef HLE_SHOW_HURTBOX
+    { extern void hle_strike_vol(const float *, const float *, float); hle_strike_vol(base, tip, 2.0f); }     // test aid: the blade while it can hit
+#endif
     const float *p = character.pos;
     const T3DVec3 *a = &character.capsuleCollider.localCapA, *c = &character.capsuleCollider.localCapB;
     float pa[3] = { p[0] + a->v[0], p[1] + a->v[1], p[2] + a->v[2] };
     float pb[3] = { p[0] + c->v[0], p[1] + c->v[1], p[2] + c->v[2] };
     bool hit = scu_capsule_vs_capsule_f(base, tip, 2.0f, pa, pb, character.capsuleCollider.radius);     // the blade's width
+#ifdef HLE_LOG_HITGAP
+    hle_hg_vol(ANIM_NAMES[s.anim], base, tip, 2.0f);
+    if (hit) { hle_hg_begin(); hle_hg_seg("blade", base, tip, 2.0f); hle_hg_mesh("body", characterModel, &s.skel, s.mat, 0); hle_hg_hit(ANIM_NAMES[s.anim]); }
+#endif
 #ifdef HLE_FK_HITLOG
     {   float lo = 0.0f, hi = 120.0f;       // the gap between the blade's surface and the player's capsule
         for (int i = 0; i < 14; i++) { float m = (lo + hi) * 0.5f; if (scu_capsule_vs_capsule_f(base, tip, m, pa, pb, character.capsuleCollider.radius)) hi = m; else lo = m; }
@@ -623,6 +645,26 @@ static void melee_check(Boss *b, float t0, float t1, float damage)
 #ifdef HLE_TEST_DUMMY
     debugf("[fk] hit by clip %d at %.2f s\n", s.anim, (double)clip);
 #endif
+}
+
+// A swing whose blow is an effect (blades, crescents, beams, a triangle, fire) still hurts where
+// its drawn blade touches, a little, once a swing (the user's call: every swing hits); its own flag,
+// so the move's effects and the stagger meter's mid-strike keep as they were
+#ifndef FK_GRAZE
+#define FK_GRAZE 5.0f       // taken (token: ~+3 points of the fight's cost on the dummy; 10 was ~+5)
+#endif
+static void blade_graze(Boss *b, float t0, float t1)
+{
+#ifdef HLE_STRIKES_OFF     // test aid: as before the grazes (the before shots)
+    (void)b; (void)t0; (void)t1; return;
+#endif
+    bool hd = s.hitDone, st = s.striking;
+    s.hitDone = s.grazed;
+    melee_check(b, t0, t1, FK_FELT(FK_GRAZE));
+#ifdef HLE_TEST_DUMMY
+    if (s.hitDone && !s.grazed) debugf("[graze] st %d step %d clip %d\n", s.state, s.step, s.anim);
+#endif
+    s.grazed = s.hitDone; s.hitDone = hd; s.striking = st;
 }
 
 static bool clip_done(void)
@@ -1108,7 +1150,10 @@ static void life_update(Boss *b, float dt)
     default: break;
     }
     if (landT >= 0.0f) { key_play(&LAND, landT, 1.0f, 1.0f, 1.0f); landT += dt; if (landT > 0.8f) landT = -1.0f; }
-    if (s.cryT >= 0.0f) { key_play(&WARCRY, s.cryT, 1.0f, 1.0f, 1.0f); s.cryT += dt; if (s.cryT > 1.8f) s.cryT = -1.0f; }
+    {   // (an Enraged Elite's cry held longer: its tell)
+        float k = tower_elite_held_longer() ? 1.5f : 1.0f;
+        if (s.cryT >= 0.0f) { key_play(&WARCRY, s.cryT, k, 1.0f, 1.0f); s.cryT += dt; if (s.cryT > 1.8f * k) s.cryT = -1.0f; }
+    }
 
     // the chase: leaning into its turns, the head leading them; running, it leans on
     {
@@ -1206,6 +1251,7 @@ void fallen_knight_free(void)
     t3d_skeleton_destroy(&s.skel);
     t3d_skeleton_destroy(&s.skelBlend);
     free_uncached(s.mat);
+    floor_fire_free();
     memset(&s, 0, sizeof(s));
 }
 
@@ -1317,6 +1363,10 @@ bool fallen_knight_stagger(Boss* b)
     play(FKA_KNEEL, true);
     sfx(SCENE1_SFX_FW_HURT, 1.0f);
     b->staggerT = boss_stagger_s();
+    {   // a shorter stagger (a Relentless Elite's 2.5 s) plays the 3.5 s kneel quicker: it's up when it ends
+        float len = t3d_anim_get_length(&s.anims[FKA_KNEEL]);
+        if (b->staggerT < BOSS_STAGGER_S - 0.05f) t3d_anim_set_speed(&s.anims[FKA_KNEEL], len / b->staggerT);
+    }
     return true;
 }
 
@@ -1347,6 +1397,7 @@ static void cleave_update(Boss *b, float dt)
         }
     }
     if (s.t >= RELEASE - 0.06f && s.t - dt < RELEASE - 0.06f) swing_sfx();     // peaking as it rips up
+    if (s.anim == FKA_CLEAVE) blade_graze(b, 0.8f, 1.1f);      // the rip up out of the floor
     if (s.step < 5 && s.t >= RELEASE + s.step * GAP) {
         float o[3], dx, dz;
         cleave_point(b, s.step, o, &dx, &dz);
@@ -1389,6 +1440,7 @@ static void halfmoon_update(Boss *b, float dt)
 static void beam_swing(int k)
 {
     play(k ? FKA_ATTACK2 : FKA_ATTACK1, true);
+    s.grazed = false;
     t3d_anim_set_time(&s.anims[s.anim], WIN[k][0] - 0.05f);
     t3d_anim_set_speed(&s.anims[s.anim], 1.2f);
 }
@@ -1405,6 +1457,7 @@ static void moonblade_update(Boss *b, float dt)
     if (s.velY < -60.0f) s.velY = -60.0f;
     b->pos[1] += s.velY * dt;
     face_player(b, dt, 6.0f);
+    if (s.anim == FKA_ATTACK1 || s.anim == FKA_ATTACK2) { int k = s.anim == FKA_ATTACK2; blade_graze(b, WIN[k][0], WIN[k][1]); }    // its cuts (high in the air: rarely within reach)
     // the crosses come slower and further apart than the player's own: readable, dodgeable
     if (s.step >= 1 && s.step <= 5 && s.t >= 0.55f + (s.step - 1) * 0.55f) {
         float o[3] = { b->pos[0], b->pos[1] + 20.0f, b->pos[2] };
@@ -1463,6 +1516,7 @@ static void splitter_update(Boss *b, float dt)
     float clip = clip_time();
     swing_pace(0.0f, w[0], 0.55f);
     if (clip < w[0] && swing_tracks(0.35f)) face_player(b, dt, 3.0f);     // then the aim holds (early: it flies): sidestep it
+    blade_graze(b, w[0], w[1]);
     if (!s.hitDone && clip >= w[0]) {
         s.hitDone = true;
         float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
@@ -1472,7 +1526,7 @@ static void splitter_update(Boss *b, float dt)
         screen_shake_set_shake_mag(3.0f);
     }
     if (s.hitDone && (clip >= w[1] || clip_done())) {
-        if (s.step < 3) { s.step++; s.hitDone = false; play(clips[s.step - 1], true); }
+        if (s.step < 3) { s.step++; s.hitDone = false; s.grazed = false; play(clips[s.step - 1], true); }
         else recover(FK_QUICK_REC, false);
     }
 }
@@ -1516,12 +1570,14 @@ static void trislam_update(Boss *b, float dt)
         // stone as it raises the blade and held a moment longer
         face_player(b, dt, 3.0f);
         swing_pace(DN_FROM, W_DN[0], 1.0f);
+        blade_graze(b, W_DN[0], W_DN[1]);       // the slam itself, where the blade comes down
         if (s.t <= dt) sfx(SCENE1_SFX_ROCK_BLAST, 0.7f);
         { static float was; if (clip >= 1.95f && was < 1.95f) sfx(SCENE1_SFX_BOSS_LAND1, 0.9f); was = clip; }     // its onset on the bite (clip - dt missed it when the clip ran fast)
         if (clip >= 2.02f) {    // the blade meets the floor: mark the triangle where the player stands
             float fx = -fm_sinf(b->rot[1]), fz = fm_cosf(b->rot[1]);
             screen_shake_set_shake_mag(8.0f);
             boss_ground_crush_spawn_varied(b->pos[0] + fx * 22.0f, s.groundY + 0.25f, b->pos[2] + fz * 22.0f, FK_CRACK, b->rot[1]);
+            floor_fire_slam(b->pos[0] + fx * 22.0f, s.groundY, b->pos[2] + fz * 22.0f, 9.0f);     // (a Smouldering Elite's: where the blade bites)
             float a0 = (rand_custom_u32() % 628) / 100.0f;
             for (int i = 0; i < 3; i++) {
                 float a = a0 + i * 2.0944f;
@@ -1547,6 +1603,13 @@ static void trislam_update(Boss *b, float dt)
                 float ex = c[0] - a[0], ez = c[1] - a[1], l = sqrtf(ex * ex + ez * ez);
                 in = (ex * (pz - a[1]) - ez * (px - a[0])) / l <= 6.0f;     // the corners go clockwise: inside is negative
             }
+#ifdef HLE_LOG_HITGAP
+            hle_hg_fixed("FW Triangle Slam (the area)", in && character.pos[1] - s.groundY < 6.0f);
+            if (in && character.pos[1] - s.groundY < 6.0f) { hle_hg_begin();
+                for (int i = 0; i < 3; i++) for (int k = 0; k < 2; k++) { float p[3]; tri_point(i, k * 0.5f, p);
+                    hle_hg_seg("blades", (float[3]){ p[0], s.groundY, p[2] }, (float[3]){ p[0], s.groundY + 28.0f, p[2] }, 4.0f); }
+                hle_hg_hit("FW Triangle Slam (the area)"); }
+#endif
             if (in && character.pos[1] - s.groundY < 6.0f) character_apply_damage(20.0f);
             screen_shake_set_shake_mag(10.0f);
             sfx_at(SCENE1_SFX_SLAM_BOSS, 1.0f, (s.tri[0][0] + s.tri[1][0] + s.tri[2][0]) / 3.0f,
@@ -1576,15 +1639,15 @@ static void holyslam_update(Boss *b, float dt)
             if (s.t >= 1.0f) { play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], W_DN[0] - 0.08f); s.blendT = s.blendDur = 0.1f; s.windK = 1.0f; }
         } else swing_pace(DN_FROM, W_DN[0], 1.5f);
         if (!s.hitDone && clip >= W_DN[0] - 0.08f) s.hitDone = true;    // as it comes down
+        if (s.anim == FKA_CHARGED) blade_graze(b, W_DN[0] - 0.08f, W_DN[1]);     // the slam itself, where the blade comes down
         if (clip >= 2.02f) {
             float o[3] = { b->pos[0], s.groundY + 4.0f, b->pos[2] };
-            skill_fx_spawn_arc_hostile(o, b->rot[1], 105.0f, FK_FELT(45.0f));
-            skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 105.0f, FK_FELT(45.0f));
-            skill_fx_spawn_pillar_hostile((float[3]){ b->pos[0], s.groundY, b->pos[2] });
+            skill_fx_spawn_fire_spread_hostile(o, 105.0f, FK_FELT(45.0f));     // fire in bursts out from the blow (the user's call: was two crimson half rings and a pillar)
             {   // where the blade bites
                 float base[3], tip[3], cx = b->pos[0] - fm_sinf(b->rot[1]) * 22.0f, cz = b->pos[2] + fm_cosf(b->rot[1]) * 22.0f;
                 if (sword_segment(base, tip)) { cx = tip[0]; cz = tip[2]; }
                 boss_ground_crush_spawn_varied(cx, s.groundY + 0.25f, cz, FK_CRACK, b->rot[1]);
+                floor_fire_slam(cx, s.groundY, cz, 9.0f);
             }
             screen_shake_set_shake_mag(16.0f);
             sfx(SCENE1_SFX_SLAM_BOSS, 1.0f);     // its thump on this frame
@@ -1670,7 +1733,7 @@ static void plunge_update(Boss *b, float dt)
 {
     // Leaping plunge: AttackCharged's crouch (the sword drawn back low), a leap at where the player
     // stood as it left (the aim held: step aside), the sword raised overhead at the top, then
-    // driven down as it lands: a ring of force where it bites, and a moment wrenching it free
+    // driven down as it lands: the floor cracks where it bites, and a moment wrenching it free
     const float CROUCH = 0.7f, VY = 95.0f, G = 190.0f, FLIGHT = 2.0f * VY / G, DOWN = 0.16f;
     float clip = clip_time();
     if (s.step == 0) {
@@ -1704,9 +1767,7 @@ static void plunge_update(Boss *b, float dt)
             float base[3], tip[3], o[3] = { b->pos[0], s.groundY + 4.0f, b->pos[2] };
             if (sword_segment(base, tip)) { o[0] = tip[0]; o[2] = tip[2]; }     // where the blade bites
             boss_ground_crush_spawn_varied(o[0], s.groundY + 0.25f, o[2], FK_CRACK, b->rot[1]);
-            float dmg = s.hitDone ? 0.0f : 10.0f;       // the blade itself already struck: the ring doesn't again
-            skill_fx_spawn_arc_hostile(o, b->rot[1], 20.0f, dmg);
-            skill_fx_spawn_arc_hostile(o, b->rot[1] + T3D_PI, 20.0f, dmg);
+            floor_fire_slam(o[0], s.groundY, o[2], 9.0f);
             screen_shake_set_shake_mag(10.0f);
             sfx(SCENE1_SFX_BOSS_LAND1, 0.9f);
             s.step = 2; s.t = 0.0f;
@@ -1727,8 +1788,18 @@ static void fire_light(const Boss *b, float x, float z)
 static void fire_update(float dt)
 {
     if (s.fireHitT > 0.0f) { s.fireHitT -= dt; return; }
+#ifdef HLE_LOG_HITGAP
+    if (character.pos[1] - s.groundY <= 6.0f) { float g = skill_fx_fire_trail_gap(character.pos), m[5];
+        for (int v = 0; v < 5; v++) m[v] = g - hle_hg_r(v);
+        if (g < 1e8f) hle_hg_m("FW fire trail", m, false); }
+#endif
     if (character.pos[1] - s.groundY > 6.0f || !skill_fx_fire_trail_touches(character.pos, character.capsuleCollider.radius)) return;
-    character_apply_damage(FK_FELT(8.0f));
+#ifdef HLE_LOG_HITGAP
+    { const float (*P)[3]; int n = hle_hg_player_pts(&P); float g = 1e9f;
+      for (int i = 0; i < n; i++) if (P[i][1] - s.groundY < 12.0f) g = fminf(g, skill_fx_fire_trail_gap(P[i]));
+      extern void hle_hg_gaps(const char *, float, float); hle_hg_begin(); hle_hg_gaps("flames", g, skill_fx_fire_trail_gap(character.pos) - character.capsuleCollider.radius); hle_hg_hit("FW fire trail"); }
+#endif
+    character_apply_damage_kind(FK_FELT(8.0f), DMG_FIRE);
     s.fireHitT = 1.0f;
 #ifdef HLE_LOG_LUNGE
     debugf("[lunge] fire burns the player at %d ms\n", (int)get_ticks_ms());
@@ -1988,9 +2059,16 @@ void fallen_knight_update(Boss* b, float dt)
 {
     if (!s.ready) return;
     if (b->damageFlashTimer > 0.0f) b->damageFlashTimer -= dt;
-    s.t += dt;
+    // A Swift Elite's footwork and breathers quicker, an Enraged one's breathers shorter below half
+    // health (section 11): their clock and clips only, its strikes' timing as ever
+    bool paced = s.state == FK_CHASE || s.state == FK_RECOVER;
+    float pace = paced ? tower_elite_pace(s.state == FK_RECOVER, b->health / fmaxf(b->maxHealth, 1.0f)) : 1.0f, feet = paced ? tower_elite_pace(false, 1.0f) : 1.0f;
+    s.t += dt * pace;
     s.dtLast = dt;
-    s.cdCleave -= dt; s.cdHalfmoon -= dt; s.cdMoonblade -= dt; s.cdRoll -= dt; s.cdSplitter -= dt; s.cdUpdown -= dt; s.cdTri -= dt; s.cdHoly -= dt; s.cdPlunge -= dt; s.cdLunge -= dt; s.cdBackLunge -= dt;
+    {   // (Swift: its moves come round sooner too)
+        float c = dt * tower_elite_pace(false, 1.0f);
+        s.cdCleave -= c; s.cdHalfmoon -= c; s.cdMoonblade -= c; s.cdRoll -= c; s.cdSplitter -= c; s.cdUpdown -= c; s.cdTri -= c; s.cdHoly -= c; s.cdPlunge -= c; s.cdLunge -= c; s.cdBackLunge -= c;
+    }
     s.bladeTgt = 0.0f;      // a move that holds the blade asks again each frame (hold_blade)
 
     float dx, dz, dist = to_player(b, &dx, &dz);
@@ -2015,7 +2093,7 @@ void fallen_knight_update(Boss* b, float dt)
 
     b->striking = s.striking || s.state == FK_ROLL;     // mid-swing (melee_check) or rolling off
     s.striking = false;
-#ifdef HLE_TEST_DUMMY
+#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT) || defined(HLE_HUMAN_BOT)
     { extern void hle_open_tick(bool, float); hle_open_tick((s.state == FK_CHASE || s.state == FK_RECOVER), dt); }   // test aid: measure the openings
 #endif
     // a Moon Blade cross's second beam, BEAM_GAP after its first (even once the leap has landed)
@@ -2024,6 +2102,7 @@ void fallen_knight_update(Boss* b, float dt)
         if (s.state == FK_MOONBLADE) { beam_swing(1); sfx(SCENE1_SFX_FW_SLICE, 1.0f); }      // its cut (not once it has landed)
     }
     if (s.state != FK_DEAD) fire_update(dt);
+    floor_fire_update(dt);
     switch (s.state) {
     case FK_INTRO:
         // Falls from above, the blade down its back, into a superhero landing that cracks
@@ -2043,7 +2122,7 @@ void fallen_knight_update(Boss* b, float dt)
         break;      // waits, landed, until the intro cutscene ends (fallen_knight_skip_intro)
 
     case FK_CHASE: {
-        footwork(b, dist, dx, dz, dt, true);
+        footwork(b, dist, dx, dz, dt * feet, true);
         // Dodge the player's swings sometimes
         CharacterState ps = character_get_state();
         if (ps == CHAR_STATE_ATTACKING && dist < 28.0f && s.cdRoll <= 0.0f) {
@@ -2145,7 +2224,7 @@ void fallen_knight_update(Boss* b, float dt)
             if (s.bladeArc == 1) hold_blade_turn(0.1f, -1.0f, 0.0f, 6.0f);
             else { s.bladeTgt = 1.0f; s.bladeTurn = 6.0f; }     // blade_pose aims it at the clip's own
         }
-        if (s.t > s.stareT) footwork(b, dist, dx, dz, dt, false);      // it shifts its feet and squares up to you
+        if (s.t > s.stareT) footwork(b, dist, dx, dz, dt * feet, false);      // it shifts its feet and squares up to you
         if (s.t > s.recT) enter(FK_CHASE);
         break;
 
@@ -2154,7 +2233,7 @@ void fallen_knight_update(Boss* b, float dt)
     }
 
     // Animate (with a short crossfade after clip changes)
-    t3d_anim_update(&s.anims[s.anim], dt);
+    t3d_anim_update(&s.anims[s.anim], dt * (paced && (s.state == FK_CHASE || s.state == FK_RECOVER) ? pace : 1.0f));
 #ifdef HLE_POP_REF      // test aid: no crossfades (the clips' own motion, for HLE_LOG_POP to hold the changes to)
     s.blendT = 0.0f;
 #endif
@@ -2401,4 +2480,16 @@ void fallen_knight_draw(Boss* b)
     t3d_model_draw_custom(s.body, (T3DModelDrawConf){ .matrices = gpu_skeleton_matrices(), .filterCb = fk_parts });
     gpu_skeleton_end(&s.skel, bones);
     t3d_light_set_ambient((uint8_t[4]){ 255, 255, 255, 255 });
+    floor_fire_draw();
 }
+
+#ifdef HLE_HB_PROPOSALS
+bool hle_fk_tri(float t[3][2], float *y, int *step)     // test aid: the Triangle Slam's marked triangle (its area: inside, or 6 past an edge)
+{
+    if (s.state != FK_TRISLAM || s.step < 1 || (s.step == 2 && s.t > 0.3f)) return false;
+    memcpy(t, s.tri, sizeof(float) * 6); *y = s.groundY; *step = s.step; return true;
+}
+#endif
+#if defined(HLE_SHOW_HURTBOX) || defined(HLE_LOG_HITGAP)
+int hle_fk_state(void) { return s.state; }     // test aid: its move, for [hbb]
+#endif

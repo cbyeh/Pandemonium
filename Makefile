@@ -88,6 +88,10 @@ N64_SYM := $(N64_SYM) --no-inlines
 N64_LDFLAGS += --wrap sys_hw_memset --wrap sys_hw_memset16 --wrap sys_hw_memset32 --wrap sys_hw_memset64
 # Z clears without a mid-frame SYNC_FULL (hle/clearz_hle.c)
 N64_LDFLAGS += --wrap __rdpq_clear_z $(HLE_EXTRA_LDFLAGS)
+# Test aid: every laid-out string checked for garbage bytes and bad escapes (hle/text_check.c)
+ifneq ($(findstring HLE_TEXT_CHECK,$(HLE_EXTRA_CFLAGS)),)
+N64_LDFLAGS += --wrap __rdpq_paragraph_build --wrap rdpq_paragraph_build
+endif
 ifneq ($(HLE_BOOTFIX_ONLY),1)
 # Models register their vertices with the converted-vertex cache (hle/ovl_t3d.c)
 N64_LDFLAGS += --wrap t3d_model_load --wrap t3d_model_free
@@ -140,6 +144,13 @@ versioned: pandemonium.z64
 	@echo "Creating versioned ROM: Pandemonium-$(VERSION).z64"
 	@cp pandemonium.z64 Pandemonium-$(VERSION).z64
 
+# The Tower's screens and the menus run outside the fight's hot loop: built for size (-Os after -O2: 23 KB less code, more heap at the Tower's low point)
+$(OBJDIR)/game/tower/tower.o $(OBJDIR)/controllers/menu_controller.o $(OBJDIR)/utilities/ui_pages.o: N64_CFLAGS += -Os
+# Code that never runs in a fight (the story's cutscenes and ending, the opening credits, the title, the save), for size too: the Codex's,
+# the Offerings' and the milestones' code (+15 KB) paid for, so the Tower's low point stays over 450 KB at 4 MB
+$(OBJDIR)/scenes/guardian/guardian_ending.o $(OBJDIR)/scenes/guardian/guardian_cutscene_phase1.o $(OBJDIR)/scenes/guardian/guardian_cutscene_phase2.o \
+$(OBJDIR)/scenes/opening_credits/opening_credits_scene.o $(OBJDIR)/scenes/title/title_scene.o $(OBJDIR)/utilities/save_controller.o: N64_CFLAGS += -Os
+
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(N64_CFLAGS) -c $< -o $@
@@ -153,6 +164,10 @@ $(FILESYSTEMDIR)/%.sprite: $(ASSDIR)/%.png
 # The fire loop (n64guy's CC0 "N64 Fire", its Flat set, 30 frames one above the next) as heat
 # alone: the game colours it (8 bits a texel, 30 KB in RAM, not RGBA32's 122)
 $(FILESYSTEMDIR)/fx/fire_flat.sprite: MKSPRITE_FLAGS += -f I8
+
+# Optimus Princeps SemiBold (Manfred Klein, free): small, outlined (an Elite's affixes under its name bar)
+$(FILESYSTEMDIR)/fonts/optimus_princeps_semibold.font64: MKFONT_FLAGS += -s $(OPTIMUS_SIZE) --outline 1
+OPTIMUS_SIZE ?= 10     # (11 and up touched the bar's end scrolls with the widest pair, Relentless Smouldering)
 
 $(FILESYSTEMDIR)/%.font64: $(ASSDIR)/%.ttf
 	@mkdir -p $(dir $@)

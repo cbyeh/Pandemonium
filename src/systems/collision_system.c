@@ -3,9 +3,11 @@
 #include <t3d/t3d.h>
 #include <t3d/t3dskeleton.h>
 #include <math.h>
+#include <string.h>
 
 #include "character.h"
 #include "game/boss/boss.h"
+#include "game/dragon_boss/dragon_boss.h"
 
 #include "simple_collision_utility.h"
 #include "debug_draw.h"
@@ -93,24 +95,43 @@ static inline bool circle_vs_circle_push_xz(
 #ifdef HLE_LOG_HITVOL
 bool hle_limb_only;     // test aid: this frame's sword contact came from the limbs alone
 #endif
-static bool guardian_body_hit(const Boss *boss, const float a[3], const float b[3], float r)
+static const struct { const char *from, *to; float r; } LIMBS[] = {
+    { "Waist", "Head", 7.0f },
+    { "Waist", "LowerLeg-Left", 5.0f }, { "LowerLeg-Left", "Foot-Left", 4.0f },
+    { "Waist", "LowerLeg-Right", 5.0f }, { "LowerLeg-Right", "Foot-Right", 4.0f },
+};
+enum { N_LIMBS = sizeof(LIMBS) / sizeof(LIMBS[0]) };
+static int limb_bones(const Boss *boss, int bone[][2])     // the limbs' bones, or 0 when they don't count
 {
-    static const struct { const char *from, *to; float r; } LIMBS[] = {
-        { "Waist", "Head", 7.0f },
-        { "Waist", "LowerLeg-Left", 5.0f }, { "LowerLeg-Left", "Foot-Left", 4.0f },
-        { "Waist", "LowerLeg-Right", 5.0f }, { "LowerLeg-Right", "Foot-Right", 4.0f },
-    };
-    enum { N = sizeof(LIMBS) / sizeof(LIMBS[0]) };
     static const void *skel;
-    static int bone[N][2];
-    if (boss->phaseIndex > 2 || boss->mode != BOSS_MODE_COMBAT || !boss->skeleton) return false;
+    static int b[N_LIMBS][2];
+    if (boss->phaseIndex > 2 || boss->mode != BOSS_MODE_COMBAT || !boss->skeleton) return 0;
     if (skel != boss->skeleton) {
         skel = boss->skeleton;
-        for (int i = 0; i < N; i++) {
-            bone[i][0] = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, LIMBS[i].from);
-            bone[i][1] = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, LIMBS[i].to);
+        for (int i = 0; i < N_LIMBS; i++) {
+            b[i][0] = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, LIMBS[i].from);
+            b[i][1] = t3d_skeleton_find_bone((T3DSkeleton*)boss->skeleton, LIMBS[i].to);
         }
     }
+    memcpy(bone, b, sizeof(b));
+    return N_LIMBS;
+}
+#ifdef HLE_SHOW_HURTBOX
+int hle_guardian_limbs(T3DVec3 p[][2], float r[])     // test aid: the limb capsules as the sword meets them
+{
+    Boss *boss = boss_get_instance();
+    int bone[N_LIMBS][2], n = 0;
+    if (!boss || !limb_bones(boss, bone)) return 0;
+    for (int i = 0; i < N_LIMBS; i++)
+        if (boss_get_bone_world_pos(boss, bone[i][0], &p[n][0]) && boss_get_bone_world_pos(boss, bone[i][1], &p[n][1])) r[n++] = LIMBS[i].r;
+    return n;
+}
+#endif
+static bool guardian_body_hit(const Boss *boss, const float a[3], const float b[3], float r)
+{
+    enum { N = N_LIMBS };
+    int bone[N][2];
+    if (!limb_bones(boss, bone)) return false;
     for (int i = 0; i < N; i++) {
         T3DVec3 p, q;
         if (!boss_get_bone_world_pos(boss, bone[i][0], &p) || !boss_get_bone_world_pos(boss, bone[i][1], &q)) continue;
@@ -121,6 +142,21 @@ static bool guardian_body_hit(const Boss *boss, const float a[3], const float b[
             return true;
         }
     }
+    return false;
+}
+
+// Shadowborne's tail (the user's call): the sword meets it too, where it is drawn. bossTailHit and
+// its segment: what this frame's sword contact met, for the blood (character.c)
+bool bossTailHit; float bossTailA[3], bossTailB[3], bossTailR;
+static bool dragon_tail_hit(const float a[3], const float b[3], float r)
+{
+    float ta[DRAGON_TAIL_VOLUMES][3], tb[DRAGON_TAIL_VOLUMES][3], tr[DRAGON_TAIL_VOLUMES];
+    int n = dragon_boss_tail_volumes(ta, tb, tr);
+    for (int i = 0; i < n; i++)
+        if (scu_capsule_vs_capsule_f(a, b, r, ta[i], tb[i], tr[i])) {
+            memcpy(bossTailA, ta[i], 12); memcpy(bossTailB, tb[i], 12); bossTailR = tr[i];
+            return true;
+        }
     return false;
 }
 
@@ -253,7 +289,7 @@ static void collision_resolve_character_scene_bounds(void)
 static float s_clearX, s_clearZ;     // where the walls last left the player
 static bool  s_clearOk;
 
-// The hall's walls are 20 thick, the player's radius 8: a move that took his middle past a wall's
+// The hall's walls are 20 thick, the player's radius 6: a move that took his middle past a wall's
 // middle in one frame (the knockdown's shove on a slow frame, a big body's shove) was pushed out the
 // far side, out of the hall. Such a move is walked in steps of his radius
 static void collision_sweep_character_scene_bounds(float fromX, float fromZ)
@@ -334,13 +370,15 @@ void collision_update(void)
         float push[3];
         float n[3];
 
-        bodyHitboxCollision = circle_vs_circle_push_xz(
+        if (boss->phaseIndex == DRAGON_BOSS_PHASE) dragon_boss_rush_hit(boss);     // (the rush's hit before its push: where he stands now)
+        float dr = boss->phaseIndex == DRAGON_BOSS_PHASE ? dragon_boss_push_radius() : 0.0f, pushR = dr > 0.0f ? dr : bossRadius;
+        bodyHitboxCollision = dr >= 0.0f && circle_vs_circle_push_xz(
             charX,
             charZ,
             charRadius,
             bossX,
             bossZ,
-            bossRadius,
+            pushR,
             push,
             n
         );
@@ -413,6 +451,10 @@ void collision_update(void)
             charCapB.v,
             charRadius
         );
+#ifdef HLE_LOG_HITGAP     // test aid: the blade's reach for the what-ifs
+        { extern void hle_hg_vol(const char *, const float *, const float *, float); extern const char *hle_hg_gname(const Boss *);
+          if (boss->phaseIndex <= 2) hle_hg_vol(hle_hg_gname(boss), bossWeaponCapA.v, bossWeaponCapB.v, bossWeaponRadius); }
+#endif
     }
 
     // ------------------------------------------------------------
@@ -477,6 +519,9 @@ void collision_update(void)
                   wasHit = att; }
                 hle_limb_only = false;
 #endif
+                bossTailHit = false;
+                if (!charWeaponCollision && character_get_state() == CHAR_STATE_ATTACKING && boss->phaseIndex == DRAGON_BOSS_PHASE && boss->mode == BOSS_MODE_COMBAT && boss->health > 0.0f)
+                    charWeaponCollision = bossTailHit = dragon_tail_hit(charWeaponCapA.v, charWeaponCapB.v, charWeaponRadius);
                 if (!charWeaponCollision && character_get_state() == CHAR_STATE_ATTACKING) {     // (only read mid-swing)
                     charWeaponCollision = guardian_body_hit(boss, charWeaponCapA.v, charWeaponCapB.v, charWeaponRadius);
 #ifdef HLE_LOG_HITVOL

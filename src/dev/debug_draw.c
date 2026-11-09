@@ -1,3 +1,4 @@
+#include "game/dragon_boss/dragon_boss.h"
 #include "debug_draw.h"
 #include <libdragon.h>
 #include <t3d/t3d.h>
@@ -11,6 +12,9 @@
 
 #include <math.h> // for isfinite
 
+#ifdef HLE_SHOW_HURTBOX
+static uint8_t s_hbAlpha = 170;
+#endif
 uint16_t DEBUG_COLORS[6] = {
     0xf800, // Red     (#ff0000)
     0x0fe0, // Green   (#08ff00)
@@ -22,6 +26,19 @@ uint16_t DEBUG_COLORS[6] = {
 
 static void debug_draw_line(int px0, int py0, int px1, int py1, uint16_t color)
 {
+#ifdef HLE_SHOW_HURTBOX     // test aid: lines as RDP quads (2 px wide, translucent), so HLE plugins show them too
+    {
+        float dx = px1 - px0, dy = py1 - py0, l = sqrtf(dx * dx + dy * dy);
+        if (l < 0.5f || abs(px0) > 2000 || abs(py0) > 2000 || abs(px1) > 2000 || abs(py1) > 2000) return;
+        float nx = -dy / l, ny = dx / l;
+        float a[2] = { px0 + nx, py0 + ny }, b[2] = { px1 + nx, py1 + ny }, c[2] = { px1 - nx, py1 - ny }, d[2] = { px0 - nx, py0 - ny };
+        color_t col = color_from_packed16(color); col.a = s_hbAlpha;
+        rdpq_set_prim_color(col);
+        rdpq_triangle(&TRIFMT_FILL, a, b, c);
+        rdpq_triangle(&TRIFMT_FILL, a, c, d);
+        return;
+    }
+#endif
     uint16_t *fb = offscreenBuffer.buffer;
     if (!fb) return;
 
@@ -291,3 +308,232 @@ void debug_draw_capsule_vs_aabb_list(
         debug_draw_cross(vp, &mid, capRadius, capColor);
     }
 }
+
+#ifdef HLE_SHOW_HURTBOX
+#include "character.h"
+#include "game/boss/boss.h"
+#include "camera_controller.h"
+int hle_hb_frame;     // the autoplay frame, shown as a barcode (bottom left) to match shots to logs
+// Test aid: the bosses' strikes live this frame (they can hit now), set by the moves, drawn cyan and cleared
+static float s_sva[8][3], s_svb[8][3], s_svr[8]; static int s_svn;
+void hle_strike_vol(const float a[3], const float b[3], float r)
+{
+    if (s_svn >= 8) return;
+    for (int m = 0; m < 3; m++) { s_sva[s_svn][m] = a[m]; s_svb[s_svn][m] = b[m]; } s_svr[s_svn++] = r;
+    static int last = -1; if (hle_hb_frame != last) { last = hle_hb_frame; debugf("[strikevol] f%d\n", hle_hb_frame); }
+}
+// to the screen, unless it is behind or right at the camera (there the projection wraps round)
+static bool hb_proj(T3DViewport *vp, const float w[3], T3DVec3 *out)
+{
+    float f[3], d = 0.0f, fl = 0.0f;
+    for (int m = 0; m < 3; m++) { f[m] = customCamTarget.v[m] - customCamPos.v[m]; fl += f[m] * f[m]; }
+    fl = sqrtf(fl) + 1e-6f;
+    for (int m = 0; m < 3; m++) d += (w[m] - customCamPos.v[m]) * f[m] / fl;
+    if (d < 4.0f) return false;
+    T3DVec3 p = {{ w[0], w[1], w[2] }};
+    t3d_viewport_calc_viewspace_pos(vp, out, &p);
+    return out->v[2] > 0.0f && out->v[2] < 1.0f;
+}
+static void hb_line(const T3DVec3 *a, const T3DVec3 *b, uint16_t c) { debug_draw_line((int)a->v[0], (int)a->v[1], (int)b->v[0], (int)b->v[1], c); }
+// A capsule seen from the test camera (customCamPos): its outline in the plane through the axis
+// facing the camera (convex: a half circle round each end), filled translucent, then stroked,
+// plus a ring round each end of the axis
+static void hb_capsule(T3DViewport *vp, const T3DVec3 *a, const T3DVec3 *b, float r, color_t col, bool rings)
+{
+    float v[3], u[3], sd[3], w[3];
+    for (int m = 0; m < 3; m++) { v[m] = (a->v[m] + b->v[m]) * 0.5f - customCamPos.v[m]; u[m] = b->v[m] - a->v[m]; }
+    float vl = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) + 1e-6f;
+    for (int m = 0; m < 3; m++) v[m] /= vl;
+    float ud = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    for (int m = 0; m < 3; m++) w[m] = u[m] - ud * v[m];     // the axis across the view
+    float wl = sqrtf(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
+    if (wl < 1e-3f) { w[0] = 0; w[1] = 1; w[2] = 0; wl = 1; }   // end on (or a ball): any way up
+    for (int m = 0; m < 3; m++) w[m] /= wl;
+    sd[0] = w[1] * v[2] - w[2] * v[1]; sd[1] = w[2] * v[0] - w[0] * v[2]; sd[2] = w[0] * v[1] - w[1] * v[0];
+    enum { H = 6, N = 2 * H + 2, NR = 12 };     // few: past ~1000 triangles the HLE frame splits in two tasks (the scene went black)
+    T3DVec3 sp[N]; float cx = 0.0f, cy = 0.0f;
+    for (int i = 0; i < N; i++) {
+        const T3DVec3 *c = i <= H ? b : a;
+        float t = T3D_PI * (float)(i <= H ? i : i - 1) / H;     // 0..pi round B, pi..2pi round A
+        float p[3];
+        for (int m = 0; m < 3; m++) p[m] = c->v[m] + r * (cosf(t) * sd[m] + sinf(t) * w[m]);
+        if (!hb_proj(vp, p, &sp[i])) return;
+        cx += sp[i].v[0] / N; cy += sp[i].v[1] / N;
+    }
+    color_t f = col; f.a = 60;
+    rdpq_set_prim_color(f);
+    for (int i = 0; i < N; i++) {
+        float p0[2] = { cx, cy }, p1[2] = { sp[i].v[0], sp[i].v[1] }, p2[2] = { sp[(i + 1) % N].v[0], sp[(i + 1) % N].v[1] };
+        rdpq_triangle(&TRIFMT_FILL, p0, p1, p2);
+    }
+    uint16_t c16 = color_to_packed16(col);
+    s_hbAlpha = 230;
+    for (int i = 0; i < N; i++) hb_line(&sp[i], &sp[(i + 1) % N], c16);
+    s_hbAlpha = 140;
+    // rings round the axis at both ends: e1, e2 across the axis
+    float ul = sqrtf(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+    float un[3] = { 0, 1, 0 };
+    if (ul > 1e-3f) for (int m = 0; m < 3; m++) un[m] = u[m] / ul;
+    float e1[3] = { 1, 0, 0 };
+    if (fabsf(un[0]) > 0.9f) { e1[0] = 0; e1[2] = 1; }
+    float e2[3] = { un[1] * e1[2] - un[2] * e1[1], un[2] * e1[0] - un[0] * e1[2], un[0] * e1[1] - un[1] * e1[0] };
+    float l2 = sqrtf(e2[0] * e2[0] + e2[1] * e2[1] + e2[2] * e2[2]);
+    for (int m = 0; m < 3; m++) e2[m] /= l2;
+    e1[0] = e2[1] * un[2] - e2[2] * un[1]; e1[1] = e2[2] * un[0] - e2[0] * un[2]; e1[2] = e2[0] * un[1] - e2[1] * un[0];
+    for (int e = 0; e < (rings ? 2 : 0); e++) {
+        const T3DVec3 *c = e ? b : a;
+        T3DVec3 q0, q1; bool ok0 = false;
+        for (int i = 0; i <= NR; i++) {
+            float t = 2.0f * T3D_PI * i / NR, p[3];
+            for (int m = 0; m < 3; m++) p[m] = c->v[m] + r * (cosf(t) * e1[m] + sinf(t) * e2[m]);
+            bool ok = hb_proj(vp, p, &q1);
+            if (ok && ok0) hb_line(&q0, &q1, c16);
+            q0 = q1; ok0 = ok;
+        }
+    }
+    { T3DVec3 p0, p1; if (hb_proj(vp, a->v, &p0) && hb_proj(vp, b->v, &p1)) hb_line(&p0, &p1, c16); }
+}
+
+#ifdef HLE_HB_PROPOSALS
+// Test aid: a boss's attack volume while it can hit, yellow: on even frames today's, on odd ones the
+// proposal (shots of two frames in a row: before | after). Returns true if it drew one (the
+// boss's own hurtboxes are left out then)
+static void hb_hand(const Boss *b, const float l[3], float w[3])
+{
+    const T3DMat4FP *B = &((T3DSkeleton *)b->skeleton)->boneMatricesFP[b->handRightBoneIndex];
+    float m[3]; mat4fp_mul_point_f32_row3_colbasis(B, l, m); mat4fp_mul_point_f32_row3_colbasis((const T3DMat4FP *)b->modelMat, m, w);
+}
+static void hb_seg(T3DViewport *vp, const float a[3], const float b[3], float r, color_t c)
+{
+    T3DVec3 p = {{ a[0], a[1], a[2] }}, q = {{ b[0], b[1], b[2] }};
+    hb_capsule(vp, &p, &q, r, c, false);
+}
+static void hb_disc(T3DViewport *vp, const float c[3], float r, float h, color_t col)     // a flat cylinder r round, h high
+{
+    uint16_t c16 = color_to_packed16(col); s_hbAlpha = 230;
+    for (int e = 0; e < 2; e++) { T3DVec3 q0, q1; bool ok0 = false;
+        for (int i = 0; i <= 24; i++) { float t = 6.2832f * i / 24, p[3] = { c[0] + r * cosf(t), c[1] + e * h, c[2] + r * sinf(t) };
+            bool ok = hb_proj(vp, p, &q1); if (ok && ok0) hb_line(&q0, &q1, c16); q0 = q1; ok0 = ok; } }
+    s_hbAlpha = 140;
+}
+static void hb_drawn_blade(T3DViewport *vp, const Boss *b, color_t c)
+{
+    static const float L[6][2][3] = { { { -112, 34, -24 }, { -751, 15, -80 } }, { { -111, 1, -21 }, { -595, -22, -63 } }, { { -113, 66, -27 }, { -599, 52, -70 } },
+                                      { { -595, -22, -63 }, { -781, -74, -76 } }, { { -599, 52, -70 }, { -724, 95, -85 } }, { { -724, 95, -85 }, { -781, -74, -76 } } };
+    for (int i = 0; i < 6; i++) { float p[3], q[3]; hb_hand(b, L[i][0], p); hb_hand(b, L[i][1], q); hb_seg(vp, p, q, 0.8f, c); }
+}
+#include "game_time.h"
+#include "simple_collision_utility.h"
+static void hb_freeze(bool now, const char *what, int id)     // the moment of contact held still 4 s (real) for the shots, the first 3 times
+{
+    static int n, last = -10000;
+#ifdef HLE_HB_ONLY
+    if (id != HLE_HB_ONLY) return;
+#endif
+    extern int hle_hb_hold; hle_hb_hold = hle_hb_frame - last < 240;
+    if (hle_hb_hold) { game_time_clear_effects(); game_time_slowmo(0.1f, 0.0001f); return; }     // held (a hit's own slow motion would end it)
+    if (!now || n >= 3 || hle_hb_frame - last < 600) return;
+    n++; last = hle_hb_frame; hle_hb_hold = 1; game_time_clear_effects(); game_time_slowmo(0.1f, 0.0001f);
+    debugf("[hbfreeze] f%d %s\n", hle_hb_frame, what);
+}
+static bool hb_proposals(T3DViewport *vp, Boss *b)
+{
+    extern bool bossWeaponCollision;
+    float pa[3] = { character.pos[0] + character.capsuleCollider.localCapA.v[0], character.pos[1] + character.capsuleCollider.localCapA.v[1], character.pos[2] + character.capsuleCollider.localCapA.v[2] };
+    float pb[3] = { character.pos[0] + character.capsuleCollider.localCapB.v[0], character.pos[1] + character.capsuleCollider.localCapB.v[1], character.pos[2] + character.capsuleCollider.localCapB.v[2] };
+    bool prop = hle_hb_frame & 1;
+    color_t Y = RGBA32(255, 225, 0, 255);
+    const CapsuleCollider *k = &b->capsuleCollider;
+    float ba[3] = { b->pos[0] + k->localCapA.v[0], b->pos[1] + k->localCapA.v[1], b->pos[2] + k->localCapA.v[2] };
+    float bb[3] = { b->pos[0] + k->localCapB.v[0], b->pos[1] + k->localCapB.v[1], b->pos[2] + k->localCapB.v[2] };
+    if (b->phaseIndex <= 2 && b->skeleton && b->handRightBoneIndex >= 0) {
+        if (b->state == BOSS_STATE_FLIP_ATTACK && b->sphereAttackColliderActive) {     // (c) the burst
+            float c[3] = { b->pos[0] - cosf(b->rot[1]) * 40.0f, b->pos[1], b->pos[2] - sinf(b->rot[1]) * 40.0f };
+            hb_freeze(sqrtf((character.pos[0] - c[0]) * (character.pos[0] - c[0]) + (character.pos[2] - c[2]) * (character.pos[2] - c[2])) <= 20.0f, "flip burst", 3);
+            hb_freeze(true, "flip burst live", 7);
+            if (!prop) hb_disc(vp, c, 20.0f, 60.0f, Y);
+            else { hb_seg(vp, ba, bb, k->radius, Y); hb_drawn_blade(vp, b, Y); }
+            return true;
+        }
+        if (b->handAttackColliderActive) {
+            if (b->state == BOSS_STATE_COMBO_LUNGE) { hb_freeze(scu_capsule_vs_capsule_f(ba, bb, k->radius, pa, pb, character.capsuleCollider.radius), "lunge body", 2); hb_drawn_blade(vp, b, Y); if (prop) hb_seg(vp, ba, bb, k->radius, Y); }     // (b)
+            else if ((hb_freeze(bossWeaponCollision, "blade", 1), !prop)) { float p[3], q[3]; hb_hand(b, (float[3]){ 0, 0, 0 }, p); hb_hand(b, (float[3]){ -640, 0, 0 }, q); hb_seg(vp, p, q, 5.0f, Y); }     // (a)
+            else hb_drawn_blade(vp, b, Y);
+            return true;
+        }
+    } else if (b->phaseIndex == DRAGON_BOSS_PHASE) {     // (d) the charge
+        extern int hle_dragon_charge_vols(float a[][3], float b[][3], float r[], float *extra);
+        float a[16][3], q[16][3], r[16], ex; int n = hle_dragon_charge_vols(a, q, r, &ex);
+        { float xa[3] = { character.pos[0], character.pos[1] + 4.0f, character.pos[2] }, xb[3] = { character.pos[0], character.pos[1] + 16.0f, character.pos[2] }; bool t = false;
+          for (int i = 0; i < n; i++) { t |= scu_capsule_vs_capsule_f(a[i], q[i], r[i] + ex, xa, xb, 6.0f); }
+          hb_freeze(t, "charge shove", 4); }
+        for (int i = 0; i < n; i++) hb_seg(vp, a[i], q[i], r[i] + (prop ? 0.0f : ex), Y);
+        extern float dragon_boss_push_radius(void);     // the circle its body pushes the player out to (white: the hit capsule's, or the rush's)
+        if (n > 0) { float c[3] = { b->pos[0], b->pos[1], b->pos[2] }, pr = dragon_boss_push_radius(); if (pr >= 0.0f) hb_disc(vp, c, pr > 0.0f ? pr : k->radius, 2.0f, RGBA32(255, 255, 255, 255)); }     // (none: no push yet)
+        return n > 0;
+    } else if (b->phaseIndex == 3) {     // (e) the Fallen Warrior: the Triangle Slam's area (kept)
+        extern bool hle_fk_tri(float t[3][2], float *y, int *step); float t[3][2], y; int st;
+        if (hle_fk_tri(t, &y, &st)) { hb_freeze(st == 2, "triangle slam", 5); for (int i = 0; i < 3; i++) { float p[3] = { t[i][0], y, t[i][1] }, q[3] = { t[(i + 1) % 3][0], y, t[(i + 1) % 3][1] }; hb_seg(vp, p, q, 6.0f, Y); } return true; }
+    } else if (b->phaseIndex == 4) {     // (e) the Sun: the dive's landing (kept)
+        extern bool hle_sun_dive(float c[3], bool *landed); float c[3]; bool ld;
+        if (hle_sun_dive(c, &ld)) { hb_freeze(ld, "dive landing", 6); hb_disc(vp, c, 34.0f, 6.0f, Y); return false; }     // (the ball's capsule too)
+    }
+    return false;
+}
+#endif
+// Test aid: the player's hit capsule (green), the boss's (magenta) and the Guardian's limbs (orange) over the frame, as the hit
+// checks build them (pos + local ends, no scale)
+void hle_hurtbox_draw(T3DViewport *vp)
+{
+    rdpq_sync_pipe();
+    rdpq_mode_push();     // the frame's own mode back after (the next frame's drawing went black without it)
+    rdpq_set_mode_standard();
+    rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+    Boss *boss = boss_get_instance();
+    if (boss) {
+        const CapsuleCollider *k = &boss->capsuleCollider;
+        T3DVec3 ba = {{ boss->pos[0] + k->localCapA.v[0], boss->pos[1] + k->localCapA.v[1], boss->pos[2] + k->localCapA.v[2] }};
+        T3DVec3 bb = {{ boss->pos[0] + k->localCapB.v[0], boss->pos[1] + k->localCapB.v[1], boss->pos[2] + k->localCapB.v[2] }};
+#ifdef HLE_HB_PROPOSALS
+        if (hb_proposals(vp, boss)) goto player;     // (the boss's attack volumes only: few triangles)
+#endif
+        hb_capsule(vp, &ba, &bb, k->radius, RGBA32(255, 40, 220, 255), true);
+        // the Guardian's (and Unbound's) limbs, which the sword also meets (collision_system.c)
+        extern int hle_guardian_limbs(T3DVec3 p[][2], float r[]);
+        T3DVec3 lp[8][2]; float lr[8];
+        int nl = hle_guardian_limbs(lp, lr);
+        for (int i = 0; i < nl; i++) hb_capsule(vp, &lp[i][0], &lp[i][1], lr[i], RGBA32(255, 150, 30, 255), false);
+        // the Guardian's and Unbound's blade, while it can hit (cyan: its hit segment)
+        if (boss->handAttackColliderActive) {
+            extern T3DVec3 bossWeaponCapA, bossWeaponCapB; extern float bossWeaponRadius;
+            hb_capsule(vp, &bossWeaponCapA, &bossWeaponCapB, bossWeaponRadius, RGBA32(40, 230, 255, 255), false);
+        }
+        // Shadowborne's tail, its second hit volume (the sword and the skills)
+        if (boss->phaseIndex == DRAGON_BOSS_PHASE) {
+            float ta[DRAGON_TAIL_VOLUMES][3], tb[DRAGON_TAIL_VOLUMES][3], tr[DRAGON_TAIL_VOLUMES];
+            int nt = dragon_boss_tail_volumes(ta, tb, tr);
+            for (int i = 0; i < nt; i++) { T3DVec3 p0 = {{ ta[i][0], ta[i][1], ta[i][2] }}, p1 = {{ tb[i][0], tb[i][1], tb[i][2] }}; hb_capsule(vp, &p0, &p1, tr[i], RGBA32(255, 150, 30, 255), false); }
+        }
+    }
+#ifdef HLE_HB_PROPOSALS
+player:
+#endif
+    for (int i = 0; i < s_svn; i++) { T3DVec3 p0 = {{ s_sva[i][0], s_sva[i][1], s_sva[i][2] }}, p1 = {{ s_svb[i][0], s_svb[i][1], s_svb[i][2] }}; hb_capsule(vp, &p0, &p1, s_svr[i], RGBA32(40, 230, 255, 255), false); }
+    s_svn = 0;
+    const CapsuleCollider *c = &character.capsuleCollider;
+    T3DVec3 a = {{ character.pos[0] + c->localCapA.v[0], character.pos[1] + c->localCapA.v[1], character.pos[2] + c->localCapA.v[2] }};
+    T3DVec3 b = {{ character.pos[0] + c->localCapB.v[0], character.pos[1] + c->localCapB.v[1], character.pos[2] + c->localCapB.v[2] }};
+    hb_capsule(vp, &a, &b, c->radius, RGBA32(40, 255, 60, 255), true);
+    // the frame as 14 bits, 4 px squares from the bottom left (white 1)
+    for (int i = 0; i < 14; i++) {
+        if (!((hle_hb_frame >> i) & 1)) continue;
+        rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
+        float x = 2.0f + i * 5.0f, y = 232.0f, q0[2] = { x, y }, q1[2] = { x + 4, y }, q2[2] = { x + 4, y + 4 }, q3[2] = { x, y + 4 };
+        rdpq_triangle(&TRIFMT_FILL, q0, q1, q2);
+        rdpq_triangle(&TRIFMT_FILL, q0, q2, q3);
+    }
+    rdpq_mode_pop();
+    rdpq_sync_pipe();
+}
+#endif

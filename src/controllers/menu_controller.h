@@ -21,6 +21,10 @@ typedef enum {
     MENU_RUN,           // the Tower run's boons, pacts and totals (from the pause menu)
     MENU_RELICS,        // Shrine > Relics: every relic, bought and equipped here
     MENU_SKINS,         // Settings > Skin: every skin, worn from here
+    MENU_UNLOCKS,       // Shrine > Unlocks: the families' new boons (Boon Packs) and the skills' B forms, bought here
+    MENU_OFFERINGS,     // Tower > Offerings: gifts for the next climb, set aside here
+    MENU_CODEX,         // Tower > Codex and the pause menu's (in a climb): a page a topic, paged (ui_pages)
+    MENU_ARMORY,        // Shrine > Armory: the swords (weapon.c), bought and equipped here
 } MenuState;
 
 typedef enum {
@@ -28,7 +32,7 @@ typedef enum {
     MENU_MAIN_RUN,      // Tower runs only
     MENU_MAIN_RESTART,
     MENU_MAIN_SETTINGS,
-    MENU_MAIN_CONTROLS,
+    MENU_MAIN_CODEX,    // Tower runs only (Controls: in Settings)
     MENU_MAIN_QUIT,
     MENU_MAIN_COUNT
 } MainMenuOption;
@@ -49,6 +53,7 @@ typedef enum {
     MENU_SETTINGS_CONTROLS,
     MENU_SETTINGS_SKILLS,
     MENU_SETTINGS_SKIN,
+    MENU_SETTINGS_SWORD,    // A: the Armory (title only, as the skins)
     MENU_SETTINGS_BACK,
     MENU_SETTINGS_COUNT
 } SettingsMenuOption;
@@ -90,6 +95,9 @@ typedef enum {
 typedef enum {
     MENU_TOWER_CLIMB,
     MENU_TOWER_SHRINE,
+    MENU_TOWER_OFFERINGS,
+    MENU_TOWER_CODEX,
+    MENU_TOWER_HEAT,        // the Heat dial: Left/Right (A steps it up, past the top back to 0)
     MENU_TOWER_BACK,
     MENU_TOWER_COUNT
 } TowerMenuOption;
@@ -98,7 +106,9 @@ typedef enum {
 #define MENU_SHRINE_UPGRADES 5
 #define MENU_SHRINE_RELIC    (MENU_SHRINE_UPGRADES)       // A: the Relics list
 #define MENU_SHRINE_NIGHTFARER   (MENU_SHRINE_UPGRADES + 1)   // A: buy the Nightfarer skin
-#define MENU_SHRINE_COUNT    (MENU_SHRINE_UPGRADES + 3)
+#define MENU_SHRINE_PACKS    (MENU_SHRINE_UPGRADES + 2)   // A: the Boon Packs list (the unlock ladder)
+#define MENU_SHRINE_ARMORY   (MENU_SHRINE_UPGRADES + 3)   // A: the swords (weapon.c)
+#define MENU_SHRINE_COUNT    (MENU_SHRINE_UPGRADES + 5)
 
 typedef enum {
     MENU_ACTION_NONE = 0,
@@ -144,5 +154,6 @@ bool menu_controller_is_pause_menu_active(void);
 
 void menu_controller_toggle(void);
 void menu_controller_close(void);
+void menu_controller_open_pause(int option);     // the pause menu, its cursor on this row (the Tower map's B: Stats)
 
 #endif

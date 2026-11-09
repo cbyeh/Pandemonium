@@ -1,3 +1,4 @@
+#include "weapon.h"
 #include <libdragon.h>
 #include "gpu_frame.h"
 #include <t3d/t3d.h>
@@ -18,8 +19,15 @@
 #include "../boss/environmental_mechanics/boss_ground_crush.h"
 #include "simple_collision_utility.h"
 #include "controllers/audio_controller.h"
+#include "game/tower/tower.h"
+#include "fx/floor_fire.h"
 #include "../../scenes/guardian/guardian_scene_sfx.h"
 #include "../../scenes/guardian/guardian_scene_bounds.h"
+#ifdef HLE_LOG_HITGAP     // test aid: [hg] / [hgw] (hle/autoplay.c)
+extern void hle_hg_vol(const char *, const float *, const float *, float), hle_hg_begin(void), hle_hg_seg(const char *, const float *, const float *, float);
+extern void hle_hg_hit(const char *), hle_hg_fixed(const char *, bool), hle_hg_m(const char *, const float *, bool), hle_hg_ring2(const char *, const float *, float, float, float, float);
+extern float hle_hg_r(int);
+#endif
 
 // ---- Tuning ----
 #define SUN_R          14.0f           // world radius of the eye
@@ -160,6 +168,9 @@ static void move_toward(Boss *b, float x, float z, float speed, float dt)
 }
 
 static void enter(SbState st) {
+#ifdef HLE_HUMAN_BOT     // test aid: the human-like bot learns each move's timing from its start
+    { extern void hb_move(int, int); hb_move(SUN_BOSS_PHASE, st); }
+#endif
 #ifdef HLE_LOG_MOVES     // test aid: each move as it starts (the hits after it are its: [hit])
     debugf("[move] %d\n", st);
 #endif
@@ -176,14 +187,14 @@ static float boss_dist(void)
     float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
     return sqrtf(dx * dx + dz * dz);
 }
-static int sfx(int id, float vol) { return audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, boss_dist()); }
+static int sfx(int id, float vol) { return audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, boss_dist()), tower_elite_pitch()); }
 static int rushCh = -1;     // a ram's or dive's rush: heard from the sun as it moves (sun_boss_update)
 // A ranged move's impact, heard from where it lands (from the boss, one by the player at range
 // was faint or silent)
 static void sfx_at(int id, float vol, float x, float z)
 {
     float dx = character.pos[0] - x, dz = character.pos[2] - z;
-    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+    audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz)), tower_elite_pitch());     // (Swift: higher)
 }
 static void sfx_boom(void) { sfx(SCENE1_SFX_BOSS_SMASH1, 1.0f); }
 static void sfx_cast(void) { sfx(SCENE1_SFX_SUN_CAST, 1.0f); }
@@ -193,7 +204,7 @@ static void sfx_cam(int id, float vol)
 {
     Boss *b = boss_get_instance();
     float dx = customCamPos.v[0] - b->pos[0], dz = customCamPos.v[2] - b->pos[2];     // (the cutscene camera as it moves)
-    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+    audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz)), tower_elite_pitch());     // (Swift: higher)
 }
 
 static float speed_mult(void) { return s.unshackled ? 1.35f : 1.0f; }
@@ -215,6 +226,7 @@ void sun_boss_free(void)
     for (int i = 0; i < MAT_RING; i++) { rspq_block_free(s.linkBlock[i]); free_uncached(s.linkVB[i]); }
     proc_mesh_free(&s.weight);
     free_uncached(s.chainMat);
+    floor_fire_free();
     memset(&s, 0, sizeof(s));
 }
 
@@ -488,16 +500,38 @@ static void dive_update(Boss *b, float dt)
         if (s.t >= 1.1f) { s.diveTarget[0] = character.pos[0]; s.diveTarget[1] = character.pos[2]; s.step = 1; s.t = 0.0f;
                            skill_fx_spawn_burst_warn((float[3]){ s.diveTarget[0], s.groundY, s.diveTarget[1] }, 0.0f); }
     } else if (s.step == 1) {
-        if (s.t >= 0.35f) { s.step = 2; s.t = 0.0f; rushCh = sfx(SCENE1_SFX_SUN_RUSH, 1.0f); }    // the drop
+        if (s.t >= 0.35f) { s.step = 2; s.t = 0.0f; s.hitDone = false; rushCh = sfx(SCENE1_SFX_SUN_RUSH, 1.0f); }    // the drop
     } else {
+        float was[3] = { b->pos[0], b->pos[1], b->pos[2] };
         move_toward(b, s.diveTarget[0], s.diveTarget[1], 200.0f, dt);
         b->pos[1] -= 260.0f * dt;
+        {   // the falling sun itself, over the frame's path: a light blow, a flinch, no knockdown (the user's
+            // call: what strikes hurts; under 20 taken: character_apply_damage's knockdown); the landing's own below
+            float pa[3], pb[3];
+            for (int m = 0; m < 3; m++) { pa[m] = character.pos[m] + character.capsuleCollider.localCapA.v[m]; pb[m] = character.pos[m] + character.capsuleCollider.localCapB.v[m]; }
+#ifndef HLE_STRIKES_OFF
+#ifdef HLE_SHOW_HURTBOX
+            if (!s.hitDone) { extern void hle_strike_vol(const float *, const float *, float); hle_strike_vol(was, b->pos, SUN_R); }     // test aid: the body while it can hit
+#endif
+            if (!s.hitDone && scu_capsule_vs_capsule_f(was, b->pos, SUN_R, pa, pb, character.capsuleCollider.radius)) {
+                s.hitDone = true; character_apply_damage(hurt(5.0f / 1.55f));      // 5 taken (6 unshackled; boss_damage_scale 1.55), as the Fallen Warrior's grazes
+#ifdef HLE_TEST_DUMMY
+                debugf("[touch] sun dive body\n");
+#endif
+            }
+#endif
+        }
         if (b->pos[1] <= s.groundY + REST_H) {
             b->pos[1] = s.groundY + REST_H;
             float dx, dz;
             // A shockwave along the floor: wide, but jumping over it (Moon Blade Dance) avoids it
+#ifdef HLE_LOG_HITGAP
+            { bool in = to_player(b, &dx, &dz) < 34.0f && character.pos[1] - s.groundY < 6.0f; hle_hg_fixed("Sun dive (landing, 34 round)", in);
+              if (in) { hle_hg_begin(); hle_hg_seg("ball", b->pos, b->pos, SUN_R); hle_hg_hit("Sun dive (landing, 34 round)"); } }
+#endif
             if (to_player(b, &dx, &dz) < 34.0f && character.pos[1] - s.groundY < 6.0f) character_apply_damage(hurt(20.0f));
             boss_ground_crush_spawn(b->pos[0], s.groundY + 0.25f, b->pos[2]);
+            floor_fire_slam(b->pos[0], s.groundY, b->pos[2], SUN_R + 6.0f);     // (a Smouldering Elite's: round where it lands)
             screen_shake_set_shake_mag(14.0f);
             sfx_boom();
             enter(SB_REST);
@@ -563,7 +597,13 @@ static void flare_tick(float dt)
         debugf("[hitvol] flare age %.2f: ring drawn %.1f-%.1f, the player's body %.1f-%.1f from its centre, %.0f up: %s\n", (double)s.flareAge,
                (double)(R - band), (double)R, (double)(d - rr), (double)(d + rr), (double)(character.pos[1] - s.groundY), hit ? "HIT" : "missed");
 #endif
-    if (hit) { s.flareHit = true; character_apply_damage(hurt(16.0f)); }
+#ifdef HLE_LOG_HITGAP
+    if (!s.flareHit && s.flareAge <= FLARE_LIVE && low) { float m[5];
+        for (int v = 0; v < 5; v++) { float r = hle_hg_r(v); m[v] = fmaxf(d - r - R, (R - band) - (d + r)); }
+        hle_hg_m("Sun Flare (ring)", m, false);
+        if (hit) { hle_hg_begin(); hle_hg_ring2("ring", s.flarePos, R - band, R, s.flarePos[1] - 6.0f, s.flarePos[1] + 12.0f); hle_hg_hit("Sun Flare (ring)"); } }
+#endif
+    if (hit) { s.flareHit = true; character_apply_damage_kind(hurt(16.0f), DMG_FIRE); }
     if (s.flareAge > 0.55f) s.flareAge = -1.0f;
 }
 
@@ -642,6 +682,10 @@ static void ram_update(Boss *b, float dt)
                 debugf("[hitvol] ram t %.2f: the eye's centre %.1f from the body's axis (eye drawn %.1f + body %.0f = %.1f): %s\n", (double)s.t, (double)best,
                        (double)drawn, (double)character.capsuleCollider.radius, (double)(drawn + character.capsuleCollider.radius), hit ? "HIT" : "miss");
         }
+#endif
+#ifdef HLE_LOG_HITGAP
+        if (!s.hitDone) { hle_hg_vol("Sun ram", was, b->pos, SUN_R);
+            if (hit) { hle_hg_begin(); hle_hg_seg("ball", b->pos, b->pos, SUN_R * (1.0f + 0.04f * sinf(s.life * 5.0f))); hle_hg_hit("Sun ram"); } }
 #endif
         if (hit) { s.hitDone = true; character_apply_damage(hurt(20.0f)); }
         if (k >= 1.0f || blocked) { s.step = 2; s.t = 0.0f; b->capsuleCollider.radius = SUN_R + 4.0f;
@@ -857,6 +901,24 @@ static bool chain_hits_player(const float now[NN][3], const float was[NN][3], fl
     return was && now[NN - 1][1] - s.groundY <= maxH && seg_dist_xz(was[NN - 1], now[NN - 1], px, pz) < R;     // grazed by the tip on its way
 }
 
+#ifdef HLE_LOG_HITGAP     // test aid: each blow's reach for the hurtboxes tried, and what was drawn when it landed
+static void hg_chain(const char *name, const float now[NN][3], const float was[NN][3], float maxH, bool hit)     // chain_hits_player's reach, and the links as drawn
+{
+    float px = character.pos[0], pz = character.pos[2], g = 1e9f; bool swept = false;
+    for (int i = 0; i < NN - 1; i++) {
+        if (fminf(now[i][1], now[i + 1][1]) - s.groundY > maxH) continue;
+        g = fminf(g, seg_dist_xz(now[i], now[i + 1], px, pz) - LINK_HALF_W);
+        if (was && (in_tri_xz(was[i], was[i + 1], now[i + 1], px, pz) || in_tri_xz(was[i], now[i + 1], now[i], px, pz))) swept = true;
+    }
+    if (was && now[NN - 1][1] - s.groundY <= maxH) g = fminf(g, seg_dist_xz(was[NN - 1], now[NN - 1], px, pz) - LINK_HALF_W);
+    float m[5]; for (int v = 0; v < 5; v++) m[v] = swept ? -1.0f : g - hle_hg_r(v);
+    hle_hg_m(name, m, swept);
+    if (!hit) return;
+    hle_hg_begin();
+    for (int i = 0; i < NN - 1; i++) { hle_hg_seg("chain", now[i], now[i + 1], LINK_HALF_W); if (was) hle_hg_seg("chain (last frame)", was[i], was[i + 1], LINK_HALF_W); }
+    hle_hg_hit(name);
+}
+#endif
 static int nearest_chain(const Boss *b, float dx, float dz)
 {
     // the chain whose root faces the player most (the eye always does, so a side one)
@@ -911,6 +973,9 @@ static void lash_update(Boss *b, float dt)
         float now[NN][3];
         chain_drawn(b, c, now);
         if (s.step == 1 && s.t <= dt) memcpy(was, now, sizeof(was));
+#ifdef HLE_LOG_HITGAP
+        if (character.pos[1] - s.groundY < 8.0f) hg_chain("Sun Shackle Lash (chain)", (const float (*)[3])now, (const float (*)[3])was, 20.0f, chain_hits_player((const float (*)[3])now, (const float (*)[3])was, 20.0f));
+#endif
         if (character.pos[1] - s.groundY < 8.0f && chain_hits_player((const float (*)[3])now, (const float (*)[3])was, 20.0f)) {
             s.chainHit = true;
             character_apply_damage(hurt(16.0f));
@@ -949,6 +1014,7 @@ static void lash_update(Boss *b, float dt)
 #endif
             boss_ground_crush_spawn(root[0] + s.strikeDir[0] * CHAIN_LEN * 0.6f, s.groundY + 0.25f,
                                     root[2] + s.strikeDir[1] * CHAIN_LEN * 0.6f);
+            floor_fire_slam(root[0] + s.strikeDir[0] * CHAIN_LEN * 0.6f, s.groundY, root[2] + s.strikeDir[1] * CHAIN_LEN * 0.6f, 9.0f);
             screen_shake_set_shake_mag(10.0f);
             sfx_boom();
             sfx_chain(1);
@@ -1017,6 +1083,9 @@ static void sweep_update(Boss *b, float dt)
         chain_drawn(b, c, now);
         if (s.t <= dt) memcpy(was, now, sizeof(was));
         bool hit = !s.hitDone && character.pos[1] - s.groundY < 6.0f && chain_hits_player((const float (*)[3])now, (const float (*)[3])was, 1e9f);
+#ifdef HLE_LOG_HITGAP
+        if (!s.hitDone && character.pos[1] - s.groundY < 6.0f) hg_chain("Sun Shackle Sweep (chain)", (const float (*)[3])now, (const float (*)[3])was, 1e9f, hit);
+#endif
 #ifdef HLE_LOG_HITVOL
         { float pa = atan2f(dx, dz), dist = sqrtf(dx * dx + dz * dz);
           float r0 = remainderf(pa - a0, 2.0f * T3D_PI), r1 = remainderf(pa - a, 2.0f * T3D_PI);
@@ -1224,18 +1293,23 @@ void sun_boss_update(Boss* b, float dt)
 {
     if (!s.ready) return;
     if (b->damageFlashTimer > 0.0f) b->damageFlashTimer -= dt;
-    s.t += dt;
+    // A Swift Elite drifts and breathes quicker, an Enraged one's pauses shorter below half health
+    // (section 11): the hover (its pause between attacks) and its rest after a dive, not a stagger's
+    bool paced = s.state == SB_HOVER || (s.state == SB_REST && b->staggerT <= 0.0f);
+    float pace = paced ? tower_elite_pace(true, b->health / fmaxf(b->maxHealth, 1.0f)) : 1.0f, drift = tower_elite_pace(false, 1.0f);
+    s.t += dt * pace;
     s.life += dt;
     if (rushCh >= 0) audio_set_scene_sfx_dist(rushCh, SCENE1_SFX_SUN_RUSH, boss_dist());    // (ignored once it has ended)
 #ifdef HLE_SUN_HITME    // test aid: a sword hit every 1.2 s, every third one a finisher (the passive dummy never hits it)
     { static float ht; static int n; if (b->mode == BOSS_MODE_COMBAT && (ht += dt) >= 1.2f) { ht = 0.0f; n++; boss_apply_hit(b, 0.01f, (n % 3 ? 1.0f : 2.5f) * 4.0f / POISE_DAMAGE); } }
 #endif
-    float sm = speed_mult();
-    s.cdGlare -= dt * sm; s.cdRain -= dt * sm; s.cdCorona -= dt * sm; s.cdDive -= dt * sm; s.cdLash -= dt * sm; s.cdSweep -= dt * sm;
-    s.cdSpiral -= dt * sm; s.cdEmber -= dt * sm; s.cdFlare -= dt * sm; s.cdRam -= dt * sm; s.cdEclipse -= dt * sm;
+    float sm = speed_mult(), cm = sm * drift;     // (Swift: its moves come round sooner too)
+    s.cdGlare -= dt * cm; s.cdRain -= dt * cm; s.cdCorona -= dt * cm; s.cdDive -= dt * cm; s.cdLash -= dt * cm; s.cdSweep -= dt * cm;
+    s.cdSpiral -= dt * cm; s.cdEmber -= dt * cm; s.cdFlare -= dt * cm; s.cdRam -= dt * cm; s.cdEclipse -= dt * cm;
     s.raysSpin += (1.0f - s.raysSpin) * fminf(1.0f, dt * 2.0f);
     rain_tick(dt);
     flare_tick(dt);
+    floor_fire_update(dt);
     if (!s.chainsReady) chains_reset(b);
 
     float dx, dz, dist = to_player(b, &dx, &dz);
@@ -1261,7 +1335,7 @@ void sun_boss_update(Boss* b, float dt)
     b->striking = s.state == SB_DIVE || ((s.state == SB_GLARE || s.state == SB_CORONA || s.state == SB_LASH || s.state == SB_SWEEP
                                           || s.state == SB_SPIRAL || s.state == SB_EMBER || s.state == SB_FLARE || s.state == SB_RAM
                                           || s.state == SB_ECLIPSE) && s.step > 0);
-#ifdef HLE_TEST_DUMMY
+#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT) || defined(HLE_HUMAN_BOT)
     { extern void hle_open_tick(bool, float); hle_open_tick((s.state == SB_HOVER || s.state == SB_REST), dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {
@@ -1283,13 +1357,13 @@ void sun_boss_update(Boss* b, float dt)
         // Drift around the player at a distance, bobbing
         s.combo = false;
         face_player(b, dt, 3.0f);
-        s.orbit += dt * 0.35f * sm;
+        s.orbit += dt * 0.35f * sm * drift;
         float away = atan2f(-dx, -dz) + s.orbit * 0.3f;
         float keep = KEEP_DIST;
 #ifdef HLE_SUN_FORCE
         if (HLE_SUN_FORCE == 5 || HLE_SUN_FORCE == 7) keep = 85.0f;     // test aid: hovers at range (the ranged moves)
 #endif
-        move_toward(b, character.pos[0] + sinf(away) * keep, character.pos[2] + cosf(away) * keep, DRIFT_SPEED * sm, dt);
+        move_toward(b, character.pos[0] + sinf(away) * keep, character.pos[2] + cosf(away) * keep, DRIFT_SPEED * sm * drift, dt);
         float hy = s.groundY + HOVER_H + sinf(s.life * 2.0f) * 3.0f;
         b->pos[1] += (hy - b->pos[1]) * fminf(1.0f, dt * 3.0f);
         if (s.t > 1.5f / sm) choose(b, dist);     // a pause between attacks: the opening
@@ -1340,7 +1414,7 @@ void sun_boss_update(Boss* b, float dt)
             if (s.step == 0) sfx(SCENE1_SFX_SUN_BREAK, 1.0f);     // the boom, its roar, the chains whipping free 0.5 s on
             s.step++;
         }
-        if (s.t > 2.0f) { b->mode = BOSS_MODE_COMBAT; s.cdCorona = 0.0f; s.cdEclipse = 6.0f; enter(SB_HOVER); }
+        if (s.t > 2.0f * (tower_elite_held_longer() ? 1.4f : 1.0f)) { b->mode = BOSS_MODE_COMBAT; s.cdCorona = 0.0f; s.cdEclipse = 6.0f; enter(SB_HOVER); }     // (an Enraged Elite's break held longer)
         break;
 
     case SB_DEAD:
@@ -1603,6 +1677,7 @@ void sun_boss_draw(Boss* b)
     face_draw(&base, h, eyeTint);
     SPROF(2);
     t3d_fog_set_enabled(true);
+    floor_fire_draw();
 #ifdef HLE_PROF_DRAGON
     gpu_prof_end();
     if (++spN == 120) { debugf("[sunprof] rays %.2f ball %.2f face %.2f ms\n", TICKS_TO_US(sp[0] / 120) / 1000.0, TICKS_TO_US(sp[1] / 120) / 1000.0,
@@ -1610,3 +1685,16 @@ void sun_boss_draw(Boss* b)
 #endif
 #undef SPROF
 }
+
+#ifdef HLE_HB_PROPOSALS
+bool hle_sun_dive(float c[3], bool *landed)     // test aid: the dive's landing (34 round over the floor, 6 high) as it drops and just after
+{
+    Boss *b = boss_get_instance(); if (!b) return false;
+    bool live = (s.state == SB_DIVE && s.step == 2 && b->pos[1] < s.groundY + REST_H + 30.0f) || (s.state == SB_REST && s.t < 0.25f);
+    c[0] = b->pos[0]; c[1] = s.groundY; c[2] = b->pos[2]; *landed = s.state == SB_REST;
+    return live;
+}
+#endif
+#if defined(HLE_SHOW_HURTBOX) || defined(HLE_LOG_HITGAP)
+int hle_sun_state(void) { return s.state; }     // test aid: its move, for [hbb]
+#endif

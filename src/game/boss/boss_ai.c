@@ -196,6 +196,10 @@ static void boss_ai_update_targeting_system(Boss* boss, float dt) {
 }
 
 static void boss_ai_update_cooldowns(Boss* boss, float dt) {
+#ifdef HLE_LEAP_FORCE     // test aid: its leaps as often as they come round (1 the combo attack, 2 the flip attack)
+    if (HLE_LEAP_FORCE == 1) { boss->comboCooldown = 0.0f; boss->comboStarterCompleted = true; }
+    else boss->flipAttackCooldown = 0.0f;
+#endif
     if (boss->attackCooldown > 0.0f) boss->attackCooldown -= dt;
     if (boss->powerJumpCooldown > 0.0f) boss->powerJumpCooldown -= dt;
     if (boss->comboCooldown > 0.0f) boss->comboCooldown -= dt;

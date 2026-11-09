@@ -28,6 +28,7 @@
 
 enum {
     FONT_UNBALANCED = 2,
+    FONT_SMALL = 3,           // Optimus Princeps SemiBold, small and outlined (red only): an Elite's affixes
 };
 
 // FONT_UNBALANCED's styles: the text colour comes from these, not the prim colour
@@ -37,6 +38,8 @@ enum {
     FONT_STYLE_GREY  = 2,     // unavailable
     FONT_STYLE_BLUE  = 3,     // rare
     FONT_STYLE_RED   = 4,     // danger: the Tower's ascensions and nights
+    FONT_STYLE_TEAL  = 5,     // the Tower's Moon family
+    FONT_STYLE_VIOLET = 6,    // the Tower's Shadow family
 };
 
 #endif

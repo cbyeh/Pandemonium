@@ -1,3 +1,7 @@
+#if defined(HLE_LOG_HITGAP) && !defined(HLE_LOG_HURTBOX)
+#define HLE_LOG_HURTBOX     // (its blows' gaps ride on these test aids)
+#endif
+#include "weapon.h"
 #include <libdragon.h>
 #include "gpu_frame.h"
 #include <t3d/t3d.h>
@@ -18,6 +22,7 @@
 #include "fx/screen_shake.h"
 #include "../boss/environmental_mechanics/boss_ground_crush.h"
 #include "controllers/audio_controller.h"
+#include "game/tower/tower.h"
 #include "../../scenes/guardian/guardian_scene_sfx.h"
 #include "../../scenes/guardian/guardian_scene_bounds.h"
 
@@ -241,6 +246,9 @@ uint32_t dragon_vi_frame(void) { return vi_n; }
 #endif
 static void enter(DgState st)
 {
+#ifdef HLE_HUMAN_BOT     // test aid: the human-like bot learns each move's timing from its start
+    { extern void hb_move(int, int); hb_move(DRAGON_BOSS_PHASE, st); }
+#endif
 #ifdef HLE_LOG_MOVES     // test aid: each move as it starts (the hits after it are its: [hit])
     debugf("[move] %d\n", st);
 #endif
@@ -306,6 +314,10 @@ static float axis_d2(const float q[3])
 // From the segment a-b to the player's axis (the distance is convex along a-b: a ternary search)
 static float axis_dist_seg(const float a[3], const float b[3])
 {
+#ifdef HLE_LOG_HITGAP     // test aid: the player's drawn body instead of his axis
+    extern float hle_hg_mesh_seg(const float *, const float *); extern bool hle_sb_mesh;
+    if (hle_sb_mesh) return hle_hg_mesh_seg(a, b);
+#endif
     float lo = 0.0f, hi = 1.0f, q[3];
     for (int i = 0; i < 16; i++) {
         float m1 = lo + (hi - lo) * (1.0f / 3.0f), m2 = hi - (hi - lo) * (1.0f / 3.0f), q2[3];
@@ -315,7 +327,14 @@ static float axis_dist_seg(const float a[3], const float b[3])
     lerp3(q, a, b, (lo + hi) * 0.5f);
     return sqrtf(axis_d2(q));
 }
-static float axis_dist_pt(const float p[3]) { return sqrtf(axis_d2(p)); }
+static float axis_dist_pt(const float p[3])
+{
+#ifdef HLE_LOG_HITGAP
+    extern float hle_hg_mesh_seg(const float *, const float *); extern bool hle_sb_mesh;
+    if (hle_sb_mesh) return hle_hg_mesh_seg(p, p);
+#endif
+    return sqrtf(axis_d2(p));
+}
 
 // What is drawn, as a distance from the player's axis less the drawn shape's own radius
 static float tail_r(int i) { return (14.5f - i * 1.8f) * 0.9f; }     // a tail link's tube (put_link r, tapering to 0.82)
@@ -325,6 +344,22 @@ static void tail_tip(float e[3])        // the end of the crystal blade (dragon_
     norm3(d);
     mad3(e, s.tl[NTAIL], d, 16.0f);
 }
+float dragon_boss_push_radius(void)
+{
+    // the charge's and the swipe charge's rush: no push until its body (as drawn) has met the player (-1), then out to
+    // 16 (just inside the torso, drawn 17 round): its head and neck led the push and edged him aside before the body
+    // reached him, so it passed him by luck. Else its hit capsule's (0)
+    if (!s.ready || (s.state != DG_CHARGE && s.state != DG_SWIPE) || s.step != 1) return 0.0f;
+    return s.hitDone ? 16.0f : -1.0f;
+}
+int dragon_boss_tail_volumes(float a[][3], float b[][3], float r[])
+{
+    if (!s.ready || s.state == DG_INTRO || s.state == DG_DEAD) return 0;
+    for (int i = 0; i < NTAIL; i++) { memcpy(a[i], s.tl[i], 12); memcpy(b[i], s.tl[i + 1], 12); r[i] = tail_r(i); }
+    memcpy(a[NTAIL], s.tl[NTAIL], 12); tail_tip(b[NTAIL]); r[NTAIL] = 3.4f;
+    return NTAIL + 1;
+}
+_Static_assert(NTAIL + 1 <= DRAGON_TAIL_VOLUMES, "the tail's volumes");
 static float tail_gap(void)
 {
     float g = 1e9f, e[3];
@@ -369,10 +404,28 @@ static void hb_move_end(void)     // the move's closest pass of each blow it cou
         hbMin[i] = 1e9f; hbHits[i] = 0;
     }
 }
+#ifdef HLE_LOG_HITGAP     // test aid: the same blows against the player's drawn body ([hg], [hgw])
+bool hle_sb_mesh;
+extern void hle_hg_sbvol(const char *, float), hle_hg_begin(void), hle_hg_gaps(const char *, float, float), hle_hg_hit(const char *);
+extern int hle_hg_player_pts(const float (**p)[3]);
+static const char *const hgName[HB_N] = { "SB bite", "SB tail", "SB whip", "SB charge", "SB land", "SB flame", "SB orb", "SB blast", "SB ball", "SB ball burst", "SB beam", "SB stream", "SB cone" };
+static float hg_special(int src, const float c[3], bool mesh);     // the bursts and the cone: by the feet's xz, or every drawn vertex's
+#define HG_SPECIAL(src) ((src) == HB_BLAST || (src) == HB_BALLBURST || (src) == HB_CONE)
+#define HB_HIT(src, gap) do { float ax_ = HG_SPECIAL(src) ? hg_special(src, hgC, false) : (gap) + 8.0f; hle_sb_mesh = true; \
+    float me_ = HG_SPECIAL(src) ? hg_special(src, hgC, true) : (gap) + 8.0f; hle_sb_mesh = false; \
+    hb_hit(src, ax_ - 8.0f); hle_hg_sbvol(hgName[src], ax_); hle_hg_begin(); hle_hg_gaps(hbName[src], me_, ax_ - PLAYER_R); hle_hg_hit(hgName[src]); } while (0)
+#define HB_TOUCH(src, gap) do { float ax_ = HG_SPECIAL(src) ? hg_special(src, hgC, false) : (gap) + 8.0f; hb_touch(src, ax_ - 8.0f); hle_hg_sbvol(hgName[src], ax_); } while (0)
+static float hgC[3];     // the burst's middle (set before its HB_TOUCH / HB_HIT)
+#define HB_HIT2(src, gap, mgap) do { float ax_ = (gap) + 8.0f; hle_sb_mesh = true; float me_ = (mgap) + 8.0f; hle_sb_mesh = false; \
+    hb_hit(src, ax_ - 8.0f); hle_hg_sbvol(hgName[src], ax_); hle_hg_begin(); hle_hg_gaps(hbName[src], me_, ax_ - PLAYER_R); hle_hg_hit(hgName[src]); } while (0)
+#else
+#define HB_HIT2(src, gap, mgap) HB_HIT(src, gap)
 #define HB_HIT(src, gap) hb_hit(src, gap)
 #define HB_TOUCH(src, gap) hb_touch(src, gap)
+#endif
 #else
 #define HB_HIT(src, gap) ((void)sizeof(gap))       // (not evaluated)
+#define HB_HIT2(src, gap, mgap) ((void)sizeof(gap))
 #define HB_TOUCH(src, gap) ((void)sizeof(gap))
 #endif
 
@@ -382,14 +435,14 @@ static int sfx(int id, float vol)
 {
     Boss *b = boss_get_instance();
     float dx = b ? character.pos[0] - b->pos[0] : 0.0f, dz = b ? character.pos[2] - b->pos[2] : 0.0f;
-    return audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+    return audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz)), tower_elite_pitch());
 }
 // A ranged move's impact, heard from where it lands (from the dragon, a blast by the player at
 // range was faint or silent)
 static void sfx_at(int id, float vol, float x, float z)
 {
     float dx = character.pos[0] - x, dz = character.pos[2] - z;
-    audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz));
+    audio_scene_sfx_pitch(audio_play_scene_sfx_dist(id, vol * BONUS_SFX_VOL, sqrtf(dx * dx + dz * dz)), tower_elite_pitch());     // (Swift: higher)
 }
 // The beam: its burst as it fires, from the dragon (a launch), and its hum while it's on, heard from
 // the beam's nearest point as it moves (beam_at). The burst alone, repeated, was lost under the
@@ -866,11 +919,14 @@ static void hazards_update(float dt)
         float gap = axis_dist_pt(f->p) - flame_r(f->size, f->age, f->life);
         if (!f->harm || s.fireCd > 0.0f || gap >= PLAYER_R) continue;
         bool stream = s.state == DG_SWEEP && s.step == 1 && !s.hitDone && f->age < 0.6f;
-        HB_HIT(stream ? HB_STREAM : HB_FLAME, gap - 8.0f);
+        HB_HIT(stream ? HB_STREAM : HB_FLAME, axis_dist_pt(f->p) - flame_r(f->size, f->age, f->life) - 8.0f);
         // the rain from the air: a heavier hit, then a breath before the next (one standing under
         // a pass took ~60 at 9 every 0.4 s)
         bool rain = s.state == DG_FLY;
-        character_apply_damage(stream ? 20.0f : rain ? 12.0f : f->ember ? 5.0f : 9.0f);
+#ifdef HLE_HUMAN_BOT
+        { extern int hb_src; if (!stream && !rain) hb_src = 2; }   // test aid: a lingering flame's tick
+#endif
+        character_apply_damage_kind(stream ? 20.0f : rain ? 12.0f : f->ember ? 5.0f : 9.0f, DMG_SHADOW);     // (its flames: Shadowslayer halves them)
         s.fireCd = rain ? 1.2f : f->ember ? 0.5f : 0.4f;      // (a fireball's patch: 5 every 0.5 s)
         if (stream) s.hitDone = true;
     }
@@ -888,7 +944,7 @@ static void hazards_update(float dt)
         }
         bool hit = axis_dist_pt(o->p) < 4.5f + PLAYER_R;      // drawn 4.5 round (the chest point within 8 let some pass through)
         HB_TOUCH(HB_ORB, axis_dist_pt(o->p) - 4.5f - 8.0f);
-        if (hit) { HB_HIT(HB_ORB, axis_dist_pt(o->p) - 4.5f - 8.0f); character_apply_damage(12.0f); }
+        if (hit) { HB_HIT(HB_ORB, axis_dist_pt(o->p) - 4.5f - 8.0f); character_apply_damage_kind(12.0f, DMG_SHADOW); }
         if (hit || o->p[1] < s.groundY + 1.0f || o->age > 7.0f || !room_ok(o->p[0], o->p[2])) {
             o->on = false;
         }
@@ -906,8 +962,11 @@ static void hazards_update(float dt)
         // burst gone half a second before)
         skill_fx_spawn_wave_hostile(SKILL_WAVE_BLADE, p, (float[3]){ 0, 0, 0 }, 0.0f, 0, 1.0f, 0.8f, false);
         float dx = character.pos[0] - p[0], dz = character.pos[2] - p[2];
+#ifdef HLE_LOG_HITGAP
+        memcpy(hgC, p, sizeof hgC);
+#endif
         HB_TOUCH(HB_BLAST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f);
-        if (burst_hits(p)) { HB_HIT(HB_BLAST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage(12.0f); }
+        if (burst_hits(p)) { HB_HIT(HB_BLAST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage_kind(12.0f, DMG_SHADOW); }
         screen_shake_set_shake_mag(3.0f);
     }
     for (int i = 0; i < BALL_MAX; i++) {
@@ -924,8 +983,11 @@ static void hazards_update(float dt)
             s.fl[(s.flNext + FL_MAX - 1) % FL_MAX].ember = true;
         }
         float dx = character.pos[0] - p[0], dz = character.pos[2] - p[2];
+#ifdef HLE_LOG_HITGAP
+        memcpy(hgC, p, sizeof hgC);
+#endif
         HB_TOUCH(HB_BALLBURST, sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f);
-        if (direct || burst_hits(p)) { HB_HIT(direct ? HB_BALL : HB_BALLBURST, direct ? axis_dist_pt(o->p) - 5.5f - 8.0f : sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage(12.0f); }
+        if (direct || burst_hits(p)) { HB_HIT(direct ? HB_BALL : HB_BALLBURST, direct ? axis_dist_pt(o->p) - 5.5f - 8.0f : sqrtf(dx * dx + dz * dz) - BURST_R - 8.0f); character_apply_damage_kind(12.0f, DMG_SHADOW); }
         screen_shake_set_shake_mag(4.0f);
         sfx_at(SCENE1_SFX_BOSS_SMASH2, 1.0f, p[0], p[2]);     // (sfx_boom's)
     }
@@ -942,10 +1004,10 @@ static void beam_at(const float to[3], float w, float dmg, bool blasts, float dt
     s.beamOn = true; s.beamW = w; s.glow = 1.0f;
     float bg = fminf(axis_dist_seg(s.mouth, to) - w, axis_dist_pt(to) - 9.0f);
     float bd = axis_dist_seg(s.mouth, to);
-    if (!audio_set_scene_sfx_dist(humCh, SCENE1_SFX_BEAM_HUM, bd)) humCh = audio_play_scene_sfx_dist(SCENE1_SFX_BEAM_HUM, BONUS_SFX_VOL, bd);     // (or stopped: all sounds stopped, its channel taken)
+    if (!audio_set_scene_sfx_dist(humCh, SCENE1_SFX_BEAM_HUM, bd)) humCh = audio_scene_sfx_pitch(audio_play_scene_sfx_dist(SCENE1_SFX_BEAM_HUM, BONUS_SFX_VOL, bd), tower_elite_pitch());     // (or stopped: all sounds stopped, its channel taken)
     humD = bd; humming = true;
     HB_TOUCH(HB_BEAM, bg - 8.0f);
-    if (!s.hitDone && bg < PLAYER_R) { HB_HIT(HB_BEAM, bg - 8.0f); character_apply_damage(dmg); s.hitDone = true; }
+    if (!s.hitDone && bg < PLAYER_R) { HB_HIT(HB_BEAM, fminf(axis_dist_seg(s.mouth, to) - w, axis_dist_pt(to) - 9.0f) - 8.0f); character_apply_damage_kind(dmg, DMG_SHADOW); s.hitDone = true; }
     if (!blasts) return;
     s.emit -= dt;
     if (s.emit <= 0.0f) { s.emit += 0.2f; blast_spawn(to); }
@@ -968,7 +1030,7 @@ static void breathe(const float to[3], float speed, float life, float dt)
     roarT -= dt;
     float d = axis_dist_seg(s.mouth, to);
     if (roarT <= 0.0f || s.emit == 0.0f) {
-        breathCh = audio_play_scene_sfx_dist(SCENE1_SFX_BREATH, 0.9f * BONUS_SFX_VOL, d);
+        breathCh = audio_scene_sfx_pitch(audio_play_scene_sfx_dist(SCENE1_SFX_BREATH, 0.9f * BONUS_SFX_VOL, d), tower_elite_pitch());
         roarT = 3.5f;
     } else audio_set_scene_sfx_dist(breathCh, SCENE1_SFX_BREATH, d);
     breathing = true;
@@ -2003,6 +2065,30 @@ static bool cone_hits(void)
     return character.pos[1] - s.groundY < cone_h(f, fminf(a, CONE_HALF)) * k + 1.0f;
 }
 
+#ifdef HLE_LOG_HITGAP
+// test aid: a burst by the feet's distance from its middle in xz, less its reach (or the nearest drawn vertex
+// low enough to be in it); the cone by how far outside its reach or sides (or above it) the player's middle is (or a drawn vertex)
+static float hg_special(int src, const float c[3], bool mesh)
+{
+    const float (*P)[3] = NULL; int n = 1; float one[1][3] = { { character.pos[0], character.pos[1], character.pos[2] } };
+    if (mesh) n = hle_hg_player_pts(&P); else P = (const float (*)[3])one;
+    float g = 1e9f;
+    for (int i = 0; i < n; i++) {
+        if (src == HB_CONE) {
+            float k = cone_grow(), dx = P[i][0] - s.cone.p[0], dz = P[i][2] - s.cone.p[1], d = sqrtf(dx * dx + dz * dz);
+            float fx = fm_sinf(s.cone.yaw), fz = fm_cosf(s.cone.yaw), along = dx * fx + dz * fz, across = dx * fz - dz * fx;
+            float side = fabsf(across) * fm_cosf(CONE_HALF) - fmaxf(along, 0.0f) * fm_sinf(CONE_HALF);
+            float f = fminf(d / (CONE_L * k), 1.0f), up = P[i][1] - s.groundY - cone_h(f, CONE_HALF) * k;
+            g = fminf(g, fmaxf(fmaxf(fmaxf(d - CONE_L * k, side), -along), mesh ? up : -1e9f));
+        } else {
+            if (mesh && P[i][1] - s.groundY > 11.0f) continue;     // (its spikes ~11 high)
+            float dx = P[i][0] - c[0], dz = P[i][2] - c[2];
+            g = fminf(g, sqrtf(dx * dx + dz * dz) - BURST_R);
+        }
+    }
+    return g;
+}
+#endif
 // The tail as drawn, now and where it passed since the last frame (a fast swing moves the blade
 // ~20-50 a frame, more than the tail is thick: three in-between poses, flat, the low tail cleared
 // by a jump as before)
@@ -2029,21 +2115,69 @@ static float tail_sweep_gap(void)     // < PLAYER_R: a hit
     return g;
 }
 
+// The charge's and the swipe charge's hit, the body (and the raking paw) as drawn: tested in the move and again by
+// collision_update just before its push, against where the player stands before it (this frame's rig): the push
+// can't move him out of the rush's path before the body reaching him is tested
+#ifdef HLE_LOG_HITGAP     // test aid: the health the rush's hit took (0 inside a roll's i-frames)
+#define RUSH_DAMAGE(nm, d) do { float h0_ = character.health; character_apply_damage(d); \
+    debugf("[rushhit] %s: player state %d, health lost %.1f\n", nm, (int)character_get_state(), (double)(h0_ - character.health)); } while (0)
+#else
+#define RUSH_DAMAGE(nm, d) character_apply_damage(d)
+#endif
+static float swipe_leg_gap(void);
+void dragon_boss_rush_hit(Boss *b)
+{
+    if (!s.ready || s.step != 1 || s.hitDone) return;
+    if (s.state == DG_CHARGE) {
+        if (body_gap() < PLAYER_R) { s.hitDone = true; HB_HIT(HB_CHARGE, body_gap() - 8.0f); RUSH_DAMAGE("charge", 28.0f); }
+    } else if (s.state == DG_SWIPE && s.t >= 0.12f) {
+        // the paw and the body as drawn, when they meet the player (the body was SHOVE_R, 8 more); (HB_HIT re-measures its gap on the drawn player)
+        float g = fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap());
+        if (g >= PLAYER_R) return;
+#ifdef HLE_LOG_HITGAP     // test aid: which drawn part meets the drawn player as the swipe charge lands (< 0 inside him)
+        { hle_sb_mesh = true; float pg = s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, bg = body_gap(); hle_sb_mesh = false;
+          float dx = b->pos[0] - character.pos[0], dz = b->pos[2] - character.pos[2];
+          debugf("[swipehit] paw %.1f body %.1f (drawn, off the player's drawn body) t %.2f dist %.1f\n", (double)pg, (double)bg, (double)s.t, (double)sqrtf(dx * dx + dz * dz)); }
+#endif
+        s.hitDone = true; HB_HIT(HB_CHARGE, fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap()) - 8.0f); RUSH_DAMAGE("swipe", 24.0f); screen_shake_set_shake_mag(5.0f);
+    }
+}
+
 static void hits_after_rig(Boss *b, float dt)
 {
     if (s.state == DG_TAIL && s.step == 1) {
         float g = tail_sweep_gap();
         HB_TOUCH(HB_TAIL, g - 8.0f);
-        if (g < PLAYER_R && !s.hitDone) { s.hitDone = true; HB_HIT(HB_TAIL, g - 8.0f); character_apply_damage(28.0f); }
+        if (g < PLAYER_R && !s.hitDone) { s.hitDone = true; HB_HIT2(HB_TAIL, g - 8.0f, tail_gap() - 8.0f); character_apply_damage(28.0f); }
     } else if (s.state == DG_WHIP && s.step == 1) {
         float g = fminf(tail_sweep_gap(), body_gap());      // the head and body spin round too
         HB_TOUCH(HB_WHIP, g - 8.0f);
-        if (g < PLAYER_R && !s.hitDone) { s.hitDone = true; HB_HIT(HB_WHIP, g - 8.0f); character_apply_damage(22.0f); }
+        if (g < PLAYER_R && !s.hitDone) { s.hitDone = true; HB_HIT2(HB_WHIP, g - 8.0f, fminf(tail_gap(), body_gap()) - 8.0f); character_apply_damage(22.0f); }
     } else if (s.state == DG_CHARGE && s.step == 1) {
-        // the body as drawn (it was a flat 25 round the head-hips line, wider than the neck and head)
+        // the body as drawn, when it meets the player (it was SHOVE_R: the shove landed 7-11 before the body reached them)
         HB_TOUCH(HB_CHARGE, body_gap() - 8.0f);
-        if (!s.hitDone && body_gap() < SHOVE_R) { s.hitDone = true; HB_HIT(HB_CHARGE, body_gap() - 8.0f); character_apply_damage(28.0f); }
+        dragon_boss_rush_hit(b);
     } else tailPrevOk = false;
+    if (s.state == DG_CONE && s.step == 1 && s.t < 0.25f && !s.hitDone) {
+        // the cone's forefeet coming down out of its rear, as drawn: a light blow, a flinch, no knockdown
+        // (the user's call: what strikes hurts; under 20 taken: character_apply_damage's knockdown)
+        float g = 1e9f;
+        for (int k = 0; k < 2; k++) g = fminf(g, fminf(axis_dist_seg(s.shoulder[k], s.foot[k]) - 6.0f, axis_dist_pt(s.foot[k]) - 7.0f));
+#if defined(HLE_SHOW_HURTBOX) && !defined(HLE_STRIKES_OFF)
+        { extern void hle_strike_vol(const float *, const float *, float); for (int k = 0; k < 2; k++) { hle_strike_vol(s.shoulder[k], s.foot[k], 6.0f); hle_strike_vol(s.foot[k], s.foot[k], 7.0f); } }     // test aid: the forefeet while they can hit
+#endif
+#ifdef HLE_STRIKES_OFF
+        g = 1e9f;
+#endif
+#ifdef HLE_TOUCH_UNDER     // test aid: the player set where the first forefoot comes down, as it does
+        if (s.t < 0.02f) { character.pos[0] = s.foot[0][0]; character.pos[2] = s.foot[0][2]; }
+#endif
+        if (g < PLAYER_R) { s.hitDone = true; HB_HIT(HB_LAND, g - 8.0f); character_apply_damage(5.0f / 1.5f);      // 5 taken, as the Fallen Warrior's grazes (boss_damage_scale 1.5)
+#ifdef HLE_TEST_DUMMY
+            debugf("[touch] cone forefeet\n");
+#endif
+        }
+    }
     if (s.cone.on) {
         s.cone.t += dt;
         if (s.cone.t < CONE_GROW + CONE_HOLD) {
@@ -2055,7 +2189,7 @@ static void hits_after_rig(Boss *b, float dt)
                 HB_TOUCH(HB_CONE, fmaxf(fmaxf(d - CONE_L * k, side), -along) - 8.0f);
             }
 #endif
-            if (!s.cone.hit && cone_hits()) { s.cone.hit = true; HB_HIT(HB_CONE, 0.0f); character_apply_damage(18.0f); }
+            if (!s.cone.hit && cone_hits()) { s.cone.hit = true; HB_HIT(HB_CONE, 0.0f); character_apply_damage_kind(18.0f, DMG_SHADOW); }
         } else if (s.cone.t >= CONE_GROW + CONE_HOLD + CONE_FADE) s.cone.on = false;
     }
 }
@@ -2360,12 +2494,13 @@ static void roar_update(Boss *b, float dt)
     s.tNeckPitch = 0.8f; s.tJaw = 1.0f; s.tWingSpan = 1.0f; s.tWingRaise = 0.7f; s.tCrouch = 2.0f;
     s.tRear = 7.0f; s.tWingSweep = 0.0f; s.tTailUp = 0.3f; s.tNeckYaw = 0.08f * fm_sinf(s.life * 9.0f);     // reared, shaking with it
     if (s.t <= dt) sfx_roar();      // loud 0.28 s in: the quakes from then
-    key_play(&ROAR, s.t, 1.0f, 1.0f, 1.0f);
-    if (s.step < 8 && s.t >= 0.25f + 0.3f * s.step) {
+    float k = tower_elite_held_longer() ? 1.4f : 1.0f;     // (an Enraged Elite's roar held longer)
+    key_play(&ROAR, s.t, k, 1.0f, 1.0f);
+    if (s.step < 8 && s.t >= 0.25f + 0.3f * k * s.step) {
         screen_shake_set_shake_mag(8.0f);
         s.step++;
     }
-    if (s.t >= 2.4f) { s.alt = 0.0f; b->mode = BOSS_MODE_COMBAT; s.cdNova = 1.0f; enter(DG_IDLE); }
+    if (s.t >= 2.4f * k) { s.alt = 0.0f; b->mode = BOSS_MODE_COMBAT; s.cdNova = 1.0f; enter(DG_IDLE); }
 }
 
 static void nova_update(Boss *b, float dt)
@@ -3030,11 +3165,8 @@ static void swipe_update(Boss *b, float dt)
         float st = SPEED * dt;
         bool moved = s.sg < s.range && move_by(b, s.F[0] * st, s.F[2] * st);
         if (moved) s.sg += st;
-        if (s.t >= 0.12f && !s.hitDone) {
-            float g = fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap() - (SHOVE_R - PLAYER_R));
-            HB_TOUCH(HB_CHARGE, g - 8.0f);
-            if (g < PLAYER_R) { s.hitDone = true; HB_HIT(HB_CHARGE, g - 8.0f); character_apply_damage(24.0f); screen_shake_set_shake_mag(5.0f); }
-        }
+        if (s.t >= 0.12f && !s.hitDone) HB_TOUCH(HB_CHARGE, fminf(s.swipePh < 1.0f ? swipe_leg_gap() : 1e9f, body_gap()) - 8.0f);
+        dragon_boss_rush_hit(b);
         if (s.t >= RAKE && s.t - dt < RAKE) screen_shake_set_shake_mag(3.0f);
         if ((!moved && s.t > RAKE) || s.t > 1.4f) { s.step = 2; s.t = 0.0f; sfx_step(); s.tailV += side * 3.0f; }
     } else {
@@ -3171,14 +3303,17 @@ void dragon_boss_update(Boss* b, float dt)
     if (b->damageFlashTimer > 0.0f) b->damageFlashTimer -= dt;
     key_remove();       // the moves and the easing work on the pose under the keyframed layer
     memset(s.kv, 0, sizeof(s.kv));
-    s.t += dt;
+    // A Swift Elite's footwork and pauses quicker, an Enraged one's pauses shorter below half health
+    // (section 11): its pause between attacks and its turns (their clock and steps), its strikes as ever
+    float sw = s.state == DG_IDLE || s.state == DG_TURN ? tower_elite_pace(false, 1.0f) : 1.0f;
+    s.t += dt * (s.state == DG_IDLE ? tower_elite_pace(true, b->health / fmaxf(b->maxHealth, 1.0f)) : sw);
     s.life += dt;
-    float sm = s.dark ? 1.2f : 1.0f;
-    s.cdWhip -= dt * sm;
-    s.cdClaw -= dt * sm; s.cdBite -= dt * sm; s.cdTail -= dt * sm; s.cdBreath -= dt * sm; s.cdCharge -= dt * sm;
-    s.cdFly -= dt * sm; s.cdNova -= dt * sm; s.cdOrbs -= dt * sm; s.cdBeam -= dt * sm; s.cdTriple -= dt * sm; s.cdSnipe -= dt * sm; s.cdSweep -= dt * sm; s.cdCone -= dt * sm;
+    float sm = s.dark ? 1.2f : 1.0f, cm = sm * tower_elite_pace(false, 1.0f);    // (Swift: its moves come round sooner too)
+    s.cdWhip -= dt * cm;
+    s.cdClaw -= dt * cm; s.cdBite -= dt * cm; s.cdTail -= dt * cm; s.cdBreath -= dt * cm; s.cdCharge -= dt * cm;
+    s.cdFly -= dt * cm; s.cdNova -= dt * cm; s.cdOrbs -= dt * cm; s.cdBeam -= dt * cm; s.cdTriple -= dt * cm; s.cdSnipe -= dt * cm; s.cdSweep -= dt * cm; s.cdCone -= dt * cm;
     s.fireCd -= dt;
-    s.cdBackstep -= dt * sm; s.cdSwipe -= dt * sm; s.passT -= dt;
+    s.cdBackstep -= dt * cm; s.cdSwipe -= dt * cm; s.passT -= dt;
 
     float dx, dz, dist = to_player(b, &dx, &dz);
     float rel = remainderf(atan2f(dx, dz) - b->rot[1], 2.0f * T3D_PI);
@@ -3203,7 +3338,7 @@ void dragon_boss_update(Boss* b, float dt)
     b->striking = s.state == DG_FLY || s.state == DG_TAIL || (s.state == DG_CLAW && s.step != 0 && s.step != 2) ||
                   ((s.state == DG_BITE || s.state == DG_BREATH || s.state == DG_CHARGE || s.state == DG_WHIP || s.state == DG_NOVA || s.state == DG_BEAM ||
                     s.state == DG_TRIPLE || s.state == DG_SNIPE || s.state == DG_SKYBEAM || s.state == DG_SWEEP || s.state == DG_CONE || s.state == DG_HOVER || s.state == DG_SWIPE || s.state == DG_STOMP) && s.step > 0);
-#ifdef HLE_TEST_DUMMY
+#if defined(HLE_TEST_DUMMY) || defined(HLE_RUN_BOT) || defined(HLE_HUMAN_BOT)
     { extern void hle_open_tick(bool, float); hle_open_tick((s.state == DG_IDLE || s.state == DG_TURN || s.state == DG_DOWN), dt); }   // test aid: measure the openings
 #endif
     switch (s.state) {
@@ -3244,14 +3379,14 @@ void dragon_boss_update(Boss* b, float dt)
         if (pace) {
             float sgn = ((int)((s.t - 0.4f) / 2.8f) & 1) ? -s.paceSg : s.paceSg;
             float off = sgn * (1.15f - fminf(fmaxf((dist - 120.0f) / 150.0f, -0.35f), 0.35f));
-            float d = turn_toward(b, atan2f(dx, dz) + off, 1.6f * sm, dt);
-            if (fabsf(d) < 0.6f) move_by(b, s.F[0] * 24.0f * sm * dt, s.F[2] * 24.0f * sm * dt);
+            float d = turn_toward(b, atan2f(dx, dz) + off, 1.6f * sm * sw, dt);
+            if (fabsf(d) < 0.6f) move_by(b, s.F[0] * 24.0f * sm * sw * dt, s.F[2] * 24.0f * sm * sw * dt);
             s.tNeckYaw = fminf(fmaxf(s.lookRel * 0.85f, -1.1f), 1.1f);
             if (!s.growled) { s.growled = true; if (pick_rng() % 100 < 60) sfx(SCENE1_SFX_DRAGON_GROWL, 0.8f); }     // a low growl as it starts to prowl
         } else {
-            float d = turn_toward(b, atan2f(dx, dz), (wait >= 1.8f && s.t >= wait - 0.8f ? 2.2f : 0.7f) * sm, dt);    // (back round from its pacing)
-            if (dist > 75.0f && fabsf(d) < 0.8f) move_by(b, s.F[0] * 30.0f * sm * dt, s.F[2] * 30.0f * sm * dt);
-            else if (dist < 50.0f && fabsf(d) < 1.0f) move_by(b, -s.F[0] * 18.0f * dt, -s.F[2] * 18.0f * dt);
+            float d = turn_toward(b, atan2f(dx, dz), (wait >= 1.8f && s.t >= wait - 0.8f ? 2.2f : 0.7f) * sm * sw, dt);    // (back round from its pacing)
+            if (dist > 75.0f && fabsf(d) < 0.8f) move_by(b, s.F[0] * 30.0f * sm * sw * dt, s.F[2] * 30.0f * sm * sw * dt);
+            else if (dist < 50.0f && fabsf(d) < 1.0f) move_by(b, -s.F[0] * 18.0f * sw * dt, -s.F[2] * 18.0f * sw * dt);
         }
         if (s.t > 0.3f && s.t < s.idleWait / sm - 0.3f) {   // every pause it breathes, its body rising and sinking
             if (s.heavyRest) {      // spent (after landing, or three beam sweeps): heaving, head low, panting, wings sagging
@@ -3748,3 +3883,22 @@ void dragon_boss_draw(Boss* b)
 #endif
     rdpq_mode_pop();
 }
+
+#ifdef HLE_HB_PROPOSALS
+// test aid: the charge's hit as it tests the body (each drawn part's radius; before 2026-11-04 the shove added SHOVE_R - PLAYER_R)
+int hle_dragon_charge_vols(float a[][3], float b[][3], float r[], float *extra)
+{
+    if (!s.ready || (s.state != DG_CHARGE && s.state != DG_SWIPE) || s.step != 1) return 0;     // (the charge's and the swipe charge's rush)
+    int n = 0;
+    const float *t[4] = { s.chest, s.spine[0], s.spine[1], s.hips };
+    for (int i = 0; i < 3; i++) { memcpy(a[n], t[i], 12); memcpy(b[n], t[i + 1], 12); r[n++] = 17.0f; }
+    for (int i = 0; i < NNECK; i++) { memcpy(a[n], s.neck[i], 12); memcpy(b[n], s.neck[i + 1], 12); r[n++] = (11.0f - i * 1.2f) * 0.9f; }
+    memcpy(a[n], s.head, 12); mad3(b[n], s.head, s.hz, 26.0f); r[n++] = 6.0f;
+    for (int k = 0; k < 4; k++) { memcpy(a[n], s.shoulder[k], 12); memcpy(b[n], s.foot[k], 12); r[n++] = 6.0f; }
+    *extra = 0.0f;
+    return n;
+}
+#endif
+#if defined(HLE_SHOW_HURTBOX) || defined(HLE_LOG_HITGAP)
+int hle_dg_state(void) { return s.state; }     // test aid: its move, for [hbb]
+#endif

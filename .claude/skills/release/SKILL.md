@@ -15,7 +15,7 @@ description: Rebuild both Pandemonium ROMs from main, check them, and publish th
    make pandemonium-hle.z64 HLE=1 $E > /tmp/rel-hle.log 2>&1
    grep "error:" /tmp/rel-hw.log /tmp/rel-hle.log   # must print nothing
    ```
-4. Smoke-test both ROMs boot (`/test-rom`).
+4. QA: `tools/release_qa.sh <Pandemonium.z64> "<The Pandemonium.z64>"` (from the repo root; ~7 min). It builds test ROMs from HEAD with `HLE_TEXT_CHECK` and runs every menu, the Tower's UI walk and a 4-floor climb (no assert, no bad string, 0 FAIL, floor 4 reached), then boots both release ROMs: look at its two shots (the title menu). Don't publish on FAILED. (2026-11-06: a Tower menu row drew stack garbage, passed every menu test, and froze the user's game on Delta: the text check catches that.)
 5. Until the user calls 1.0 stable, replace v1.0 (after that, create a new numbered release instead and leave old ones up):
    ```sh
    mkdir -p /tmp/rel && cp pandemonium.z64 "/tmp/rel/Pandemonium.z64" && cp pandemonium-hle.z64 "/tmp/rel/The Pandemonium.z64"

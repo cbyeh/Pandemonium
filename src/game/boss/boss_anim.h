@@ -7,6 +7,7 @@
 // This module owns all animation state and tiny3d animation structs
 
 void boss_anim_init(Boss* boss);
+void boss_anim_forget_model(void);     // the breathing pose's skeleton clone (before the model is freed)
 void boss_anim_request(Boss* boss, BossAnimState target, float start_time, bool force_restart, BossAnimPriority priority);
 void boss_anim_update(Boss* boss);
 // A cutscene's clip, played from where it stands (no crossfade, no restart)

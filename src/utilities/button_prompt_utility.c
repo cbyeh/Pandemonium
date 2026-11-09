@@ -151,6 +151,6 @@ void button_prompt_draw_skip_bottom_right(void)
             .align = ALIGN_RIGHT,
             .width = textRight,
             .wrap = WRAP_WORD,
-        }, FONT_UNBALANCED, 0, textY, "%s", "skip");
+        }, FONT_UNBALANCED, 0, textY, "%s", "Skip");
     }
 }

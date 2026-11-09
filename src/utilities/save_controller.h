@@ -61,6 +61,9 @@ typedef struct {
     uint8_t  relics[3];      // before 1.0: found relics (two effects a byte), converted on load
     uint8_t  relicsOwned;    // bit per relic bought
     uint8_t  relicEquipped;  // 1-based, 0 none
+    uint16_t unlocks;        // 9 bits: the Shrine's ladder (bits 0-5 the families' packs, 6-8 the skills' second forms)
+    uint8_t  offers;         // the Offerings set aside for the next climb: two 4-bit ids + 1 (low nibble the first; 0 none)
+    uint8_t  heat;           // the Heat dial: low nibble the setting (0-10), high nibble the highest a circle was cleared at
 } TowerSave;
 #define TOWER_FLAG_NIGHTFARER 0x01   // the Nightfarer skin, bought at the Shrine
 void save_controller_get_tower(TowerSave *out);
@@ -77,6 +80,9 @@ bool save_progress_skin_unlocked(const SaveData *d, int skin);
 // The active slot
 void save_controller_mark_bonus_beaten(int bonusIndex);   // 0..2
 bool save_controller_skin_unlocked(int skin);
+// Sunforged, the floor-100 milestone: gold skills, on or off in Skins (_pad[25] bit 1; 1.0 never touches it)
+#define SAVE_SUNFORGED_FLOOR 100
+bool save_controller_sunforged_unlocked(void);
 
 // Run + boss stats
 bool save_controller_increment_run_count(void);

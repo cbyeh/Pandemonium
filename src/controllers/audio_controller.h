@@ -49,6 +49,7 @@ int audio_play_scene_sfx_dist(
 );
 // A sound still playing on `ch` (audio_play_scene_sfx_dist's) heard from `distance` now (a moving source)
 bool audio_set_scene_sfx_dist(int ch, int sceneSfxIndex, float distance);
+int  audio_scene_sfx_pitch(int ch, float k);    // the sound on this channel played at k times its rate (a Swift Elite's voice); returns ch
 void audio_stop_scene_sfx(int ch, int sceneSfxIndex);   // stop one sound early (if it is still that sound)
 
 void audio_stop_all_sfx(void);

@@ -84,6 +84,7 @@ static T3DSkeleton s_breathSkel;
 static bool s_breathReady;
 static float s_breathK = -1.0f;     // < 0: not breathing
 static float s_blendDur = 0.4f;     // the current crossfade (boss->blendDuration paces the AI, not this)
+void boss_anim_forget_model(void) { if (s_breathReady) { t3d_skeleton_destroy(&s_breathSkel); s_breathReady = false; } s_breathK = -1.0f; }
 // The crucifix pose (boss_anim_update), radians about each bone's own axes
 #ifndef CX_SPINE1
 #define CX_SPINE1      0.10f
@@ -205,7 +206,13 @@ void boss_anim_breathe(Boss* boss, int anim, float t0, float t1, float k)
     s_breathK = k;
 }
 
+#ifdef HLE_HB_PROPOSALS
+int hle_hb_hold;     // test aid: the pose held still (debug_draw.c: the moment of contact, for shots)
+#endif
 void boss_anim_update(Boss* boss) {
+#ifdef HLE_HB_PROPOSALS
+    if (hle_hb_hold) return;
+#endif
     if (!boss || !boss->skeleton || !boss->animations || !boss->skeletonBlend) return;
     // Safety check: ensure deltaTime is valid (not zero, negative, or denormal)
     // Use a minimum threshold to prevent denormal floating point values

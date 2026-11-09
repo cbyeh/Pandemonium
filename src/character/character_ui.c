@@ -141,6 +141,30 @@ static void character_ui_load_sprite(sprite_t **sprite, surface_t *surface, cons
 static rspq_block_t *s_keysBlock;     // the D-pad keys as last drawn (character_ui_draw_c_buttons)
 static unsigned s_keysLook = ~0u;
 
+// A skill's icon is its Lv 5 form's once the climb has one (assets/ui/skills/form_*.rgba16.png, tools/forms.py): that
+// sprite then stands in for the skill's own (no more held), loaded when it's first wanted
+static int8_t s_skillForm[3];       // the form whose icon is loaded (0: the skill's own)
+static void character_ui_sync_skill_icons(void)
+{
+    static const char *const BASE[3] = { "rom:/ui/skills/skill_moonblade.rgba16.sprite", "rom:/ui/skills/skill_halfmoon.rgba16.sprite", "rom:/ui/skills/skill_cleave.rgba16.sprite" };
+    static const char *const FORM[3][2] = {
+        { "rom:/ui/skills/form_full_moon_dance.rgba16.sprite", "rom:/ui/skills/form_shattering_dance.rgba16.sprite" },
+        { "rom:/ui/skills/form_twin_moon.rgba16.sprite", "rom:/ui/skills/form_full_moon.rgba16.sprite" },
+        { "rom:/ui/skills/form_crescent_storm.rgba16.sprite", "rom:/ui/skills/form_long_cleave.rgba16.sprite" },
+    };
+    sprite_t **spr[3] = { &s_skillMoonBladeSprite, &s_skillHalfmoonSprite, &s_skillCleaveSprite };
+    surface_t *surf[3] = { &s_skillMoonBladeSurf, &s_skillHalfmoonSurf, &s_skillCleaveSurf };
+    for (int i = 0; i < 3; i++) {
+        int f = tower_active() ? tower_skill_form(i) : 0;
+        if (!*spr[i] || f == s_skillForm[i]) continue;      // (not loaded: the scene's UI is down)
+        gpu_wait();     // (in the frame's draw: the queue so far run first; the keys' block draws the old one)
+        if (s_keysBlock) { rspq_block_free(s_keysBlock); s_keysBlock = NULL; }
+        sprite_free(*spr[i]); *spr[i] = NULL;
+        character_ui_load_sprite(spr[i], surf[i], f ? FORM[i][f - 1] : BASE[i]);
+        s_skillForm[i] = (int8_t)f;
+    }
+}
+
 static void character_ui_free_sprite(sprite_t **sprite, surface_t *surface)
 {
     if (!sprite || !surface) return;
@@ -166,6 +190,8 @@ void character_ui_init(void)
     character_ui_load_sprite(&s_skillMoonBladeSprite, &s_skillMoonBladeSurf, "rom:/ui/skills/skill_moonblade.rgba16.sprite");
     character_ui_load_sprite(&s_skillHalfmoonSprite, &s_skillHalfmoonSurf, "rom:/ui/skills/skill_halfmoon.rgba16.sprite");
     character_ui_load_sprite(&s_skillCleaveSprite, &s_skillCleaveSurf, "rom:/ui/skills/skill_cleave.rgba16.sprite");
+    s_skillForm[0] = s_skillForm[1] = s_skillForm[2] = 0;
+    character_ui_sync_skill_icons();        // (a climb's forms: their icons instead)
 
     // Health potion bottle icon.
     character_ui_load_sprite(&s_healthBottleSprite, &s_healthBottleSurf, "rom:/healthBottle.ia8.sprite");
@@ -195,6 +221,7 @@ void character_ui_reset(void)
     character_ui_reset_bar_trail(&s_playerStaminaBarState, 1.0f);
 }
 
+int character_ui_bar_slide(void) { return (int)((1.0f - s_playerUiIntro) * 40.0f); }     // how far the bars sit over their place (the intro's slide)
 void character_ui_set_intro(float progress)
 {
     s_playerUiIntro = character_ui_clampf(progress, 0.0f, 1.0f);
@@ -257,13 +284,13 @@ void character_ui_draw_health_bar(const char *name, float ratio, float flash)
         rdpq_fill_rectangle(fillRight, top + 2, lossRight, bottom - 2);
     }
 
-    // Rally: the health a hit back can still win, orange as in Bloodborne
+    // Rally: the health a hit back can still win, a lighter red past the fill (Bloodborne's regain), draining as the pool does
     float rally = tower_rally_pool();
     if (rally > 0.0f && character_get_max_health() > 0.0f) {
         int rallyRight = fillRight + (int)((float)(barWidth - 4) * rally / character_get_max_health() + 0.5f);
         if (rallyRight > right - 2) rallyRight = right - 2;
         if (rallyRight > fillRight) {
-            rdpq_set_prim_color(RGBA32(235, 120, 40, 220));
+            rdpq_set_prim_color(RGBA32(250, 160, 150, 255));
             rdpq_fill_rectangle(fillRight, top + 2, rallyRight, bottom - 2);
         }
     }
@@ -375,6 +402,21 @@ static void character_ui_draw_icon(sprite_t *sprite, const surface_t *surf, int 
     });
 }
 
+// a skill's HUD icon (0 Moon Blade Dance, 1 Halfmoon Slash, 2 Crescent Cleave) px wide at its centre x, y (the Build rows': a fight's sprites)
+void character_ui_draw_skill_icon(int skill, int x, int y, int px)
+{
+    character_ui_sync_skill_icons();        // (its form's once taken)
+    sprite_t *spr[3] = { s_skillMoonBladeSprite, s_skillHalfmoonSprite, s_skillCleaveSprite };
+    const surface_t *surf[3] = { &s_skillMoonBladeSurf, &s_skillHalfmoonSurf, &s_skillCleaveSurf };
+    if (skill < 0 || skill > 2 || !spr[skill]) return;
+    rdpq_sync_pipe();
+    rdpq_set_mode_standard();
+    rdpq_mode_alphacompare(1);
+    rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+    rdpq_mode_filter(FILTER_BILINEAR);
+    character_ui_draw_icon(spr[skill], surf[skill], x, y, (float)px);
+}
+
 /** Skill slot: icon, darkened from the top while on cooldown, plus seconds left. */
 /** The cooldown over a skill's icon: darkened from the top, plus seconds left. */
 static void character_ui_draw_skill_cooldown(CharacterSkill skill, int x, int y, int keyPx)
@@ -406,6 +448,7 @@ void character_ui_draw_c_buttons(void)
     // This should be called by scene after the 3D/world pass, with the rest of
     // the 2D UI.
     if (!s_keySprite) return;
+    character_ui_sync_skill_icons();        // (a form taken: its icon on the key; the block is recorded again)
 
     // Target on-screen key size. Source sprites are 64x64.
     const int keyPx = 20;
@@ -436,6 +479,7 @@ void character_ui_draw_c_buttons(void)
     int potionCount = character_get_health_potion_count();
     unsigned look = potionCount > 0 ? 8 : 0;
     for (int i = 0; i < 3; i++) if (character_skill_usable(keys[i].s)) look |= 1u << i;
+    if (tower_potion_blocked()) look |= 16;     // Berserker below half health: the potion key dimmed as a skill's is
 
     // The keys, icons and bottle change only with that: recorded once for it (64 px sprites
     // scaled down, each with its own mode, cost the RSP half a millisecond a frame). The
@@ -474,12 +518,22 @@ void character_ui_draw_c_buttons(void)
             rdpq_set_prim_color(RGBA32(220, 50, 50, 255));
             character_ui_draw_icon(s_healthBottleSprite, &s_healthBottleSurf, leftX, leftY, keyPx * 0.65f);
         }
+        if (look & 16) {    // (over the bottle: it can't be drunk now)
+            int half = (int)(keyPx * 0.40f);
+            rdpq_set_mode_standard();
+            rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+            rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+            rdpq_set_prim_color(RGBA32(0, 0, 0, 140));
+            rdpq_fill_rectangle(leftX - half, leftY - half, leftX + half, leftY + half);
+        }
         s_keysBlock = gpu_block_end();
         s_keysLook = look;
     }
     rspq_block_run(s_keysBlock);
     for (int i = 0; i < 3; i++)
         if (look & (1u << i)) character_ui_draw_skill_cooldown(keys[i].s, keys[i].x, keys[i].y, keyPx);
+    for (int i = 0; i < 3; i++)     // a climb's levels: pips and a form's badge over the key (over the cooldown's shade)
+        if (look & (1u << i)) tower_hud_skill_marks(keys[i].s, keys[i].x, keys[i].y);
 
     if (potionCount <= 0) {
         return;

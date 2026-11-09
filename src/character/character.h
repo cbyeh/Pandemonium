@@ -132,6 +132,7 @@ void character_update(void);
 void character_update_cinematic(void);
 
 CharacterState character_get_state(void);
+bool character_invulnerable(void);     // rolling in its i-frames, or down
 void character_set_state(CharacterState state);
 
 void character_reset_button_state(void);
@@ -152,6 +153,7 @@ float character_get_damage_flash_ratio(void);
 
 // External API to apply damage to the character.
 void character_apply_damage(float amount);
+void character_apply_damage_kind(float amount, int kind);     // a blow of a kind (weapon.h DMG_*): fire, Shadowborne's flames
 
 // Health potion API.
 int character_get_health_potion_count(void);
@@ -160,6 +162,8 @@ bool character_try_use_health_potion(void);
 // Skill API (cooldowns for the HUD).
 float character_get_skill_cooldown(CharacterSkill skill);         // seconds left
 float character_get_skill_cooldown_ratio(CharacterSkill skill);   // 1 = just used, 0 = ready
+void  character_cut_skill_cooldowns(float seconds);                // every skill's cooldown that much shorter now (the Tower's boons)
+void  character_call_lightning(float bolt);                        // a Tower boon's bolt on the boss: its hit, Storm Blade's pillar, a hit's sound
 bool character_can_afford_skill(CharacterSkill skill);            // enough stamina
 bool character_skills_enabled(void);                              // Settings toggle
 bool character_skill_usable(CharacterSkill skill);                // the toggle, or the Tower's unlocks in a run

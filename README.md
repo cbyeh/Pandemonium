@@ -55,6 +55,10 @@ Toggle in **Settings > Skills** (title screen). In the Tower the setting doesn't
 - **Nights:** from the second circle, each circle draws a night: Blood Moon, Iron Night or Starfall. Each is a trade-off that pays more Embers, announced before the circle starts.
 - **Relics:** buy them at **Tower > Shrine > Relics** (200 Embers each) and equip one to carry into the climb.
 - **Embers:** cleared floors earn Embers, kept when you die. Spend them at **Tower > Shrine** on permanent upgrades, which only apply in the Tower, and on the Nightfarer skin.
+- **Offerings:** small gifts for a single climb, set aside at **Tower > Offerings** before you go.
+- **Milestones:** climbing deeper than ever before earns lasting rewards.
+- **Codex:** **Tower > Codex**, and the pause menu mid-climb, explains the climb, its rooms, boons and the Shrine.
+- **Seeds:** every climb has one, shown when it ends.
 
 Each save slot keeps its best floor, Embers, relics, skin and settings (a fresh cart uses Save 1). **Load Game** switches to a slot without starting a fight, and the game reopens on the slot used last. It shows a slot's progress: story clear time, best Tower floor, Bonus bosses beaten and skins earned (of the three that unlock).
 
@@ -182,6 +186,7 @@ Sound effects: Gomo Sounds (gomosounds.com)
 | Shadowforge Convergence | Shadowborne's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
 | Veil of Eternal Nightfall | The Shackled Sun's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
 | Whispers of the Abyss | The Fallen Warrior's theme | AlkaKrab | [itch.io](https://alkakrab.itch.io/6-dark-fantasy-boss-battle-tracks) |
+| Optimus Princeps | The Elites' names | Manfred Klein | [dafont](https://www.dafont.com/optimusprinceps.font) |
 
 ## Licensing
 

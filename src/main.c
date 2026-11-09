@@ -30,6 +30,7 @@ static surface_t *s_latFb;
 #include "gpu_frame.h"
 
 rspq_queue_t *g_drawQueue;
+bool g_gpuTrimQueues;
 #ifdef HLE_LOG_FPS
 int hle_floor_mark;     // test aid (autoplay): a Tower floor's fight began
 #endif
@@ -127,6 +128,11 @@ int main(void)
     rdpq_font_style(font1, FONT_STYLE_GREY, &(rdpq_fontstyle_t){ .color = RGBA32(130, 130, 130, 255) });
     rdpq_font_style(font1, FONT_STYLE_BLUE, &(rdpq_fontstyle_t){ .color = RGBA32(140, 185, 255, 255) });
     rdpq_font_style(font1, FONT_STYLE_RED, &(rdpq_fontstyle_t){ .color = RGBA32(235, 110, 85, 255) });
+    rdpq_font_style(font1, FONT_STYLE_TEAL, &(rdpq_fontstyle_t){ .color = RGBA32(130, 225, 210, 255) });
+    rdpq_font_style(font1, FONT_STYLE_VIOLET, &(rdpq_fontstyle_t){ .color = RGBA32(190, 145, 255, 255) });
+    rdpq_font_t *fontSmall = rdpq_font_load("rom:/fonts/optimus_princeps_semibold.font64");   // Optimus Princeps SemiBold, small, outlined
+    rdpq_text_register_font(FONT_SMALL, fontSmall);
+    rdpq_font_style(fontSmall, FONT_STYLE_RED, &(rdpq_fontstyle_t){ .color = RGBA32(235, 110, 85, 255), .outline_color = RGBA32(0, 0, 0, 255) });
 
     game_time_init();
     joypad_utility_init();
@@ -312,6 +318,12 @@ int main(void)
         // Recorded, then run as a whole: submitting straight to the RSP stalled the CPU on its
         // small command ring, and the RSP then idled through the next frame's update. Now the RSP
         // draws this frame while the CPU updates the next (what it reads is buffered: kGpuFrames)
+        if (g_gpuTrimQueues && drawQueue[0]) {     // (the RSP done with both first)
+            rspq_wait();
+            rspq_queue_destroy(drawQueue[0]); rspq_queue_destroy(drawQueue[1]);
+            drawQueue[0] = drawQueue[1] = NULL;
+        }
+        g_gpuTrimQueues = false;
         if (!drawQueue[0]) { drawQueue[0] = rspq_queue_create(); drawQueue[1] = rspq_queue_create(); }
         rspq_queue_clear(drawQueue[dq]);
 #if !defined(HLE_PROF_SERIAL) && !defined(HLE_PROF_BOSS) && !defined(HLE_PROF_DRAGON)    // test aids that time the RSP stage by stage
@@ -378,6 +390,9 @@ int main(void)
         rspq_queue_switch(NULL);
         g_drawQueue = NULL;
         rspq_queue_run(drawQueue[dq]);
+#ifdef HLE_SHOW_HURTBOX     // test aid: the hit capsules over the fight
+        if (isGuardian) { extern void hle_hurtbox_draw(T3DViewport *vp); hle_hurtbox_draw(&viewport); }
+#endif
         drawDone[dq] = rspq_syncpoint_new();
 #ifdef HLE_PROF_WAITEND   // test aid: the frame's GPU time with the CPU idle
         { static uint32_t acc, n; rspq_flush(); uint32_t t = TICKS_READ();

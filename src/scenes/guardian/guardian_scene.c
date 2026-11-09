@@ -21,7 +21,9 @@
 #include "game_time.h"
 
 #include "globals.h"
+#include "../../utilities/video_layout.h"
 #include "../../utilities/button_prompt_utility.h"
+#include "../../utilities/ui_pages.h"
 
 #include "../../managers/cutscene_manager.h"
 #include "../../managers/cutscene_manager_internal.h"
@@ -186,9 +188,11 @@ static const char *s_boss2LoopMusicPath = "rom:/audio/music/boss_phase2_cutscene
 static const char *s_boss3LoopMusicPath = "rom:/audio/music/whispers_of_the_abyss-22k.wav64";    // Fallen Warrior
 static BonusFight s_bonusFight = BONUS_NONE;   // set by the title Bonus menu
 static bool  s_tower;             // set by the title Tower menu: the next scene_init climbs
-static bool  s_towerDraft;        // choosing a boon between floors
+static bool  s_towerDraft;        // between floors: the draft, the map, a Rest
 static float s_towerDeadT;        // the floor's boss has lain dead this long
-static bool  s_towerLastL, s_towerLastR, s_towerLastA;
+static bool  s_towerLastL, s_towerLastR, s_towerLastA, s_towerLastU, s_towerLastD, s_towerLastB, s_towerLastRB;
+// no carried-over press on the screens between floors (a fight's mashing, the pause menu's A or B)
+static void scene_tower_hold_presses(void) { s_towerLastL = s_towerLastR = s_towerLastA = s_towerLastU = s_towerLastD = s_towerLastB = s_towerLastRB = true; }
 static void scene_tower_begin_run(void);
 static int   s_bonusBeat;                     // bonus intro/outro script step
 static float s_bonusEndTimer;
@@ -1365,6 +1369,7 @@ static void scene_tower_start_floor(void)
 #endif
     // A clean hall: nothing from the last floor's fight may linger
     gpu_wait();
+    g_gpuTrimQueues = true;     // (nor the memory the screens between floors drew with)
     skill_fx_reset();
     msa_clear_all();
     boss_ground_crush_reset();
@@ -1374,6 +1379,7 @@ static void scene_tower_start_floor(void)
     dragon_boss_free();
     screen_shake_set_shake_mag(0.0f);
 
+    if (tb == TOWER_GUARDIAN || tb == TOWER_UNBOUND) boss_tower_ensure_model(g_boss);     // (dropped on a Bonus floor)
     boss_reset(g_boss);
     g_boss->pos[0] = BONUS_SPAWN_X;
     g_boss->pos[2] = 0.0f;
@@ -1400,7 +1406,7 @@ static void scene_tower_start_floor(void)
         }
     } else {
         s_bonusFight = tb == TOWER_FALLEN_KNIGHT ? BONUS_FALLEN_KNIGHT : tb == TOWER_SHACKLED_SUN ? BONUS_SHACKLED_SUN : BONUS_SHADOWBORN;
-        boss_render_forget_model();   // the Guardian's recorded draws (~74 KB): re-recorded when it next draws
+        boss_tower_release_model(g_boss);   // the Guardian's model, skeletons and clips, and its recorded draws (~74 KB): loaded again for its next floor
         const BonusDef *d = &BONUS_DEFS[s_bonusFight];
         d->begin(g_boss);
         d->skip(g_boss);
@@ -1433,21 +1439,23 @@ static void scene_tower_begin_run(void)
     gameState = GAME_STATE_PLAYING;
     bossUiIntro = playerUiIntro = 0.0f;
     character_ui_set_intro(0.0f);
+    // The run's first fight is always the Guardian: straight into it, no map before it (the map shows
+    // after its draft). Its music starts with the fight, as every floor's
+    tower_enter_guardian();
     scene_tower_start_floor();
 }
 
-// Between floors: the draft; once a boon is taken, the next floor
+// Between floors: the draft, then the map (and a Rest's, a Shop's or an Event's screens); once a fight's node is entered, its floor
 static void scene_tower_draft_update(void)
 {
     bool l = btn.d_left || joypad.stick_x < -40, r = btn.d_right || joypad.stick_x > 40, a = btn.a;
     bool u = btn.d_up || joypad.stick_y > 40, d = btn.d_down || joypad.stick_y < -40;
-    static bool lastU, lastD;
-    bool done = tower_draft_update(l && !s_towerLastL, r && !s_towerLastR, u && !lastU, d && !lastD, a && !s_towerLastA);
-    s_towerLastL = l; s_towerLastR = r; s_towerLastA = a; lastU = u; lastD = d;
-    if (!done) return;
+    bool b = btn.b, rr = btn.z;     // (B back a level, Z Details; the menus' buttons are the same in every layout)
+    bool fight = tower_between_update(l && !s_towerLastL, r && !s_towerLastR, u && !s_towerLastU, d && !s_towerLastD, a && !s_towerLastA, b && !s_towerLastB, rr && !s_towerLastRB);
+    s_towerLastL = l; s_towerLastR = r; s_towerLastA = a; s_towerLastU = u; s_towerLastD = d; s_towerLastB = b; s_towerLastRB = rr;
+    if (tower_take_pause_request()) { menu_controller_open_pause(MENU_MAIN_RUN); return; }     // the map's B: the pause menu, on Stats
+    if (!fight) return;
     s_towerDraft = false;
-    tower_floor_restore();
-    tower_next_floor();
     scene_tower_start_floor();
 }
 
@@ -1773,6 +1781,7 @@ void scene_update(void) {
     if (lastMenuActive && !pauseMenuBlocking) {
         // Menu was just closed - reset character button state to prevent false "just pressed"
         character_reset_button_state();
+        scene_tower_hold_presses();     // (the A of Resume, the B that closed it: not a press on the map)
     }
     lastMenuActive = pauseMenuBlocking;
 
@@ -1867,7 +1876,7 @@ void scene_update(void) {
                 if (s_towerDeadT >= 2.0f) {     // let the death play out, then the draft
                     tower_floor_cleared();
                     s_towerDraft = true;
-                    s_towerLastL = s_towerLastR = s_towerLastA = true;   // no carried-over press
+                    scene_tower_hold_presses();
                     return;
                 }
             }
@@ -2185,7 +2194,7 @@ void scene_draw_cutscene(T3DViewport *viewport)
                 int height = 70;
                 int width = 220;
                 int x = (SCREEN_WIDTH - width) / 2;
-                int y = 240 - height - 10;
+                int y = ui_safe_rect().y1 - height;     // (inside the title-safe area: it reached 230)
 
                 dialog_controller_draw(false, x, y, width, height);
             }
@@ -2555,10 +2564,10 @@ void scene_draw(T3DViewport *viewport)
 #endif
         if (s_tower) tower_hud_draw();
     }
-    if (s_towerDraft && !isDead) tower_draft_draw();
+    if (s_towerDraft && !isDead) tower_between_draw();
 
-    // Slide-up overlay for boss title after fight starts (no fading)
-    if (!cutsceneActive && !isEndScreen && bossTitleFade > 0.0f && g_boss) {
+    // The boss's name title as the fight starts (1.8 s, then its bar grows)
+    if (!cutsceneActive && !isEndScreen && bossTitleFade > 0.0f && g_boss && !s_towerDraft && !menu_controller_is_pause_menu_active()) {   // (not over the Tower's map, nor under the pause menu's title)
         rdpq_sync_pipe();
         rdpq_set_mode_standard();
         rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
@@ -2568,19 +2577,18 @@ void scene_draw(T3DViewport *viewport)
         int barHeight = 23;
         int barTop = 35;
         int barLeft = (SCREEN_WIDTH - barWidth) / 2;
-        int slideDistance = 120; // pixels to move upward until off-screen
-        float t = 1.0f - bossTitleFade; // 0 -> 1 as we slide up
-
-        // Compute current Y positions while sliding upward
-        int currentBarTop = barTop - (int)(slideDistance * t);
-        int currentTextY = 50 - (int)(slideDistance * t);
+        // held inside the title-safe area until the bar grows (it slid off the top: cut after 0.4 s), under the
+        // player's bars (they end 20 under the margin) or in the Tower its slot strip (to 45) and its Floor, Ascension and night lines
+        { int top = ui_safe_margin_y() + (s_tower ? 48 : 24); if (top > barTop) barTop = top; }     // (a climb's: under its slot strip too)
+        int currentBarTop = barTop;
+        int currentTextY = barTop + 15;
 
         // Draw centered black bar behind the title (constant alpha)
         int barAlpha = 120;
         rdpq_set_prim_color(RGBA32(0, 0, 0, barAlpha));
         rdpq_fill_rectangle(barLeft, currentBarTop, barLeft + barWidth, currentBarTop + barHeight);
 
-        // Draw centered title text (constant intensity while sliding up)
+        // Draw centered title text
         rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
         rdpq_text_printf(&(rdpq_textparms_t){
             .align = ALIGN_CENTER,
@@ -2598,6 +2606,11 @@ void scene_draw(T3DViewport *viewport)
             // Full-screen overlay with prompt to restart
             rdpq_set_prim_color(RGBA32(0, 0, 0, 140));
             rdpq_fill_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+            if (s_tower) {      // the menus' box under the Tower's summary: it stays legible over the Sun or a fire
+                UiRect sr = ui_safe_rect();
+                ui_box_exact(sr.x0 - UI_PAD, SCREEN_HEIGHT / 2 - 28, sr.x1 + UI_PAD, SCREEN_HEIGHT / 2 + 48);
+                rdpq_sync_pipe(); rdpq_set_mode_standard(); rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY); rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+            }
             rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
 
             rdpq_text_printf(&(rdpq_textparms_t){
@@ -2605,35 +2618,20 @@ void scene_draw(T3DViewport *viewport)
                 .width = SCREEN_WIDTH,
             }, FONT_UNBALANCED, 0, SCREEN_HEIGHT / 2 - 12, "%s", "You Died");
             if (s_tower) {
-                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = SCREEN_WIDTH, .style_id = FONT_STYLE_GOLD },
-                                 FONT_UNBALANCED, 0, SCREEN_HEIGHT / 2 + 2, "%s", tower_death_summary());
+                // its two lines: the first with the Embers icon (tower_money_text draws one line)
+                char l1[96]; const char *sum = tower_death_summary(), *nl = strchr(sum, '\n');
+                snprintf(l1, sizeof l1, "%.*s", nl ? (int)(nl - sum) : (int)strlen(sum), sum);
+                tower_money_text(0, SCREEN_HEIGHT / 2 + 2, SCREEN_WIDTH, ALIGN_CENTER, FONT_STYLE_GOLD, l1);
+                if (nl) rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = SCREEN_WIDTH, .style_id = FONT_STYLE_GOLD },
+                                         FONT_UNBALANCED, 0, SCREEN_HEIGHT / 2 + 2 + ui_line_pitch(), "%s", nl + 1);
             }
 
             // Delay restart prompt so rapid gameplay A-mashing doesn't instantly restart.
+            // The menus' one row under the cursor (ui_pages.h: THE MENU STANDARD): no button letter, A takes it
             if (deathRestartLockoutTimer >= DEATH_RESTART_LOCKOUT_S) {
-                const char *label = "Restart";
-                const int gap = 6;
-                const int y = (SCREEN_HEIGHT / 2) + (s_tower ? 34 : 20);    // below the Tower's two summary lines
-
-                // Source sprite is 64×64; scale down to match other UI button sizes.
-                const float kTargetPx = 20.0f;
-                int buttonW = button_prompt_a_icon_width(kTargetPx);
-                int buttonH = button_prompt_a_icon_height(kTargetPx);
-                int x0 = (SCREEN_WIDTH / 2) - 44;
-
-                if (button_prompt_has_a_button()) {
-                    int buttonX = x0;
-                    int buttonY = y - (buttonH / 2) - 6;
-                    button_prompt_draw_a_icon(buttonX, buttonY, kTargetPx);
-                }
-
-                // Text baseline aligned to match other UI codepaths (roughly icon vertical center)
-                int textX = x0 + buttonW + gap;
-                rdpq_set_prim_color(RGBA32(255, 255, 255, 255));
-                rdpq_text_printf(&(rdpq_textparms_t){
-                    .align = ALIGN_LEFT,
-                    .width = SCREEN_WIDTH - textX,
-                }, FONT_UNBALANCED, textX, y, "%s", label);
+                const int y = (SCREEN_HEIGHT / 2) + (s_tower ? 40 : 20), w = 120, x0 = (SCREEN_WIDTH - w) / 2;    // below the Tower's two summary lines
+                ui_select_box(x0, y - 12, x0 + w, y + 4);
+                rdpq_text_printf(&(rdpq_textparms_t){ .align = ALIGN_CENTER, .width = w }, FONT_UNBALANCED, x0, y, "%s", "Restart");
             }
 
             scene_draw_video_preroll_fade();
@@ -2717,7 +2715,7 @@ void scene_draw(T3DViewport *viewport)
     // bottom positioning
     if(cutsceneDialogActive)
     {
-        int y = 240 - height - 10;
+        int y = ui_safe_rect().y1 - height;     // (inside the title-safe area: it reached 230)
         dialog_controller_draw(false, x, y, width, height);
     }
 

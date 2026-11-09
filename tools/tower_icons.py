@@ -1,0 +1,310 @@
+#!/usr/bin/env python3
+"""The Tower's icons, pixelled by hand in the map icons' style (assets/ui/map/map_icons.i4.png: a bright body, a soft
+edge, darker inner detail). Run: python3 tools/tower_icons.py (no PIL needed). It writes:
+- assets/ui/tower/tower_icons.i4.png: one 16-wide I4 strip, 16x16 each, one above the next: the six family emblems,
+  the padlock, the link (below), then one icon a boon (boon_icons.py: BOONS in BoonId order, tiles 8-42) and a duo's
+  (DUOS in BoonId order, 43-51); tower.c tints them (a duo's left half its first family's colour, its right its second's)
+- assets/ui/tower/list_icons.i4.png: the 12 px list icons (list12_grids.py), 12-wide; list_icons.rgba16.png the
+  skills' and B forms' 12 px (their colour art taken down); src/game/tower/tower_list_icons.h names and tints them
+- assets/ui/skills/form_<name>.rgba16.png: the six Lv 5 form icons (forms.py, 32x32, edited from the skill icons)
+- assets/ui/tower/portraits.ci8.png: the five bosses (portraits.py), 22x22 one above the next, in TowerBoss order (48
+  colours: CI8 holds them as they are, 2.9 KB against RGBA16's 4.8)
+- the menus' box corner, assets/ui/box_corner.i4.png (ui_pages.c's 9-slice: see box_corner())."""
+import struct, zlib, os
+
+# '#' 15 (body), 'o' 12 (edge), '+' 10 (soft edge), ':' 8 (detail), '-' 6 (deep detail), '.' 0 (clear)
+LEVEL = {'#': 15, 'o': 12, '+': 10, ':': 8, '-': 6, '.': 0}
+
+ICONS = [
+# 0 Blood: a drop, shaded down its right side
+"""
+................
+.......++.......
+.......##.......
+......o##o......
+......####......
+.....o####o.....
+....o######o....
+...o########o...
+...#########:...
+..o#########:o..
+..##########::..
+..##########::..
+..o########::o..
+...o######:::...
+....o##:::::o...
+......++++......
+""",
+# 1 Storm: a bolt
+"""
+................
+........o#####o.
+.......o#####o..
+......o#####o...
+.....o#####o....
+....o#####o.....
+...o##########o.
+..o##########o..
+.......o####o...
+......o####o....
+.....o####o.....
+.....o###o......
+....o###o.......
+....o##o........
+...o#o..........
+...+o...........
+""",
+# 2 Moon: a crescent, two craters
+"""
+................
+......o####o....
+....o####o+.....
+...o###o........
+..o###o.........
+..###o..........
+.o###...........
+.o##:#..........
+.o###...........
+.o###o..........
+..###:o.........
+..o####o........
+...o####o+......
+....o######o+...
+......o#####o...
+................
+""",
+# 3 Iron: a heater shield, its field crossed
+"""
+................
+.o############o.
+.##oooooooooo##.
+.##ooo----ooo##.
+.##ooo----ooo##.
+.##----------##.
+.##----------##.
+.##ooo----ooo##.
+.o#ooo----ooo#o.
+..##oo----oo##..
+..o#oo----oo#o..
+...##o----o##...
+....##o--o##....
+.....o####o.....
+.......oo.......
+................
+""",
+# 4 Shadow: a rogue's eye mask, its eyes slanted, its ties trailing
+"""
+................
+................
+................
+..oo........oo..
+.o###o....o###o.
+o######oo######o
+###...####...###
+####...##...####
+o##############o
+:o#####oo#####o:
+.:o###o..o###o:.
+.:.ooo....ooo.:.
+..:..........:..
+..:..........:..
+................
+................
+""",
+# 5 Hearth: a flame in its bowl
+"""
+.......+........
+.......#+.......
+......o#o..+....
+......###o.#+...
+.....o####o##...
+....o#########..
+....###:######..
+...o##:::####o..
+...o#::-::###o..
+....o#::::##o...
+.....o####o.....
+.##############.
+.o:::::::::::#o.
+..o##########o..
+....oooooooo....
+................
+""",
+# 6 a padlock (7x8, top left; a rival locked out)
+"""
+.o###o..........
+o#...#o.........
+#.....#.........
+#######.........
+###-###.........
+###-###.........
+#######.........
+.ooooo..........
+................
+................
+................
+................
+................
+................
+................
+................
+""",
+# 7 a link (12x6, top left: a duo's two boons fused)
+"""
+.o###oo###o.....
+o#o..##..o#o....
+#o..o##o..o#....
+o#o..##..o#o....
+.o###oo###o.....
+................
+................
+................
+................
+................
+................
+................
+................
+................
+................
+................
+""",
+]
+
+def rows():
+    out = []
+    for n, art in enumerate(ICONS):
+        lines = [l for l in art.strip('\n').split('\n')]
+        assert len(lines) == 16 and all(len(l) == 16 for l in lines), (n, [len(l) for l in lines], len(lines))
+        for l in lines: out.append([LEVEL[c] * 17 for c in l])
+    return out
+
+def write_png(path, px):
+    h, w = len(px), len(px[0])
+    raw = b''.join(b'\0' + bytes(r) for r in px)
+    def chunk(t, d): return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+    png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 0, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b'')
+    open(path, 'wb').write(png)
+
+# The menus' box, its top left corner (16x16, its coverage as the intensity: I4 reads it as alpha): a quarter circle of
+# radius R round (R, R), its rim fading out over F px as main's dialog art's soft edge; column 15 is the top edge's
+# profile and row 15 the left's (ui_pages stretches them along the sides), the rest of the box a flat fill
+def box_corner(R=9.0, F=3.0, N=16):
+    out = []
+    for y in range(N):
+        row = []
+        for x in range(N):
+            a = 0.0
+            for sy in range(4):          # 4x4 samples a pixel
+                for sx in range(4):
+                    px, py = x + (sx + 0.5) / 4, y + (sy + 0.5) / 4
+                    if px < R and py < R: d = R - ((px - R) ** 2 + (py - R) ** 2) ** 0.5    # (inside the circle: positive)
+                    else: d = min(px, py)
+                    a += min(max(d / F, 0.0), 1.0)
+            row.append(int(round(a / 16 * 15)) * 17)
+        out.append(row)
+    return out
+
+def write_rgba(path, px):      # 8-bit RGBA, already at RGBA16's 5 bits a colour and 1 of alpha (mksprite keeps it as is)
+    q = [[(p[0] >> 3 << 3 | p[0] >> 5, p[1] >> 3 << 3 | p[1] >> 5, p[2] >> 3 << 3 | p[2] >> 5, 255) if p[3] >= 128 else (0, 0, 0, 0) for p in r] for r in px]
+    h, w = len(q), len(q[0])
+    raw = b''.join(b'\0' + bytes(c for p in r for c in p) for r in q)
+    def chunk(t, d): return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+    open(path, 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b''))
+
+# the boons in BoonId order (tower.h) up to Berserker, then the duos: tower.c's boon_tile() counts on it
+BOON_ORDER = ["Ember Edge", "Iron Skin", "Deep Flask", "Kindled Flask", "Fleetfoot", "Second Wind", "Moon Mastery", "Bloodthirst",
+              "Vigor", "Last Stand", "Unbroken", "Phantom Step", "Riposte", "Crushing Blows", "Executioner", "Storm Blade", "Blood Pact",
+              "Rally", "Hemorrhage", "Sanguine Flask", "Red Thirst", "Static", "Thunderclap", "Conductor", "Overcharge", "Lunar Tide",
+              "Eclipse", "Waxing Moon", "Heavy Hand", "Stalwart", "Shadow Edge", "Evasion", "Vanish", "Prospector", "Berserker"]
+DUO_ORDER = ["Crimson Storm", "Thunderstep", "Blood Moon Rite", "Iron Tide", "Shade's Mercy", "Anvil of Storms", "Waning Light",
+             "Steel Hearth", "Skyfall"]
+
+def boon_rows():
+    import boon_icons as B
+    art = {n: B.parse(a) for n, f, t, d, a in B.BOONS}
+    art.update({n: B.parse(a) for n, fa, fb, d, a in B.DUOS})
+    assert sorted(art) == sorted(BOON_ORDER + DUO_ORDER), set(art) ^ set(BOON_ORDER + DUO_ORDER)
+    out = []
+    for n in BOON_ORDER + DUO_ORDER: out += art[n]
+    return out
+
+# The 12 px list icons: each row's name (as the game names the row), its art (list12_grids.py) and its tint (as the
+# approved sheet's: the potion red, gold, steel, the skills' cyan, a pact's crimson, the map's tints, the families')
+POTION, GOLD, STEEL, SKILL, PACT, GREY = (220, 50, 50), (255, 200, 90), (225, 228, 235), (110, 210, 255), (230, 50, 60), (200, 200, 215)
+FAM_RGB = [(235, 110, 85), (140, 185, 255), (130, 225, 210), (225, 228, 235), (190, 145, 255), (255, 200, 90)]
+LIST12 = [  # (the row's name, list12_grids' key, tint; None: Families' three, each in its family's colour)
+    ("Spare Flask", "Spare Flask", POTION), ("Hale Oath", "Hale Oath", POTION), ("Pilgrim's Purse", "Pilgrim's Purse", GOLD),
+    ("Whetstone", "Whetstone", STEEL), ("Scholar's Candle", "Scholar's Candle", GOLD), ("Hearth Ember", "Hearth Ember", (255, 150, 60)),
+    ("Kindling", "Kindling", GOLD),
+    ("Flask Capacity", "Flask Capacity", POTION), ("Flask Potency", "Flask Potency", POTION), ("Honed Blade", "Honed Blade", STEEL),
+    ("Vigor", "Vigor", POTION), ("Skill Mastery", "Skill Mastery", SKILL),
+    ("Knight's Oath", "Knight's Oath", GOLD), ("Saint's Chalice", "Saint's Chalice", GOLD), ("Moonlit Tome", "Moonlit Tome", GOLD),
+    ("Ember Crown", "Ember Crown", GOLD), ("Brand of Wrath", "Brand of Wrath", PACT), ("Climber's Sigil", "Climber's Sigil", GOLD),
+    ("Nightfarer", "Nightfarer", (150, 155, 235)),
+    ("The climb", "codex: The climb", STEEL), ("The map", "codex: The map", GREY), ("Fights and Elites", "codex: Fights and Elites", GREY),
+    ("Rests, Shops, Events", "codex: Rests, Shops, Events", (255, 150, 60)), ("Slots and levels", "codex: Slots and levels", STEEL),
+    ("Families", "codex: Families", None), ("Rivals", "codex: Rivals", (235, 110, 85)), ("\"+\" and duos", 'codex: "+" and duos', GOLD),
+    ("Skills", "codex: Skills", SKILL), ("Elite affixes", "codex: Elite affixes", (230, 70, 60)), ("Gold", "codex: Gold", (235, 190, 70)),
+    ("Embers and the Shrine", "codex: Embers and the Shrine", GOLD), ("Offerings", "Scholar's Candle", GOLD),
+    ("Milestones", "codex: Milestones", GOLD), ("Pacts", "Brand of Wrath", PACT), ("Nights", "codex: Nights", (190, 145, 255)),
+    ("The Tower's Heart", "codex: The Tower's Heart", (235, 110, 85)),
+] + [(f, "emblem " + f, FAM_RGB[k]) for k, f in enumerate(["Blood", "Storm", "Moon", "Iron", "Shadow", "Hearth"])]
+# the swords (weapon.c, its WEAPONS' names and blades; appended: the tiles above keep their places): the Armory's row
+# and Codex page in steel, each sword in its blade's colour (the Knight's in steel)
+LIST12 += [("Armory", "sword", STEEL), ("The Armory", "sword", STEEL), ("Knight's Sword", "sword", STEEL),
+           ("Lunar Edge", "sword", (120, 196, 255)), ("Mare Nubium", "sword", (214, 220, 232)), ("Mare Frigoris", "sword", (178, 214, 255)),
+           ("Mare Requiem", "sword", (150, 222, 200)), ("Sol's Bane", "sword", (205, 160, 90)), ("Shadowslayer", "sword", (150, 150, 175))]
+# the colour ones (the skills' own art at 12: the Codex's skill topics, the Unlocks' B forms)
+LIST12_RGBA = [("Moon Blade Dance", "skill", "moonblade"), ("Halfmoon Slash", "skill", "halfmoon"), ("Crescent Cleave", "skill", "cleave"),
+               ("Shattering Dance", "form", "Shattering Dance"), ("Full Moon", "form", "Full Moon"), ("Long Cleave", "form", "Long Cleave")]
+
+def grid12(s):
+    rows = s.strip('\n').split('\n')
+    assert len(rows) == 12 and all(len(r) == 12 for r in rows), rows
+    return [[LEVEL[c] * 17 for c in r] for r in rows]
+
+def rgba12(px):     # 32 px colour art at 12: area average (premultiplied), alpha pushed to on/off (its 1-bit RGBA16 look)
+    out = []
+    for j in range(12):
+        r = []
+        for i in range(12):
+            acc = [0.0] * 4; tot = 0.0
+            for y in range(int(j * 32 / 12), int((j + 1) * 32 / 12 + 0.999)):
+                for x in range(int(i * 32 / 12), int((i + 1) * 32 / 12 + 0.999)):
+                    w = max(0, min((i + 1) * 32 / 12, x + 1) - max(i * 32 / 12, x)) * max(0, min((j + 1) * 32 / 12, y + 1) - max(j * 32 / 12, y))
+                    p = px[min(y, 31)][min(x, 31)]; tot += w
+                    for k in range(3): acc[k] += p[k] * p[3] / 255 * w
+                    acc[3] += p[3] * w
+            a = acc[3] / tot
+            if a < 70: r.append((0, 0, 0, 0)); continue
+            r.append(tuple(min(255, int(acc[k] / (acc[3] / 255) * 1.12)) for k in range(3)) + (255,))
+        out.append(r)
+    return out
+
+def c_str(s): return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+if __name__ == '__main__':
+    import sys
+    here = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, here)
+    from list12_grids import GRIDS
+    from icon_png import read_png
+    import forms as F, portraits as P
+    A = lambda *p: os.path.join(here, '..', 'assets', *p)
+    write_png(A('ui', 'tower', 'tower_icons.i4.png'), rows() + boon_rows())
+    write_png(A('ui', 'box_corner.i4.png'), box_corner())
+    write_png(A('ui', 'tower', 'list_icons.i4.png'), [r for n, k, t in LIST12 for r in grid12(GRIDS[k])])
+    fm = {name: px for name, sk, f, px in F.make()}
+    for name, px in fm.items(): write_rgba(A('ui', 'skills', 'form_%s.rgba16.png' % name.lower().replace(' ', '_')), px)
+    rg = []
+    for n, kind, src in LIST12_RGBA:
+        rg += rgba12(read_png(A('ui', 'skills', 'skill_%s.rgba16.png' % src))[2] if kind == 'skill' else fm[src])
+    write_rgba(A('ui', 'tower', 'list_icons.rgba16.png'), rg)
+    write_rgba(A('ui', 'tower', 'portraits.ci8.png'), [r for n, use, px in P.PORTRAITS for r in px])
+    h = ['// Generated by tools/tower_icons.py: the 12 px list icons (assets/ui/tower/list_icons.*.png), by the row\'s name',
+         '// rgba: a tile of list_icons.rgba16 (drawn as itself), else of list_icons.i4 tinted r, g, b (all 0: Families\' three colours)',
+         'static const struct { const char *name; uint8_t rgba, tile, r, g, b; } LIST_ICONS[] = {']
+    for i, (n, k, t) in enumerate(LIST12): h.append('    { %s, 0, %d, %d, %d, %d },' % ((c_str(n), i) + (t or (0, 0, 0))))
+    for i, (n, kind, src) in enumerate(LIST12_RGBA): h.append('    { %s, 1, %d, 0, 0, 0 },' % (c_str(n), i))
+    h.append('};')
+    open(os.path.join(here, '..', 'src', 'game', 'tower', 'tower_list_icons.h'), 'w').write('\n'.join(h) + '\n')

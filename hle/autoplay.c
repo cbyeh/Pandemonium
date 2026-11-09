@@ -5,7 +5,7 @@
 #ifdef HLE_AUTOPLAY
 #include <libdragon.h>
 #include <string.h>
-#ifdef HLE_LOG_HITVOL
+#if defined(HLE_LOG_HITVOL) || defined(HLE_LOG_HITGAP)
 #include <t3d/t3dmodel.h>
 #include <t3d/t3dskeleton.h>
 #endif
@@ -15,7 +15,7 @@
 #ifdef HLE_TEST_TOWER     // the Unbroken check hits the player
 #include "character.h"
 #endif
-#if defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_OOB) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE)
+#if defined(HLE_TEST_PACKS) || defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_SKILLS) || defined(HLE_TEST_SKILL_DMG) || defined(HLE_TEST_TOGGLE) || defined(HLE_TEST_BOSS2) || defined(HLE_TEST_TWO_RUNS) || defined(HLE_TEST_BONUS) || defined(HLE_TEST_ENDING) || defined(HLE_TEST_HEAVY) || defined(HLE_TEST_DUMMY) || defined(HLE_TEST_COVER) || defined(HLE_TEST_ROLLCANCEL) || defined(HLE_TEST_SKIN) || defined(HLE_TEST_UNBOUND) || defined(HLE_TEST_CRUCIFIX) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_TOWER_NAV) || defined(HLE_TOWER_GALLERY) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_BOOT_SKIN) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_BKEY) || defined(HLE_TEST_ANIMVIEW) || defined(HLE_TEST_GETUP) || defined(HLE_TEST_OOB) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_CONTROLS) || defined(HLE_TEST_CYCLE) || defined(HLE_TEST_MENUS) || defined(HLE_SHOW_HURTBOX)
 #include "camera_controller.h"
 #include "joypad_utility.h"
 #include "character_skin.h"
@@ -26,8 +26,11 @@
 #include "controllers/menu_controller.h"
 #include "game/boss/environmental_mechanics/multi_sword_attacks.h"
 #include "scenes/guardian/guardian_scene_bounds.h"
+#ifdef HLE_SHOW_HURTBOX
+#include "utilities/game_math.h"
 #endif
-#if defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH)
+#endif
+#if defined(HLE_TEST_PACKS) || defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_AUDIO) || defined(HLE_TEST_SHRINE) || defined(HLE_TEST_LOADMENU) || defined(HLE_TEST_MARKS) || defined(HLE_TEST_QUIT) || defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS) || defined(HLE_TEST_TOWER_NAV) || defined(HLE_TOWER_GALLERY) || defined(HLE_TEST_SKIN_TITLE) || defined(HLE_TEST_SKIN_SAVE) || defined(HLE_TEST_SKIN_SLOT) || defined(HLE_TEST_SAVE_FLOW) || defined(HLE_TEST_SAVE_FRESH) || defined(HLE_TEST_MENUS)
 #include "utilities/save_controller.h"
 #include "controllers/scene_controller.h"
 #include "controllers/menu_controller.h"
@@ -36,18 +39,29 @@
 #include "game/boss/boss.h"
 #endif
 
+#include "utilities/ui_pages.h"
+#include <string.h>
 int hle_task_log;
 float hle_dummy_damage;
 int hle_dummy_hits;
+int hle_build_breaks;       // (HLE_DUMMY_BUILD) casts broken by a blow
 // Openings (HLE_TEST_DUMMY): time a Bonus boss spends not attacking, and how many such gaps
-float hle_open_time, hle_open_cur;
+float hle_open_time, hle_open_cur, hle_open_dmg;
 int hle_open_gaps;
+bool hle_roll_in;       // test aid (HLE_HOLY_ROLLIN): roll toward the boss this frame
 bool hle_open_now;      // the boss is between attacks this frame (the bot playtest strikes then)
 void hle_open_tick(bool open, float dt)
 {
+#ifdef HLE_TEST_DUMMY   // (a Smouldering Elite: an opening with its fire burning by the boss is no opening: the sword can't reach it from there)
+    { extern bool floor_fire_near(float, float, float); Boss *b = boss_get_instance(); if (open && b && floor_fire_near(b->pos[0], b->pos[2], 26.0f)) open = false; }
+#endif
     hle_open_now = open;
     if (open) { hle_open_time += dt; hle_open_cur += dt; }
-    else if (hle_open_cur > 0.0f) { hle_open_gaps++; hle_open_cur = 0.0f; }
+    else if (hle_open_cur > 0.0f) {
+        hle_open_gaps++;
+        hle_open_dmg += fmaxf(0.0f, hle_open_cur - 0.4f) / 0.65f * 4.0f;     // the metric's sword in it: 4 a 0.65 s, after a 0.4 s reaction
+        hle_open_cur = 0.0f;
+    }
 }
 
 #ifdef HLE_TEST_FOG_AB
@@ -111,13 +125,17 @@ void *__real_malloc_uncached(size_t), *__real_asset_load(const char *, int *);
 static uint32_t lkBlockRa;     // a block being recorded: its buffers are its caller's
 void *__wrap_malloc_uncached(size_t s) { void *p = __real_malloc_uncached(s); disable_interrupts(); uint32_t ra = lkBlockRa ? lkBlockRa : (uint32_t)__builtin_return_address(0);
     for (int i = 0; i < LK_N; i++) if (lk[i].p && (uint32_t)lk[i].p == ((uint32_t)p & 0xDFFFFFFF)) lk[i].ra = ra;  // uncached pointer: the cached block it came from
-    enable_interrupts(); return p; }
+    enable_interrupts();
+    if (!lkBlockRa && s >= 8192) { extern bool tower_between_open(void), tower_draft_is_open(void), tower_map_is_open(void); debugf("[qgrow] a draw queue grew %u bytes (tag %d, %s)\n", (unsigned)s, hle_leak_cyc, tower_draft_is_open() ? "the draft" : tower_map_is_open() ? "the map" : tower_between_open() ? "a Rest, Shop or Event" : "in a fight"); }   // (no block recording: the frame's draw queue)
+    return p; }
 void *__real_malloc_uncached_aligned(int, size_t);
 void *__wrap_malloc_uncached_aligned(int a, size_t s) { void *p = __real_malloc_uncached_aligned(a, s); disable_interrupts(); uint32_t ra = (uint32_t)__builtin_return_address(0);
     for (int i = 0; i < LK_N; i++) if (lk[i].p && (uint32_t)lk[i].p == ((uint32_t)p & 0xDFFFFFFF)) lk[i].ra = ra;
     enable_interrupts(); return p; }
 void *__real_rspq_block_end(void), __real_rspq_block_begin_reuse(rspq_block_t *);
 void __wrap_rspq_block_begin_reuse(rspq_block_t *r) { lkBlockRa = (uint32_t)__builtin_return_address(0); __real_rspq_block_begin_reuse(r); }
+void __real_rspq_block_begin(void);
+void __wrap_rspq_block_begin(void) { lkBlockRa = (uint32_t)__builtin_return_address(0); __real_rspq_block_begin(); }   // (link with --wrap rspq_block_begin: a block's later buffers are its recorder's too)
 void *__wrap_rspq_block_end(void) { void *b = __real_rspq_block_end(); disable_interrupts(); uint32_t ra = (uint32_t)__builtin_return_address(0); lkBlockRa = 0;
     for (int i = 0; i < LK_N; i++) if ((uint32_t)lk[i].p == ((uint32_t)b & 0xDFFFFFFF)) lk[i].ra = ra;
     enable_interrupts(); return b; }
@@ -133,10 +151,162 @@ void hle_leak_dump(int from, int to)
     debugf("[leak] cycles %d-%d: %d blocks, %lu bytes still held\n", from, to - 1, n, (unsigned long)total);
 }
 #endif
+#if defined(HLE_TEST_TOWER_RUN) || defined(HLE_TEST_TOWER_UI) || defined(HLE_TEST_TOWER_STATS)
+// Test aid: the Tower's Shop and Event screens in a scripted climb, a press every 15 frames once each is up.
+// An Event: HLE_EVENT_CHOICE (1-based; default the first it can take), then Continue. A Shop: B leaves at
+// once; with HLE_TEST_TOWER_SHOP it buys every item by the shelf's presses (the D-pad and the stick in
+// turn): a card with too little gold (refused), then with enough, a level, a "+", the pact, potions past
+// the run's max (refused), Mend twice (once sold), Release, Up/Down along the rows, then B ([shopwalk] lines;
+// tower.c logs each [shop] buy). Each purchase's confirm: the first cancelled by B, the second by its Back row (A),
+// then Up (to Buy) and A, and the A that opened them pressed again. In a Shop's or Temper's list, A takes the first row
+#ifdef HLE_LOG_MOVE_MS
+extern uint32_t dragon_vi_frame(void);
+#define SCR_VI() ((int)dragon_vi_frame())
+#else
+#define SCR_VI() -1
+#endif
+void hle_tower_screen(joypad_inputs_t *in, joypad_buttons_t *pressed, int frame)
+{
+    extern int tower_screen(void), tower_shop_sel(void), tower_list_sel(void), tower_gold(void);
+    extern bool tower_event_done(void);
+    extern void tower_test_set_gold(int);
+    enum { SCR_SHOP = 5, SCR_SHOP_LEVEL, SCR_SHOP_PLUS, SCR_SHOP_RELEASE, SCR_EVENT };     // (tower.c's)
+    static int scr = -99, since, dirs;
+    int now = tower_screen();
+    if (now != scr) { scr = now; since = 0; debugf("[shopwalk] screen %d up (frame %d, VI %d)\n", now, frame, SCR_VI()); }
+    if (++since < 60 || (since - 60) % 15) return;      // past the screen's input delay
+    #define PRESS(f) do { pressed->f = 1; in->btn.f = 1; } while (0)
+    extern bool tower_leave_asking(void);
+    static int la;
+    if (tower_leave_asking()) {     // Leave's confirm (a Shop's B, an Event's Leave): Up to Leave, then A
+        if (la++ % 2 == 0) PRESS(d_up); else PRESS(a);
+        debugf("[shopwalk] leave confirm: %s (frame %d, VI %d)\n", la % 2 ? "Up" : "A on Leave", frame, SCR_VI());
+        return;
+    }
+    la = 0;
+    if (now == SCR_EVENT) {
+#if defined(HLE_EVENT_CHOICE) && HLE_EVENT_CHOICE > 0
+        if (!tower_event_done() && tower_list_sel() < HLE_EVENT_CHOICE - 1) { PRESS(d_down); return; }
+#endif
+        debugf("[shopwalk] event: A on row %d (%s, frame %d, VI %d)\n", tower_list_sel() + 1, tower_event_done() ? "Continue" : "its choice", frame, SCR_VI());
+        PRESS(a);
+        return;
+    }
+#ifdef HLE_TEST_TOWER_SHOP
+    static int asked, cs, k;     // (k: the shelf's script below)
+    if (ui_details()->open && ui_details()->confirm && now != 10) {      // a purchase's confirm (10: the map's node page)
+        if (asked < 2) { if (asked++ == 0) PRESS(b); else PRESS(a); k--; }      // B, then its Back row (A): cancelled; that A again
+        else if (cs++ % 2 == 0) { if (dirs++ % 2) in->stick_y = 70; else PRESS(d_up); }      // Up: Buy
+        else PRESS(a);
+        debugf("[shopwalk] confirm: %s, gold %d (frame %d)\n", asked <= 2 && cs == 0 ? (asked == 1 ? "B" : "A on Back") : cs % 2 ? "Up" : "A on Buy", tower_gold(), frame);
+        return;
+    }
+    cs = 0;
+#endif
+    if (now != SCR_SHOP) { PRESS(a); return; }      // a list: its first row
+#ifdef HLE_TEST_TOWER_SHOP
+    static const char seq[] = "gAGADARARADLLAAAARAARAUDDB";
+    if (!seq[k]) return;
+    char c = seq[k++];
+    if (c == 'g') { tower_test_set_gold(40); character.health = character.maxHealth * 0.5f; character.healthPotions = 1; }     // too little for a card; hurt and low, for Mend and potions
+    else if (c == 'G') tower_test_set_gold(600);
+    else if (c == 'A') PRESS(a);
+    else if (c == 'B') PRESS(b);
+    else if (dirs++ % 2) { if (c == 'L') in->stick_x = -70; else if (c == 'R') in->stick_x = 70; else if (c == 'U') in->stick_y = 70; else in->stick_y = -70; }
+    else { if (c == 'L') PRESS(d_left); else if (c == 'R') PRESS(d_right); else if (c == 'U') PRESS(d_up); else PRESS(d_down); }
+    debugf("[shopwalk] '%c'%s on item %d, gold %d (frame %d, VI %d)\n", c, (c == 'L' || c == 'R' || c == 'U' || c == 'D') ? (dirs % 2 ? " D-pad" : " stick") : "",
+           tower_shop_sel(), tower_gold(), frame, SCR_VI());
+#else
+    PRESS(b);
+#endif
+    #undef PRESS
+}
+#endif
+#ifdef HLE_MAP_WALK
+// Test aid (with HLE_TEST_TOWER_RUN): a path through the Tower's map that enters a Shop, an Event, a Rest in
+// rows 2-5 and an Elite when it can, once each (else a Fight), moving with the D-pad and the stick in turn, Up in between (it enters
+// nothing), then A (the node's page) and A (in); at each Rest, two of HLE_REST_SEQ's letters: H heal, T Temper (the first on its list),
+// P potions, then k (keep the boons) or n (release the n-th on the list: slot order)
+#ifndef HLE_REST_SEQ
+#define HLE_REST_SEQ "T1Hk"
+#endif
+#ifdef HLE_LOG_MOVE_MS     // (Mupen's shot numbers for each screen)
+extern uint32_t dragon_vi_frame(void);
+#define WALK_VI() ((int)dragon_vi_frame())
+#else
+#define WALK_VI() -1
+#endif
+void hle_map_walk(joypad_inputs_t *in, joypad_buttons_t *pressed, int frame)
+{
+    extern int tower_screen(void), tower_map_row(void), tower_map_sel(void), tower_map_next(int), tower_list_sel(void);
+    enum { NODE_FIGHT = 1, NODE_ELITE = 2, NODE_EVENT = 3, NODE_SHOP = 4, NODE_REST = 5, SCR_MAP = 1, SCR_REST, SCR_TEMPER, SCR_RELEASE, SCR_SHOP };     // (tower.c's)
+    static const char seq[] = HLE_REST_SEQ;
+    static int scr = -99, row = -99, since, target, moves, enters, rp, want; static bool sawRest, sawElite, sawShop, sawEvent;
+    int now = tower_screen(), r = tower_map_row();
+    if (now == 10) { if (frame % 12 == 0) { pressed->a = 1; in->btn.a = 1; debugf("[walk] the node's page: A enters (frame %d)\n", frame); } return; }     // (SCR_CONFIRM)
+    if (now >= SCR_SHOP) { hle_tower_screen(in, pressed, frame); return; }      // a Shop's screens, an Event's
+    if (now != scr || r != row) { scr = now; row = r; since = 0; want = -1; }
+    if (++since < 60) return;       // past the screen's input delay
+    bool tick = (since - 60) % 12 == 0;
+    if (now == SCR_MAP) {
+        if (since == 60) {
+            target = -1;
+            static const int PREF[5] = { NODE_SHOP, NODE_EVENT, NODE_REST, NODE_ELITE, NODE_FIGHT };
+            for (int p = 0; p < 5 && target < 0; p++) {
+                if ((PREF[p] == NODE_REST && (sawRest || r + 1 < 1 || r + 1 > 4)) || (PREF[p] == NODE_ELITE && sawElite)
+                    || (PREF[p] == NODE_SHOP && sawShop) || (PREF[p] == NODE_EVENT && sawEvent)) continue;
+                for (int l = 0; l < 3; l++) if (tower_map_next(l) == PREF[p]) { target = l; break; }
+            }
+            debugf("[walk] map row %d next: %d %d %d, cursor %d, going to %d (frame %d, VI %d)\n", r + 2, tower_map_next(0), tower_map_next(1), tower_map_next(2), tower_map_sel(), target, frame, WALK_VI());
+        }
+        if (!tick) return;
+        int sel = tower_map_sel();
+        if (target >= 0 && sel != target) {     // a step along the row: the D-pad, then the stick
+            bool right = target > sel;
+            if (moves++ % 2) in->stick_x = right ? 70 : -70;
+            else if (right) { pressed->d_right = 1; in->btn.d_right = 1; } else { pressed->d_left = 1; in->btn.d_left = 1; }
+            debugf("[walk] %s %s (frame %d)\n", moves % 2 ? "D-pad" : "stick", right ? "right" : "left", frame);
+            return;
+        }
+        int t = target >= 0 ? tower_map_next(target) : tower_map_next(sel);
+        if (t == NODE_REST && r + 1 >= 1 && r + 1 <= 4) sawRest = true;
+        if (t == NODE_ELITE) sawElite = true;
+        if (t == NODE_SHOP) sawShop = true;
+        if (t == NODE_EVENT) sawEvent = true;
+        if (enters++ % 2 && row == r) { pressed->d_up = 1; in->btn.d_up = 1; debugf("[walk] Up: enters nothing (frame %d)\n", frame); return; }   // (pick then confirm: Up never enters)
+        pressed->a = 1; in->btn.a = 1;
+        debugf("[walk] A: the node's page (frame %d)\n", frame);
+        return;
+    }
+    if (now == SCR_REST && since == 60) character.health = character.maxHealth * 0.5f;    // hurt (instant kills cost nothing): the heal shows
+    if (!tick || !seq[rp]) { if (tick) { pressed->a = 1; in->btn.a = 1; } return; }
+    if (want < 0) {
+        char c = seq[rp];
+        want = now == SCR_REST ? (c == 'H' ? 0 : c == 'T' ? 1 : 2) : now == SCR_RELEASE ? (c == 'k' ? 0 : c - '0') : 0;
+        debugf("[walk] rest screen %d: '%c', row %d (frame %d, VI %d)\n", now, now == SCR_TEMPER ? 'A' : c, want, frame, WALK_VI());
+    }
+    if (tower_list_sel() < want) { pressed->d_down = 1; in->btn.d_down = 1; return; }
+    pressed->a = 1; in->btn.a = 1;
+    if (now != SCR_TEMPER) rp++;
+}
+#endif
+
 void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 {
     static int frame;
     frame++;
+#ifdef HLE_LOG_HITGAP
+    { extern int hle_hg_frame; extern void hle_hg_tick(void); hle_hg_frame = frame; hle_hg_tick(); }
+#endif
+#ifdef HLE_SHOW_HURTBOX
+    { extern int hle_hb_frame; hle_hb_frame = frame; }
+#endif
+#ifdef HLE_TEXT_CHECK_SELFTEST
+    { extern void hle_textcheck_selftest(void); if (frame == 100) hle_textcheck_selftest(); }
+#endif
+#ifdef HLE_TEXT_CHECK     // every 600 frames: the bad strings so far (0: none)
+    { extern int hle_textcheck_bad; if (frame % 600 == 0) debugf("[textcheck] %d bad so far (frame %d)\n", hle_textcheck_bad, frame); }
+#endif
 #ifdef HLE_TEST_DIRTY_HEAP  // test aid: freed heap left full of garbage (finds memory used before it is set)
     if (frame == 400 || frame == 900) {
         void *p[64]; int n = 0;
@@ -156,6 +326,19 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         t = TICKS_READ(); for (int i = 0; i < 4096; i++) u[i] = i; t = TICKS_READ() - t; debugf("[membench] uncached store %lu ticks / 4096\n", t);
         t = TICKS_READ(); for (volatile int i = 0; i < 4096; i++) s ^= s << 1; t = TICKS_READ() - t; debugf("[membench] alu loop     %lu ticks / 4096 (%lu)\n", t, s);
     }
+#endif
+#ifdef HLE_TEST_SPRITE_COST     // test aid: the heap each of these sprites holds once loaded
+    if (frame == 300) {
+        static const char *const P[] = { "rom:/buttons/B.sprite", "rom:/buttons/Z.sprite", "rom:/buttons/Start.sprite", "rom:/buttons/StickTexture.sprite", "rom:/buttons/CLeft.sprite", "rom:/buttons/Dpad.sprite", "rom:/buttons/A.sprite" };
+        for (unsigned i = 0; i < sizeof P / sizeof P[0]; i++) {
+            heap_stats_t h0, h1; sys_get_heap_stats(&h0); sprite_t *sp = sprite_load(P[i]); sys_get_heap_stats(&h1);
+            debugf("[spritecost] %s: %d bytes (%dx%d format %d)\n", P[i], h1.used - h0.used, sp->width, sp->height, sprite_get_format(sp));
+            sprite_free(sp);
+        }
+    }
+#endif
+#ifdef HLE_OVERSCAN_X      // test aid: the Video menu's overscan setting (X and Y: -15 the smallest, 0 the 7.5% title-safe margin, more moves the HUD in)
+    { extern int8_t uiOverscanX, uiOverscanY; uiOverscanX = HLE_OVERSCAN_X; uiOverscanY = HLE_OVERSCAN_Y; }
 #endif
 #ifdef HLE_PAD_LAYOUT       // test aid: play in this button layout (0 Classic, 1 A/B Swapped, 2 Skills on C)
     { extern void joypad_set_layout(int); joypad_set_layout(HLE_PAD_LAYOUT); }     // every frame: loading the save sets it too
@@ -241,6 +424,25 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
     }
 #endif
+#if defined(HLE_LOG_JUMPBODY) && defined(HLE_LOG_HITVOL)    // test aid: the Guardian's/Unbound's drawn body against its hit capsule in its jumps (heights over the player's floor)
+    {
+        Boss *bb = boss_get_instance();
+        extern bool hle_body_yspan(const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M, float out[2]);
+        float y[2];
+        bool leap = bb && (bb->state == BOSS_STATE_POWER_JUMP || bb->state == BOSS_STATE_FLIP_ATTACK || bb->state == BOSS_STATE_COMBO_ATTACK);
+        if (bb && leap && frame % 2 == 0 && bb->mode == BOSS_MODE_COMBAT && bb->phaseIndex <= 2 && hle_body_yspan(bb->model, bb->skeleton, bb->modelMat, y)) {
+            float g = character.pos[1], r = bb->capsuleCollider.radius;
+            float lo = bb->pos[1] + fminf(bb->capsuleCollider.localCapA.v[1], bb->capsuleCollider.localCapB.v[1]) - r - g;
+            float hi = bb->pos[1] + fmaxf(bb->capsuleCollider.localCapA.v[1], bb->capsuleCollider.localCapB.v[1]) + r - g;
+            T3DVec3 w; float wy = boss_get_bone_world_pos(bb, bb->waistBoneIndex, &w) ? w.v[1] - g : -999.0f;
+            static int fl = -2, fr; if (fl == -2) { fl = t3d_skeleton_find_bone((T3DSkeleton*)bb->skeleton, "Foot-Left"); fr = t3d_skeleton_find_bone((T3DSkeleton*)bb->skeleton, "Foot-Right"); }
+            T3DVec3 f1, f2; float fy = boss_get_bone_world_pos(bb, fl, &f1) && boss_get_bone_world_pos(bb, fr, &f2) ? fminf(f1.v[1], f2.v[1]) - g : -999.0f;
+                debugf("[jb] f%d boss %d st %d t %.2f origin %.0f | body %.0f..%.0f | capsule %.0f..%.0f | waist %.0f | player %.0f away, state %d | feet %.0f\n", frame, bb->phaseIndex, bb->state, (double)bb->stateTimer,
+                       (double)(bb->pos[1] - g), (double)(y[0] - g), (double)(y[1] - g), (double)lo, (double)hi, (double)wy,
+                       (double)sqrtf((character.pos[0] - bb->pos[0]) * (character.pos[0] - bb->pos[0]) + (character.pos[2] - bb->pos[2]) * (character.pos[2] - bb->pos[2])), (int)character_get_state(), (double)fy);
+        }
+    }
+#endif
 #ifdef HLE_LOG_JUMPS     // test aid: any frame the boss moves further than it could in one step (a teleport)
     {
         Boss *bb = boss_get_instance(); static float last[3]; static bool have;
@@ -254,6 +456,54 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_LOG_RELIC    // test aid: the save's relics after boot (does the Shrine's choice survive a reboot?)
     if (frame == 600) { extern int tower_relic_equipped(void); extern bool tower_relic_owned(int); debugf("[relic] after boot: equipped %d, owned%s%s%s%s%s\n", tower_relic_equipped(),
         tower_relic_owned(0) ? " 0" : "", tower_relic_owned(1) ? " 1" : "", tower_relic_owned(2) ? " 2" : "", tower_relic_owned(3) ? " 3" : "", tower_relic_owned(4) ? " 4" : ""); }
+#endif
+#if defined(HLE_LOG_TOWERSAVE) || defined(HLE_TEST_PACKS)   // test aid: the slot's Tower progress after boot (old saves, unlocks across a reboot)
+    if (frame == 150) {
+        TowerSave ts; save_controller_get_tower(&ts);
+        const SaveData *d = save_controller_get_slot_data(save_controller_get_active_slot());
+        debugf("[tsave] slot %d: Embers %d, best floor %d, upgrades %d %d %d %d %d, relics owned %02x equipped %d, flags %02x, unlocks %03x | pad[24..27] %02x %02x %02x %02x\n",
+               save_controller_get_active_slot(), ts.embers, ts.bestFloor, ts.levels[0], ts.levels[1], ts.levels[2], ts.levels[3], ts.levels[4],
+               ts.relicsOwned, ts.relicEquipped, ts.flags, ts.unlocks, d ? d->_pad[24] : 0, d ? d->_pad[25] : 0, d ? d->_pad[26] : 0, d ? d->_pad[27] : 0);
+        extern int tower_pack_count(void); extern bool tower_pack_owned(int); extern const char *tower_pack_name(int);
+        for (int i = 0; i < tower_pack_count(); i++) debugf("[tsave] pack %s: %s\n", tower_pack_name(i), tower_pack_owned(i) ? "owned" : "not bought");
+        extern const char *tower_offers_line(void); extern int tower_milestone_count(void), tower_milestone_floor(int); extern bool tower_milestone_reached(int);
+        extern int tower_relic_equipped(void);
+        debugf("[tsave] set aside for the next climb: %s | relic worn %d | milestones reached:", tower_offers_line()[0] ? tower_offers_line() : "none", tower_relic_equipped());
+        for (int i = 0; i < tower_milestone_count(); i++) if (tower_milestone_reached(i)) debugf(" %d", tower_milestone_floor(i));
+        debugf("\n");
+    }
+#endif
+#ifdef HLE_TEST_PACKS
+    // The Shrine's Unlocks on a save with none: 500 Embers; Tower > Shrine > Unlocks (row 7), A, Up, A buys Blood (120: A its
+    // confirm, Up its Buy row, A), Down, A, Up, A buys Storm (160), Down x5, the same buys Shattering Dance (200, the first B form), then B, B. A second boot
+    // (the same ROM) logs them owned ([tsave]) and buys nothing
+    {
+        static int phase = 0, t0 = 0, step = 0;
+        int t = frame - t0;
+        if (phase == 0) {
+            if (menu_controller_is_active()) {
+                TowerSave ts; save_controller_get_tower(&ts);
+                if (!ts.unlocks) { ts.embers = 500; save_controller_set_tower(&ts); phase = 1; } else phase = 3;
+                t0 = frame;
+            } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+        } else if (phase == 1) {
+            static const char seq[] = "DDADADDDDDDDAAUA.DAUA.DDDDDAUA.B";
+            if (t >= 25 && seq[step]) {
+                char c = seq[step];
+                if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1; else if (c == 'B') { pressed->b = 1; in->btn.b = 1; } else if (c == 'A') { pressed->a = 1; in->btn.a = 1; }
+                if (c == '.') debugf("[packs] step %d at frame %d\n", step, frame);
+                step++; t0 = frame;
+            }
+            if (!seq[step] && t == 40) {
+                extern int tower_embers(void), tower_pack_count(void); extern bool tower_pack_owned(int);
+                extern const char *tower_pack_name(int);
+                debugf("[packs] owned:"); for (int i = 0; i < tower_pack_count(); i++) if (tower_pack_owned(i)) debugf(" %s", tower_pack_name(i));
+                debugf(", Embers %d\n", tower_embers());
+                phase = 2;
+            }
+        }
+        return;
+    }
 #endif
 #ifdef HLE_LOG_FPS
     {   // game frames per second, every 2 s (for hardware-path runs in Ares)
@@ -405,21 +655,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         extern float tower_boss_health_scale(int);
         extern bool tower_mod_skill_allowed(int);
         int fails = 0;
-        for (uint32_t seed = 1; seed <= 20; seed++) {
-            tower_begin_run(seed);
-            int seen = 0;
-            for (int f = 0; f < 5; f++) {
-                int bss = tower_floor_boss();
-                if ((f == 0 && bss != 0) || (f == 4 && bss != 1)) fails++;    // Guardian first, Unbound last
-                seen |= 1 << bss;
-                tower_next_floor();
-            }
-            if (seen != 0x1F) fails++;              // all five, once each
-            if (fabsf(tower_boss_health_scale(1) - 1.0f) > 0.01f) fails++;                    // circle 2: 0.7 + 0.3
-        }
-        tower_begin_run(7);
-        for (int f = 0; f < 25; f++) tower_next_floor();
-        { float h = tower_boss_health_scale(1); if (fabsf(h - 2.3f) > 0.01f && fabsf(h - 2.875f) > 0.01f) fails++; }   // circle 6: 0.7 + 4 x 0.3 + 0.4 (x1.25 on an Iron Night)
+        (void)tower_floor_boss;     // (the circle's order, its scaling: tower_test_map walks the maps)
+        { extern int tower_test_map(void); fails += tower_test_map(); }     // the map: 1,000 maps against the rules, paths, Rests, Release, Elites
         tower_begin_run(7);
         if (tower_mod_max_potions() != 3) fails++;
         if (fabsf(tower_boss_health_scale(1) - 0.7f) > 0.01f || fabsf(tower_boss_health_scale(5) - 0.385f) > 0.01f) fails++;   // circle 1, no skills (a Bonus boss: 0.7 x 0.55)
@@ -457,6 +694,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             tower_end_run(); character.maxHealth = 150.0f; character.health = 150.0f;
         }
         if (tower_mod_max_potions() != 3 || !tower_mod_skill_allowed(0) || tower_boss_health_scale(3) != 1.0f) fails++;
+        { extern int tower_test_slots(void); fails += tower_test_slots(); }     // slots, levels, a full bar, packs, weighting, save bits
+        { extern int tower_test_stage2(void); fails += tower_test_stage2(); }   // rivals, "+", duos
+        { extern int tower_test_skills(void); fails += tower_test_skills(); }   // the skills' levels and forms, the B forms' unlocks, the stagger cap
+        { extern int tower_test_shop(void), tower_test_events(void); fails += tower_test_shop(); fails += tower_test_events(); }   // gold, the Shop, the Events
+        { extern int tower_test_affixes(void); fails += tower_test_affixes(); }     // stage 6: the Elites' affixes, Berserker
+        { extern int tower_test_offerings(void); fails += tower_test_offerings(); }     // the Offerings, the milestones, the seed, the Codex's fit
         debugf("[tower] self-check: %s (%d failed)\n", fails ? "FAIL" : "ok", fails);
     }
     return;
@@ -660,6 +903,185 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         return;
     }
 #endif
+#ifdef HLE_TEST_MENUS
+#include "scenes/guardian/guardian_scene.h"
+    // Every menu by its presses, from the title and from the pause menus of a Story, a Bonus and a Tower fight
+    // (HLE_NAV_MODE: 0 D-pad and B, 1 stick and B, 2 D-pad and "A only", 3 stick and "A only": every level left by its
+    // Back row and A, a pager's Back corner by Left and A; HLE_PAD_LAYOUT the layout). Each visit walks down its path
+    // (the rows, A at each), logs "[menus] at <name> (frame f)" (Mupen's shot numbers: shoot a second run at f+20),
+    // checks a paged screen's Left/Right (a page each way, or nothing when it has one: never a cursor sideways) and that no
+    // "(Z)" is drawn in it, opens a purchase's confirm with A where marked ('c': on Back, nothing spent; B, or its Back row by
+    // A, cancels with the cursor on the row) or a Codex topic's Details ('d': Left/Right its pages, closed by B or its Back row),
+    // then backs out a level at a time: each level must land on its parent's row it came from. [menus] PASS/FAIL, [menus] done
+    // with the counts. The save starts with 5000 Embers and nothing bought (Relics: its first relic's row)
+    {
+#ifndef HLE_NAV_MODE
+#define HLE_NAV_MODE 0
+#endif
+        extern int menu_controller_test_nav(int *row, int *back, int *corner);
+        extern bool scene_is_cutscene_active(void); extern bool tower_active(void), tower_between_open(void);
+        typedef struct { const char *name, *path; int menu; char r; } Visit;     // r: 'c' a purchase's confirm, 'd' a topic's Details
+        static const Visit TITLE[] = {
+            { "Title", "", MENU_TITLE, false }, { "Bonus", "1", MENU_BONUS, false }, { "Tower", "2", MENU_TOWER, false },
+            { "Shrine", "21", MENU_SHRINE, 'c' }, { "Relics", "215", MENU_RELICS, 'c' }, { "Unlocks", "217", MENU_UNLOCKS, 'c' }, { "Armory", "218", MENU_ARMORY, false },
+            { "Offerings", "22", MENU_OFFERINGS, 'c' }, { "Codex", "23", MENU_CODEX, 'd' }, { "Nightfarer", "21", MENU_SHRINE, 'n' }, { "Load Game", "3", MENU_LOAD_GAME, false },
+            { "Settings", "4", MENU_SETTINGS, false }, { "Audio", "40", MENU_AUDIO, false }, { "Video", "41", MENU_VIDEO, false },
+            { "Overscan", "411", 100, false }, { "Controls", "42", MENU_CONTROLS, false }, { "Skins", "44", MENU_SKINS, false }, { "Settings Sword", "45", MENU_ARMORY, false },
+            { "Credits", "5", MENU_CREDITS, false }, { NULL, NULL, 0, false } };
+        static const Visit PAUSE[] = {
+            { "Pause", "", MENU_MAIN, false }, { "Pause Settings", "3", MENU_SETTINGS, false }, { "Pause Audio", "30", MENU_AUDIO, false },
+            { "Pause Video", "31", MENU_VIDEO, false }, { "Pause Overscan", "311", 100, false }, { "Pause Settings Controls", "32", MENU_CONTROLS, false },
+            { NULL, NULL, 0, false } };     // (no Skins: the pause Settings hide them)
+        static const Visit TPAUSE[] = {
+            { "Tower Pause", "", MENU_MAIN, false }, { "Stats", "1", MENU_RUN, false }, { "Tower Pause Codex", "4", MENU_CODEX, 'd' },
+            { "Tower Pause Settings", "3", MENU_SETTINGS, false }, { "Tower Pause Settings Controls", "32", MENU_CONTROLS, false }, { NULL, NULL, 0, false } };
+        static const char *const GAME[] = { "Story", "Bonus", "Tower" };
+        static int phase, t0, vi, lvl, sub, game, pass, fail;
+        static int at[8];       // the row taken at each level of the path
+        static bool seen; static int rd;     // (rd: "(Z)" strings drawn when the screen came up)
+        #define PR(f) do { pressed->f = 1; in->btn.f = 1; } while (0)
+        #define CHECK(c, ...) do { if (c) pass++; else fail++; debugf("[menus] %s: ", (c) ? "PASS" : "FAIL"); debugf(__VA_ARGS__); debugf(" (frame %d)\n", frame); } while (0)
+        // the box fits its content (ui_fit): all it laid out at least 10 inside its box (the padding, 14, clear of the rounded
+        // corners), and (paged screens aside, whose pages fill the safe rect) at most 20 over and under it: as tall as its
+        // content (its width one of the fixed three)
+        #define BOXCHECK(nm, paged) do { UiRect b_ = ui_last_box(), c_ = ui_tracked(false), f_ = ui_tracked(true); \
+            if (f_.x1 > f_.x0 || f_.y1 > f_.y0) { if (f_.x0 < c_.x0) c_.x0 = f_.x0; if (f_.y0 < c_.y0) c_.y0 = f_.y0; if (f_.x1 > c_.x1) c_.x1 = f_.x1; if (f_.y1 > c_.y1) c_.y1 = f_.y1; } \
+            int gl_ = c_.x0 - b_.x0, gt_ = c_.y0 - b_.y0, gr_ = b_.x1 - c_.x1, gb_ = b_.y1 - c_.y1; \
+            bool in_ = gl_ >= 10 && gt_ >= 10 && gr_ >= 10 && gb_ >= 10, snug_ = (paged) || (gt_ <= 20 && gb_ <= 20); \
+            CHECK(in_ && snug_, "%s: its box %d,%d-%d,%d, its content %d,%d-%d,%d: gaps left %d top %d right %d bottom %d%s", nm, \
+                  b_.x0, b_.y0, b_.x1, b_.y1, c_.x0, c_.y0, c_.x1, c_.y1, gl_, gt_, gr_, gb_, (paged) ? " (paged)" : ""); } while (0)
+        bool stick = HLE_NAV_MODE & 1, aOnly = HLE_NAV_MODE >= 2;
+        int t = frame - t0, row, back, corner, m = menu_controller_test_nav(&row, &back, &corner);
+        Boss *boss = boss_get_instance();
+        const Visit *vs = phase == 1 ? TITLE : game == 2 ? TPAUSE : PAUSE;
+        if (phase == 0) {       // the title menu
+            if (menu_controller_is_active() && !boss) { if (t > 40) { phase = 1; t0 = frame; vi = 0; lvl = 0; sub = 0;
+                TowerSave ts; save_controller_get_tower(&ts);       // (every purchase there to ask for)
+                ts.embers = 5000; ts.unlocks = 0; ts.relicsOwned = 0; ts.relicEquipped = 0; ts.offers = 0; ts.flags &= ~TOWER_FLAG_NIGHTFARER;
+                for (int u = 0; u < 5; u++) ts.levels[u] = 0;
+                save_controller_set_tower(&ts); } }
+            else { t0 = frame; if (!boss && frame > 200 && frame % 30 == 0) PR(a); }
+            return;
+        }
+        if (phase == 2) {       // start the next game: Story (row 0), Bonus > Fallen Warrior, Tower > Climb; skip to the fight; pause
+            static const char *const START[] = { "A", "AA", "AA" };
+            const char *sq = START[game];
+            if (t >= 20 && sub == 0 && m == MENU_TITLE && row != game) { if (row > game) pressed->d_up = 1; else pressed->d_down = 1; t0 = frame; return; }   // (the title's row: Story, Bonus, Tower)
+            if (t >= 20 && sq[sub]) { PR(a); sub++; t0 = frame; return; }
+            if (!sq[sub]) {
+                if (boss && boss->mode == BOSS_MODE_COMBAT && !scene_is_cutscene_active() && scene_get_game_state() == GAME_STATE_PLAYING && !(game == 2 && tower_between_open())) {
+                    if (t > 30 && frame % 1500 == 0) { PR(start); phase = 3; t0 = frame; vi = 0; lvl = 0; sub = 0; debugf("[menus] %s fight, paused (frame %d)\n", GAME[game], frame); }
+                } else { t0 = frame; if (frame % 20 == 0) PR(a); }
+                if (character.health < character.maxHealth) character.health = character.maxHealth;
+            }
+            return;
+        }
+        if (phase == 4) {       // Main Menu: back to the title for the next game (or done)
+            if (t == 30) { if (row != MENU_MAIN_QUIT) { pressed->d_down = 1; t0 = frame - 20; } else PR(a); }
+            if (t > 40 && menu_controller_is_active() && !boss) {
+                if (++game < 3) { phase = 2; t0 = frame; sub = 0; }
+                else { debugf("[menus] done: mode %d layout %d, %d PASS, %d FAIL\n", HLE_NAV_MODE,
+#ifdef HLE_PAD_LAYOUT
+                               HLE_PAD_LAYOUT,
+#else
+                               0,
+#endif
+                               pass, fail); phase = 5; }
+            }
+            return;
+        }
+        if (phase != 1 && phase != 3) return;
+        if (t < 20) return;     // a press every 20 frames
+        t0 = frame;
+        const Visit *v = &vs[vi];
+        if (!v->name) {         // the root's visits done
+            if (phase == 1) { phase = 2; game = 0; sub = 0; } else { phase = 4; }
+            return;
+        }
+        int depth = (int)strlen(v->path);
+        // a move: the D-pad or the stick, one push a press
+        #define MOVE(d_) do { char dir = (d_); if (stick) { if (dir == 'U') in->stick_y = 70; else if (dir == 'D') in->stick_y = -70; else if (dir == 'L') in->stick_x = -70; else in->stick_x = 70; } \
+                               else if (dir == 'U') pressed->d_up = 1; else if (dir == 'D') pressed->d_down = 1; else if (dir == 'L') pressed->d_left = 1; else pressed->d_right = 1; } while (0)
+        if (sub == 0) {         // down the path
+            if (lvl < depth) {
+                int want = v->path[lvl] - '0';
+                if (row != want) { MOVE(row < want ? 'D' : 'U'); return; }
+                at[lvl++] = want; PR(a); return;
+            }
+            CHECK(m == v->menu, "%s: menu %d (want %d), row %d, Back row %d", v->name, m, v->menu, row, back);
+            debugf("[menus] at %s%s%s (frame %d)\n", phase == 3 && game < 2 ? GAME[game] : "", phase == 3 && game < 2 ? " " : "", v->name, frame);
+            if (m != MENU_TITLE && m != 100) BOXCHECK(v->name, m == MENU_RUN || m == MENU_CODEX);     // (the overscan screen: its corner marks and hint over the scene)
+            bool paged = m == MENU_RUN || m == MENU_CODEX || m == MENU_SHRINE || m == MENU_RELICS || m == MENU_UNLOCKS || m == MENU_OFFERINGS || m == MENU_SKINS;
+            sub = paged ? 10 : v->r ? 1 : 3; rd = ui_test_z_drawn; return;
+        }
+        extern int menu_controller_test_pages(int *per), tower_embers(void);
+        static int row0, pg0, e0, lr, pgR;
+        // a paged screen: no "(Z)" drawn in it (the frames since it came up), then Right and Left: a page each way (a list's
+        // cursor onto that page's first row; Stats'/the Codex's page), or with one page nothing (the cursor where it was)
+        int per_, pages_ = menu_controller_test_pages(&per_), pgNow = m == MENU_RUN || m == MENU_CODEX ? corner : per_ ? row / per_ : 0;
+        if (sub == 10) { CHECK(ui_test_z_drawn == rd, "%s: no \"(Z)\" drawn in it (%d)", v->name, ui_test_z_drawn - rd); row0 = row; pg0 = pgNow; lr = pages_; MOVE('R'); sub = 11; return; }
+        if (sub == 11) {
+            pgR = pg0 + 1 < lr ? pg0 + 1 : pg0;
+            CHECK(m == v->menu && pgNow == pgR && (lr > 1 || row == row0), "%s: Right: page %d -> %d of %d, row %d -> %d", v->name, pg0 + 1, pgNow + 1, lr, row0, row);
+            MOVE('L'); sub = 12; return;
+        }
+        if (sub == 12) {
+            int want = pgR > 0 ? pgR - 1 : 0;
+            CHECK(m == v->menu && pgNow == want && (lr > 1 || row == row0), "%s: Left: page %d (want %d), row %d", v->name, pgNow + 1, want + 1, row);
+            CHECK(ui_test_z_drawn == rd, "%s: still no \"(Z)\" after the turns", v->name);
+            sub = v->r ? 1 : 3; return;
+        }
+        if (sub == 1) {         // 'c': a purchase's confirm (A on the row; Relics: its first relic's row); 'd': a Codex topic's Details (A on row 0)
+            if (v->r == 'c' && m == MENU_RELICS && row != 1) { MOVE(row < 1 ? 'D' : 'U'); return; }
+            if (v->r == 'n' && row != 6) { MOVE(row < 6 ? 'D' : 'U'); return; }     // (the Shrine's Nightfarer row)
+            if (v->r == 'd' && row != 0) { MOVE(row < 0 ? 'D' : 'U'); return; }
+            row0 = row; e0 = tower_embers(); PR(a); sub = 2; seen = false; return;
+        }
+        if (sub == 2) {
+            UiPanel *dp = ui_details();
+            if (!seen) {
+                seen = true; rd = ui_test_z_drawn;
+                if (v->r != 'd') CHECK(dp->open && dp->confirm && dp->owner == UI_OWNER_MENU && dp->button == 1 && tower_embers() == e0, "%s: A opens its confirm (\"%s\"), on Back, nothing spent (Embers %d)", v->name, dp->title, tower_embers());
+                else CHECK(dp->open && !dp->confirm && dp->owner == UI_OWNER_MENU, "%s: A opens the topic's Details (%d pages)", v->name, dp->pg.pages);
+                debugf("[menus] at %s %s (frame %d)\n", v->name, v->r != 'd' ? "confirm" : "Details", frame);
+                if (!dp->open) { sub = 3; return; }
+                BOXCHECK(v->r != 'd' ? "Confirm" : "Details", v->r == 'd');
+                lr = dp->pg.pages; pg0 = dp->pg.page;
+                if (v->r == 'd') { MOVE('R'); sub = 6; } return;
+            }
+            if (!dp->open) {
+                CHECK(m == v->menu && row == row0 && tower_embers() == e0, "%s: %s closed by %s: nothing spent (Embers %d), the cursor on its row (%d)", v->name, v->r != 'd' ? "the confirm" : "Details", aOnly ? "its Back row" : "B", tower_embers(), row);
+                sub = 3; return;
+            }
+            CHECK(ui_test_z_drawn == rd, "%s: no \"(Z)\" in its %s", v->name, v->r != 'd' ? "confirm" : "Details");
+            if (!aOnly) PR(b); else PR(a);      // (the cursor on Back: A takes Back)
+            return;
+        }
+        if (sub == 6) { UiPanel *dp = ui_details(); CHECK(dp->open && dp->pg.page == (lr > 1 ? pg0 + 1 : pg0), "%s: Details' Right turns a page (%d of %d)", v->name, dp->pg.page + 1, lr); MOVE('L'); sub = 7; return; }
+        if (sub == 7) { UiPanel *dp = ui_details(); CHECK(dp->open && dp->pg.page == pg0, "%s: Details' Left turns back (%d)", v->name, dp->pg.page + 1); sub = 2; return; }
+        if (sub == 3) { sub = 4; return; }      // (a moment for the shot)
+        // back up the path, a level at a time
+        if (lvl == 0) { vi++; sub = 0; return; }
+        if (sub == 4) {
+            if (!aOnly || m == 100) { if (aOnly) PR(a); else PR(b); sub = 5; return; }     // (the overscan screen: A saves, B cancels)
+            if (back >= 0) { if (row != back) { MOVE(row < back ? 'D' : 'U'); return; } PR(a); sub = 5; return; }
+            if (row != -1) { MOVE('U'); return; }               // a pager: Up to its Back row (-1), A
+            PR(a); sub = 5; return;
+        }
+        if (sub == 5) {
+            lvl--;
+            const char *pm = v->path;
+            int pmenu = lvl == 0 ? vs[0].menu : -1;
+            for (int k = 0; vs[k].name && pmenu < 0; k++) if ((int)strlen(vs[k].path) == lvl && !strncmp(vs[k].path, pm, lvl)) pmenu = vs[k].menu;
+            CHECK(m == pmenu && row == at[lvl], "%s: %s from level %d: menu %d row %d (want %d row %d)", v->name, aOnly ? "its Back row" : "B", lvl + 1, m, row, pmenu, at[lvl]);
+            sub = 4; return;
+        }
+        #undef MOVE
+        #undef PR
+        #undef CHECK
+        return;
+    }
+#endif
 #ifdef HLE_TEST_CONTROLS
     // Title > Settings > Controls: Right (A/B Swapped), Right (Skills on C), Down, Right (camera 4);
     // the remap of each layout; then B back
@@ -707,9 +1129,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
 #ifdef HLE_SHRINE_NONE
-            static const char seq[] = "DDADADDDDDADDABDAUAUUAB";    // ... and back up to Relics, Up x2 (to None), A: no relic
+            static const char seq[] = "DDADADDDDDADDAUABDAUAUAUUAB";    // ... and back up to Relics, Up x2 (to None), A: no relic
 #else
-            static const char seq[] = "DDADADDDDDADDABDA";    // ... Relics: A, Down x2 (Saint's Chalice), A buys it, B; Nightfarer
+            static const char seq[] = "DDADADDDDDADDAUABDAUA";    // ... Relics: A, Down x2 (Saint's Chalice), A buys it, B; Nightfarer
 #endif
             if (t >= 25 && seq[step]) {
                 char c = seq[step];
@@ -734,6 +1156,239 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         return;
     }
 #endif
+#ifdef HLE_TEST_TOWER_NAV
+    // The Tower's screens by their presses (HLE_NAV_MODE: 0 the D-pad, 1 the stick, 2 "A only": moves on the D-pad, every
+    // exit by its own row or button and A, never B or R), in the layout HLE_PAD_LAYOUT: a run from the title, its first
+    // fight (no map before it), the draft, the map (Up/Down enter nothing, B the pause menu, R Details, A the node's page,
+    // its B or Back the map, its A in), a Shop, an Event and a Rest on the way (R, B a level back), the music on each
+    // screen, then a death. [nav] PASS / FAIL lines; [nav] done with the counts
+    {
+#ifndef HLE_NAV_MODE
+#define HLE_NAV_MODE 0
+#endif
+        extern int tower_screen(void), tower_map_row(void), tower_map_sel(void), tower_map_next(int), tower_list_sel(void), tower_shop_sel(void), tower_floor(void), tower_draft_selected(void), tower_gold(void);
+        extern bool tower_active(void), tower_between_open(void), tower_draft_is_open(void), tower_event_done(void), tower_leave_asking(void);
+        extern const char *audio_music_now(void); extern int menu_controller_test_state(int *);
+        enum { S_MAP = 1, S_REST, S_TEMPER, S_RELEASE, S_SHOP, S_EVENT = 9, S_CONFIRM = 10, N_SHOP = 4, N_EVENT = 3, N_REST = 5, N_ELITE = 2 };
+        static int phase, t0, k, pass, fail, entry = -99, mapsSeen, lastRow = -9, sawShop, sawEvent, sawRest, sawElite, fights;
+        static char seq[64]; static int expectRow, shopGold, rdc; static bool rdOpen;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0;
+        bool det = ui_details()->open && !ui_details()->confirm, menu = menu_controller_is_active();
+        #define PR(f) do { pressed->f = 1; in->btn.f = 1; } while (0)
+        #define CHECK(c, ...) do { if (c) pass++; else fail++; debugf("[nav] %s: ", (c) ? "PASS" : "FAIL"); debugf(__VA_ARGS__); debugf(" (frame %d)\n", frame); } while (0)
+        #define MUSIC(where) debugf("[nav] music on %s: %s\n", where, audio_music_now()[0] ? audio_music_now() : "silent")
+        if (phase == 0) {       // the title: Tower, Climb
+            if (menu_controller_is_active()) { phase = 1; t0 = frame; k = 0; }
+            else if (frame > 200 && frame % 30 == 0) PR(a);
+            return;
+        }
+        if (phase == 1) {
+            static const char ts[] = "DDAA";
+            if (t >= 20 && ts[k]) { if (ts[k] == 'D') pressed->d_down = 1; else PR(a); k++; t0 = frame; }
+            if (!ts[k] && boss && tower_active() && boss->mode == BOSS_MODE_COMBAT && t > 30) {
+                CHECK(!tower_between_open() && boss->phaseIndex == 1 && tower_floor() == 1, "the run's first floor is the Guardian, no map before it (between %d, phase %d)", tower_between_open(), boss->phaseIndex);
+                MUSIC("the first fight");
+                phase = 2; t0 = frame; fights = 1;
+            }
+            return;
+        }
+        if (phase == 2) {       // a fight: 60 frames, then the kill
+            if (t == 30) MUSIC("a fight");
+            if (t >= 60 && t % 60 == 0 && boss->health > 0.0f) boss_apply_damage(boss, boss->maxHealth * 2.0f);     // (again if a move's state shrugged it off)
+            if (t > 60 && tower_draft_is_open()) { phase = 3; t0 = frame; entry = -99; }
+            return;
+        }
+        if (phase == 5) {       // the end: a death, its screen
+            if ((t == 10 || t == 40) && character_get_state() != CHAR_STATE_DEAD) { character.health = 1.0f; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(1000.0f); }   // (twice: Unbroken)
+            if (t == 200) { CHECK(character_get_state() == CHAR_STATE_DEAD, "the death screen"); MUSIC("the death screen");
+                            debugf("[nav] done: mode %d layout %d, %d PASS, %d FAIL, shop %d event %d rest %d elite %d, %d fights\n", HLE_NAV_MODE,
+#ifdef HLE_PAD_LAYOUT
+                                   HLE_PAD_LAYOUT,
+#else
+                                   0,
+#endif
+                                   pass, fail, sawShop, sawEvent, sawRest, sawElite, fights); phase = 6; }
+            return;
+        }
+        if (phase != 3) return;
+        // between floors: a script for each screen as it comes up, a press every 24 frames (past the screens' input delay)
+        int now = tower_draft_is_open() ? -1 : tower_screen();
+        if (!tower_between_open() && !menu) {      // a fight began
+            fights++;
+            CHECK(boss && boss->mode == BOSS_MODE_COMBAT, "a fight's node entered: its fight (floor %d)", tower_floor());
+            if (tower_floor() >= 9 || (sawShop && sawEvent && sawRest)) { phase = 5; t0 = frame; return; }
+            phase = 2; t0 = frame; return;
+        }
+        if (now != entry && !menu && !det && now != S_CONFIRM && now != S_TEMPER && now != S_RELEASE && !(entry == S_REST && now == S_MAP && seq[0] == 'B' && k == 1)) {
+            if (entry != -99 && !seq[k]) {      // the script's last press left that screen: where it went
+                if (entry == -1) CHECK(now == S_MAP, "the draft's A takes the card: the map (%d)", now);
+                else if (entry == S_MAP) CHECK(tower_map_row() == expectRow + 1, "A, A: the node entered (row %d -> %d, screen %d)", expectRow + 2, tower_map_row() + 2, now);
+                else CHECK(now == S_MAP, "screen %d left by its last press (%c): the map (%d)", entry, k ? seq[k - 1] : '-', now);
+            }
+            entry = now; k = 0; t0 = frame;
+            bool aOnly = HLE_NAV_MODE == 2;
+            if (now == -1) { MUSIC("the draft"); snprintf(seq, sizeof seq, aOnly ? ">v^A" : "rBB>v^A"); }
+            else if (now == S_MAP) {
+                MUSIC("the map");
+                // the node to go to: a Shop, an Event, a Rest, an Elite not seen yet, else straight on
+                int target = -1;
+                static const int PREF[4] = { N_SHOP, N_EVENT, N_REST, N_ELITE };
+                for (int p = 0; p < 4 && target < 0; p++) {
+                    if ((PREF[p] == N_SHOP && sawShop) || (PREF[p] == N_EVENT && sawEvent) || (PREF[p] == N_REST && (sawRest || tower_map_row() + 1 >= 5)) || (PREF[p] == N_ELITE && sawElite)) continue;
+                    for (int l = 0; l < 3; l++) if (tower_map_next(l) == PREF[p]) { target = l; break; }
+                }
+                if (target < 0) target = tower_map_sel();
+                int n = 0, sel = tower_map_sel();
+                n += snprintf(seq + n, sizeof seq - n, aOnly ? "AvA" : "^vBBrBABAvA");     // (A only: the page's Back row by Down, A)
+                for (; sel < target; sel++) seq[n++] = '>';
+                for (; sel > target; sel--) seq[n++] = '<';
+                seq[n++] = 'A'; seq[n++] = 'A'; seq[n] = 0;
+                int nt = tower_map_next(target);
+                sawShop |= nt == N_SHOP; sawEvent |= nt == N_EVENT; sawRest |= nt == N_REST; sawElite |= nt == N_ELITE;
+                expectRow = tower_map_row();
+                mapsSeen++;
+                debugf("[nav] map row %d: next %d %d %d, cursor %d, to %d: \"%s\"\n", tower_map_row() + 2, tower_map_next(0), tower_map_next(1), tower_map_next(2), tower_map_sel(), target, seq);
+            }
+            else if (now == S_SHOP) {      // Mend's confirm (gold and hurt for it): B or its Back row cancels, then Buy
+                MUSIC("a Shop"); extern void tower_test_set_gold(int); tower_test_set_gold(999); character.health = character.maxHealth * 0.5f; shopGold = 999;
+                snprintf(seq, sizeof seq, aOnly ? ">vvAAA^AvAAA^A" : "vrB>vABAvABBB^A"); }     // (then Leave's confirm: cancelled, asked again, Up, Leave)
+            else if (now == S_EVENT) { MUSIC("an Event"); snprintf(seq, sizeof seq, aOnly ? "vvvAAA^A" : "rBBBB^A"); }     // (Leave's confirm the same way)
+            else if (now == S_REST) { MUSIC("a Rest"); snprintf(seq, sizeof seq, aOnly ? "AA" : "BAAvABrB^^AB"); }
+            else seq[0] = 0;
+        }
+        if (t < 50 || (t - 50) % 24 || !seq[k]) {      // (the first press past the screens' 0.75 s input delay)
+            if (t > 50 && (t - 50) % 24 == 14 && k > 0 && rdOpen && ui_details()->open)      // a panel (Details, a confirm) up: no "(Z)" in it
+                CHECK(ui_test_z_drawn == rdc, "no \"(Z)\" drawn in the %s (screen %d)", ui_details()->confirm ? "confirm" : "Details", tower_screen());
+            if (t > 50 && (t - 50) % 24 == 12) { rdc = ui_test_z_drawn; rdOpen = ui_details()->open; }
+            if (t > 50 && (t - 50) % 24 == 12 && k > 0) {     // the last press's check, half-way to the next
+                char c = seq[k - 1]; int sc = tower_screen();
+                if (entry == -1) {
+                    if (c == 'r') CHECK(det, "the draft's Z: Details open");
+                    if (c == 'B') CHECK(tower_draft_is_open() && !det && !menu, "the draft's B: %s (still the draft)", k == 2 ? "Details closed" : "nothing");
+                    if (c == 'v') CHECK(tower_draft_selected() == 3, "Down: Skip (%d)", tower_draft_selected());
+                    if (c == '^') CHECK(tower_draft_selected() == 1, "Up: back on the card (%d)", tower_draft_selected());
+                    if (c == 'A') CHECK(!tower_draft_is_open() && (sc == S_MAP || !tower_between_open()), "A takes the card: the map (%d)", sc);
+                } else if (entry == S_MAP) {
+                    int pos = k - 1; bool aOnly = HLE_NAV_MODE == 2;
+                    if (!aOnly && pos <= 1) CHECK(sc == S_MAP && tower_map_row() == expectRow && !menu, "the map's %s enters nothing", c == '^' ? "Up" : "Down");
+                    if (!aOnly && pos == 2) { int opt; int m = menu_controller_test_state(&opt); CHECK(menu && m == 0 && opt == 1, "the map's B: the pause menu, on Stats (menu %d row %d)", m, opt); }
+                    if (!aOnly && pos == 3) CHECK(!menu && sc == S_MAP, "B again closes it: the map");
+                    if (!aOnly && pos == 4) CHECK(det && sc == S_MAP, "the map's Z: the node's Details");
+                    if (!aOnly && pos == 5) CHECK(!det && sc == S_MAP && !menu, "B closes them: the map (no pause menu)");
+                    if ((!aOnly && pos == 6) || (aOnly && pos == 0)) CHECK(sc == S_CONFIRM && tower_map_row() == expectRow, "A: the node's page, nothing entered (%d)", sc);
+                    if (!aOnly && pos == 7) CHECK(sc == S_MAP && tower_map_row() == expectRow, "the page's B: the map");
+                    if ((!aOnly && pos == 10) || (aOnly && pos == 2)) CHECK(sc == S_MAP && tower_map_row() == expectRow, "the page's Back row (Down, A): the map");
+                    if (!seq[k]) CHECK(tower_map_row() == expectRow + 1, "A, A: the node entered (row %d -> %d)", expectRow + 2, tower_map_row() + 2);
+                } else if (entry == S_SHOP) {
+                    bool aOnly = HLE_NAV_MODE == 2; UiPanel *dp = ui_details();
+                    int ask1 = aOnly ? 4 : 6, cancel = ask1 + 1, ask2 = ask1 + 2, toBuy = ask1 + 3, buy = ask1 + 4;      // (Mend's confirm, by k)
+                    if (!aOnly && c == 'r') CHECK(det, "the Shop's Z on A level: Details open");
+                    if (!aOnly && k == 3) CHECK(!det && sc == S_SHOP, "B closes them: still the Shop (%d)", sc);
+                    if (!aOnly && k == 1) CHECK(tower_shop_sel() == 3, "Down: the row under (%d)", tower_shop_sel());
+                    if (!aOnly && k == 4) CHECK(tower_shop_sel() == 4, "Right: the next item (%d)", tower_shop_sel());
+                    if (k == ask1 - 1) CHECK(tower_shop_sel() == 7, "on Mend (%d)", tower_shop_sel());
+                    if (k == ask1 || k == ask2) CHECK(dp->open && dp->confirm && dp->button == 1 && tower_gold() == shopGold, "Mend's A: its confirm (\"%s\"), on Back, nothing paid (gold %d)", dp->title, tower_gold());
+                    if (k == cancel) CHECK(!dp->open && sc == S_SHOP && tower_shop_sel() == 7 && tower_gold() == shopGold, "%s cancels: nothing paid, the cursor on Mend (gold %d)", aOnly ? "its Back row (A)" : "B", tower_gold());
+                    if (k == toBuy) CHECK(dp->open && dp->button == 0, "%s: on Buy", aOnly ? "Up" : "Down");
+                    if (k == buy) CHECK(!dp->open && sc == S_SHOP && tower_gold() == shopGold - 50, "Buy: Mend paid (gold %d -> %d)", shopGold, tower_gold());
+                    int L = (int)strlen(seq);
+                    if (k == L - 4 || k == L - 2) CHECK(tower_leave_asking() && dp->button == 1 && sc == S_SHOP, "the Shop's %s: Leave's confirm, on Back", aOnly ? "Leave (A)" : "B");
+                    if (k == L - 3) CHECK(!dp->open && sc == S_SHOP && tower_gold() == shopGold - 50, "%s on it: still the Shop", aOnly ? "its Back row (A)" : "B");
+                    if (!seq[k]) CHECK(sc == S_MAP, "Leave's Leave: the Shop left, the map (%d)", sc);
+                } else if (entry == S_EVENT) {
+                    if (c == 'r') CHECK(det, "the Event's Z: Details open");
+                    if (c == 'B' && k == 2) CHECK(!det && sc == S_EVENT, "B closes them: still the Event (%d)", sc);
+                    bool aOnly = HLE_NAV_MODE == 2; UiPanel *dp = ui_details(); int L = (int)strlen(seq);
+                    if (k == L - 4 || k == L - 2) CHECK(tower_leave_asking() && dp->button == 1 && sc == S_EVENT, "the Event's %s: Leave's confirm, on Back", aOnly ? "Leave (A)" : "B");
+                    if (k == L - 3) CHECK(!dp->open && sc == S_EVENT && !tower_event_done(), "%s on it: still the Event, nothing chosen", aOnly ? "its Back row (A)" : "B");
+                    if (!seq[k]) CHECK(sc == S_MAP, "Leave's Leave: the Event left, the map (%d)", sc);
+                } else if (entry == S_REST) {
+                    bool aOnly = HLE_NAV_MODE == 2;
+                    if (!aOnly && k == 1) CHECK(sc == S_MAP && tower_map_row() == expectRow, "the Rest's B: the map, the Rest still to choose");
+                    if (!aOnly && k == 3) CHECK(sc == S_REST, "A, A: the Rest again");
+                    if (!aOnly && k == 5) CHECK(sc == S_TEMPER || sc == S_RELEASE || sc == S_MAP, "Down, A: Temper's list (or, nothing to Temper, Down passed it: the potions taken) (%d)", sc);
+                    if (!aOnly && k == 6) CHECK(sc == S_REST && !det, "B: back to the Rest's choices (%d)", sc);
+                    if (!aOnly && k == 7) CHECK(det && sc == S_REST, "Z on its row: Details");
+                    if (!aOnly && k == 8) CHECK(!det && sc == S_REST, "B closes them: still the Rest");
+                    if (!seq[k]) CHECK(sc == S_MAP, "the Rest taken, %s: the map (%d)", aOnly ? "Keep (A)" : "B keeps the boons", sc);
+                }
+            }
+            return;
+        }
+        // a press: the moves on the D-pad, or the stick (one push a press)
+        char c = seq[k++];
+        bool stick = HLE_NAV_MODE == 1;
+        switch (c) {
+        case 'A': PR(a); break;
+        case 'B': PR(b); break;
+        case 'r': PR(z); break;     // r: the Details key (Z)
+        case '>': if (stick) in->stick_x = 70; else pressed->d_right = 1; break;
+        case '<': if (stick) in->stick_x = -70; else pressed->d_left = 1; break;
+        case '^': if (stick) in->stick_y = 70; else pressed->d_up = 1; break;
+        case 'v': if (stick) in->stick_y = -70; else pressed->d_down = 1; break;
+        default: break;     // '.': a press's time, no press
+        }
+        debugf("[nav] press %c%s on screen %d (frame %d)\n", c, stick && strchr("<>^v", c) ? " (stick)" : "", now, frame);
+        #undef PR
+        #undef CHECK
+        #undef MUSIC
+        return;
+    }
+#endif
+#ifdef HLE_TOWER_GALLERY
+    // Every Tower screen in its worst case (tower.c's tower_test_gallery), then an Elite fight's HUD and name bar, the
+    // pause menu's Stats and Build pages (A along them, Down to rows, A for a row's Details, R to close) and the death
+    // screen. [gallery] lines give each one's VI frame (build with HLE_LOG_MOVE_MS: Mupen's shot numbers)
+    {
+        extern const char *tower_test_gallery(int); extern bool tower_active(void), tower_draft_is_open(void), tower_between_open(void);
+        extern uint32_t dragon_vi_frame(void);
+#ifndef HLE_GALLERY_HOLD
+#define HLE_GALLERY_HOLD 40
+#endif
+        static int phase = 0, t0 = 0, step = 0, k = 0;
+        Boss *boss = boss_get_instance();
+        int t = frame - t0;
+        #define PR(f) do { pressed->f = 1; in->btn.f = 1; } while (0)
+        if (phase == 0) {
+            if (menu_controller_is_active()) { phase = 1; t0 = frame; }
+            else if (frame > 200 && frame % 30 == 0) PR(a);
+        } else if (phase == 1) {
+            static const char seq[] = "DDAA";
+            if (t >= 20 && step < 4) { if (seq[step] == 'D') pressed->d_down = 1; else PR(a); step++; t0 = frame; }
+            if (step == 4 && boss && tower_active() && boss->mode == BOSS_MODE_COMBAT) { phase = 2; t0 = frame; debugf("[gallery] the run's first floor: %s, map %d (VI %d)\n", boss->name, tower_between_open(), (int)dragon_vi_frame()); }
+        } else if (phase == 2) {
+            if (t >= 60 && t % 60 == 0 && boss->health > 0.0f) boss_apply_damage(boss, boss->maxHealth * 2.0f);     // (again if a move shrugged it off)
+            if (tower_draft_is_open() && t > 60) { phase = 3; t0 = frame; }
+        } else if (phase == 3) {
+            if (t % HLE_GALLERY_HOLD == 0) {
+                const char *nm = tower_test_gallery(k);
+                if (!nm) { phase = 4; t0 = frame; step = 0; return; }
+                debugf("[gallery] %d %s (VI %d, frame %d)\n", k, nm, (int)dragon_vi_frame(), frame);
+                k++;
+            }
+        } else if (phase == 4) {      // A, A: the Elite's fight; its HUD; then the pause menu's pages
+            static const char seq[] = "AA.....SDARRRDAr.BB.....";      // (Right x3: the Build page; Down a row, A its Details, Z closes)
+            if (t >= 30 && seq[step]) {
+                char c = seq[step];
+                if (c == 'A') PR(a); else if (c == 'B') PR(b); else if (c == 'S') PR(start); else if (c == 'r') PR(z);
+                else if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1; else if (c == 'R') pressed->d_right = 1;
+                debugf("[gallery] press %c (VI %d, frame %d)\n", c, (int)dragon_vi_frame(), frame);
+                step++; t0 = frame;
+            }
+            if (!seq[step]) { phase = 6; t0 = frame; }
+        } else if (phase == 6) {      // the Elite down: its draft over the Sun's hall (its fire)
+            if (t == 1) boss_apply_damage(boss, boss->maxHealth * 2.0f);
+            if (tower_draft_is_open() && t > 1) { debugf("[gallery] the draft over the Sun's hall (VI %d, frame %d)\n", (int)dragon_vi_frame(), frame); phase = 5; t0 = frame; }     // (then the death: over the draft)
+            if (t > 600) { phase = 5; t0 = frame; }
+        } else if (phase == 5) {
+            if (t == 100 && character_get_state() != CHAR_STATE_DEAD) { character.health = 1.0f; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(1000.0f); }
+            if (t == 70) { character.health = 1.0f; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(1000.0f); debugf("[gallery] death (VI %d, frame %d)\n", (int)dragon_vi_frame(), frame); }
+        }
+        #undef PR
+        return;
+    }
+#endif
 #ifdef HLE_TEST_TOWER_STATS
     // The pause menu's Stats pages with every boon held (tower.c fills the run): Title > Tower >
     // Climb; in the fight Start, D-down (Stats), A: page 1; A: page 2; Right: page 1; Left: page 2;
@@ -743,10 +1398,45 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         Boss *boss = boss_get_instance();
         int t = frame - t0;
         if (phase == 0) {
-            if (menu_controller_is_active()) { phase = 1; t0 = frame; debugf("[stats] title at %d\n", frame); }
+            if (menu_controller_is_active()) {
+                phase = 1; t0 = frame; debugf("[stats] title at %d\n", frame);
+#ifdef HLE_SHRINE_STATE     // test aid: the Shrine's extremes: 0 nothing owned and no Embers, 1 everything owned and 65535 Embers
+                TowerSave ts; save_controller_get_tower(&ts);
+                if (HLE_SHRINE_STATE) { ts.embers = 65535; ts.unlocks = 0x1ff; ts.relicsOwned = 0x1f; ts.relicEquipped = 3; ts.flags |= TOWER_FLAG_NIGHTFARER; for (int u = 0; u < 5; u++) ts.levels[u] = 3; }
+                else { ts.embers = 0; ts.unlocks = 0; ts.relicsOwned = 0; ts.relicEquipped = 0; ts.flags &= ~TOWER_FLAG_NIGHTFARER; for (int u = 0; u < 5; u++) ts.levels[u] = 0; }
+                save_controller_set_tower(&ts);
+#endif
+#ifdef HLE_BEST_FLOOR       // test aid: the save's best floor (the milestones, the Offerings' locks, the Codex's last page)
+                { TowerSave tb; save_controller_get_tower(&tb); tb.bestFloor = HLE_BEST_FLOOR; save_controller_set_tower(&tb); }
+#endif
+            }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
             extern bool tower_active(void);
+#ifdef HLE_CODEX_WALK   // instead: Tower > Codex, every topic open and every page of it (Right turns), B closes it; to the next
+            // topic by Down (and Right onto its page)
+            {
+                extern int tower_codex_count(void); extern bool tower_codex_open_ok(int); extern const char *tower_codex_title(int);
+                extern int menu_controller_test_nav(int *, int *, int *), menu_controller_test_pages(int *);
+                static int k = 0, sub = 0; static const char pre[] = "DDADDDA";
+                UiPanel *dp = ui_details();
+                if (t < 45) return;
+                t0 = frame;
+                if (pre[step]) { char c = pre[step++]; if (c == 'D') pressed->d_down = 1; else { pressed->a = 1; in->btn.a = 1; } return; }
+                if (k >= tower_codex_count()) { if (k++ == tower_codex_count()) debugf("[codexwalk] done (frame %d)\n", frame); return; }
+                if (!dp->open) {
+                    int row, back, page, per; menu_controller_test_nav(&row, &back, &page); menu_controller_test_pages(&per);
+                    if (page < k / per) { pressed->d_right = 1; return; }
+                    if (row != k % per) { if (row < k % per) pressed->d_down = 1; else pressed->d_up = 1; return; }
+                    if (sub == 0) { debugf("[codexwalk] list, topic %d %s%s (frame %d)\n", k, tower_codex_title(k), tower_codex_open_ok(k) ? "" : " (locked)", frame); sub = 1; return; }
+                    if (sub == 1 && tower_codex_open_ok(k)) { pressed->a = 1; in->btn.a = 1; sub = 2; return; }
+                    k++; sub = 0; return;     // (closed, or locked: the next topic)
+                }
+                if (sub == 2) { debugf("[codexwalk] topic %d %s page %d/%d (frame %d)\n", k, tower_codex_title(k), dp->pg.page + 1, dp->pg.pages, frame); sub = 3; return; }
+                if (dp->pg.page + 1 < dp->pg.pages) { pressed->d_right = 1; sub = 2; return; }      // (Right: the next page)
+                pressed->b = 1; in->btn.b = 1; sub = 4; return;
+            }
+#endif
 #ifdef HLE_TITLE_SEQ    // instead: these presses on the title's menus (D/U/L/R, A, B), 1 s apart, and no climb
             {
                 static const char tseq[] = HLE_TITLE_SEQ;
@@ -754,6 +1444,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                     char c = tseq[step];
                     if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1; else if (c == 'L') pressed->d_left = 1;
                     else if (c == 'R') pressed->d_right = 1; else if (c == 'A') { pressed->a = 1; in->btn.a = 1; } else if (c == 'B') { pressed->b = 1; in->btn.b = 1; }
+                    else if (c == 'r') { pressed->z = 1; in->btn.z = 1; }
+                    else if (c == 'y' || c == 'z') {     // only on a purchase's confirm: Up onto Buy (y), A (z)
+                        UiPanel *cp = ui_details();
+                        if (cp->open && cp->confirm) { if (c == 'y') pressed->d_up = 1; else { pressed->a = 1; in->btn.a = 1; } }
+                    }
                     debugf("[stats] title step %c at frame %d\n", c, frame);
                     step++; t0 = frame;
                 }
@@ -765,7 +1460,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (step == 4 && boss && tower_active()) { phase = 2; t0 = frame; step = 0; debugf("[stats] climbing at %d\n", frame); }
         } else if (phase == 2) {
             static bool fighting;
-            if (!fighting) { if (!boss || boss->mode != BOSS_MODE_COMBAT) { t0 = frame; if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; } return; } fighting = true; t0 = frame; return; }
+            extern bool tower_between_open(void);
+            if (!fighting) { if (!boss || boss->mode != BOSS_MODE_COMBAT || tower_between_open()) { t0 = frame; if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; } return; } fighting = true; t0 = frame; return; }   // (the map first: A enters the Guardian)
+            { extern int tower_screen(void); if (tower_screen() >= 5) { hle_tower_screen(in, pressed, frame); t0 = frame; return; } }     // a Shop or an Event on the way
 #ifdef HLE_TOWER_HEALCHECK   // the healing boons, measured in the fight (every boon held: Bloodthirst 2, Rally, Phantom Step)
             if (t == 100) {
                 extern void tower_on_perfect_dodge(void); extern float tower_mod_perfect_window(void), tower_mod_damage_dealt(void);
@@ -775,13 +1472,13 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 character.health = 100.0f; bossHitBySword = true; for (int i = 0; i < 20; i++) { boss->health = boss->maxHealth; boss_apply_hit(boss, 4.0f, 0.0f); } bossHitBySword = false;
                 float steal = (character.health - 100.0f) / 20.0f;     // (an average: the Impaired curse drops some)
                 debugf("[heal] a skill's hit of 4 heals %.2f (0)\n", (double)skillSteal);
-                character.health = 200.0f; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(40.0f);
-                float lost = 200.0f - character.health, h0 = character.health;
+                character.health = mh; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(40.0f);
+                float lost = mh - character.health, h0 = character.health;
                 boss->health = boss->maxHealth; boss_apply_hit(boss, 4.0f, 0.0f);
                 float back1 = character.health - h0;
                 for (int i = 0; i < 40; i++) { boss->health = boss->maxHealth; boss_apply_hit(boss, 4.0f, 0.0f); }
                 float back = character.health - h0;
-                debugf("[heal] Rally: one hit of 4 (x%.2f after boons) wins back %.1f (4: its base)\n", (double)tower_mod_damage_dealt(), (double)back1);
+                debugf("[heal] Rally: one hit of 4 (x%.2f after boons) wins back %.1f (0.5: Lv 1, an eighth of its base; TOWER_STATS holds Rally Lv 1/2)\n", (double)tower_mod_damage_dealt(), (double)back1);
                 character.health = 100.0f; tower_on_perfect_dodge();
                 debugf("[heal] damage x%.2f max %.0f | sword hit 4 heals %.2f (12%%x2 of base: 0.96) | lost %.1f, Rally won back %.1f (%.0f%%, all: 100) | perfect dodge +%.1f (2%%: %.1f), window %.2f s\n",
                        (double)tower_mod_damage_dealt(), (double)mh, (double)steal, (double)lost, (double)back, (double)(lost > 0.0f ? 100.0f * back / lost : 0.0f),
@@ -793,17 +1490,26 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifdef HLE_STATS_SEQ     // another walk through the pause menu (S, D/L/R, A, B)
             static const char seq[] = HLE_STATS_SEQ;
 #else
-            static const char seq[] = "SDAARALADDDADDAB";
-#endif   // pause, Stats, Next, Right (stays on Prev), Prev, Left, Back (A only), down to Controls, its Back; B closes the pause menu
+            static const char seq[] = "SDARRRRRLDDADBBDDABB";
+#endif   // pause, Stats, Right x4 (the full bar: Stats 1-3, Build 1-2), Right on the last (stays), Left (Build 1),
+         // Down x2 (a row), A (its Details), Down (it stays open), B closes it, B (the pause menu, on Stats), down to Settings, A, B
+         // back to the pause menu, B closes it
             if (t >= (step ? 60 : 300) && seq[step]) {
                 char c = seq[step];
                 extern bool tower_active(void);
                 if (!step) debugf("[stats] in the Tower: %d\n", tower_active());
                 if (c == 'S') { pressed->start = 1; in->btn.start = 1; } else if (c == 'D') pressed->d_down = 1;
                 else if (c == 'A') { pressed->a = 1; in->btn.a = 1; } else if (c == 'B') { pressed->b = 1; in->btn.b = 1; }
-                else if (c == 'R') pressed->d_right = 1; else if (c == 'L') pressed->d_left = 1;
+                else if (c == 'R') pressed->d_right = 1; else if (c == 'L') pressed->d_left = 1; else if (c == 'U') pressed->d_up = 1;
+                else if (c == 'r') { pressed->z = 1; in->btn.z = 1; }
                 debugf("[stats] step %c at frame %d\n", c, frame);
                 step++; t0 = frame;
+            }
+            if (step && t == 20) {     // where the press left it
+                extern int menu_controller_test_state(int *), menu_controller_test_run(int *, int *, int *);
+                int opt, page, pages, row, m = menu_controller_test_state(&opt), sel = menu_controller_test_run(&page, &pages, &row);
+                debugf("[stats] after %c: menu %d (active %d) row %d | Stats page %d of %d, corner %d, Build row %d, Details %d\n", seq[step - 1], m, menu_controller_is_active(), opt,
+                       page + 1, pages, sel, row, ui_details()->open);
             }
         }
         return;
@@ -828,7 +1534,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             } else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
             // DDD A (Tower) . A? no: D (Shrine) A; D D A (Honed Blade); D D D D A (Halfmoon); B; U A (Climb)
-            static const char seq[] = "DDA.DA.DDA.B.UA";
+            static const char seq[] = "DDA.DA.DDAUA.B.UA";
             if (t >= 25 && seq[step]) {
                 char c = seq[step];
                 if (c == 'D') pressed->d_down = 1; else if (c == 'U') pressed->d_up = 1;
@@ -842,12 +1548,21 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             }
         } else if (phase == 2) {
             static bool fighting;
-            if (!fighting) { if (!boss || boss->mode != BOSS_MODE_COMBAT) { t0 = frame; return; } fighting = true; t0 = frame; return; }
+            extern bool tower_between_open(void), tower_map_is_open(void);
+            if (!fighting) { if (!boss || boss->mode != BOSS_MODE_COMBAT || tower_between_open()) { t0 = frame; if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; } return; } fighting = true; t0 = frame; return; }   // (the map first)
             if (t == 40) pressed->d_up = 1;
             if (t == 44) debugf("[ui] floor 1, D-up: state %d (%s)\n", character_get_state(), character_get_state() == CHAR_STATE_SKILL ? "CAST: not locked" : "locked");
             if (t == 120) { debugf("[ui] kill at %d\n", frame); boss_apply_damage(boss, boss->maxHealth * 2.0f); }
             if (t == 240) debugf("[ui] draft %s at %d\n", tower_draft_is_open() ? "open" : "CLOSED", frame);
             if (t == 300) { pressed->a = 1; in->btn.a = 1; }      // the first card
+            static bool mapSeen;
+            if (t == 340 && !mapSeen) { mapSeen = true; debugf("[ui] map %s at %d\n", tower_map_is_open() ? "open" : "CLOSED", frame); }
+            if (t >= 340 && t < 420 && tower_between_open()) {     // the map: A on its node (a Rest: heal, keep the boons; a Shop: B; an Event: A), then the map again
+                extern int tower_screen(void);
+                t0 = frame - 341;
+                if (tower_screen() >= 5) hle_tower_screen(in, pressed, frame);
+                else if (frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            }
             if (t == 420) debugf("[ui] floor %d: skills usable %d %d %d\n", tower_floor(), tower_mod_skill_allowed(0), tower_mod_skill_allowed(1), tower_mod_skill_allowed(2));
             if (t == 430) { int k = tower_mod_skill_allowed(0) ? 0 : tower_mod_skill_allowed(1) ? 1 : 2;
                             if (k == 0) pressed->d_up = 1; else if (k == 1) pressed->d_right = 1; else pressed->d_down = 1; }
@@ -864,17 +1579,23 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     }
 #endif
 #ifdef HLE_TEST_TOWER_RUN
+#ifndef HLE_STRIKE_FRAMES
+#define HLE_STRIKE_FRAMES 1200      // HLE_RUN_STRIKE's fight (frames)
+#endif
     // A Tower run from the title: Down x3 (Tower), A, A (Climb). Each floor: check the
     // boss, a locked skill (D-up does nothing), kill it, take a boon (A). After floor 6,
     // die: the death screen's summary, then A back to the title.
     {
         extern int tower_floor(void), tower_floor_boss(void);
-        extern bool tower_draft_is_open(void), tower_active(void); extern int tower_draft_selected(void);
+        extern bool tower_draft_is_open(void), tower_active(void), tower_between_open(void), tower_map_is_open(void), tower_rest_is_open(void); extern int tower_draft_selected(void);
         extern const char *tower_death_summary(void);
         static int phase = 0, t0 = 0, step = 0, lastFloor = 0;
         Boss *boss = boss_get_instance();
         int t = frame - t0;
         if (phase == 0) {
+#ifdef HLE_HUMAN_BOT
+            { extern void hb_init(void); hb_init(); }
+#endif
             if (menu_controller_is_active()) { phase = 1; t0 = frame; }
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 1) {
@@ -888,8 +1609,43 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
               if (lastFloor && t == 60) { char w[16]; snprintf(w, sizeof w, "floor%d", lastFloor); hle_leak_by_caller(w); }
               if (lastFloor && t == 59) for (int f = 1; f <= lastFloor; f++) hle_low_report(f); }
 #endif
+#ifdef HLE_HUMAN_BOT       // a run over, back at the title: the next one (HLE_HB_RUNS in all)
+#ifndef HLE_HB_RUNS
+#define HLE_HB_RUNS 1
+#endif
+            if (!boss && !tower_active()) {
+                static int idle;
+                if (++idle > 120 && menu_controller_is_active()) {
+                    extern int hb_runs; extern void hb_next_run(void);
+                    idle = 0; hb_runs++;
+                    if (hb_runs >= HLE_HB_RUNS) { debugf("[hbrun] all %d runs done\n", hb_runs); phase = 9; return; }
+                    hb_next_run();
+                    phase = 1; step = 0; t0 = frame; lastFloor = 0;
+                }
+                return;
+            }
+            { static int fr, between; fr++; if (tower_between_open()) between++;
+              if (fr % 3600 == 0) debugf("[hbtime] %d frames in the run, %d on the screens between fights\n", fr, between); }
+#endif
             if (!boss) return;
-            if (tower_floor() != lastFloor && boss->mode == BOSS_MODE_COMBAT && !tower_draft_is_open()) {
+#ifdef HLE_RUN_CLIMB
+            static int heapMin = 1 << 30;     // the lowest free heap in the climb, sampled every 10 frames
+            if (frame % 10 == 0) { heap_stats_t h; sys_get_heap_stats(&h); if (h.total - h.used < heapMin) heapMin = h.total - h.used; }
+#endif
+            { static bool was; bool now = tower_draft_is_open();     // the draft's open and close (a milestone's notice over it), for shots
+              if (now != was) debugf("[run] draft %s at floor %d, notice %d (frame %d)\n", now ? "open" : "closed", tower_floor(), ui_details()->open, frame);
+              was = now; }
+            if (tower_map_is_open() || tower_rest_is_open()) {     // the map (and a Rest): A on the cursor's node (straight up), heal, keep the boons
+#ifdef HLE_MAP_WALK
+                extern void hle_map_walk(joypad_inputs_t *, joypad_buttons_t *, int); hle_map_walk(in, pressed, frame);
+#else
+                extern int tower_screen(void);
+                if (tower_screen() >= 5) hle_tower_screen(in, pressed, frame);     // a Shop (B leaves; HLE_TEST_TOWER_SHOP buys), an Event (A)
+                else if (frame % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
+#endif
+                return;
+            }
+            if (tower_floor() != lastFloor && boss->mode == BOSS_MODE_COMBAT && !tower_between_open()) {
                 lastFloor = tower_floor(); t0 = frame;
 #ifdef HLE_LOG_FPS
                 { extern int hle_floor_mark; hle_floor_mark = 1; }   // test aid: count this floor's fight apart from its load
@@ -902,10 +1658,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                     extern float tower_mod_damage_dealt(void), tower_mod_damage_taken(void), tower_mod_max_health(void);
                     extern int tower_run_embers(void), tower_circle(void);
                     heap_stats_t h; sys_get_heap_stats(&h);
-                    debugf("[climb] floor %d circle %d boss %d hp %.0f | dealt x%.2f taken x%.2f maxhp %.0f potions %d | embers %d | heap %d KB free\n",
-                           lastFloor, tower_circle(), tower_floor_boss(), (double)boss->maxHealth, (double)tower_mod_damage_dealt(),
-                           (double)tower_mod_damage_taken(), (double)tower_mod_max_health(), character.healthPotions, tower_run_embers(),
-                           (h.total - h.used) / 1024);
+                    extern int tower_gold(void); extern const char *tower_affix_tag(void);
+                    debugf("[climb] floor %d circle %d boss %d hp %.0f%s%s | dealt x%.2f taken x%.2f health %.0f/%.0f potions %d gold %d | embers %d | heap %d KB free (min so far %d)\n",
+                           lastFloor, tower_circle(), tower_floor_boss(), (double)boss->maxHealth, tower_affix_tag()[0] ? " elite " : "", tower_affix_tag(),
+                           (double)tower_mod_damage_dealt(), (double)tower_mod_damage_taken(), (double)character.health, (double)tower_mod_max_health(),
+                           character.healthPotions, tower_gold(), tower_run_embers(), (h.total - h.used) / 1024, heapMin / 1024);
                 }
 #endif
             }
@@ -915,11 +1672,152 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (t == 40) character.stamina = 1.0f;          // a sliver left: this roll empties the bar
             if (t == 41) { pressed->a = 1; in->btn.a = 1; in->stick_y = 80; }
 #endif
-#ifdef HLE_RUN_STRIKE      // fight with the sword for 20 s first (the boons that hook into hits)
+#ifdef HLE_BOONFX_RUN      // (with HLE_TOWER_GIVE_NEW, HLE_LOG_BOONFX, HLE_RUN_STRIKE) the new boons' triggers in the fight
+            if (t > 0 && t < HLE_STRIKE_FRAMES) {
+                static int dodges, rollAt = -1, swingAt = -1;
+                extern float tower_mod_damage_taken(void);
+                if (character.health < character.maxHealth * 0.4f) character.health = character.maxHealth * 0.55f;   // alive, and hurt (Red Thirst)
+                static int potionsAt = -1, drankAt = -1;
+                if (t == 200) { potionsAt = character.healthPotions; character.health = character.maxHealth * 0.5f; }
+                if (potionsAt >= 0) {       // a potion (Sanguine Flask), pressed until it's drunk (not mid-swing)
+                    if (character.healthPotions < potionsAt) { debugf("[boonfx-run] potion drunk at t %d\n", t); potionsAt = -1; drankAt = t; }
+                    else if (t % 2) { pressed->d_left = 1; in->btn.d_left = 1; }
+                }
+                if (t >= 300 && t <= 320 && t % 4 == 0 && character_get_state() != CHAR_STATE_SKILL && character_get_skill_cooldown(SKILL_CRESCENT_CLEAVE) <= 0.0f) {
+                    character_set_state(CHAR_STATE_NORMAL); character.stamina = character.maxStamina;   // a Cleave before the rolls: a cooldown running (Waning Light)
+                    pressed->d_down = 1; in->btn.d_down = 1;
+                }
+                if (drankAt > 0 && t == drankAt + 30) {     // a blow 1 s after it (Steel Hearth's ward)
+                    float h = character.health; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(20.0f);
+                    debugf("[boonfx-run] a blow of 20 a second after the potion (x%.2f taken): health %.1f -> %.1f\n", (double)tower_mod_damage_taken(), (double)h, (double)character.health);
+                }
+                if (t >= 400 && t % 200 == 199 && dodges < 4) { character.stamina = character.maxStamina * 0.5f; character_set_state(CHAR_STATE_NORMAL); }
+                if (t >= 400 && t % 200 == 0 && dodges < 4) { pressed->a = 1; in->btn.a = 1; in->stick_y = 80; rollAt = t; }   // a roll...
+                if (rollAt > 0 && t == rollAt + 4) {     // ... and a blow inside its first 0.2 s: a perfect dodge (Evasion, Vanish)
+                    float st0 = character.stamina;
+                    debugf("[boonfx-run] blow in a roll: state %d (rolling %d), stamina %.0f\n", character_get_state(), CHAR_STATE_ROLLING, (double)st0);
+                    character_apply_damage(10.0f);
+                    debugf("[boonfx-run] stamina after %.0f\n", (double)character.stamina);
+                    dodges++; swingAt = t + 16;
+                }
+                if (rollAt > 0 && t == swingAt) {     // out of the roll, at the boss, a swing: a hit inside the window
+                    float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
+                    if (d > 30.0f) { character.pos[0] += dx / d * (d - 30.0f); character.pos[2] += dz / d * (d - 30.0f); }
+                    character.rot[1] = atan2f(-dx, dz);
+                    character_set_state(CHAR_STATE_NORMAL);
+                    pressed->b = 1; in->btn.b = 1;
+                    debugf("[boonfx-run] a swing after the roll\n");
+                    rollAt = -1;
+                }
+                if (t == 1300) { float h = character.health; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(20.0f);    // Vanish armed: 0
+                                 debugf("[boonfx-run] a blow of 20 after 3 perfect dodges: health %.1f -> %.1f\n", (double)h, (double)character.health); }
+                if (t == 1400) { character.health = character.maxHealth; float h = character.health; character_set_state(CHAR_STATE_NORMAL); character_apply_damage(70.0f);   // Stalwart: over 20%
+                                 debugf("[boonfx-run] a blow of 70 (x%.2f taken): health %.1f -> %.1f\n", (double)tower_mod_damage_taken(), (double)h, (double)character.health); }
+                static int staggerCast = -1; static bool cast;
+                if (boss->staggerT > 0.0f && staggerCast < 0) {     // a stagger: Crescent Cleave on it (Eclipse, Waxing Moon), then swings
+                    character_set_state(CHAR_STATE_NORMAL); character.stamina = character.maxStamina;
+                    pressed->d_down = 1; in->btn.d_down = 1; staggerCast = t; cast = false;
+                    debugf("[boonfx-run] Crescent Cleave on the staggered boss (%.1f s left, cooldown %.1f s)\n", (double)boss->staggerT, (double)character_get_skill_cooldown(SKILL_CRESCENT_CLEAVE));
+                }
+                if (staggerCast >= 0 && !cast) {      // pressed again until it casts (a press mid-swing or mid-roll does nothing)
+                    if (character_get_state() == CHAR_STATE_SKILL) cast = true;
+                    else if (t > staggerCast && t < staggerCast + 60 && t % 4 == 0) {
+                        character_set_state(CHAR_STATE_NORMAL); character.stamina = character.maxStamina;
+                        pressed->d_down = 1; in->btn.d_down = 1;
+                    }
+                }
+                if (boss->staggerT <= 0.0f) staggerCast = -1;
+                bool castOver = staggerCast >= 0 && (cast || t > staggerCast + 60) && t > staggerCast + 10 && character_get_state() != CHAR_STATE_SKILL;
+                if (castOver || (t > 400 && t < 1100 && t % 200 > 10 && t % 200 < 130)) {     // close in after the cast and the rolls: sword hits in the windows (Waxing Moon, Shadow Edge)
+                    float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
+                    if (d > 34.0f) { character.pos[0] += dx / d * (d - 34.0f); character.pos[2] += dz / d * (d - 34.0f); }
+                    if (t % 8 == 0) { pressed->b = 1; in->btn.b = 1; }     // and swing
+                }
+                if (t == 2100 || t == 2600) { boss->poise = 0.99f; debugf("[boonfx-run] the stagger meter set to 0.99: the next hit breaks it\n"); }
+                if (t % 600 == 0) debugf("[boonfx-run] t %d boss hp %.0f/%.0f poise %.2f player %.0f\n", t, (double)boss->health, (double)boss->maxHealth, (double)boss->poise, (double)character.health);
+                if (boss->health < boss->maxHealth * 0.7f) boss->health = boss->maxHealth;     // the fight lasts the window
+            }
+#endif
+#ifdef HLE_HUMAN_BOT       // the human-like bot (hle/human_bot.c): it learns the moves' timing and rolls through them, swings and casts in the
+                            // openings, drinks when it's safe; dies for real. Runs follow one another (HLE_HB_RUNS), each its own seed, plan and route
+            {
+                extern void hb_fight_begin(Boss *), hb_fight_end(const char *, Boss *), hb_fight(joypad_inputs_t *, joypad_buttons_t *, Boss *), hb_init(void), hb_dump_table(void);
+                extern bool hb_fight_on(void);
+                static int deadAt;
+                hb_init();
+                if (character_get_state() == CHAR_STATE_DEAD) {
+                    if (!deadAt) { deadAt = frame; hb_fight_end("died", boss); extern int tower_circle(void), tower_gold(void);
+                        debugf("[bot] died on floor %d (circle %d), boss %d at %.0f/%.0f, potions %d, gold %d\n", tower_floor(), tower_circle(), tower_floor_boss(),
+                               (double)boss->health, (double)boss->maxHealth, character.healthPotions, tower_gold());
+                        extern int tower_run_embers(void), tower_best_floor(void), tower_embers(void);
+                        debugf("[hbrun] end: floor %d circle %d run embers %d, gold %d, best floor %d, Embers banked %d\n", tower_floor(), tower_circle(), tower_run_embers(), tower_gold(), tower_best_floor(), tower_embers());
+                        hb_dump_table(); }
+                    if (frame - deadAt == 60) debugf("[run] died: \"%s\"\n", tower_death_summary());
+                    if (frame - deadAt > 150 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+                    return;
+                }
+                deadAt = 0;
+#ifndef HLE_HB_MAXCIRCLE
+#define HLE_HB_MAXCIRCLE 13     // a run this deep is ended (the time a marathon has): "[hbrun] capped"
+#endif
+                { extern int tower_circle(void); static int capped;
+                  if (tower_circle() > HLE_HB_MAXCIRCLE && !capped) { capped = 1; debugf("[hbrun] capped at circle %d floor %d\n", tower_circle(), tower_floor()); character.health = 0.0f; character_set_state(CHAR_STATE_DEAD); return; }
+                  if (tower_circle() <= HLE_HB_MAXCIRCLE) capped = 0; }
+                if (boss->mode == BOSS_MODE_COMBAT && boss->health > 0.0f && boss->state != BOSS_STATE_DEAD) {
+                    if (!hb_fight_on()) { hb_fight_begin(boss); t0 = frame; t = 0; }
+                    hb_fight(in, pressed, boss);
+                    if (t == 300 * 60) { debugf("[bot] floor %d: timed out at 300 s, boss %.0f/%.0f\n", tower_floor(), (double)boss->health, (double)boss->maxHealth); hb_fight_end("timeout", boss); boss_apply_damage(boss, boss->maxHealth * 2.0f); }
+                } else if (hb_fight_on() && (boss->health <= 0.0f || boss->state == BOSS_STATE_DEAD)) hb_fight_end("won", boss);   // (not a break: the Sun's)
+            }
+#elif defined(HLE_RUN_BOT)         // the climbing bot (HLE_RUN_PATH's climbs): stays close and strikes in the boss's openings, drinks below 40%;
+                            // it takes the metric's 30% of each blow (character.c), its sword x1.9 (tower.c: the metric's rate), and dies for real
+            {
+                extern bool hle_open_now;
+                static int k, lastRoll, deadAt;
+                if (character_get_state() == CHAR_STATE_DEAD) {
+                    if (!deadAt) { deadAt = frame; extern int tower_circle(void), tower_gold(void);
+                        debugf("[bot] died on floor %d (circle %d), boss %d at %.0f/%.0f, potions %d, gold %d\n", tower_floor(), tower_circle(), tower_floor_boss(),
+                               (double)boss->health, (double)boss->maxHealth, character.healthPotions, tower_gold()); }
+                    if (frame - deadAt == 60) debugf("[run] died: \"%s\"\n", tower_death_summary());
+                    if (frame - deadAt > 150 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+                    return;
+                }
+                if (boss->mode == BOSS_MODE_COMBAT && boss->health > 0.0f) {
+                    k++;
+                    if (k % 60 == 1) pressed->z = 1;
+                    in->btn.z = 1;
+                    float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
+                    if (character.health < character.maxHealth * 0.4f && character.healthPotions > 0 && character_get_state() == CHAR_STATE_NORMAL && k % 10 == 0) { pressed->d_left = 1; in->btn.d_left = 1; }
+                    else {      // close in and stay there, as the passive dummy the metric is taken on; swing in the openings
+                        if (d > 34.0f) in->stick_y = 70;
+                        if (hle_open_now && d < 40.0f && k % 20 == 0) { pressed->b = 1; in->btn.b = 1; }
+                    }
+                    (void)lastRoll;
+                    if (t == 300 * 60) { debugf("[bot] floor %d: timed out at 300 s, boss %.0f/%.0f\n", tower_floor(), (double)boss->health, (double)boss->maxHealth); boss_apply_damage(boss, boss->maxHealth * 2.0f); }
+                }
+            }
+#elif defined(HLE_RUN_STRIKE)      // fight with the sword for 20 s first (the boons that hook into hits)
 #ifdef HLE_RUN_TOPUP       // (and never die: a full climb, every floor's sounds and effects, for the heap's low point)
             if (character.health < character.maxHealth * 0.6f) character.health = character.maxHealth;
 #endif
-            if (t < 1200) {
+#ifdef HLE_BERSERK_RUN     // (with HLE_TOWER_GIVE=BOON_BERSERKER HLE_LOG_BOONFX): the fight below half health (Berserker on), a potion pressed now and then
+            if (t < HLE_STRIKE_FRAMES && (character.health > character.maxHealth * 0.45f || character.health < character.maxHealth * 0.2f)) character.health = character.maxHealth * 0.4f;
+            extern bool tower_potion_blocked(void);
+            if (t > 0 && t % 600 == 300) { int p0 = character.healthPotions; pressed->d_left = 1; in->btn.d_left = 1;
+                debugf("[berserk-run] t %d: the potion pressed at %.0f/%.0f health, %d potions (blocked %d)\n", t, (double)character.health, (double)character.maxHealth, p0, tower_potion_blocked()); }
+            if (t > 0 && t % 600 == 320) debugf("[berserk-run] t %d: potions now %d\n", t, character.healthPotions);
+#endif
+#ifdef HLE_HUD_LEVELS      // (icons step 1) the D-pad keys' marks: every skill known, all three at Lv 1, 2, 3, 4, then 5 (A, B, A), 120 frames each
+            if (t % 120 == 60) {
+                extern void tower_test_skill_lv(int skill, int lv, int form);
+                int lv = (t / 120) % 5 + 1;
+                for (int k = 0; k < 3; k++) tower_test_skill_lv(k, lv, 1 + (k & 1));
+                debugf("[hudlv] skills at Lv %d (frame %d)\n", lv, frame);
+            }
+            { extern float tower_rally_pool(void); float rp = tower_rally_pool();      // the Rally pool as the bar draws it
+              if (rp > 0.0f && t % 10 == 0) debugf("[rallybar] pool %d.%d of %d (frame %d)\n", (int)rp, (int)(rp * 10) % 10, (int)character.maxHealth, frame); }
+#endif
+            if (t < HLE_STRIKE_FRAMES) {
                 if (t == 1) pressed->z = 1;
                 in->btn.z = 1;
                 float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2];
@@ -927,16 +1825,20 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (t % 24 == 0) { pressed->b = 1; in->btn.b = 1; }
                 if (t % 300 == 299) debugf("[run] boss hp %.0f/%.0f\n", (double)boss->health, (double)boss->maxHealth);
             }
-            if (t == 1200) {
+            if (t == HLE_STRIKE_FRAMES) {
 #ifdef HLE_LOG_FPS
                 { extern int hle_floor_mark; hle_floor_mark = 2; }   // the fight's end (before the next load)
 #endif
                 boss_apply_damage(boss, boss->maxHealth * 2.0f);
             }
-#else
+#elif !defined(HLE_RUN_BOT) && !defined(HLE_HUMAN_BOT)
             if (t == 90) boss_apply_damage(boss, boss->maxHealth * 2.0f);
 #endif
+#if defined(HLE_RUN_BOT) || defined(HLE_HUMAN_BOT)
+            if (boss->state == BOSS_STATE_DEAD) {
+#else
             if (t >= 90 && t < 140) {   // stand facing the fallen boss, where its "A" prompt would show
+#endif
                 float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
                 if (d > 60.0f) { character.pos[0] += dx / d * (d - 60.0f); character.pos[2] += dz / d * (d - 60.0f); }
             }
@@ -946,7 +1848,8 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 if (!tower_draft_is_open()) k = 0;
                 else {
                     k++;
-#if defined(HLE_RUN_CLIMB)    // take a boon while any are offered (so they run out), else the first pact
+#if defined(HLE_HUMAN_BOT)    // (tower.c put the cursor on the bot's card: A below)
+#elif defined(HLE_RUN_CLIMB)    // take a boon while any are offered (so they run out), else the first pact
                     static int want;
                     if (k == 1) {
                         extern int tower_draft_card(int i);
@@ -974,7 +1877,11 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #ifndef HLE_DRAFT_HOLD
 #define HLE_DRAFT_HOLD 100      // frames the draft stays up (longer: for a screenshot; past its 0.75 s input delay)
 #endif
+#ifdef HLE_HUMAN_BOT    // (again every 40 frames: a milestone's notice over the draft takes the first A)
+                    if (k >= HLE_DRAFT_HOLD && (k - HLE_DRAFT_HOLD) % 40 == 0) { pressed->a = 1; in->btn.a = 1; }
+#else
                     if (k == HLE_DRAFT_HOLD) { pressed->a = 1; in->btn.a = 1; }
+#endif
                 }
             }
 #elif defined(HLE_RUN_MASH)  // dodge (A) every 15 frames from the kill on, as a player rolling about after a fight: does a card get taken unseen?
@@ -1005,7 +1912,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
             if (lastFloor == HLE_RUN_FLOORS && t == 60) { phase = 3; t0 = frame; character_apply_damage(9999.0f); }
         } else if (phase == 3) {
-            if (t == 30) debugf("[run] died: state %d, \"%s\"\n", character_get_state(), tower_death_summary());
+            if (t == 30 || t == 160) debugf("[run] died: state %d, \"%s\" (frame %d)\n", character_get_state(), tower_death_summary(), frame);
             if (t > 150 && t % 30 == 0) { pressed->a = 1; in->btn.a = 1; in->btn.a = 1; }
             if (t > 150 && !boss) { debugf("[run] back at the title, run %s\n", tower_active() ? "STILL ACTIVE" : "ended"); phase = 4; }
         }
@@ -1013,7 +1920,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     }
 #endif
 #ifdef HLE_TEST_QUIT
-    // Pause mid-fight > Main Menu (4 down: Resume, Restart, Settings, Controls, Main Menu) > A:
+    // Pause mid-fight > Main Menu (3 down: Resume, Restart, Settings, Main Menu) > A:
     // back at the title, then into the fight again
     {
         static int start = -1, again = 0;
@@ -1025,7 +1932,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         }
         int t = frame - start;
         if (t == 60) { pressed->start = 1; in->btn.start = 1; }
-        if (t == 80 || t == 90 || t == 100 || t == 110) pressed->d_down = 1;
+        if (t == 80 || t == 90 || t == 100) pressed->d_down = 1;
         if (t == 125) { pressed->a = 1; in->btn.a = 1; }
         if (t == 160) debugf("[quit] after Main Menu: boss %s, title menu %s\n", boss ? "still there" : "gone", menu_controller_is_active() ? "open" : "closed");
         if (t > 200 && t < 1400 && t % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
@@ -1175,6 +2082,91 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         customCamPos = (T3DVec3){{ boss->pos[0] + 60.0f, boss->pos[1] + 30.0f, boss->pos[2] + 70.0f }};
         customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + 22.0f, boss->pos[2] }};
         camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+        return;
+    }
+#endif
+#if defined(HLE_SHOW_HURTBOX) && defined(HLE_TEST_DUMMY)    // with the bosses: their capsules each frame ([hbb], over the player's floor)
+    {
+        Boss *bb = boss_get_instance();
+        if (bb && bb->mode == BOSS_MODE_COMBAT) {
+            const CapsuleCollider *c = &bb->capsuleCollider;
+            float g = character.pos[1], *p = bb->pos;
+            extern int hle_fk_state(void), hle_sun_state(void), hle_dg_state(void);
+            int st = bb->phaseIndex == 3 ? hle_fk_state() : bb->phaseIndex == 4 ? hle_sun_state() : bb->phaseIndex == 5 ? hle_dg_state() : (int)bb->state;
+            debugf("[hbb] f%d boss %d st %d at %.0f up | A %.1f %.1f %.1f B %.1f %.1f %.1f (over the floor; x z off its centre, along its facing / side) r %.1f\n", frame, bb->phaseIndex, st, (double)(p[1] - g),
+                   (double)(c->localCapA.v[0] * -sinf(bb->rot[1]) + c->localCapA.v[2] * cosf(bb->rot[1])), (double)(c->localCapA.v[0] * cosf(bb->rot[1]) + c->localCapA.v[2] * sinf(bb->rot[1])), (double)(p[1] + c->localCapA.v[1] - g),
+                   (double)(c->localCapB.v[0] * -sinf(bb->rot[1]) + c->localCapB.v[2] * cosf(bb->rot[1])), (double)(c->localCapB.v[0] * cosf(bb->rot[1]) + c->localCapB.v[2] * sinf(bb->rot[1])), (double)(p[1] + c->localCapB.v[1] - g), (double)c->radius);
+        }
+    }
+#endif
+#if defined(HLE_SHOW_HURTBOX) && !defined(HLE_TEST_DUMMY)
+    // The hit capsules drawn (with HLE_TEST_FREEZE_BOSS, HLE_LOG_MOVE_MS for [hb]'s vi): four 12 s rounds, the knight then the
+    // Black Swordsman, each seen from the side then the front: idle (wide, then close), a swing at
+    // 2 s, a roll at 4 s, knocked down at 6 s. [hb] logs the capsule and the bones over the floor
+    {
+        extern float deltaTime;
+        static int start = -1;
+        static float tm = -0.001f;     // below 0: the first round's 0 s step fires
+        Boss *boss = boss_get_instance();
+        if (start < 0) {
+            if (frame > 200 && boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL) { start = frame; debugf("[hb] start f%d ms %lu\n", frame, (unsigned long)get_ticks_ms()); }
+            else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
+            return;
+        }
+        float prev = tm;
+        tm += deltaTime;
+        int round = (int)(tm / 12.0f);
+        float r = tm - round * 12.0f, pr = prev - round * 12.0f;
+#define AT(x) (pr < (x) && r >= (x))
+        bool front = round & 1;
+        static float floorY;
+        cameraLockOnActive = false;
+        if (round >= 4) return;
+        if (AT(0.0f) || AT(3.6f) || AT(5.6f)) {     // back on the spot, facing the boss (-x)
+            if (AT(0.0f)) { character_skin_set(round < 2 ? SKIN_KNIGHT : SKIN_BLACK_SWORDSMAN); floorY = character.pos[1]; }
+            character.pos[0] = boss->pos[0] + 70.0f; character.pos[2] = boss->pos[2] + 10.0f; character.rot[1] = 1.5708f;
+            character.health = character.maxHealth; character.stamina = character.maxStamina;
+            character_skin_reset_cloth();
+            debugf("[hb] f%d round %d %s skin %d\n", frame, round, front ? "front" : "side", character_skin_get());
+        }
+        if (AT(2.0f)) { pressed->b = 1; in->btn.b = 1; debugf("[hb] f%d swing\n", frame); }
+        if (r >= 4.0f && r < 4.2f) { in->stick_y = 80; if (AT(4.0f)) { pressed->a = 1; in->btn.a = 1; debugf("[hb] f%d roll\n", frame); } }
+        if (AT(6.0f)) { character_apply_damage(25.0f); debugf("[hb] f%d knocked down\n", frame); }
+        {   // the capsule and the drawn body's bones, over the floor
+            static const char *NB[] = { "Head", "Hand-Left", "Hand-Right", "Foot-Left", "Foot-Right", "Waist" };
+            static int bone[6] = { -2 };
+            T3DSkeleton *sk = (T3DSkeleton*)character.skeleton;
+            if (bone[0] == -2) for (int i = 0; i < 6; i++) bone[i] = t3d_skeleton_find_bone(sk, NB[i]);
+            if (frame % 3 == 0 && sk && character.modelMat) {
+                const CapsuleCollider *c = &character.capsuleCollider;
+                char buf[200]; int n = 0;
+                for (int i = 0; i < 6; i++) {
+                    if (bone[i] < 0) continue;
+                    float m[3], w[3];
+                    mat4fp_mul_point_f32_row3_colbasis(&sk->boneMatricesFP[bone[i]], (float[3]){ 0, 0, 0 }, m);
+                    mat4fp_mul_point_f32_row3_colbasis((const T3DMat4FP*)character.modelMat, m, w);
+                    float dx = w[0] - character.pos[0], dz = w[2] - character.pos[2];
+                    n += snprintf(buf + n, sizeof buf - n, " %s y%.1f out%.1f", NB[i], (double)(w[1] - floorY), (double)sqrtf(dx * dx + dz * dz));
+                }
+                extern uint32_t dragon_vi_frame(void);     // HLE_LOG_MOVE_MS: Mupen's frame (shot) number
+                debugf("[hb] vi %lu f%d t %.2f st %d skin %d pos y%.1f | capsule y %.1f..%.1f r %.1f |%s\n", (unsigned long)dragon_vi_frame(), frame, (double)r, character_get_state(), character_skin_get(),
+                       (double)(character.pos[1] - floorY), (double)(character.pos[1] + c->localCapA.v[1] - c->radius - floorY), (double)(character.pos[1] + c->localCapB.v[1] + c->radius - floorY), (double)c->radius, buf);
+            }
+        }
+        // the camera: wide on both (side rounds, the first second), else close on the knight
+        float *p = character.pos;
+        if (!front && r < 1.0f) {
+            customCamPos = (T3DVec3){{ p[0] - 35.0f, floorY + 30.0f, p[2] + 160.0f }};
+            customCamTarget = (T3DVec3){{ p[0] - 35.0f, floorY + 25.0f, p[2] }};
+        } else if (!front) {
+            customCamPos = (T3DVec3){{ p[0], floorY + 11.0f, p[2] + 42.0f }};
+            customCamTarget = (T3DVec3){{ p[0], floorY + 9.0f, p[2] }};
+        } else {
+            customCamPos = (T3DVec3){{ p[0] - 42.0f, floorY + 11.0f, p[2] }};
+            customCamTarget = (T3DVec3){{ p[0], floorY + 9.0f, p[2] }};
+        }
+        camera_mode(CAMERA_CUSTOM);
+#undef AT
         return;
     }
 #endif
@@ -1352,7 +2344,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 else if (v == V_KILL) boss_apply_damage(boss, boss->maxHealth * 2.0f);
                 else pressed->start = 1;
             }
-            int downs = v == V_RESTART && !restarted ? 1 : 4;     // Resume, Restart, Settings, Controls, Main Menu
+            int downs = v == V_RESTART && !restarted ? 1 : 3;     // Resume, Restart, Settings, Main Menu
             if (v != V_DIE && v != V_KILL) {
                 if (t > 180 && t <= 180 + downs * 10 && (t - 180) % 10 == 0) pressed->d_down = 1;
                 if (t == 200 + downs * 10) {
@@ -1412,6 +2404,189 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 phase = 4; tm = 0.0f; hle_dummy_damage = 0.0f; hle_dummy_hits = 0; debugf("[dummy] start\n"); }
             else if (frame % 20 == 0) { pressed->a = 1; in->btn.a = 1; }
         } else if (phase == 4) {
+#ifdef HLE_HUMAN_BOT     // test aid: the human-like bot (hle/human_bot.c) in the dummy's fight: windows of HLE_SWEEP_S s ([hbfight] each), with
+                         // HLE_DUMMY_BUILD each window that build (section 14's, tower_test_build), the boss's health held in its half and the
+                         // player's at 42%; without HLE_DUMMY_REAL the blows don't hurt (the bench: what lands is counted, "landed")
+            {
+#ifndef HLE_SWEEP_S
+#define HLE_SWEEP_S 240.0f
+#endif
+                extern void hb_fight_begin(Boss *), hb_fight_end(const char *, Boss *), hb_fight(joypad_inputs_t *, joypad_buttons_t *, Boss *), hb_init(void), hb_dump_table(void);
+                extern bool hb_fight_on(void); extern int hb_skill_pref;
+                static int w = -1; static float w0, prevHp, dealt, wasStag, dealt0; static int staggers; extern float hb_dealt;
+                hb_init();
+                if (!boss) return;
+                if (w < 0 || tm - w0 >= HLE_SWEEP_S) {
+                    if (w >= 0) { debugf("[hbwin] window %d build %d: %.0f s dealt %.1f (%.1f a minute) staggers %d | boss max %.0f\n", w,
+#ifdef HLE_DUMMY_BUILD
+                                         (int)((const int[]){ HLE_DUMMY_BUILD })[w % (int)(sizeof (const int[]){ HLE_DUMMY_BUILD } / sizeof(int))],
+#else
+                                         -1,
+#endif
+                                         (double)(tm - w0), (double)(hb_dealt - dealt0), (double)((hb_dealt - dealt0) * 60.0f / (tm - w0)), staggers, (double)boss->maxHealth);
+                                  hb_fight_end("window", boss); hb_dump_table(); }
+                    w++; w0 = tm; dealt = 0.0f; staggers = 0; dealt0 = hb_dealt;
+#ifdef HLE_DUMMY_BUILD
+                    { extern int tower_test_build(int); static const int L[] = { HLE_DUMMY_BUILD };
+                      int sk = tower_test_build(L[w % (int)(sizeof L / sizeof L[0])]); hb_skill_pref = sk - 1; character_cut_skill_cooldowns(1e6f); }
+#endif
+#ifdef HLE_ELITE_SWEEP
+                    { extern int hle_elite_force; static const int A[] = { HLE_ELITE_SWEEP }; int a = A[w % (int)(sizeof A / sizeof A[0])];
+                      hle_elite_force = a ? 1 << (a - 1) : 0; debugf("[hbwin] window %d: affix %d\n", w, a); }
+#endif
+#ifdef HLE_ELITE_MASKS      // (with HLE_ELITE_FORCE=0) each window these affixes at once (a bit each: two-affix Elites)
+                    { extern int hle_elite_force; static const int A[] = { HLE_ELITE_MASKS }; hle_elite_force = A[w % (int)(sizeof A / sizeof A[0])];
+                      debugf("[hbwin] window %d: affixes %02x\n", w, hle_elite_force); }
+#endif
+                    prevHp = boss->health;
+                    hb_fight_begin(boss);
+                }
+#ifdef HLE_DUMMY_BUILD
+#ifdef HLE_DUMMY_HALF
+                const float lo = 0.1f, hi = 0.45f;
+#else
+                const float lo = 0.55f, hi = 1.0f;
+#endif
+                dealt += prevHp - boss->health;
+                if (boss->health < boss->maxHealth * lo) boss->health = boss->maxHealth * hi;
+                if (boss->health > boss->maxHealth * hi) boss->health = boss->maxHealth * hi;
+                prevHp = boss->health;
+                character.health = character.maxHealth * 0.42f;
+#else
+                dealt += prevHp - boss->health;
+#ifdef HB_HOLD          // (the fight goes on: its health kept over 30%)
+                if (boss->health < boss->maxHealth * 0.3f) boss->health = boss->maxHealth * 0.6f;
+#endif
+                prevHp = boss->health;
+#endif
+                if (boss->staggerT > 0.0f && wasStag <= 0.0f) staggers++;
+                wasStag = boss->staggerT;
+#ifdef HLE_DUMMY_REAL
+                if (character_get_state() == CHAR_STATE_DEAD || boss->health <= 0.0f || (HLE_DUMMY_BOSS == 1 && boss->state == BOSS_STATE_DEAD)) {
+                    static bool once; if (!once) { once = true; hb_fight_end(character_get_state() == CHAR_STATE_DEAD ? "died" : "won", boss); hb_dump_table(); debugf("[hbrun] all 1 runs done\n"); }
+                    return;
+                }
+#endif
+                if (boss->mode == BOSS_MODE_COMBAT) hb_fight(in, pressed, boss);
+                tm += deltaTime;
+                return;
+            }
+#endif
+#ifdef HLE_DUMMY_CAST    // test aid: a skill (1-3; 4 five in turn, [palcast]) cast every HLE_DUMMY_CAST_EVERY frames, locked on, its cooldown zeroed, in a Tower
+                         // run begun here; with HLE_SKILL_LV=<skill>,<lv>,<form> the casts alternate Lv 1 and that level: [castft] the
+                         // frame time through each (mean, worst), the most effects alive, any dropped ([fxfull])
+            {
+#ifndef HLE_DUMMY_CAST_EVERY
+#define HLE_DUMMY_CAST_EVERY 300
+#endif
+                extern void tower_begin_run(uint32_t); extern bool tower_active(void); extern void tower_test_skill_lv(int, int, int);
+                extern int skill_fx_live(void); extern void character_cut_skill_cooldowns(float);
+                static int k, n; static uint32_t prev, sum, worst, cnt; static int live;
+                if (!tower_active()) {
+                    tower_begin_run(1);
+#ifdef HLE_STRIP_FULL       // (the slot strip full: its cost in [castft], against HLE_NO_STRIP)
+                    { extern void tower_test_fill_slots(void); tower_test_fill_slots(); }
+#endif
+                }
+                int c = k % HLE_DUMMY_CAST_EVERY;
+#if HLE_DUMMY_CAST == 4     // 4: each in turn, Moon Blade Dance, Full Moon Dance, Halfmoon Slash, Crescent Cleave, Crescent Storm (palette shots)
+                static const int CYC[5][3] = { { 1, 1, 0 }, { 1, 5, 1 }, { 2, 1, 0 }, { 3, 1, 0 }, { 3, 5, 1 } };
+                int sk = CYC[n % 5][0];
+                if (c == 0) {
+                    tower_test_skill_lv(sk - 1, CYC[n % 5][1], CYC[n % 5][2]);
+                    debugf("[palcast] cast %d skill %d lv %d at VI frame ~%lu\n", n, sk, CYC[n % 5][1], (unsigned long)(get_ticks_ms() * 60 / 1000));
+#elif defined(HLE_SKILL_LV)
+                const int sk = HLE_DUMMY_CAST;
+                if (c == 0) {
+                    static const int L[3] = { HLE_SKILL_LV };
+                    tower_test_skill_lv(HLE_DUMMY_CAST - 1, n % 2 ? L[1] : 1, n % 2 ? L[2] : 0);
+#else
+                const int sk = HLE_DUMMY_CAST;
+                if (c == 0) {
+                    tower_test_skill_lv(HLE_DUMMY_CAST - 1, 1, 0);
+#endif
+                    character_cut_skill_cooldowns(1e6f); character.stamina = character.maxStamina;
+                }
+#if HLE_DUMMY_CAST == 4 && defined(HLE_PALCAM)   // HLE_PALCAM=<back>: the player set 60 from the boss each cast, a still camera
+                // that far behind him and off to his right, above, looking past him at the boss (its effects against the boss)
+                if (boss) {
+                    static float bx, bz, gy;
+                    float dx = character.pos[0] - boss->pos[0], dz = character.pos[2] - boss->pos[2], d = sqrtf(dx * dx + dz * dz) + 1e-3f;
+                    if (c == 0) { boss->health = boss->maxHealth; character.pos[0] = boss->pos[0] + dx / d * 60.0f; character.pos[2] = boss->pos[2] + dz / d * 60.0f; bx = dx / d; bz = dz / d; gy = character.pos[1]; }
+                    float px = boss->pos[0] + bx * 60.0f, pz = boss->pos[2] + bz * 60.0f;
+                    customCamPos = (T3DVec3){{ px + bx * HLE_PALCAM - bz * HLE_PALCAM * 0.45f, gy + 40.0f, pz + bz * HLE_PALCAM + bx * HLE_PALCAM * 0.45f }};
+                    customCamTarget = (T3DVec3){{ px - bx * 28.0f, gy + 40.0f, pz - bz * 28.0f }};
+                    camera_mode_smooth(CAMERA_CUSTOM, 0.0f);
+                }
+#endif
+                if (k % 60 == 1) pressed->z = 1;
+                in->btn.z = 1;
+                if (c == 5) { if (sk == 1) pressed->d_up = 1; else if (sk == 2) pressed->d_right = 1; else pressed->d_down = 1; }
+                uint32_t now = get_ticks_us();
+                if (c > 5 && c <= HLE_DUMMY_CAST_EVERY - 10) { uint32_t d = now - prev; sum += d; cnt++; if (d > worst) worst = d; int l = skill_fx_live(); if (l > live) live = l; }
+                prev = now;
+                if (c == HLE_DUMMY_CAST_EVERY - 9 && cnt) {
+                    extern int tower_skill_level(int), tower_skill_form(int);
+                    debugf("[castft] cast %d (Lv %d form %d): mean %u us, worst %u us over %u frames, at most %d effects alive\n", n, tower_skill_level(sk - 1),
+                           tower_skill_form(sk - 1), (unsigned)(sum / cnt), (unsigned)worst, (unsigned)cnt, live);
+                    sum = worst = cnt = 0; live = 0; n++;
+                }
+                k++;
+            }
+#endif
+#ifdef HLE_DUMMY_BUILD   // test aid: the builds compared (section 14) on this boss: a window of HLE_SWEEP_S s each of the list HLE_DUMMY_BUILD
+                         // (tower_test_build), round and round. The bot stays close as the passive dummy, swings in the boss's openings and
+                         // casts the build's skill there when it's ready; 30% of the blows land (character.c), its health held at 40% (Berserker
+                         // on) and what the build heals counted; the boss's health kept in its half. [build] each window's damage a minute,
+                         // staggers, casts, casts broken, healing a minute
+            {
+#ifndef HLE_SWEEP_S
+#define HLE_SWEEP_S 240.0f
+#endif
+                extern int tower_test_build(int);
+                extern bool hle_open_now; extern int hle_build_breaks;
+                static const int L[] = { HLE_DUMMY_BUILD };
+                static int w = -1, skill, casts, staggers, b0, k; static float w0, dealt, heal, prevHp, wasStag, took0;
+                if (w < 0 || tm - w0 >= HLE_SWEEP_S) {
+                    if (w >= 0) debugf("[build] boss %d build %d window %d: %.0f s dealt %.1f (%.1f a minute) | staggers %d, casts %d, broken %d | healed %.1f (%.1f a minute) | boss max %.0f | took %.1f\n",
+                                       HLE_DUMMY_BOSS, L[w % (int)(sizeof L / sizeof L[0])], w, (double)(tm - w0), (double)dealt, (double)(dealt * 60.0f / (tm - w0)), staggers, casts,
+                                       hle_build_breaks - b0, (double)heal, (double)(heal * 60.0f / (tm - w0)), (double)boss->maxHealth, (double)(hle_dummy_damage - took0));
+                    w++; w0 = tm; dealt = heal = 0.0f; casts = staggers = 0; b0 = hle_build_breaks; took0 = hle_dummy_damage;
+                    skill = tower_test_build(L[w % (int)(sizeof L / sizeof L[0])]);
+#ifdef HLE_ELITE_SWEEP      // (and each window this affix: a list as long as the builds'; with HLE_ELITE_FORCE=0)
+                    { extern int hle_elite_force; static const int A[] = { HLE_ELITE_SWEEP }; int a = A[w % (int)(sizeof A / sizeof A[0])];
+                      hle_elite_force = a ? 1 << (a - 1) : 0; debugf("[build] window %d: affix %d\n", w, a); }
+#endif
+                    character_cut_skill_cooldowns(1e6f);
+                    prevHp = boss->health;
+                }
+#ifdef HLE_DUMMY_HALF
+                const float lo = 0.1f, hi = 0.45f;
+#else
+                const float lo = 0.55f, hi = 1.0f;
+#endif
+                dealt += prevHp - boss->health;     // (net: a Vampiric Elite's heals come off it)
+                if (boss->health < boss->maxHealth * lo) boss->health = boss->maxHealth * hi;
+                if (boss->health > boss->maxHealth * hi) boss->health = boss->maxHealth * hi;
+                prevHp = boss->health;
+                if (boss->staggerT > 0.0f && wasStag <= 0.0f) staggers++;
+                wasStag = boss->staggerT;
+                float keep = character.maxHealth * 0.4f;
+                if (character.health > keep) heal += character.health - keep;
+                character.health = keep; character.stamina = character.maxStamina;
+                k++;
+                if (k % 60 == 1) pressed->z = 1;
+                in->btn.z = 1;
+                float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
+                if (d > 34.0f && character_get_state() != CHAR_STATE_SKILL) in->stick_y = 70;
+                if (hle_open_now && d < 45.0f && character_get_state() == CHAR_STATE_NORMAL && skill && character_get_skill_cooldown(skill - 1) <= 0.0f) {
+                    if (skill == 1) pressed->d_up = 1; else if (skill == 2) pressed->d_right = 1; else pressed->d_down = 1;
+                    casts++;
+                } else if (hle_open_now && d < 40.0f && k % 20 == 0) { pressed->b = 1; in->btn.b = 1; }
+                tm += deltaTime;
+                return;
+            }
+#endif
 #ifdef HLE_DUMMY_REAL    // the bot playtest: it fights (HLE_DUMMY_STRIKE, HLE_DUMMY_ROLL), drinks below 40% and says how it went
             {
                 static int potions0 = -1, done;
@@ -1478,9 +2653,16 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             if (boss) {
                 cameraLockOnActive = false;
                 float a = boss->rot[1] + HLE_DUMMY_CAM_YAW;
-                customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * HLE_DUMMY_CAM_DIST, boss->pos[1] + 30.0f, boss->pos[2] + cosf(a) * HLE_DUMMY_CAM_DIST }};
-                customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + 35.0f, boss->pos[2] }};
-                camera_mode_smooth(CAMERA_CUSTOM, 0.01f);
+#ifdef HLE_DUMMY_CAM_ALT    // the front and the side by turns, this many frames each (side: +1.57), both views of one moment
+                if (frame / HLE_DUMMY_CAM_ALT & 1) a += 1.5708f;
+#endif
+#ifndef HLE_DUMMY_CAM_H     // the camera's height and where it looks, over the boss's origin
+#define HLE_DUMMY_CAM_H 30.0f
+#define HLE_DUMMY_CAM_LOOK 35.0f
+#endif
+                customCamPos = (T3DVec3){{ boss->pos[0] - sinf(a) * HLE_DUMMY_CAM_DIST, boss->pos[1] + HLE_DUMMY_CAM_H, boss->pos[2] + cosf(a) * HLE_DUMMY_CAM_DIST }};
+                customCamTarget = (T3DVec3){{ boss->pos[0], boss->pos[1] + HLE_DUMMY_CAM_LOOK, boss->pos[2] }};
+                camera_mode_smooth(CAMERA_CUSTOM, 0.01f);     // (10 ms: a cut)
                 if (boss->state == BOSS_STATE_AERIAL_SWORD_BARRAGE && frame % 20 == 0) debugf("[cam] f%d aerial, y %.0f\n", frame, (double)boss->pos[1]);
             }
 #endif
@@ -1616,6 +2798,9 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
               in->btn.z = 1;
               float dx = boss->pos[0] - character.pos[0], dz = boss->pos[2] - character.pos[2], d = sqrtf(dx * dx + dz * dz);
               in->stick_y = d < HLE_DUMMY_KEEP - 15.0f ? -70 : d > HLE_DUMMY_KEEP + 15.0f ? 70 : 0;
+#ifdef HLE_KEEP_SWING     // and swing on a loop where it stands (what a leap that comes to it meets)
+              if (k % 12 == 0) { pressed->b = 1; in->btn.b = 1; }
+#endif
 #ifndef HLE_DUMMY_KEEP_STILL    // (or only in and out while the boss isn't attacking: no strafe)
 #ifndef HLE_KEEP_STRAFE
 #define HLE_KEEP_STRAFE 45
@@ -1650,17 +2835,43 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #endif
             }
 #endif
+#ifndef HLE_HOLY_ROLL_Y
+#define HLE_HOLY_ROLL_Y 70
+#endif
+#ifdef HLE_HOLY_ROLLIN    // test aid: a roll toward the boss when the Holy Slam's fire says (skill_fx)
+            { extern bool hle_roll_in; static int still;      // (then stands a second where the roll left it: no walking back out into the fire)
+              if (hle_roll_in) { hle_roll_in = false; still = 60; pressed->a = 1; in->btn.a = 1; in->stick_x = 0; in->stick_y = HLE_HOLY_ROLL_Y; }
+              else if (still > 0) { still--; in->stick_x = 0; in->stick_y = 0; } }     // (70 in toward it, -70 away: HLE_HOLY_ROLL_Y)
+#endif
 #ifdef HLE_DUMMY_ROLL     // roll every 0.7 s: some catch a blow right at the start (a perfect dodge)
             { static int k; if (++k % 42 == 0) { pressed->a = 1; in->btn.a = 1; } }
+#endif
+#ifdef HLE_ELITE_SWEEP   // test aid (with HLE_ELITE_FORCE=0): the fight in windows of HLE_SWEEP_S s, each with the next affix of the list
+                         // (AFX_ + 1; 0 none), round and round: [afxwin] each window's damage, hits and openings (the metric's sword in them)
+            {
+#ifndef HLE_SWEEP_S
+#define HLE_SWEEP_S 240.0f
+#endif
+                extern int hle_elite_force;
+                static const int L[] = { HLE_ELITE_SWEEP };
+                static int w = -1; static float w0, d0, o0, od0; static int h0, g0;
+                if (w < 0 || tm - w0 >= HLE_SWEEP_S) {
+                    if (w >= 0) debugf("[afxwin] boss %d affix %d window %d: %.0f s damage %.1f hits %d | open %.1f s, %d gaps, sword %.1f\n", HLE_DUMMY_BOSS, L[w % (int)(sizeof L / sizeof L[0])], w,
+                                       (double)(tm - w0), (double)(hle_dummy_damage - d0), hle_dummy_hits - h0, (double)(hle_open_time - o0), hle_open_gaps - g0, (double)(hle_open_dmg - od0));
+                    w++; w0 = tm; d0 = hle_dummy_damage; h0 = hle_dummy_hits; o0 = hle_open_time; g0 = hle_open_gaps; od0 = hle_open_dmg;
+                    int a = L[w % (int)(sizeof L / sizeof L[0])];
+                    hle_elite_force = a ? 1 << (a - 1) : 0;
+                }
+            }
 #endif
             float prev = tm;
             tm += deltaTime;
             static int heapMin = 1 << 30;     // the lowest free heap, sampled each second
             if ((int)tm != (int)prev) { heap_stats_t h; sys_get_heap_stats(&h); if (h.total - h.used < heapMin) heapMin = h.total - h.used; }
             if ((int)(tm / 30.0f) != (int)(prev / 30.0f))
-                debugf("[dummy] boss %d t %.0f s damage %.0f hits %d | open %.1f%% of the time, %d gaps of %.2f s | %.1f fps, heap min %d KB free\n", HLE_DUMMY_BOSS, (double)tm,
+                debugf("[dummy] boss %d t %.0f s damage %.0f hits %d | open %.1f%% of the time, %d gaps of %.2f s, sword %.0f | %.1f fps, heap min %d KB free\n", HLE_DUMMY_BOSS, (double)tm,
                        (double)hle_dummy_damage, hle_dummy_hits, (double)(100.0f * hle_open_time / (tm > 0 ? tm : 1)), hle_open_gaps,
-                       (double)(hle_open_gaps ? hle_open_time / hle_open_gaps : 0.0f), (double)display_get_fps(), heapMin / 1024);
+                       (double)(hle_open_gaps ? hle_open_time / hle_open_gaps : 0.0f), (double)hle_open_dmg, (double)display_get_fps(), heapMin / 1024);
         }
         return;
     }
@@ -1960,7 +3171,7 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         Boss *boss = boss_get_instance();
         bool combat = boss && boss->mode == BOSS_MODE_COMBAT && character_get_state() == CHAR_STATE_NORMAL;
         int t = frame - t0;
-        // pause menu: Resume, Restart, Settings, Controls / settings: Audio, Video, Controls, Skills, Skin, Back
+        // pause menu: Resume, Restart, Settings, Main Menu / settings: Audio, Video, Controls, Skills, Skin, Back
         // O = open the pause menu, C = close it (both wait until it took effect)
         static const char seq[] = "ODDADDDABBC";
         switch (phase) {
@@ -2029,21 +3240,43 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
             else if (frame > 200 && frame % 30 == 0) { pressed->a = 1; in->btn.a = 1; }
             return;
         }
-        int t = (frame - start) % 200, cyc = (frame - start) / 200;
+#ifndef HLE_SDMG_CYCLE
+#define HLE_SDMG_CYCLE 200      // frames a cast (Full Moon Dance needs about 300)
+#endif
+        int t = (frame - start) % HLE_SDMG_CYCLE, cyc = (frame - start) / HLE_SDMG_CYCLE;
         static float hp0; static int t0;
+        if (t == 0) debugf("[sdmgcyc] cast %d starts at %lu ms (VI frame ~%lu)\n", cyc, (unsigned long)get_ticks_ms(), (unsigned long)(get_ticks_ms() * 60 / 1000));
         if (t == 0) {
-#ifdef HLE_SDMG_TOWER     // in a Tower run holding every skill and the Halfmoon+/Cleave+ cards
+#ifdef HLE_SDMG_TOWER     // in a Tower run holding every skill (at Lv 1; HLE_SKILL_LV: one at a level and form)
             { extern void tower_begin_run(uint32_t); extern bool tower_active(void); if (!tower_active()) tower_begin_run(1); }
+#ifdef HLE_SKILL_LV       // <skill 1-3>,<lv 1-5>,<form 1 A, 2 B>; lv 0: each cast the next of Lv 1-4, then 5 A, 5 B
+            { extern void tower_test_skill_lv(int, int, int); static const int L[3] = { HLE_SKILL_LV };
+              if (!L[1]) { int c = cyc % 6; tower_test_skill_lv(L[0] - 1, c < 4 ? c + 1 : 5, c == 5 ? 2 : 1); } }
+#endif
+#ifdef HLE_SDMG_STAGGERED   // the boss held down, with Executioner, 3 Breaker pacts and Eclipse: its bonuses capped at +100%
+            { extern void tower_test_stagger_build(void); tower_test_stagger_build(); }
+#endif
 #endif
             boss->health = boss->maxHealth; hp0 = boss->health;
             float a = atan2f(character.pos[0] - boss->pos[0], character.pos[2] - boss->pos[2]);
-            character.pos[0] = boss->pos[0] + sinf(a) * 30.0f; character.pos[2] = boss->pos[2] + cosf(a) * 30.0f;
+#ifndef HLE_SDMG_DIST
+#define HLE_SDMG_DIST 30.0f     // from the boss
+#endif
+            character.pos[0] = boss->pos[0] + sinf(a) * HLE_SDMG_DIST; character.pos[2] = boss->pos[2] + cosf(a) * HLE_SDMG_DIST;
             character.stamina = character.maxStamina;
 #ifdef HLE_TEST_LOW_STAMINA     // a sliver of stamina: the first action still goes
             character.stamina = 1.0f;
 #endif
             boss->poise = 0.0f; boss->staggerT = 0.0f;
         }
+#ifdef HLE_SDMG_STAGGERED
+        boss->staggerT = 3.0f; boss->poise = 0.0f;
+#endif
+#ifdef HLE_SDMG_FT        // test aid: the frame time through each cast (10-190 frames into its cycle): mean and worst
+        static uint32_t ftPrev, ftSum, ftWorst, ftN;
+        { uint32_t now = get_ticks_us(); if (t > 10 && t <= HLE_SDMG_CYCLE - 10) { uint32_t d = now - ftPrev; ftSum += d; ftN++; if (d > ftWorst) ftWorst = d; } ftPrev = now;
+          if (t == HLE_SDMG_CYCLE - 9 && ftN) { debugf("[sdmgft] cast %d: mean %u us, worst %u us over %u frames\n", cyc, (unsigned)(ftSum / ftN), (unsigned)ftWorst, (unsigned)ftN); ftSum = ftWorst = ftN = 0; } }
+#endif
         if (t == 2 && cyc == 0) pressed->z = 1;
 #ifdef HLE_DUMMY_SKIN   // in this skin (the cloth through a skill)
         if (t == 2 && cyc == 0) character_skin_set(HLE_DUMMY_SKIN);
@@ -2101,10 +3334,13 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
         { static float y0; if (cyc == 0 && t == 0) y0 = boss->pos[1]; boss->pos[1] = y0 + (float)HLE_SDMG_RAISE; }
 #endif
         static int busyEnd;
-        if (t == 11) busyEnd = 0;
+        static float poisePeak;
+        if (t == 11) { busyEnd = 0; poisePeak = 0.0f; }
+        if (boss->poise > poisePeak) poisePeak = boss->poise;
         if (t > 11 && !busyEnd && character_get_state() == CHAR_STATE_NORMAL) busyEnd = frame;
-        if (t == 195) debugf("[sdmg] skill %d: %.1f damage, busy %.2f s, stagger meter %.2f%s\n", HLE_TEST_SKILL_DMG, (double)(hp0 - boss->health),
-                             (double)((busyEnd - t0) * deltaTime), (double)boss->poise, boss->staggerT > 0.0f ? " (staggered)" : "");
+        if (t == HLE_SDMG_CYCLE - 5) { extern int tower_skill_level(int), tower_skill_form(int); int k = HLE_TEST_SKILL_DMG - 1;
+            debugf("[sdmg] skill %d Lv %d form %d: %.1f damage, busy %.2f s, stagger meter %.2f (its peak %.3f)%s\n", HLE_TEST_SKILL_DMG, k >= 0 ? tower_skill_level(k) : 0, k >= 0 ? tower_skill_form(k) : 0,
+                   (double)(hp0 - boss->health), (double)((busyEnd - t0) * deltaTime), (double)boss->poise, (double)poisePeak, boss->staggerT > 0.0f ? " (staggered)" : ""); }
         return;
     }
 #endif
@@ -2156,10 +3392,137 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
     if (frame > 2600 && frame % 45 == 0) { pressed->b = 1; in->btn.b = 1; }   // attack
 }
 #endif
-#ifdef HLE_LOG_HITVOL
+#if defined(HLE_LOG_HITVOL) || defined(HLE_LOG_HITGAP)
 #include <t3d/t3dmodel.h>
 #include <t3d/t3dskeleton.h>
 #include "utilities/game_math.h"
+// test aid: a skinned mesh's vertices in the world (which: 0 the body, swords left out; 1 the swords only)
+int hle_mesh_points(const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M, int which, float (*out)[3], int max)
+{
+    int n = 0;
+    if (!m || !sk || !M) return 0;
+    T3DModelIter it = t3d_model_iter_create(m, T3D_CHUNK_TYPE_OBJECT);
+    while (t3d_model_iter_next(&it)) {
+        const T3DObject *ob = it.object;
+        const char *mn = ob->material && ob->material->name ? ob->material->name : "";
+        bool sw = strstr(mn, "sword") != NULL;
+        if (strstr(mn, "a_black") || sw != (which == 1)) continue;
+        for (int p = 0; p < ob->numParts; p++) {
+            const T3DObjectPart *pt = &ob->parts[p];
+            if (pt->matrixIdx >= sk->skeletonRef->boneCount) continue;
+            const T3DMat4FP *B = &sk->boneMatricesFP[pt->matrixIdx];
+            for (int v = 0; v < pt->vertLoadCount && n < max; v++) {
+                const int16_t *q = (v & 1) ? pt->vert[v >> 1].posB : pt->vert[v >> 1].posA;
+                float l[3] = { q[0], q[1], q[2] }, mm[3];
+                mat4fp_mul_point_f32_row3_colbasis(B, l, mm);
+                mat4fp_mul_point_f32_row3_colbasis(M, mm, out[n++]);
+            }
+        }
+    }
+    return n;
+}
+// test aid: a blade as drawn: the segment between its two furthest vertices, and how far its other vertices stand off it
+bool hle_points_blade(const float (*p)[3], int n, float a[3], float b[3], float *hw)
+{
+    if (n < 2) return false;
+    int i0 = 0, i1 = 1; float best = -1.0f;
+    for (int i = 0; i < n; i++) for (int j = i + 1; j < n; j++) {
+        float dx = p[i][0] - p[j][0], dy = p[i][1] - p[j][1], dz = p[i][2] - p[j][2], d = dx * dx + dy * dy + dz * dz;
+        if (d > best) { best = d; i0 = i; i1 = j; }
+    }
+    memcpy(a, p[i0], 12); memcpy(b, p[i1], 12);
+    extern float hle_pt_seg(const float q[3], const float a[3], const float b[3]);
+    // its half-width: the median vertex's distance off the segment (the guard's few, much wider, left out)
+    enum { NW = 256 }; float d[NW]; int m = 0;
+    for (int i = 0; i < n && m < NW; i++) { float v = hle_pt_seg(p[i], a, b), t = v; int j = m++; while (j > 0 && d[j - 1] > t) { d[j] = d[j - 1]; j--; } d[j] = t; }
+    *hw = d[m / 2];
+#ifdef HLE_LOG_HITGAP
+    { static int said; if (said++ < 6) { float l = sqrtf((a[0]-b[0])*(a[0]-b[0]) + (a[1]-b[1])*(a[1]-b[1]) + (a[2]-b[2])*(a[2]-b[2]));
+        debugf("[hgblade] %d vertices, %.1f long, off its line: p25 %.1f p50 %.1f p75 %.1f max %.1f\n", n, (double)l, (double)d[m / 4], (double)d[m / 2], (double)d[m * 3 / 4], (double)d[m - 1]); } }
+#endif
+    return true;
+}
+float hle_pt_seg(const float q[3], const float a[3], const float b[3])     // test aid: a point's distance from a segment
+{
+    float ab[3] = { b[0] - a[0], b[1] - a[1], b[2] - a[2] }, aq[3] = { q[0] - a[0], q[1] - a[1], q[2] - a[2] };
+    float l2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2], t = l2 > 1e-6f ? (aq[0] * ab[0] + aq[1] * ab[1] + aq[2] * ab[2]) / l2 : 0.0f;
+    t = fminf(1.0f, fmaxf(0.0f, t));
+    float d[3] = { aq[0] - ab[0] * t, aq[1] - ab[1] * t, aq[2] - ab[2] * t };
+    return sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+}
+#ifdef HLE_LOG_JUMPBODY
+// test aid: each player swing while the Guardian/Unbound leaps (combo attack, flip attack): did it land, and did the drawn blade touch the drawn body
+void hle_jb_swing(int idx, float t, float t0, float t1, bool hit, const float base[3], const float tip[3])
+{
+    static int lastIdx = -1, st; static float lastT = 1e9f, gap = 1e9f, bodyLo, bodyHi, capLo, capHi, bladeLo, bladeHi, at; static bool any, wasHit, hitLimb; static float hitGap, hitBodyLo, hitCapLo, hitBladeHi;
+    Boss *bb = boss_get_instance();
+    bool jump = bb && bb->phaseIndex <= 2 && bb->mode == BOSS_MODE_COMBAT && (bb->state == BOSS_STATE_COMBO_ATTACK || bb->state == BOSS_STATE_FLIP_ATTACK);
+    bool fresh = idx != lastIdx || t < lastT;
+    if ((fresh || idx < 0) && any) {
+        debugf("[jbswing] boss %d st %d t %.2f: %s | drawn blade to drawn body %.1f | body %.0f..%.0f, blade %.0f..%.0f, capsule %.0f..%.0f (over the floor, at the closest)", bb ? bb->phaseIndex : 0, st, (double)at,
+               wasHit ? "HIT" : "miss", (double)gap, (double)bodyLo, (double)bodyHi, (double)bladeLo, (double)bladeHi, (double)capLo, (double)capHi);
+        if (wasHit) debugf(" | at the hit: gap %.1f, body from %.0f, capsule from %.0f, blade up to %.0f%s", (double)hitGap, (double)hitBodyLo, (double)hitCapLo, (double)hitBladeHi, hitLimb ? ", a limb" : "");
+        debugf("\n");
+        any = false;
+    }
+    if (fresh) { gap = 1e9f; wasHit = false; }
+    lastIdx = idx; lastT = t;
+    if (idx < 0 || !jump || t <= t0 || t >= t1) return;
+    if (!any && hit) return;     // it landed before the leap began
+    enum { NP = 1400 };
+    static float pts[NP][3], sw[64][3];
+    extern T3DModel *characterModel;
+    int n = hle_mesh_points(bb->model, bb->skeleton, bb->modelMat, 0, pts, NP);
+    int ns = hle_mesh_points(characterModel, character.skeleton, character.modelMat, 1, sw, 64);
+    float a[3], b[3], hw;
+    if (!hle_points_blade((const float (*)[3])sw, ns, a, b, &hw)) { memcpy(a, base, 12); memcpy(b, tip, 12); hw = 1.0f; }
+    float g = 1e9f, lo = 1e9f, hi = -1e9f, fl = character.pos[1];
+    for (int i = 0; i < n; i++) { g = fminf(g, hle_pt_seg(pts[i], a, b) - hw); lo = fminf(lo, pts[i][1]); hi = fmaxf(hi, pts[i][1]); }
+    {   // every frame of a swing's live part in the leap: the sword's hit test against the drawn blade meeting the drawn body
+        extern bool charWeaponCollision; static int nf, both, air, missed, n0;
+        nf++; if (charWeaponCollision && g <= 1.5f) both++; else if (charWeaponCollision && g > 3.0f) air++; else if (!charWeaponCollision && g <= 1.5f) missed++;
+        if (nf - n0 >= 60) { n0 = nf; debugf("[jbframes] %d frames: the sword's test meets it and the drawn blade touches the body %d | meets it with the blade >3 off the body (air) %d | the blade touches the body, the test misses %d\n", nf, both, air, missed); }
+    }
+    if (hit && !wasHit) {     // the frame it landed
+        extern bool hle_limb_only;
+        hitGap = g; hitLimb = hle_limb_only; hitBodyLo = lo - fl;
+        hitCapLo = bb->pos[1] + bb->capsuleCollider.localCapA.v[1] - bb->capsuleCollider.radius - fl;
+        hitBladeHi = fmaxf(a[1], b[1]) - fl;
+    }
+    if (g < gap) {
+        gap = g; st = bb->state; at = bb->stateTimer; bodyLo = lo - fl; bodyHi = hi - fl;
+        bladeLo = fminf(a[1], b[1]) - fl; bladeHi = fmaxf(a[1], b[1]) - fl;
+        capLo = bb->pos[1] + bb->capsuleCollider.localCapA.v[1] - bb->capsuleCollider.radius - fl;
+        capHi = bb->pos[1] + bb->capsuleCollider.localCapB.v[1] + bb->capsuleCollider.radius - fl;
+    }
+    any = true;
+    if (hit) wasHit = true;
+}
+#endif
+bool hle_body_yspan(const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M, float out[2])     // test aid: the drawn body's lowest and highest skinned vertex (world y; swords left out)
+{
+    if (!m || !sk || !M) return false;
+    out[0] = 1e9f; out[1] = -1e9f;
+    T3DModelIter it = t3d_model_iter_create(m, T3D_CHUNK_TYPE_OBJECT);
+    while (t3d_model_iter_next(&it)) {
+        const T3DObject *ob = it.object;
+        const char *mn = ob->material && ob->material->name ? ob->material->name : "";
+        if (strstr(mn, "sword") || strstr(mn, "a_black")) continue;
+        for (int p = 0; p < ob->numParts; p++) {
+            const T3DObjectPart *pt = &ob->parts[p];
+            if (pt->matrixIdx >= sk->skeletonRef->boneCount) continue;
+            const T3DMat4FP *B = &sk->boneMatricesFP[pt->matrixIdx];
+            for (int v = 0; v < pt->vertLoadCount; v++) {
+                const int16_t *q = (v & 1) ? pt->vert[v >> 1].posB : pt->vert[v >> 1].posA;
+                float l[3] = { q[0], q[1], q[2] }, mm[3], w[3];
+                mat4fp_mul_point_f32_row3_colbasis(B, l, mm);
+                mat4fp_mul_point_f32_row3_colbasis(M, mm, w);
+                out[0] = fminf(out[0], w[1]); out[1] = fmaxf(out[1], w[1]);
+            }
+        }
+    }
+    return out[1] > out[0];
+}
 /** Every skinned vertex (swords and the summoned swords left out) in world space, from o: the
  *  widest (horizontal) below h above o of the legs, torso, arms and head; the top; the furthest
  *  in front of yaw (facing (-sin, cos)) and to its side */
@@ -2207,5 +3570,370 @@ bool hle_silhouette(const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M
         }
     }
     return true;
+}
+#endif
+#ifdef HLE_LOG_HITGAP
+// Test aid: each blow on the player, the gap between what was drawn when it landed (a blade, fist,
+// body, fire, beam...) and the player's drawn body (every skinned vertex, the sword left out),
+// against the same thing's gap to the player's hit capsule, and what a smaller capsule would change.
+// [hg] each blow as it lands; [hgw] each blow's live window as it ends: whether it landed and, for the
+// hurtboxes tried (v0 as it is, 8 round; r6; r5; r6 and r5 with the top lowered while rolling or down),
+// whether its volume reached it. A volume that doesn't use the player's capsule (a distance from his
+// middle) is "fixed": every hurtbox gives the same answer
+#include "character.h"
+#include "game/boss/boss.h"
+extern T3DModel *characterModel;
+extern float hle_pt_seg(const float q[3], const float a[3], const float b[3]);
+extern int hle_mesh_points(const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M, int which, float (*out)[3], int max);
+extern bool hle_points_blade(const float (*p)[3], int n, float a[3], float b[3], float *hw);
+int hle_hg_frame;
+#ifndef HLE_HG_LOW_TOP
+#define HLE_HG_LOW_TOP 14.0f    // the capsule's top over the floor while rolling or down, in the what-ifs
+#endif
+enum { HG_NP = 800, HG_NV = 5, HG_SLOTS = 96 };
+static float hgP[HG_NP][3]; static int hgN, hgAt = -1;
+static float hgMesh, hgCap; static const char *hgWhat;
+static const char *hgPartN[6]; static float hgPartG[6]; static int hgParts;     // each drawn part's own gap
+static void hg_part(const char *what, float g) { for (int i = 0; i < hgParts; i++) if (hgPartN[i] == what) { hgPartG[i] = fminf(hgPartG[i], g); return; } if (hgParts < 6) { hgPartN[hgParts] = what; hgPartG[hgParts++] = g; } }
+static void hg_player(void)
+{
+    if (hgAt == hle_hg_frame) return;
+    hgAt = hle_hg_frame;
+    hgN = hle_mesh_points(characterModel, character.skeleton, character.modelMat, 0, hgP, HG_NP);
+    static int said;     // how far apart its vertices are (a gap between two meshes' vertices reads up to about half of each mesh's spacing over the surfaces' own)
+    if (said++ == 600) {
+        static float nn[HG_NP]; int m = 0;
+        for (int i = 0; i < hgN; i++) { float b2 = 1e18f; for (int j = 0; j < hgN; j++) if (j != i) { float dx = hgP[i][0]-hgP[j][0], dy = hgP[i][1]-hgP[j][1], dz = hgP[i][2]-hgP[j][2], d2 = dx*dx+dy*dy+dz*dz; if (d2 > 1e-4f && d2 < b2) b2 = d2; } nn[m++] = sqrtf(b2); }
+        for (int i = 1; i < m; i++) { float v = nn[i]; int j = i - 1; while (j >= 0 && nn[j] > v) { nn[j + 1] = nn[j]; j--; } nn[j + 1] = v; }
+        debugf("[hgmesh] the player: %d vertices, nearest neighbour p50 %.1f p90 %.1f max %.1f\n", hgN, (double)nn[m / 2], (double)nn[m * 9 / 10], (double)nn[m - 1]);
+    }
+}
+static float hg_segseg(const float p1[3], const float q1[3], const float p2[3], const float q2[3])     // between two segments
+{
+    float d1[3], d2[3], r[3];
+    for (int i = 0; i < 3; i++) { d1[i] = q1[i] - p1[i]; d2[i] = q2[i] - p2[i]; r[i] = p1[i] - p2[i]; }
+    float a = d1[0]*d1[0] + d1[1]*d1[1] + d1[2]*d1[2], e = d2[0]*d2[0] + d2[1]*d2[1] + d2[2]*d2[2], f = d2[0]*r[0] + d2[1]*r[1] + d2[2]*r[2];
+    float s = 0.0f, t = 0.0f;
+    if (a < 1e-6f && e < 1e-6f) { } 
+    else if (a < 1e-6f) t = fminf(1.0f, fmaxf(0.0f, f / e));
+    else {
+        float c = d1[0]*r[0] + d1[1]*r[1] + d1[2]*r[2];
+        if (e < 1e-6f) s = fminf(1.0f, fmaxf(0.0f, -c / a));
+        else {
+            float b = d1[0]*d2[0] + d1[1]*d2[1] + d1[2]*d2[2], den = a * e - b * b;
+            s = den > 1e-6f ? fminf(1.0f, fmaxf(0.0f, (b * f - c * e) / den)) : 0.0f;
+            t = (b * s + f) / e;
+            if (t < 0.0f) { t = 0.0f; s = fminf(1.0f, fmaxf(0.0f, -c / a)); }
+            else if (t > 1.0f) { t = 1.0f; s = fminf(1.0f, fmaxf(0.0f, (b - c) / a)); }
+        }
+    }
+    float x[3]; for (int i = 0; i < 3; i++) x[i] = p1[i] + d1[i] * s - (p2[i] + d2[i] * t);
+    return sqrtf(x[0]*x[0] + x[1]*x[1] + x[2]*x[2]);
+}
+static bool hg_low(void) { CharacterState st = character_get_state(); return st == CHAR_STATE_ROLLING || st == CHAR_STATE_KNOCKDOWN; }
+// The player's capsule: v 0 as the game has it; 1/2 radius 6/5 with the same top (20); 3/4 those with
+// the top at HLE_HG_LOW_TOP while rolling or down
+static float hg_axis(int v, float a[3], float b[3])
+{
+    const float *p = character.pos;
+    if (v == 0) {
+        for (int i = 0; i < 3; i++) { a[i] = p[i] + character.capsuleCollider.localCapA.v[i]; b[i] = p[i] + character.capsuleCollider.localCapB.v[i]; }
+        return character.capsuleCollider.radius;
+    }
+    float r = (v == 1 || v == 3) ? 6.0f : 5.0f, top = (v >= 3 && hg_low()) ? HLE_HG_LOW_TOP : 20.0f;
+    a[0] = b[0] = p[0]; a[2] = b[2] = p[2];
+    b[1] = p[1] + top - r; a[1] = fminf(p[1] + 4.0f, b[1]);
+    return r;
+}
+typedef struct { const char *name; const void *key; int last, hits; float m[HG_NV], mesh, cap, top; int st; bool fixed; } HgWin;
+static const void *hgKey;
+void hle_hg_key(const void *k) { hgKey = k; }     // the next call's blow is this one (an effect among several of one name)
+static HgWin hgW[HG_SLOTS];
+static void hg_flush(HgWin *w)
+{
+    Boss *bb = boss_get_instance();
+    debugf("[hgw] boss %d %s | %s | reach", bb ? bb->phaseIndex : 0, w->name, w->hits ? "LANDED" : "missed");
+    for (int v = 0; v < HG_NV; v++) debugf(" %.1f", (double)w->m[v]);
+    debugf(" | hurtboxes it reaches:");
+    for (int v = 0; v < HG_NV; v++) debugf(" %d", w->m[v] <= 0.0f);
+    if (w->hits) debugf(" | drawn gap %.1f, to the capsule %.1f, player state %d top %.1f", (double)w->mesh, (double)w->cap, w->st, (double)w->top);
+    debugf("%s\n", w->fixed ? " | fixed" : "");
+    w->name = NULL;
+}
+void hle_hg_tick(void)     // a window not seen for 4 frames is over
+{
+#ifdef HLE_HG_POSE     // the drawn body's top and reach off the axis, every 6th frame out of the normal stance (rolls, knockdowns)
+    if (hle_hg_frame % 6 == 0 && character.skeleton && character_get_state() != CHAR_STATE_NORMAL) {
+        hg_player(); float top = -1e9f, out = 0.0f;
+        for (int i = 0; i < hgN; i++) { float dx = hgP[i][0] - character.pos[0], dz = hgP[i][2] - character.pos[2]; top = fmaxf(top, hgP[i][1] - character.pos[1]); out = fmaxf(out, sqrtf(dx * dx + dz * dz)); }
+        debugf("[pose] f%d st %d top %.1f out %.1f\n", hle_hg_frame, character_get_state(), (double)top, (double)out);
+    }
+#endif
+    for (int i = 0; i < HG_SLOTS; i++) if (hgW[i].name && hle_hg_frame - hgW[i].last > 4) hg_flush(&hgW[i]);
+}
+static HgWin *hg_win(const char *name)
+{
+    HgWin *free = NULL; const void *key = hgKey; hgKey = NULL;
+    for (int i = 0; i < HG_SLOTS; i++) { if (hgW[i].name == name && hgW[i].key == key) return &hgW[i]; if (!hgW[i].name && !free) free = &hgW[i]; }
+    if (!free) return NULL;
+    memset(free, 0, sizeof *free);
+    free->name = name; free->key = key;
+    for (int v = 0; v < HG_NV; v++) free->m[v] = 1e9f;
+    return free;
+}
+// A blow's volume this frame: the capsule a-b (a ball when a == b), radius r, tested against the player's capsule
+void hle_hg_vol(const char *name, const float a[3], const float b[3], float r)
+{
+    HgWin *w = hg_win(name); if (!w) return;
+    w->last = hle_hg_frame;
+    for (int v = 0; v < HG_NV; v++) { float pa[3], pb[3], pr = hg_axis(v, pa, pb); w->m[v] = fminf(w->m[v], hg_segseg(a, b, pa, pb) - r - pr); }
+}
+// A blow whose volume is a distance from the player's middle (or a floor area): inside or not, any capsule
+void hle_hg_fixed(const char *name, bool inside)
+{
+    HgWin *w = hg_win(name); if (!w) return;
+    w->last = hle_hg_frame; w->fixed = true;
+    for (int v = 0; v < HG_NV; v++) w->m[v] = fminf(w->m[v], inside ? -1.0f : 1.0f);
+}
+// What is drawn as the blow lands, added up from its parts: segments (balls when a == b) of radius r,
+void hle_hg_begin(void) { hg_player(); hgMesh = hgCap = 1e9f; hgWhat = ""; hgParts = 0; }
+void hle_hg_seg(const char *what, const float a[3], const float b[3], float r)
+{
+    float pa[3], pb[3], pr = hg_axis(0, pa, pb), g = 1e9f;
+    for (int i = 0; i < hgN; i++) g = fminf(g, hle_pt_seg(hgP[i], a, b));
+    g -= r;
+    hg_part(what, g);
+    if (g < hgMesh) { hgMesh = g; hgWhat = what; }
+    hgCap = fminf(hgCap, hg_segseg(a, b, pa, pb) - r - pr);
+}
+// a skinned mesh's vertices (which 0: the body; 1: the swords), as points: the nearest pair
+void hle_hg_mesh(const char *what, const T3DModel *m, const T3DSkeleton *sk, const T3DMat4FP *M, int which)
+{
+    enum { NB = 1400 };
+    static float q[NB][3];
+    int n = hle_mesh_points(m, sk, M, which, q, NB);
+    { static int said[2]; if (said[which & 1]++ == 3) {
+        static float nn[NB]; int c = 0;
+        for (int i = 0; i < n; i++) { float b2 = 1e18f; for (int j = 0; j < n; j++) if (j != i) { float dx = q[i][0]-q[j][0], dy = q[i][1]-q[j][1], dz = q[i][2]-q[j][2], d2 = dx*dx+dy*dy+dz*dz; if (d2 > 1e-4f && d2 < b2) b2 = d2; } nn[c++] = sqrtf(b2); }
+        for (int i = 1; i < c; i++) { float v = nn[i]; int j = i - 1; while (j >= 0 && nn[j] > v) { nn[j + 1] = nn[j]; j--; } nn[j + 1] = v; }
+        if (c) debugf("[hgmesh] %s (%s): %d vertices, nearest neighbour p50 %.1f p90 %.1f max %.1f\n", what, which ? "swords" : "body", c, (double)nn[c / 2], (double)nn[c * 9 / 10], (double)nn[c - 1]); } }
+    float pa[3], pb[3], pr = hg_axis(0, pa, pb), g2 = 1e18f, c = 1e9f, out = 0.0f;
+    for (int j = 0; j < hgN; j++) out = fmaxf(out, hle_pt_seg(hgP[j], pa, pb));     // the player's drawn body reaches this far off his axis
+    for (int i = 0; i < n; i++) {
+        float da = hle_pt_seg(q[i], pa, pb);
+        c = fminf(c, da - pr);
+        if (da - out > 0.0f && (da - out) * (da - out) >= g2) continue;     // (no nearer than that to any of his vertices)
+        for (int j = 0; j < hgN; j++) {
+            float dx = q[i][0] - hgP[j][0], dy = q[i][1] - hgP[j][1], dz = q[i][2] - hgP[j][2], d2 = dx*dx + dy*dy + dz*dz;
+            if (d2 < g2) g2 = d2;
+        }
+    }
+    float g = sqrtf(g2);
+    hg_part(what, g);
+    if (g < hgMesh) { hgMesh = g; hgWhat = what; }
+    hgCap = fminf(hgCap, c);
+}
+// a gap worked out by the caller (Shadowborne's drawn shapes): to the mesh, to the capsule
+void hle_hg_gaps(const char *what, float mesh, float cap) { hg_part(what, mesh); if (mesh < hgMesh) { hgMesh = mesh; hgWhat = what; } hgCap = fminf(hgCap, cap); }
+float hle_hg_mesh_seg(const float a[3], const float b[3])     // the player's drawn body from a segment
+{
+    hg_player();
+    float g = 1e9f;
+    for (int i = 0; i < hgN; i++) g = fminf(g, hle_pt_seg(hgP[i], a, b));
+    return g;
+}
+void hle_hg_hit(const char *name)
+{
+    float top = -1e9f;
+    for (int i = 0; i < hgN; i++) top = fmaxf(top, hgP[i][1] - character.pos[1]);
+    Boss *bb = boss_get_instance();
+    debugf("[hg] boss %d %s | drawn %s gap %.1f | to the capsule %.1f | player state %d top %.1f | f%d | parts", bb ? bb->phaseIndex : 0, name, hgWhat, (double)hgMesh, (double)hgCap, character_get_state(), (double)top, hle_hg_frame);
+    for (int i = 0; i < hgParts; i++) debugf(" %s %.1f", hgPartN[i], (double)hgPartG[i]);
+    debugf("\n");
+    HgWin *w = hg_win(name); if (!w) return;
+    if (!w->last) { w->last = hle_hg_frame; }
+    if (!w->hits) { w->mesh = hgMesh; w->cap = hgCap; w->st = character_get_state(); w->top = top; }
+    w->hits++;
+}
+#endif
+#ifdef HLE_LOG_HITGAP
+static const char *const hgG[2][20] = {
+    { "G 0", "G 1", "G 2", "G 3", "G 4", "G 5", "G 6", "G lunge (blade)", "G power jump (blade)", "G combo (blade)", "G combo starter (blade)", "G tracking slam (blade)", "G flip (blade)", "G lunge starter (blade)", "G stomp (blade)", "G attack1 (blade)", "G 16", "G 17", "G 18", "G 19" },
+    { "U 0", "U 1", "U 2", "U 3", "U 4", "U 5", "U 6", "U lunge (blade)", "U power jump (blade)", "U combo (blade)", "U combo starter (blade)", "U tracking slam (blade)", "U flip (blade)", "U lunge starter (blade)", "U stomp (blade)", "U attack1 (blade)", "U barrage (blade)", "U sweep (blade)", "U 18", "U 19" } };
+const char *hle_hg_gname(const Boss *b) { return hgG[b->phaseIndex == 2][(unsigned)b->state < 20 ? b->state : 19]; }
+const char *hle_hg_gsphere; int hle_hg_gsphereAt;     // this frame's ball (power jump, stomp, flip burst), if that's what landed
+// test aid: the Guardian's sword blade (z_sword1 and its decal past the guard, and the flared point) as its plane
+// sampled every 0.75 (tools: /tmp/gb), in the Hand-Right bone's space: the mesh has vertices only at the
+// guard and the point, so its vertices read the middle of the blade as far as 5 off
+static const int16_t HG_GBLADE[][3] = {
+    {-781,-74,-76}, {-777,-63,-76}, {-773,-51,-77}, {-770,-71,-75}, {-770,-50,-77}, {-770,-40,-77}, {-769,-62,-76}, {-766,-29,-78}, {-762,-18,-79}, {-759,-68,-74},
+    {-759,-25,-78}, {-759,-13,-79}, {-758,-61,-74}, {-758,-49,-76}, {-758,-37,-77}, {-758,-6,-79}, {-754,5,-80}, {-751,16,-80}, {-748,-65,-73}, {-748,11,-80},
+    {-748,23,-81}, {-747,-25,-77}, {-747,-13,-78}, {-747,-1,-79}, {-747,27,-81}, {-746,-61,-73}, {-746,-49,-74}, {-746,-37,-76}, {-743,39,-82}, {-739,50,-82},
+    {-737,-62,-73}, {-737,35,-81}, {-737,47,-82}, {-736,0,-78}, {-736,12,-79}, {-736,24,-80}, {-735,-24,-76}, {-735,-12,-77}, {-735,61,-83}, {-734,-60,-72},
+    {-734,-48,-73}, {-734,-36,-74}, {-732,73,-83}, {-728,84,-84}, {-726,-59,-72}, {-726,72,-83}, {-726,84,-84}, {-725,36,-80}, {-725,48,-81}, {-725,60,-82},
+    {-724,0,-77}, {-724,12,-78}, {-724,24,-79}, {-724,95,-85}, {-723,-24,-74}, {-723,-12,-76}, {-722,-48,-72}, {-722,-36,-73}, {-715,-56,-71}, {-714,60,-81},
+    {-714,72,-82}, {-714,84,-83}, {-714,91,-83}, {-713,36,-79}, {-713,48,-80}, {-712,1,-76}, {-712,12,-77}, {-712,24,-78}, {-711,-35,-72}, {-711,-23,-73},
+    {-711,-11,-74}, {-710,-47,-71}, {-704,-53,-70}, {-703,88,-82}, {-702,61,-80}, {-702,73,-81}, {-702,85,-82}, {-701,37,-78}, {-701,49,-79}, {-700,1,-74},
+    {-700,13,-76}, {-700,25,-77}, {-699,-35,-71}, {-699,-23,-72}, {-699,-11,-73}, {-698,-47,-70}, {-693,-50,-70}, {-693,84,-81}, {-690,61,-79}, {-690,73,-80},
+    {-689,25,-76}, {-689,37,-77}, {-689,49,-78}, {-688,1,-73}, {-688,13,-74}, {-687,-34,-70}, {-687,-22,-71}, {-687,-10,-72}, {-686,-46,-69}, {-682,-47,-69},
+    {-682,81,-80}, {-678,62,-78}, {-678,74,-79}, {-677,26,-74}, {-677,38,-76}, {-677,50,-77}, {-676,2,-72}, {-676,14,-73}, {-675,-34,-69}, {-675,-22,-70},
+    {-675,-10,-71}, {-672,77,-78}, {-671,-44,-68}, {-666,62,-77}, {-666,74,-78}, {-665,26,-73}, {-665,38,-74}, {-665,50,-76}, {-664,2,-71}, {-664,14,-72},
+    {-663,-33,-68}, {-663,-21,-69}, {-663,-10,-70}, {-662,74,-77}, {-660,-40,-67}, {-654,63,-76}, {-653,27,-72}, {-653,39,-73}, {-653,51,-74}, {-652,-9,-69},
+    {-652,3,-70}, {-652,15,-71}, {-651,-33,-67}, {-651,-21,-68}, {-651,70,-76}, {-649,-37,-67}, {-642,63,-74}, {-641,27,-71}, {-641,39,-72}, {-641,51,-73},
+    {-641,67,-75}, {-640,-9,-68}, {-640,3,-69}, {-640,14,-70}, {-640,15,-70}, {-639,-32,-66}, {-639,-21,-67}, {-638,-34,-66}, {-632,21,-70}, {-631,7,-69},
+    {-630,52,-72}, {-630,63,-73}, {-629,28,-70}, {-629,40,-71}, {-628,-8,-67}, {-628,4,-68}, {-628,12,-69}, {-628,16,-69}, {-628,24,-70}, {-627,-31,-65},
+    {-627,-20,-66}, {-624,29,-70}, {-622,0,-67}, {-620,59,-72}, {-618,52,-71}, {-617,28,-69}, {-617,40,-70}, {-616,-28,-64}, {-616,-8,-66}, {-616,4,-67},
+    {-616,13,-68}, {-616,16,-68}, {-616,25,-69}, {-615,-20,-65}, {-615,1,-67}, {-615,37,-70}, {-613,-8,-66}, {-610,56,-71}, {-607,45,-70}, {-606,53,-70},
+    {-605,-25,-64}, {-605,17,-67}, {-605,29,-68}, {-605,37,-69}, {-605,41,-69}, {-604,-15,-64}, {-604,-7,-65}, {-604,1,-66}, {-604,5,-66}, {-604,13,-67},
+    {-604,25,-68}, {-603,-19,-64}, {-603,-11,-65}, {-599,52,-70}, {-597,51,-69}, {-596,39,-68}, {-595,-22,-63}, {-595,28,-67}, {-594,-22,-63}, {-594,-13,-64},
+    {-594,-3,-65}, {-594,6,-65}, {-594,16,-66}, {-593,38,-68}, {-593,50,-69}, {-592,2,-65}, {-592,14,-66}, {-592,26,-67}, {-591,-10,-64}, {-587,53,-69},
+    {-582,-22,-62}, {-581,38,-67}, {-581,50,-68}, {-580,2,-64}, {-580,14,-65}, {-580,26,-66}, {-579,-10,-63}, {-576,53,-68}, {-570,-21,-61}, {-569,39,-66},
+    {-569,51,-67}, {-568,3,-63}, {-568,15,-64}, {-568,27,-65}, {-567,-9,-62}, {-564,53,-67}, {-558,-21,-60}, {-557,27,-64}, {-557,39,-65}, {-557,51,-66},
+    {-556,3,-62}, {-556,15,-63}, {-555,-9,-61}, {-552,54,-66}, {-547,-20,-59}, {-545,28,-63}, {-545,39,-64}, {-545,51,-65}, {-544,4,-61}, {-544,16,-62},
+    {-543,-8,-60}, {-540,54,-64}, {-535,-19,-58}, {-533,28,-62}, {-533,40,-63}, {-533,52,-64}, {-532,4,-60}, {-532,16,-61}, {-531,-8,-58}, {-528,54,-63},
+    {-523,-19,-57}, {-521,28,-61}, {-521,40,-62}, {-521,52,-63}, {-520,-7,-57}, {-520,5,-58}, {-520,17,-60}, {-516,55,-62}, {-511,-18,-56}, {-509,29,-60},
+    {-509,41,-61}, {-509,53,-62}, {-508,-7,-56}, {-508,5,-57}, {-508,17,-58}, {-504,55,-61}, {-500,-18,-55}, {-498,53,-61}, {-497,29,-58}, {-497,41,-60},
+    {-496,-6,-55}, {-496,6,-56}, {-496,17,-57}, {-493,55,-60}, {-488,-17,-54}, {-486,54,-60}, {-485,30,-57}, {-485,42,-58}, {-484,-6,-54}, {-484,6,-55},
+    {-484,18,-56}, {-481,56,-59}, {-476,-17,-53}, {-474,54,-58}, {-473,18,-55}, {-473,30,-56}, {-473,42,-57}, {-472,-5,-53}, {-472,6,-54}, {-469,56,-58},
+    {-464,-16,-52}, {-462,55,-57}, {-461,19,-54}, {-461,31,-55}, {-461,43,-56}, {-460,-5,-52}, {-460,7,-53}, {-457,56,-57}, {-453,-15,-51}, {-450,55,-56},
+    {-449,19,-53}, {-449,31,-54}, {-449,43,-55}, {-448,-5,-51}, {-448,7,-52}, {-445,57,-56}, {-441,-15,-50}, {-438,56,-55}, {-437,20,-52}, {-437,32,-53},
+    {-437,44,-54}, {-436,-4,-50}, {-436,8,-51}, {-433,57,-55}, {-429,-14,-49}, {-426,56,-54}, {-425,20,-51}, {-425,32,-52}, {-425,44,-53}, {-424,-4,-49},
+    {-424,8,-50}, {-421,57,-54}, {-417,-14,-48}, {-414,45,-52}, {-414,57,-53}, {-413,21,-50}, {-413,33,-51}, {-412,-3,-48}, {-412,9,-49}, {-410,58,-53},
+    {-405,-13,-47}, {-402,45,-51}, {-402,57,-52}, {-401,21,-49}, {-401,33,-50}, {-400,-3,-47}, {-400,9,-48}, {-398,58,-52}, {-394,-13,-46}, {-390,46,-50},
+    {-390,58,-51}, {-389,10,-47}, {-389,22,-48}, {-389,34,-49}, {-388,-2,-46}, {-386,58,-51}, {-382,-12,-45}, {-378,46,-49}, {-378,58,-50}, {-377,10,-46},
+    {-377,22,-47}, {-377,34,-48}, {-376,-2,-45}, {-374,59,-50}, {-370,-11,-44}, {-366,47,-48}, {-366,58,-49}, {-365,11,-45}, {-365,23,-46}, {-365,35,-47},
+    {-364,-1,-44}, {-362,59,-49}, {-358,-11,-43}, {-354,47,-47}, {-354,59,-48}, {-353,11,-44}, {-353,23,-45}, {-353,35,-46}, {-352,-1,-43}, {-350,59,-48},
+    {-347,-10,-42}, {-342,47,-46}, {-342,59,-47}, {-341,12,-43}, {-341,24,-44}, {-341,36,-45}, {-340,0,-42}, {-338,60,-47}, {-335,-10,-41}, {-330,36,-44},
+    {-330,48,-45}, {-330,60,-46}, {-329,12,-42}, {-329,24,-43}, {-328,0,-41}, {-327,60,-46}, {-323,-9,-39}, {-318,36,-43}, {-318,48,-44}, {-317,13,-41},
+    {-317,25,-42}, {-316,1,-40}, {-315,60,-45}, {-311,-9,-38}, {-306,37,-42}, {-306,49,-43}, {-305,1,-39}, {-305,13,-40}, {-305,25,-41}, {-303,61,-44},
+    {-299,-8,-37}, {-294,37,-41}, {-294,49,-42}, {-293,2,-38}, {-293,13,-39}, {-293,25,-40}, {-291,61,-43}, {-288,-7,-36}, {-282,38,-40}, {-282,50,-41},
+    {-281,2,-37}, {-281,14,-38}, {-281,26,-39}, {-279,61,-41}, {-276,-7,-35}, {-270,38,-39}, {-270,50,-40}, {-269,2,-36}, {-269,14,-37}, {-269,26,-38},
+    {-267,62,-40}, {-264,-6,-34}, {-258,39,-38}, {-258,51,-39}, {-257,3,-35}, {-257,15,-36}, {-257,27,-37}, {-255,62,-39}, {-252,-6,-33}, {-246,27,-36},
+    {-246,39,-37}, {-246,51,-38}, {-245,3,-33}, {-245,15,-35}, {-244,62,-38}, {-241,-5,-32}, {-234,28,-35}, {-234,40,-36}, {-234,52,-37}, {-233,4,-32},
+    {-233,16,-33}, {-232,63,-37}, {-229,-5,-31}, {-222,28,-33}, {-222,40,-35}, {-222,52,-36}, {-221,4,-31}, {-221,16,-32}, {-220,63,-36}, {-217,-4,-30},
+    {-210,29,-32}, {-210,41,-33}, {-210,53,-34}, {-209,5,-30}, {-209,17,-31}, {-208,63,-35}, {-205,-3,-29}, {-199,53,-33}, {-198,29,-31}, {-198,41,-32},
+    {-197,5,-29}, {-197,17,-30}, {-196,64,-34}, {-193,-3,-28}, {-187,54,-32}, {-186,30,-30}, {-186,42,-31}, {-185,6,-28}, {-185,18,-29}, {-184,64,-33},
+    {-182,-2,-27}, {-175,54,-31}, {-174,30,-29}, {-174,42,-30}, {-173,6,-27}, {-173,18,-28}, {-172,64,-32}, {-170,-2,-26}, {-163,54,-30}, {-162,19,-27},
+    {-162,31,-28}, {-162,43,-29}, {-161,7,-26}, {-161,65,-31}, {-158,-1,-25}, {-151,55,-29}, {-150,19,-26}, {-150,31,-27}, {-150,43,-28}, {-149,7,-25},
+    {-149,65,-30}, {-146,-1,-24}, {-139,55,-28}, {-138,20,-25}, {-138,32,-26}, {-138,43,-27}, {-137,8,-24}, {-137,65,-29}, {-135,0,-23}, {-127,56,-27},
+    {-126,20,-24}, {-126,32,-25}, {-126,44,-26}, {-125,8,-23}, {-125,66,-28}, {-123,1,-22}, {-115,44,-25}, {-115,56,-26}, {-114,21,-23}, {-114,32,-24},
+    {-113,9,-22}, {-113,55,-26}, {-113,66,-27}, {-112,23,-23}, {-112,34,-24}, {-112,45,-25}, {-111,1,-21}, {-111,2,-21}, {-111,12,-22}
+};
+static void hg_gblade(const Boss *b)
+{
+    if (b->handRightBoneIndex < 0) return;
+    const T3DMat4FP *B = &((T3DSkeleton *)b->skeleton)->boneMatricesFP[b->handRightBoneIndex];
+    float pa[3], pb[3], pr = hg_axis(0, pa, pb), g2 = 1e18f, c = 1e9f;
+    for (unsigned i = 0; i < sizeof HG_GBLADE / sizeof HG_GBLADE[0]; i++) {
+        float l[3] = { HG_GBLADE[i][0], HG_GBLADE[i][1], HG_GBLADE[i][2] }, m[3], w[3];
+        mat4fp_mul_point_f32_row3_colbasis(B, l, m); mat4fp_mul_point_f32_row3_colbasis((const T3DMat4FP *)b->modelMat, m, w);
+        c = fminf(c, hle_pt_seg(w, pa, pb) - pr);
+        for (int j = 0; j < hgN; j++) { float dx = w[0] - hgP[j][0], dy = w[1] - hgP[j][1], dz = w[2] - hgP[j][2], d2 = dx*dx + dy*dy + dz*dz; if (d2 < g2) g2 = d2; }
+    }
+    float g = sqrtf(g2);
+    hg_part("blade", g);
+    if (g < hgMesh) { hgMesh = g; hgWhat = "blade"; }
+    hgCap = fminf(hgCap, c);
+}
+void hle_hg_ghit(void)      // the Guardian or Unbound landed a blow: the blade and the body as drawn
+{
+    Boss *b = boss_get_instance(); if (!b) return;
+    hle_hg_begin();
+    hg_gblade(b);     // the sword's blade, its plane sampled densely (its mesh has vertices only at the guard and the point)
+    hle_hg_mesh("swords", b->model, b->skeleton, b->modelMat, 1);
+    hle_hg_mesh("body", b->model, b->skeleton, b->modelMat, 0);
+    hle_hg_hit(hle_hg_gsphere && hle_hg_gsphereAt == hle_hg_frame ? hle_hg_gsphere : hle_hg_gname(b));
+}
+#endif
+#ifdef HLE_LOG_HITGAP
+#include "utilities/simple_collision_utility.h"
+static float hg_obb_d(const SCU_OBB *o, const float q[3], bool xz)     // a point's distance from a box turned by yaw about y
+{
+    float c = cosf(o->yaw), s = sinf(o->yaw), dx = q[0] - o->center[0], dy = q[1] - o->center[1], dz = q[2] - o->center[2];
+    float lx = dx * c + dz * s, lz = -dx * s + dz * c;     // (either turn: the box is symmetric)
+    float ex = fmaxf(0.0f, fabsf(lx) - o->half[0]), ey = xz ? 0.0f : fmaxf(0.0f, fabsf(dy) - o->half[1]), ez = fmaxf(0.0f, fabsf(lz) - o->half[2]);
+    return sqrtf(ex * ex + ey * ey + ez * ez);
+}
+void hle_hg_obb_vol(const char *name, const SCU_OBB *o)     // a box on the floor tested in xz against the player's radius
+{
+    HgWin *w = hg_win(name); if (!w) return;
+    w->last = hle_hg_frame;
+    for (int v = 0; v < HG_NV; v++) { float pa[3], pb[3], pr = hg_axis(v, pa, pb); w->m[v] = fminf(w->m[v], hg_obb_d(o, pa, true) - pr); }
+}
+void hle_hg_obb(const char *what, const SCU_OBB *o)     // a box as drawn
+{
+    float pa[3], pb[3], pr = hg_axis(0, pa, pb), g = 1e9f, c = 1e9f;
+    for (int i = 0; i < hgN; i++) g = fminf(g, hg_obb_d(o, hgP[i], false));
+    for (int k = 0; k <= 8; k++) { float q[3]; for (int i = 0; i < 3; i++) q[i] = pa[i] + (pb[i] - pa[i]) * k / 8.0f; c = fminf(c, hg_obb_d(o, q, false) - pr); }
+    hg_part(what, g);
+    if (g < hgMesh) { hgMesh = g; hgWhat = what; }
+    hgCap = fminf(hgCap, c);
+}
+#endif
+#ifdef HLE_LOG_HITGAP
+void hle_hg_vol_xz(const char *name, const float c[3], float R)     // a wave on the floor: the player's middle within R + his radius of c
+{
+    HgWin *w = hg_win(name); if (!w) return;
+    w->last = hle_hg_frame;
+    for (int v = 0; v < HG_NV; v++) { float pa[3], pb[3], pr = hg_axis(v, pa, pb), dx = pa[0] - c[0], dz = pa[2] - c[2]; w->m[v] = fminf(w->m[v], sqrtf(dx * dx + dz * dz) - R - pr); }
+}
+void hle_hg_ring(const char *what, const float c[3], float R, float yLo, float yHi)     // a ring on the floor as drawn: out to R, from yLo to yHi
+{
+    float pa[3], pb[3], pr = hg_axis(0, pa, pb), g = 1e9f;
+    for (int i = 0; i < hgN; i++) {
+        float dx = hgP[i][0] - c[0], dz = hgP[i][2] - c[2], ex = sqrtf(dx * dx + dz * dz) - R, ey = hgP[i][1] > yHi ? hgP[i][1] - yHi : hgP[i][1] < yLo ? yLo - hgP[i][1] : 0.0f;
+        g = fminf(g, ex > 0.0f ? sqrtf(ex * ex + ey * ey) : ey > 0.0f ? ey : ex);
+    }
+    float dx = pa[0] - c[0], dz = pa[2] - c[2], cap = sqrtf(dx * dx + dz * dz) - R - pr;
+    hg_part(what, g);
+    if (g < hgMesh) { hgMesh = g; hgWhat = what; }
+    hgCap = fminf(hgCap, cap);
+}
+int hle_hg_boss_state(void)
+{
+    extern int hle_fk_state(void), hle_sun_state(void), hle_dg_state(void);
+    Boss *b = boss_get_instance(); if (!b) return -1;
+    return b->phaseIndex == 3 ? hle_fk_state() : b->phaseIndex == 4 ? hle_sun_state() : b->phaseIndex == 5 ? hle_dg_state() : (int)b->state;
+}
+const char *hle_hg_fxname(int shape, bool arc, int st)     // a hostile effect, by its boss, its shape and the boss's move when it was cast
+{
+    static const char *const S[7] = { "X", "blade", "crescent", "ember", "beam", "shot", "wave" };
+    static const char *const B[6] = { "?", "G", "U", "FW", "Sun", "SB" };
+    static char buf[6][7][32][28];
+    Boss *b = boss_get_instance(); int p = b && b->phaseIndex >= 1 && b->phaseIndex <= 5 ? b->phaseIndex : 0;
+    int k = arc ? 6 : (shape >= 0 && shape < 6 ? shape : 5), m = st >= 0 && st < 32 ? st : 31;
+    if (!buf[p][k][m][0]) snprintf(buf[p][k][m], sizeof buf[p][k][m], "%s %s (move %d)", B[p], S[k], st);
+    return buf[p][k][m];
+}
+#endif
+#ifdef HLE_LOG_HITGAP
+void hle_hg_sbvol(const char *name, float ax)     // Shadowborne's own test: what is drawn within 6 (PLAYER_R) of an axis 4..16 over the feet; ax its distance
+{
+    static const float R[HG_NV] = { 6.0f, 6.0f, 5.0f, 6.0f, 5.0f };
+    HgWin *w = hg_win(name); if (!w) return;
+    w->last = hle_hg_frame;
+    for (int v = 0; v < HG_NV; v++) w->m[v] = fminf(w->m[v], ax - R[v]);
+}
+int hle_hg_player_pts(const float (**p)[3]) { hg_player(); *p = (const float (*)[3])hgP; return hgN; }
+float hle_hg_r(int v) { float a[3], b[3]; return hg_axis(v, a, b); }
+void hle_hg_m(const char *name, const float m[HG_NV], bool fixed)     // a reach worked out by the caller for each hurtbox
+{
+    HgWin *w = hg_win(name); if (!w) return;
+    w->last = hle_hg_frame; w->fixed = w->fixed || fixed;
+    for (int v = 0; v < HG_NV; v++) w->m[v] = fminf(w->m[v], m[v]);
+}
+#endif
+#ifdef HLE_LOG_HITGAP
+void hle_hg_ring2(const char *what, const float c[3], float Rin, float Rout, float yLo, float yHi)     // a band Rin..Rout round c as drawn, yLo..yHi
+{
+    float pa[3], pb[3], pr = hg_axis(0, pa, pb), g = 1e9f;
+    for (int i = 0; i < hgN; i++) {
+        float dx = hgP[i][0] - c[0], dz = hgP[i][2] - c[2], d = sqrtf(dx * dx + dz * dz), ex = fmaxf(Rin - d, d - Rout), ey = hgP[i][1] > yHi ? hgP[i][1] - yHi : hgP[i][1] < yLo ? yLo - hgP[i][1] : 0.0f;
+        g = fminf(g, ex > 0.0f ? sqrtf(ex * ex + ey * ey) : ey > 0.0f ? ey : ex);
+    }
+    float dx = pa[0] - c[0], dz = pa[2] - c[2], d = sqrtf(dx * dx + dz * dz);
+    hg_part(what, g);
+    if (g < hgMesh) { hgMesh = g; hgWhat = what; }
+    hgCap = fminf(hgCap, fmaxf(d - pr - Rout, Rin - (d + pr)));
 }
 #endif

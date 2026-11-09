@@ -1,3 +1,5 @@
+#include "weapon.h"
+#include "game/sun_boss/sun_boss.h"
 #include <libdragon.h>
 #include "gpu_frame.h"
 #include <t3d/t3d.h>
@@ -9,17 +11,25 @@
 #include "blood_particles_fx.h"
 #include "screen_shake.h"
 #include "game/boss/boss.h"
+#include "game/tower/tower.h"
 #include "controllers/audio_controller.h"
 #include "../scenes/guardian/guardian_scene_sfx.h"
 #include "utilities/general_utility.h"
 #include "character/character.h"
 #include "utilities/simple_collision_utility.h"
+#include "game/dragon_boss/dragon_boss.h"
+#ifdef HLE_LOG_HITGAP     // test aid: each hostile effect's reach, and what was drawn when it landed
+extern void hle_hg_vol(const char *, const float *, const float *, float), hle_hg_vol_xz(const char *, const float *, float), hle_hg_begin(void);
+extern void hle_hg_seg(const char *, const float *, const float *, float), hle_hg_ring(const char *, const float *, float, float, float), hle_hg_hit(const char *);
+extern const char *hle_hg_fxname(int shape, bool arc, int st);
+extern void hle_hg_key(const void *);
+#endif
 
 static void dir_basis(const float v[3], float d[3], float s[3], float u[3]);
 
-#define SKILL_FX_MAX 40     // the Shackled Sun's spiral has 20 embers in the air
+#define SKILL_FX_MAX 48     // the Shackled Sun's spiral has 20 embers in the air; with Crescent Storm's 8 blades and bursts 39 were alive at once (Ares)
 
-typedef enum { FX_NONE, FX_ARC, FX_WAVE, FX_PILLAR, FX_BURST, FX_CROWN } FxType;
+typedef enum { FX_NONE, FX_ARC, FX_WAVE, FX_PILLAR, FX_BURST, FX_CROWN, FX_FIRESPREAD } FxType;
 
 typedef struct {
     FxType type;
@@ -39,6 +49,9 @@ typedef struct {
     float scale;            // a wave's size (hit and drawn), 1 by default
     float delay;            // charging where it was spawned: still, harmless and growing until then
     float homing;           // turn rate toward the player (an orb), 0 once it has committed
+#ifdef HLE_LOG_HITGAP
+    int8_t hgSt;            // test aid: its boss's move when it was cast
+#endif
 } SkillFx;
 
 static bool s_spawnHostile;     // palette/target for effects spawned now
@@ -76,13 +89,22 @@ static SkillFx* fx_alloc(FxType type)
             s_fx[i].type = type;
             s_fx[i].hostile = s_spawnHostile;
             s_fx[i].warn = s_spawnWarn;
+#ifdef HLE_LOG_HITGAP
+            { extern int hle_hg_boss_state(void); s_fx[i].hgSt = (int8_t)hle_hg_boss_state(); }
+#endif
             return &s_fx[i];
         }
     }
+#ifdef HLE_AUTOPLAY     // test aid: an effect dropped (the pool full), at most a few a second
+    { static uint32_t last; uint32_t now = get_ticks_ms(); if (now - last > 250) { last = now; debugf("[fxfull] the pool (%d) is full: a type %d dropped\n", SKILL_FX_MAX, (int)type); } }
+#endif
     return NULL;    // pool full: drop the effect
 }
 
 void skill_fx_init(void) { skill_fx_reset(); }
+#ifdef HLE_AUTOPLAY
+int skill_fx_live(void) { int n = 0; for (int i = 0; i < SKILL_FX_MAX; i++) n += s_fx[i].type != FX_NONE; return n; }     // test aid
+#endif
 void skill_fx_reset(void) { memset(s_fx, 0, sizeof(s_fx)); s_fireN = 0; }
 void skill_fx_clear_hostile(void) { for (int i = 0; i < SKILL_FX_MAX; i++) if (s_fx[i].hostile) s_fx[i].type = FX_NONE; s_fireN = 0; }
 
@@ -112,10 +134,25 @@ bool skill_fx_fire_trail_touches(const float p[3], float r)
     return false;
 }
 
+#ifdef HLE_LOG_HITGAP
+float skill_fx_fire_trail_gap(const float p[3])     // test aid: how far out of the burning band a point is, in xz (< 0 inside)
+{
+    float g = 1e9f;
+    for (int i = 0; i + 1 < s_fireN; i++) {
+        const FirePt *a = &s_fire[i], *b = &s_fire[i + 1];
+        if (a->id != b->id || s_fireT - a->born >= a->burn) continue;
+        float ex = b->x - a->x, ez = b->z - a->z, l2 = ex * ex + ez * ez;
+        float u = l2 > 1e-6f ? fmaxf(0.0f, fminf(1.0f, ((p[0] - a->x) * ex + (p[2] - a->z) * ez) / l2)) : 0.0f;
+        float dx = p[0] - (a->x + ex * u), dz = p[2] - (a->z + ez * u);
+        g = fminf(g, sqrtf(dx * dx + dz * dz) - FIRE_BAND);
+    }
+    return g;
+}
+#endif
 void skill_fx_spawn_arc(const float pos[3], float yaw, float radius, float damage)
 {
     SkillFx *f = fx_alloc(FX_ARC);
-    if (!f) return;
+    if (!f) { s_spawnHalf = T3D_PI * 0.5f; s_spawnPoise = -1.0f; return; }     // (the next arc's own, not these)
     memcpy(f->pos, pos, sizeof(f->pos));
     f->yaw = yaw;
     f->radius = radius;
@@ -194,6 +231,27 @@ void skill_fx_spawn_arc_hostile(const float pos[3], float yaw, float radius, flo
     s_spawnHostile = false;
 }
 
+// The Holy Slam's fire: SPREAD_N bursts out from the blow, SPREAD_GAP apart, each a band
+// radius / SPREAD_N wide (about a roll's reach); a band hurts only while it flares (SPREAD_HURT),
+// then its flames die (by SPREAD_FLAME) to harmless embers (SPREAD_EMBER): roll in through it
+#define SPREAD_N     4
+#define SPREAD_GAP   0.35f
+#define SPREAD_HURT  0.2f
+#define SPREAD_FLAME 0.4f
+#define SPREAD_EMBER 0.6f
+void skill_fx_spawn_fire_spread_hostile(const float pos[3], float radius, float damage)
+{
+    s_spawnHostile = true;
+    SkillFx *f = fx_alloc(FX_FIRESPREAD);
+    s_spawnHostile = false;
+    if (!f) return;
+    memcpy(f->pos, pos, sizeof(f->pos));
+    f->radius = radius;
+    f->damage = damage;
+    f->hitsLeft = 1;        // one burn a slam, whichever band catches the player
+    f->life = (SPREAD_N - 1) * SPREAD_GAP + SPREAD_FLAME + SPREAD_EMBER;
+}
+
 void skill_fx_spawn_wave_hostile(SkillWaveShape shape, const float pos[3], const float vel[3],
                                  float damage, int hits, float hitInterval, float life, bool pillarOnEnd)
 {
@@ -253,6 +311,22 @@ static void closest_on_segment(const float a[3], const float b[3], const float p
     for (int i = 0; i < 3; i++) out[i] = a[i] + ab[i] * t;
 }
 
+// Shadowborne's tail, a second hit volume (the user's call): a ball meets it where it is drawn
+static bool sphere_hits_tail(const float p[3], float r, float contact[3])
+{
+    float a[DRAGON_TAIL_VOLUMES][3], c[DRAGON_TAIL_VOLUMES][3], tr[DRAGON_TAIL_VOLUMES], q[3];
+    int n = dragon_boss_tail_volumes(a, c, tr);
+    for (int i = 0; i < n; i++) {
+        closest_on_segment(a[i], c[i], p, q);
+        float d[3] = { p[0]-q[0], p[1]-q[1], p[2]-q[2] }, dist = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+        if (dist > r + tr[i]) continue;
+        float k = dist > 1e-4f ? tr[i] / dist : 0.0f;
+        for (int m = 0; m < 3; m++) contact[m] = q[m] + d[m] * k;
+        return true;
+    }
+    return false;
+}
+
 /** Sphere vs boss capsule; `contact` gets the point on the boss surface. */
 static bool sphere_hits_boss(Boss *b, const float p[3], float r, float contact[3])
 {
@@ -262,7 +336,13 @@ static bool sphere_hits_boss(Boss *b, const float p[3], float r, float contact[3
     float d[3] = { p[0]-q[0], p[1]-q[1], p[2]-q[2] };
     float dist = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
     float br = b->capsuleCollider.radius;
-    if (dist > r + br) return false;
+    if (dist > r + br) {
+        bool t = b->phaseIndex == DRAGON_BOSS_PHASE && sphere_hits_tail(p, r, contact);
+#ifdef HLE_AUTOPLAY
+        if (t) debugf("[tailhit] a skill's shot met the tail\n");
+#endif
+        return t;
+    }
     float k = dist > 1e-4f ? br / dist : 0.0f;
     for (int i = 0; i < 3; i++) contact[i] = q[i] + d[i] * k;
     return true;
@@ -270,13 +350,23 @@ static bool sphere_hits_boss(Boss *b, const float p[3], float r, float contact[3
 
 static void damage_boss(Boss *b, float damage, float poise, const float contact[3], float strength)
 {
+    bossHitBySkill = true;
     if (poise >= 0.0f) boss_apply_hit(b, damage, poise);
     else boss_apply_damage(b, damage);
+    bossHitBySkill = false;
+    tower_on_skill_hit();       // (Skyfall)
+#ifdef HLE_LOG_BOONFX
+    debugf("[boonfx-run] a skill's hit of %.2f, boss %s\n", (double)damage, b->staggerT > 0.0f ? "staggered" : "standing");
+#endif
     blood_particles_fx_spawn_burst(contact[0], contact[1], contact[2], strength);
     audio_play_scene_sfx_dist(SCENE1_SFX_CHAR_ATTACK_HIT1 + (int)(rand_custom_u32() % 6), 1.0f, 0.0f);
 }
 
 #define ARC_GROW_TIME 0.35f
+#ifdef HLE_LOG_SKILLHIT
+#define X_DRAWN_HALF     (15.0f * 0.7071f)   // the player's X: its arms (X_LEN, at 45 degrees) reach this far across and up
+#define BLADE_DRAWN_HALF 2.0f                // a Cleave blade: 4 wide (draw_blade's W), bowed 2.5 forward, 70 tall
+#endif
 
 /** The crescent rolls outward from the player like a wave. */
 static inline float arc_radius(const SkillFx *f)
@@ -307,6 +397,50 @@ bool skill_arc_reaches(const Boss *b, float arcY)
     return fminf(a[1], c[1]) - b->capsuleCollider.radius <= arcY + ARC_REACH;
 }
 
+// The arc's front meets Shadowborne's tail: a point along a link out to the wave's radius (with the
+// link's own), ahead of the player as the body is, within the wave's reach over the floor
+static bool arc_meets_tail(const SkillFx *f, float contact[3])
+{
+    float a[DRAGON_TAIL_VOLUMES][3], c[DRAGON_TAIL_VOLUMES][3], tr[DRAGON_TAIL_VOLUMES];
+    int n = dragon_boss_tail_volumes(a, c, tr);
+    float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw), R = arc_radius(f);
+    for (int i = 0; i < n; i++)
+        for (int k = 0; k <= 4; k++) {
+            float p[3]; for (int m = 0; m < 3; m++) p[m] = a[i][m] + (c[i][m] - a[i][m]) * k * 0.25f;
+            float dx = p[0] - f->pos[0], dz = p[2] - f->pos[2], d = sqrtf(dx * dx + dz * dz);
+            if (d - tr[i] > R || p[1] - tr[i] > f->pos[1] + ARC_REACH) continue;
+            if (f->half < T3D_PI * 0.75f && d > 1e-3f && (dx * fx + dz * fz) / d < -0.2f) continue;
+            float s = d > 1e-3f ? tr[i] / d : 0.0f;
+            contact[0] = p[0] - dx * s; contact[1] = f->pos[1]; contact[2] = p[2] - dz * s;
+            return true;
+        }
+    return false;
+}
+
+/** A burst of the Holy Slam's fire flaring catches one on the floor in its band */
+static void update_spread_hit(SkillFx *f)
+{
+    if (f->hitsLeft <= 0 || character.pos[1] > f->pos[1] + 2.0f) return;     // (one in the air clears it)
+    float dx = character.pos[0] - f->pos[0], dz = character.pos[2] - f->pos[2];
+    float d = sqrtf(dx * dx + dz * dz), w = f->radius / SPREAD_N, rr = character.capsuleCollider.radius;
+#ifdef HLE_HOLY_ROLLIN   // test aid: roll in toward the middle 0.1 s before the player's band flares (the dodge)
+    { extern bool hle_roll_in; int kp = (int)(d / w); float when = kp * SPREAD_GAP - 0.1f;
+      if (kp > 0 && kp < SPREAD_N && f->hitTimer == 0.0f && f->age >= when) { f->hitTimer = 1.0f; hle_roll_in = true; debugf("[spread] roll in from %.0f out (burst %d)\n", (double)d, kp); } }     // (hitTimer: once a slam)
+#endif
+    for (int k = 0; k < SPREAD_N; k++) {
+        float t = f->age - k * SPREAD_GAP;
+        if (t < 0.0f || t > SPREAD_HURT || d < k * w || d > (k + 1) * w + (k == SPREAD_N - 1 ? rr : 0.0f)) continue;     // the band the body's middle is in: one burst to dodge (the outer edge with the body's width)
+        bool dodged = character_invulnerable();     // rolled through it: the next bursts can still burn (roll in, not out)
+#if defined(HLE_FK_TRACE) || defined(HLE_FK_HITLOG)
+        if (!dodged || f->hitTimer < 2.0f) { if (dodged) f->hitTimer = 2.0f;     // (a dodge logged once)
+          debugf("[spread] %s: burst %d (%.0f..%.0f out), player %.0f out, %.2f s into it\n", dodged ? "dodged" : "BURNT", k, (double)(k * w), (double)((k + 1) * w), (double)d, (double)t); }
+#endif
+        if (!dodged) f->hitsLeft = 0;
+        character_apply_damage_kind(f->damage, DMG_FIRE);          // (a roll's start: its perfect dodge; the Holy Slam's fire)
+        return;
+    }
+}
+
 static void update_arc_hit(SkillFx *f, Boss *b)
 {
     // One hit, when the wave front reaches the target
@@ -316,6 +450,9 @@ static void update_arc_hit(SkillFx *f, Boss *b)
         float dx = character.pos[0] - f->pos[0], dz = character.pos[2] - f->pos[2];
         float dist = sqrtf(dx*dx + dz*dz);
         float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
+#ifdef HLE_LOG_HITGAP
+        if (character.pos[1] <= f->pos[1] + 2.0f) { hle_hg_key(f); hle_hg_vol_xz(hle_hg_fxname(0, true, f->hgSt), f->pos, arc_radius(f)); }
+#endif
         if (dist - character.capsuleCollider.radius > arc_radius(f)) return;
         float rr = character.capsuleCollider.radius;     // only as far round as it's drawn (with the body's width)
         if (dist > rr && acosf(fmaxf(-1.0f, fminf(1.0f, (dx*fx + dz*fz) / dist))) > f->half + asinf(rr / dist)) return;
@@ -325,21 +462,39 @@ static void update_arc_hit(SkillFx *f, Boss *b)
                (double)(dist - character.capsuleCollider.radius), (double)arc_radius(f), (double)f->age, (double)(character.pos[1] - f->pos[1]));
 #endif
         f->hitsLeft = 0;
+#ifdef HLE_LOG_HITGAP
+        hle_hg_begin(); hle_hg_ring("ring", f->pos, arc_radius(f), f->pos[1] - 6.0f, f->pos[1] + 12.0f); hle_hg_key(f); hle_hg_hit(hle_hg_fxname(0, true, f->hgSt));
+#endif
 #ifdef HLE_LOG_MOVES     // test aid: a hostile wave's hit (the [hit] after it is this one)
         debugf("[fxhit] wave\n");
 #endif
-        character_apply_damage(f->damage);
+        character_apply_damage_kind(f->damage, b && b->phaseIndex == SUN_BOSS_PHASE ? DMG_FIRE : DMG_PLAIN);     // (the Sun's rings: fire)
         return;
     }
     float a[3], c[3];
     if (!boss_capsule(b, a, c)) return;
     float dx = b->pos[0] - f->pos[0], dz = b->pos[2] - f->pos[2];
     float dist = sqrtf(dx*dx + dz*dz);
-    if (dist - b->capsuleCollider.radius > arc_radius(f)) return;
     float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
-    if (dist > 1e-3f && (dx*fx + dz*fz) / dist < -0.2f) return;    // behind the player
-    if (!skill_arc_reaches(b, f->pos[1])) return;      // over the wave: it may come down into it while it rolls
+    if (dist - b->capsuleCollider.radius > arc_radius(f) ||
+        (f->half < T3D_PI * 0.75f && dist > 1e-3f && (dx*fx + dz*fz) / dist < -0.2f) ||    // behind the player (Full Moon's goes all round)
+        !skill_arc_reaches(b, f->pos[1])) {    // over the wave: it may come down into it while it rolls
+        float tc[3];
+        if (b->phaseIndex == DRAGON_BOSS_PHASE && arc_meets_tail(f, tc)) {      // (or Shadowborne's tail, as drawn)
+            f->hitsLeft = 0;
+#ifdef HLE_AUTOPLAY
+            debugf("[tailhit] an arc met the tail\n");
+#endif
+            damage_boss(b, f->damage, f->poise, tc, 2.5f);
+            screen_shake_set_shake_mag(14.0f);
+        }
+        return;
+    }
     f->hitsLeft = 0;
+#ifdef HLE_LOG_SKILLHIT     // test aid: the arc as drawn when it hit (its front at the boss's body)
+    debugf("[skillhit] arc age %.2f: boss body's edge %.1f out at %.0f deg from its facing, the arc drawn out to %.1f (round %.0f deg each side)\n", (double)f->age,
+           (double)(dist - b->capsuleCollider.radius), (double)(acosf(fmaxf(-1.0f, fminf(1.0f, (dx*fx + dz*fz) / (dist + 1e-3f)))) * 57.3f), (double)arc_radius(f), (double)(f->half * 57.3f));
+#endif
     float contact[3] = { b->pos[0] - dx / (dist + 1e-3f) * b->capsuleCollider.radius,
                          f->pos[1], b->pos[2] - dz / (dist + 1e-3f) * b->capsuleCollider.radius };
     damage_boss(b, f->damage, f->poise, contact, 2.5f);
@@ -367,7 +522,7 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
     if (f->shape == SKILL_WAVE_BLADE) {
         if (f->age < 0.2f) return;      // still rising out of the ground
         c[0] = f->pos[0]; c[1] = f->pos[1] + 14.0f; c[2] = f->pos[2];
-        r = f->hostile ? 4.0f : 7.0f;   // a hostile one is drawn 4 wide: no further (the player's own reaches wider)
+        r = f->hostile ? 4.0f : 7.0f;   // a hostile one is drawn 4 wide: no further (the player's own reaches wider, the user's call: as on main, in the Tower too)
     } else {
         memcpy(c, f->pos, sizeof(c));
         r = (f->shape == SKILL_WAVE_ORB ? 5.0f : f->shape == SKILL_WAVE_CRESCENT ? 14.0f : f->hostile ? 12.0f : 7.5f) * f->scale;     // the player's X is drawn 15 long (hit as drawn)
@@ -383,6 +538,10 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
                 pa[m] = character.pos[m] + character.capsuleCollider.localCapA.v[m];
                 pb[m] = character.pos[m] + character.capsuleCollider.localCapB.v[m];
             }
+#ifdef HLE_LOG_HITGAP
+            hle_hg_key(f); hle_hg_vol(hle_hg_fxname(f->shape, false, f->hgSt), ea, eb, SLASH_R * f->scale);
+            if (scu_capsule_vs_capsule_f(ea, eb, SLASH_R * f->scale, pa, pb, character.capsuleCollider.radius)) { hle_hg_begin(); hle_hg_seg("beam", ea, eb, 3.7f * f->scale); }
+#endif
             if (!scu_capsule_vs_capsule_f(ea, eb, SLASH_R * f->scale, pa, pb, character.capsuleCollider.radius)) return;
         } else if (f->shape == SKILL_WAVE_CRESCENT) {
             // A crescent is one long thin blade (draw_xwave): hit along it, not with a ball round its
@@ -397,6 +556,10 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
                 pb[m] = character.pos[m] + character.capsuleCollider.localCapB.v[m];
             }
             bool hit = scu_capsule_vs_capsule_f(a, b, k, pa, pb, character.capsuleCollider.radius);
+#ifdef HLE_LOG_HITGAP
+            hle_hg_key(f); hle_hg_vol(hle_hg_fxname(f->shape, false, f->hgSt), a, b, k);
+            if (hit) { hle_hg_begin(); hle_hg_seg("crescent", a, b, k); }
+#endif
 #ifdef HLE_LOG_HITVOL     // test aid: the old ball (14) against the blade
             static int said;
             if (hit != sphere_hits_player(c, r) && said++ < 60) { float q[3] = { character.pos[0] - f->pos[0], character.pos[1] + 8.0f - f->pos[1], character.pos[2] - f->pos[2] };
@@ -406,6 +569,10 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
             if (!hit) return;
         } else {
             bool hit = sphere_hits_player(c, r);
+#ifdef HLE_LOG_HITGAP
+            hle_hg_key(f); hle_hg_vol(hle_hg_fxname(f->shape, false, f->hgSt), c, c, r);
+            if (hit) { hle_hg_begin(); hle_hg_seg(f->shape == SKILL_WAVE_ORB ? "flame" : "shot", c, c, f->shape == SKILL_WAVE_ORB ? 7.2f * f->scale : r); }
+#endif
 #ifdef HLE_LOG_HITVOL     // test aid: an ember's centre against the player's body (its axis), near it
             if (f->shape == SKILL_WAVE_ORB) {
                 float a[3], b2[3], q[3];
@@ -426,9 +593,20 @@ static void update_wave_hit(SkillFx *f, Boss *b, float dt)
 #ifdef HLE_LOG_MOVES     // test aid: a hostile shot's hit (the [hit] after it is this one)
         debugf("[fxhit] shape %d\n", f->shape);
 #endif
-        character_apply_damage(f->damage);
+#ifdef HLE_LOG_HITGAP
+        hle_hg_key(f); hle_hg_hit(hle_hg_fxname(f->shape, false, f->hgSt));
+#endif
+        character_apply_damage_kind(f->damage, b && b->phaseIndex == SUN_BOSS_PHASE ? DMG_FIRE : DMG_PLAIN);     // (the Sun's crosses, embers and orbs: fire)
     } else {
         if (!sphere_hits_boss(b, c, r, contact)) return;
+#ifdef HLE_LOG_SKILLHIT     // test aid: where the cross or blade was drawn when it hit, against the boss's body
+        {
+            float a[3], q[3], e[3]; boss_capsule(b, a, e); closest_on_segment(a, e, c, q);
+            float gap = sqrtf((c[0]-q[0])*(c[0]-q[0]) + (c[1]-q[1])*(c[1]-q[1]) + (c[2]-q[2])*(c[2]-q[2])) - b->capsuleCollider.radius;
+            debugf("[skillhit] %s age %.2f at %.0f %.0f %.0f: its middle %.1f from the boss's body (drawn %.1f each way)\n", f->shape == SKILL_WAVE_BLADE ? "blade" : "cross",
+                   (double)f->age, (double)c[0], (double)c[1], (double)c[2], (double)gap, (double)(f->shape == SKILL_WAVE_BLADE ? BLADE_DRAWN_HALF : X_DRAWN_HALF));
+        }
+#endif
         damage_boss(b, f->damage, f->poise, contact, 1.0f);
     }
     f->hitsLeft--;
@@ -466,6 +644,8 @@ void skill_fx_update(float dt)
             update_wave_hit(f, b, dt);
         } else if (f->type == FX_ARC) {
             update_arc_hit(f, b);
+        } else if (f->type == FX_FIRESPREAD) {
+            update_spread_hit(f);
         }
         if (f->age >= f->life) {
             if (f->type == FX_WAVE && (f->shape == SKILL_WAVE_X || f->shape == SKILL_WAVE_SLASH)) {
@@ -535,12 +715,36 @@ static void build_tri(int a, int b, int c)
 }
 
 static bool s_drawHostile;      // crimson palette for the effect being drawn
+static bool s_drawPlayer;       // the player's effect being drawn: its skill palette
+
+#ifndef HLE_SKILL_PALETTE       // test aid (preview): 0 today's cyan/white, any other Sunforged
+#define HLE_SKILL_PALETTE 0
+#endif
+static int s_skillPalette = HLE_SKILL_PALETTE;
+// Sunforged (the floor-100 reward, toggled in Skins): the save sets it; the test aid keeps it on
+void skill_fx_set_palette(bool sunforged) { s_skillPalette = sunforged || HLE_SKILL_PALETTE; }
+bool skill_fx_palette(void) { return s_skillPalette != 0; }
+// Sunforged: the waves' ramp, dark gold to saturated gold (at SUN_MID of 256) to white: through gold, not
+// a pale peach mix, so it stands out from the tan floor, and white soon enough to stand out from the Sun's orange
+static const uint8_t SUN_RAMP[3][3] = { { 235, 175, 45 }, { 255, 196, 45 }, { 255, 254, 250 } };
+#define SUN_MID 90
 
 static inline uint32_t rgba(int r, int g, int b, float a)
 {
     if (s_drawHostile) {        // cyan/white -> crimson/rose, gold -> violet
         int nr = b, ng = g / 4, nb = r / 2;
         r = nr; g = ng; b = nb;
+    } else if (s_drawPlayer && s_skillPalette) {
+        if (r < 255) {          // the cyan waves (the gold sparks stay): their red is how white they are (40 deep .. 245 white)
+            int t = (r - 40) * 5 / 4;
+            t = t < 0 ? 0 : t > 256 ? 256 : t;
+            const uint8_t *c0 = SUN_RAMP[t >= SUN_MID], *c1 = SUN_RAMP[1 + (t >= SUN_MID)];
+            int u = t < SUN_MID ? t * 256 / SUN_MID : (t - SUN_MID) * 256 / (256 - SUN_MID);
+            r = c0[0] + (((c1[0] - c0[0]) * u) >> 8);
+            g = c0[1] + (((c1[1] - c0[1]) * u) >> 8);
+            b = c0[2] + (((c1[2] - c0[2]) * u) >> 8);
+            a *= a < 0.4f ? 1.6f : 1.3f;    // denser than the cyan: thinned amber reads brown over the dark and melts into tan and orange
+        }
     }
     int ai = (int)(a * 255.0f);
     ai = ai < 0 ? 0 : ai > 255 ? 255 : ai;
@@ -583,6 +787,7 @@ static void draw_arc(const SkillFx *f)
 #endif
     float fx = -fm_sinf(f->yaw), fz = fm_cosf(f->yaw);
     float rx = fz, rz = -fx;
+    bool sun = !f->hostile && s_skillPalette;
     // Layer 0: flat crescent on the slash plane; layer 1: a blade-wall standing on its
     // outer edge, so the slash also reads from a low camera
     for (int layer = 0; layer < 2; layer++) {
@@ -590,20 +795,20 @@ static void draw_arc(const SkillFx *f)
             float th = f->half * (-1.0f + 2.0f * i / (N - 1));
             float dx = fx * cosf(th) + rx * sinf(th), dz = fz * cosf(th) + rz * sinf(th);
             float taper = cosf(th * (T3D_PI * 0.5f) / f->half);     // crescent: thin at the tips
-            if (f->hostile) taper = 0.35f + 0.65f * taper;  // but a hostile one hurts right out to them: show it (a ring's two halves met in nothing at its sides)
+            if (f->hostile || f->half > T3D_PI * 0.75f) taper = 0.35f + 0.65f * taper;     // (a ring, Full Moon's too, hurts all round: drawn so)  // but a hostile one hurts right out to them: show it (a ring's two halves met in nothing at its sides)
             outer[i][0] = f->pos[0] + dx * R; outer[i][2] = f->pos[2] + dz * R;
             if (layer == 0) {
                 float w = 16.0f * taper;
                 outer[i][1] = f->pos[1];
                 inner[i][0] = f->pos[0] + dx * (R - w); inner[i][1] = f->pos[1]; inner[i][2] = f->pos[2] + dz * (R - w);
-                co[i] = rgba(110, 210, 255, a);
-                ci[i] = rgba(40, 120, 255, 0.0f);
+                co[i] = rgba(sun ? 40 : 110, 210, 255, a);     // Sunforged: the dark gold where it meets the floor (its own gold reads as the tan floor)
+                ci[i] = rgba(sun ? 245 : 40, 120, 255, 0.0f);   // fading in to white
             } else {
                 float h = 12.0f * taper;
                 outer[i][1] = f->pos[1] + h;
                 inner[i][0] = outer[i][0]; inner[i][1] = f->pos[1] - h * 0.5f; inner[i][2] = outer[i][2];
                 co[i] = rgba(240, 252, 255, 0.0f);
-                ci[i] = rgba(200, 240, 255, a);
+                ci[i] = rgba(sun ? 40 : 200, 240, 255, a);
             }
         }
         build_ribbon(outer, inner, co, ci, N);
@@ -895,6 +1100,61 @@ static void draw_fire_trail(void)
     s_drawHostile = hostile;
 }
 
+/** The Holy Slam's fire: each burst a band flaring up from the floor (the fire trail's colours
+ *  and flicker: tongues at its outer edge and through its middle, a glow on the floor between),
+ *  dying down to a few small dull embers that fade (harmless: flat, sparse, dim) */
+static void draw_fire_spread(const SkillFx *f)
+{
+    enum { NMAX = 49, CHUNK = 33 };     // build_ribbon takes up to 34
+    static float top[NMAX][3], base[NMAX][3], in[NMAX][3];
+    static uint32_t ct[NMAX], cb[NMAX], ci[NMAX];
+    bool hostile = s_drawHostile;
+    s_drawHostile = false;      // fire's own colours
+    float y = f->pos[1] - 3.7f, w = f->radius / SPREAD_N;      // (spawned 4 over the floor, as the arcs)
+    for (int k = 0; k < SPREAD_N; k++) {
+        float t = f->age - k * SPREAD_GAP;
+        if (t < 0.0f) break;
+        if (t < SPREAD_FLAME) {     // the flames: up fast, held while it hurts, then down
+            float e = t < 0.08f ? t / 0.08f : t < SPREAD_HURT ? 1.0f : 1.0f - (t - SPREAD_HURT) / (SPREAD_FLAME - SPREAD_HURT);
+            for (int ring = 0; ring < 2; ring++) {      // its outer edge, then its middle (lower)
+                float R = ring ? (k + 0.5f) * w : (k + 1) * w, Ri = ring ? k * w : (k + 0.5f) * w, H = (ring ? 9.0f : 14.0f) * e;
+                int n = 8 + (int)(40.0f * R / f->radius); n &= ~1;     // tongues about as far apart on every ring (even: tongue, trough)
+                for (int v = 0; v <= n; v++) {
+                    float th = 2.0f * T3D_PI * v / n + k * 0.4f + ring * 0.2f, cx = fm_cosf(th), sz = fm_sinf(th), ph = v * 1.93f + k * 2.7f + ring;
+                    float h = (v & 1) ? H * (0.62f + 0.38f * fm_sinf(s_fireT * 14.0f + ph) * fm_sinf(s_fireT * 5.3f + ph * 0.7f) + 0.25f) : H * 0.3f;
+                    base[v][0] = f->pos[0] + cx * R; base[v][1] = y; base[v][2] = f->pos[2] + sz * R;
+                    top[v][0] = base[v][0]; top[v][1] = y + h; top[v][2] = base[v][2];
+                    in[v][0] = f->pos[0] + cx * Ri; in[v][1] = y; in[v][2] = f->pos[2] + sz * Ri;
+                    cb[v] = rgba(255, 130, 30, e);
+                    ct[v] = rgba(230, 50, 12, (v & 1) ? 0.0f : e * 0.35f);
+                    ci[v] = rgba(220, 80, 20, e * 0.45f);
+                }
+                for (int v = 0; v < n; v += CHUNK - 1) {
+                    int m = n + 1 - v < CHUNK ? n + 1 - v : CHUNK;
+                    build_ribbon(&base[v], &in[v], &cb[v], &ci[v], m);      // the glow on the floor, in to the next ring
+                    build_ribbon(&top[v], &base[v], &ct[v], &cb[v], m);     // the flames
+                }
+            }
+        }
+        float te = t - SPREAD_HURT;      // the embers: from as it stops hurting, small, flat and dull, fading out
+        if (te > 0.0f && te < SPREAD_FLAME - SPREAD_HURT + SPREAD_EMBER) {
+            float ea = fminf(1.0f, te / 0.1f) * fminf(1.0f, (SPREAD_FLAME - SPREAD_HURT + SPREAD_EMBER - te) / SPREAD_EMBER);
+            int n = 3 + 3 * k, b0 = build_reserve(n * 3, n);     // sparse: a few to a band
+            uint32_t c = rgba(170, 45, 10, ea * 0.8f);
+            for (int i = 0; i < n; i++) {
+                uint32_t h = (uint32_t)(i * 2654435761u + k * 40503u);     // fixed scatter
+                float th = (h & 1023) * (2.0f * T3D_PI / 1024.0f), r = (k + ((h >> 10) & 255) / 256.0f) * w;
+                float px = f->pos[0] + fm_cosf(th) * r, pz = f->pos[2] + fm_sinf(th) * r, s = 0.8f;
+                build_vert((float[3]){ px - s, y + 0.2f, pz - s }, c);
+                build_vert((float[3]){ px + s, y + 0.2f, pz - s * 0.3f }, c);
+                build_vert((float[3]){ px, y + 0.2f, pz + s }, c);
+                build_tri(b0 + i * 3, b0 + i * 3 + 1, b0 + i * 3 + 2);
+            }
+        }
+    }
+    s_drawHostile = hostile;
+}
+
 /** The Fallen Warrior's landing crown: a ring spreading out over the floor, a circle of spikes
  *  rising from it, pointed, leaning out; fading as it spreads (no hit) */
 static void draw_crown(const SkillFx *f)
@@ -969,8 +1229,10 @@ void skill_fx_draw(void)
     for (int i = 0; i < SKILL_FX_MAX; i++) {
         const SkillFx *f = &s_fx[i];
         s_drawHostile = f->hostile;
+        s_drawPlayer = !f->hostile;
         switch (f->type) {
             case FX_ARC:    draw_arc(f); break;
+            case FX_FIRESPREAD: draw_fire_spread(f); break;
             case FX_WAVE:   if (f->shape == SKILL_WAVE_ORB) draw_orb(f); else if (f->shape != SKILL_WAVE_BLADE) draw_xwave(f); else draw_blade(f); break;
             case FX_PILLAR: draw_pillar(f); break;
             case FX_BURST:  draw_burst(f); break;
@@ -978,6 +1240,7 @@ void skill_fx_draw(void)
             default: break;
         }
     }
+    s_drawPlayer = false;
 #ifndef HLE_FIRE_NODRAW     // test aid: the fire trail's cost (not drawn)
     draw_fire_trail();
 #endif
