@@ -4,7 +4,7 @@ N64 souls-like boss rush built with libdragon + tiny3d. Design numbers (balance,
 
 ## Git and releases
 - Work on `main` of the fork (remote `cbyeh`) and push as work lands. Never push, tag or open PRs on upstream (`origin` = Boxingbruin). Use `--repo cbyeh/Pandemonium` with `gh`.
-- Release only when the user asks (`/release`); pushing doesn't ship one. Until the user calls 1.0 stable, a release replaces v1.0; after that, ship numbered releases.
+- Release only when the user asks (`/release`); pushing doesn't ship one.
 - Squash fix-up commits into the commit they fix.
 - Other Claude sessions may share this checkout: do work in a `git worktree`.
 
