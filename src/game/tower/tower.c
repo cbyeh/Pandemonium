@@ -2643,7 +2643,7 @@ static void doc_card(UiDoc *d, int card, char *title, int tn, int *tstyle)
     if (is_minor(card)) {
         int b = card - MINOR_CARD0;
         snprintf(title, tn, "%s", MINOR_NAME[b]); *tstyle = FONT_STYLE_GOLD;
-        ui_doc_text(d, FONT_STYLE_WHITE, "%s for the run: half of %s's blessing, with no curse. It takes no slot and stacks (held: %d).", MINOR_DESC[b], BLESSINGS[b].name, s.halfBless[b]);
+        ui_doc_text(d, FONT_STYLE_WHITE, "A minor blessing: %s for the run, half of %s's blessing, with no curse. It takes no slot and stacks (held: %d).", MINOR_DESC[b], BLESSINGS[b].name, s.halfBless[b]);
         ui_doc_gap(d);
         ui_doc_text(d, FONT_STYLE_GREY, "It comes once no boon is left for your build, one a circle.");
     } else if (card >= BOON_COUNT) doc_pact(d, card, title, tn, tstyle);
