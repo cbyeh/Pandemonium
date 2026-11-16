@@ -1922,7 +1922,8 @@ static void tower_draft_draw(void)
         if (is_minor(card)) {    // a complete build's minor blessing
             int nl = card_text(x + 2, y0 + 27, CARD_NAME_W, CARD_PITCH, FONT_STYLE_GOLD, MINOR_NAME[card - MINOR_CARD0]);
             card_text(x + 2, y0 + card_desc_y(nl), CARD_TEXT_W, CARD_PITCH, FONT_STYLE_WHITE, MINOR_DESC[card - MINOR_CARD0]);
-            text_style(x + 1, y0 + ch - 3, CARD_FOOT_W, ALIGN_CENTER, FONT_STYLE_GREY, "No slot, no curse");
+            const char *foot = "No slot, no curse";     // up from the foot when it wraps, as the boons' foot lines (under it: Details)
+            card_text(x + 1, y0 + ch - 3 - FOOT_PITCH * (card_lines(foot, CARD_FOOT_W) - 1), CARD_FOOT_W, FOOT_PITCH, FONT_STYLE_GREY, foot);
             continue;
         }
         const BoonDef *bd = &BOONS[card];
