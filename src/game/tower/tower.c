@@ -56,7 +56,7 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_KINDLED_FLASK] = { "Kindled Flask", "Potions heal 25% more",        2, TIER_COMMON, FAM_HEARTH },
     [BOON_FLEETFOOT]     = { "Fleetfoot",     "Rolls cost 40% less stamina",  1, TIER_RARE, FAM_SHADOW },
     [BOON_SECOND_WIND]   = { "Second Wind",   "+40% stamina regen",     3, TIER_COMMON, FAM_SHADOW },
-    [BOON_MOON_MASTERY]  = { "Moon Mastery",  "Skill cooldowns -20%",         4, TIER_RARE, FAM_MOON },
+    [BOON_MOON_MASTERY]  = { "Moon Mastery",  "Cooldowns -20% (to -40%)", 4, TIER_RARE, FAM_MOON },
     [BOON_BLOODTHIRST]   = { "Bloodthirst",   "Sword hits heal 12% of base damage", 3, TIER_RARE, FAM_BLOOD },
     [BOON_VIGOR]         = { "Vigor",         "+25 max health",               5, TIER_COMMON, FAM_IRON },
     [BOON_LAST_STAND]    = { "Last Stand",    "+40% damage below 30% health", 2, TIER_RARE, FAM_BLOOD },
@@ -1650,7 +1650,7 @@ void tower_draft_open(void)
     for (int k = 0; k < SKILL_COUNT && due < 0; k++) if ((s.formsDue >> k) & 1) due = k;
     s.formsDue = 0;
     for (int b = 0; b < BOON_COUNT; b++) {
-        if (!offerable(b) || (s.elite && card_tier(b) == TIER_COMMON)) continue;    // an Elite's draft: Rare or better
+        if (!offerable(b) || (s.elite && card_tier(b) == TIER_COMMON && !s.stacks[b])) continue;    // an Elite's draft: Rare or better, or a held boon's next level
         if (s.legendDraft && card_tier(b) != TIER_LEGENDARY) continue;              // the Prisoner's Elite: all Legendary
         if (due >= 0 && is_form(b) && form_skill(b) == due) continue;              // (they lead, below)
         if (!s.skills && is_learn(b)) lead[nl++] = b;
@@ -4267,10 +4267,13 @@ float tower_mod_max_health(void) { return 150.0f + 10.0f * shrine(UPG_VIGOR) + 2
 float tower_mod_roll_cost(void) { return (tower_boon_stacks(BOON_FLEETFOOT) ? 0.6f : 1.0f) * (has_relic(RELIC_LEADEN) ? 1.25f : 1.0f); }
 float tower_mod_stamina_empty(void) { return 1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND); }   // the wait once the bar is empty: x1/1.4 a stack
 float tower_mod_stamina_regen(void) { return (1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND)) * (has_relic(RELIC_STAMINA) ? 1.2f : 1.0f); }
+#define SKILL_CD_FLOOR 0.6f
 float tower_mod_skill_cooldown(void)
 {
-    return (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * powf_int(0.8f, tower_boon_stacks(BOON_MOON_MASTERY) < 3 ? tower_boon_stacks(BOON_MOON_MASTERY) : 3) * (tower_boon_stacks(BOON_MOON_MASTERY) >= 4 ? 0.421875f / 0.512f : 1.0f)
-           * ((s.active && s.night == NIGHT_STARFALL) ? 0.7f : 1.0f);
+    static const float MM[] = { 1.0f, 0.8f, 0.7f, 0.65f, 0.6f };     // Moon Mastery by level: -20%, -30%, -35%, -40%
+    int mm = tower_boon_stacks(BOON_MOON_MASTERY);
+    float c = (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * MM[mm < 4 ? mm : 4] * ((s.active && s.night == NIGHT_STARFALL) ? 0.7f : 1.0f);
+    return c > SKILL_CD_FLOOR ? c : SKILL_CD_FLOOR;     // all the cuts together: at most -40% (the user's call, 1.0.1)
 }
 float tower_mod_lifesteal(void) { return (0.12f * (tower_boon_stacks(BOON_BLOODTHIRST) < 2 ? tower_boon_stacks(BOON_BLOODTHIRST) : 2) + (tower_boon_stacks(BOON_BLOODTHIRST) >= 3 ? 0.08f : 0.0f)) + 0.03f * has_relic(RELIC_VAMPIRIC); }   // of a hit before boons: it no longer grows with the damage multiplier
 
@@ -4686,7 +4689,10 @@ int tower_test_stage2(void)
     RUN(27); MAX(BOON_PHANTOM_STEP);
     CHECK(fabsf(tower_mod_perfect_window() - 0.31f) < 0.001f, "Phantom Step Lv 2: 0.31 s");
     RUN(27); s.skills = 1; float cd0 = tower_mod_skill_cooldown(); for (int k = 0; k < 3; k++) take_boon(BOON_MOON_MASTERY); float cd3 = tower_mod_skill_cooldown(); take_boon(BOON_MOON_MASTERY);
-    CHECK(fabsf(cd3 / cd0 - 0.512f) < 0.001f && fabsf(tower_mod_skill_cooldown() / cd0 - 0.421875f) < 0.001f, "Moon Mastery Lv 3 x0.512, Lv 4 x0.422 (%.3f)", (double)(tower_mod_skill_cooldown() / cd0));
+    CHECK(fabsf(cd3 - 0.65f * cd0) < 0.001f && fabsf(tower_mod_skill_cooldown() - fmaxf(0.6f, 0.6f * cd0)) < 0.001f, "Moon Mastery Lv 3 x0.65, Lv 4 x0.6 (%.3f)", (double)(tower_mod_skill_cooldown() / cd0));
+    s.night = NIGHT_STARFALL;
+    CHECK(fabsf(tower_mod_skill_cooldown() - 0.6f) < 0.001f, "the cooldown floor: Moon Mastery Lv 4 and Starfall x0.6 together (%.3f)", (double)tower_mod_skill_cooldown());
+    s.night = 0;
     RUN(27); MAX(BOON_BLOODTHIRST);
     CHECK(fabsf(tower_mod_lifesteal() - 0.32f) < 0.001f, "Bloodthirst Lv 3: 32%% (%.2f)", (double)tower_mod_lifesteal());
     RUN(27); MAX(BOON_IRON_SKIN); take_boon(BOON_IRON_SKIN_PLUS);
@@ -5063,6 +5069,15 @@ int tower_test_map(void)
       debugf("[map] elite: 500 drafts, %d boon cards, %d Common; Bonus health x%.3f (plain x%.3f), Guardian x%.2f; Embers %d (plain %d)\n", cards, common, (double)h3, (double)n3, (double)h1, e, ne);
       MCHECK(!common && cards > 1000 && fabsf(h3 / n3 - 1.25f) < 0.001f && h1 == tower_boss_health_scale(1) && e == 14 && ne == 7,
              "an Elite: no Common card, x1.25 health on a Bonus boss only, Embers x2 (14 for 7)"); }
+    RUN(44);    // a held Common boon still levels in an Elite's draft (a full bar of them left only the minor blessing)
+    { static const BoonId C[] = { BOON_SECOND_WIND, BOON_VIGOR, BOON_IRON_SKIN, BOON_EMBER_EDGE, BOON_RALLY }; int lv = 0, minor = 0, n = 0;
+      for (int i = 0; i < TOWER_SLOTS; i++) take_boon(C[i]);
+      s.elite = true; s.map.fights = 2;
+      for (int d = 0; d < 100; d++) { tower_draft_open(); for (int i = 0; i < s.nChoices; i++) { int c = s.choices[i]; n++;
+          if (is_minor(c)) minor++; else if (c < BOON_COUNT && BOONS[c].tier == TIER_COMMON) { lv++; MCHECK(s.stacks[c] > 0, "an Elite's Common card is a held boon's level (%s)", BOONS[c].name); } } }
+      s.elite = false;
+      debugf("[map] elite with a full bar: 100 drafts, %d cards, %d held Common levels, %d minor\n", n, lv, minor);
+      MCHECK(lv > 50 && !minor, "an Elite levels a full bar's Common boons (%d levels, %d minor cards)", lv, minor); }
     #undef RUN
     tower_end_run();
     character.maxHealth = tower_mod_max_health(); character.health = character.maxHealth;
