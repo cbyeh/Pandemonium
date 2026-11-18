@@ -351,8 +351,14 @@ static bool sphere_hits_boss(Boss *b, const float p[3], float r, float contact[3
 static void damage_boss(Boss *b, float damage, float poise, const float contact[3], float strength)
 {
     bossHitBySkill = true;
+#ifdef HLE_AUTOPLAY
+    extern float hle_skill_dealt; float h0 = b->health;     // test aid: the skills' own damage ([build])
+#endif
     if (poise >= 0.0f) boss_apply_hit(b, damage, poise);
     else boss_apply_damage(b, damage);
+#ifdef HLE_AUTOPLAY
+    hle_skill_dealt += h0 - b->health;
+#endif
     bossHitBySkill = false;
     tower_on_skill_hit();       // (Skyfall)
 #ifdef HLE_LOG_BOONFX

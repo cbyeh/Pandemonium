@@ -53,6 +53,7 @@ static CharacterState characterState = CHAR_STATE_NORMAL;
 // D-pad skill state (see the skills section)
 static bool skillsEnabled = true;    // Settings toggle
 static float skillCooldowns[SKILL_COUNT];
+static float skillFloorLeft[SKILL_COUNT];     // how long a cast's cooldown lasts at least (Lunar Tide keeps to the -40% floor)
 static CharacterSkill activeSkill = SKILL_MOON_BLADE_DANCE;
 static float skillTime = 0.0f;      // seconds since the skill started
 static int   skillStep = 0;         // timeline events already fired
@@ -809,7 +810,7 @@ void character_reset(void)
     character.currentAttackHasHit = false;
 
 
-    for (int s = 0; s < SKILL_COUNT; s++) skillCooldowns[s] = 0.0f;
+    for (int s = 0; s < SKILL_COUNT; s++) skillCooldowns[s] = skillFloorLeft[s] = 0.0f;
     skillTime = 0.0f;
     velocityY = 0.0f;
     airborne = false;
@@ -1229,16 +1230,18 @@ static const int   MBD_WAVES = 5;
 #define SHATTER_HIT (2.0f / 3.0f)   // a Shattering Dance cross's stagger, in sword hits (a plain cross: a fifth); the stagger build against the builds' mean: a third -21%, a half -17%, two thirds -11%
 #endif
 #ifndef SHATTER_DMG
-#define SHATTER_DMG 1.75f           // its crosses' damage (Lv 4's 1.5: the stagger build stayed -11..-13% with any stagger a cross, its breaks capped by the bosses' moves)
+#define SHATTER_DMG 1.0f            // its crosses' damage (Lv 4's 1.5: the stagger build stayed -11..-13% with any stagger a cross, its breaks capped by the bosses' moves)
 #endif
 #ifndef FULL_MOON_HIT
-#define FULL_MOON_HIT 1.05f         // Full Moon's slash, on Lv 3's (phase 2: 1.15 -> 1.0 -> 1.05: the Halfmoon forms a little over the Cleave's)
+#define FULL_MOON_HIT 1.2f          // Full Moon's slash, on Lv 3's (phase 2: 1.15 -> 1.0 -> 1.05: the Halfmoon forms a little over the Cleave's)
 #endif
 // The skills' levels and Lv 5 forms (docs/design/TOWER_ROGUELIKE.md section 6; outside the Tower Lv 1):
 // Moon Blade Dance Lv 2 crosses 1.5, Lv 3 7 of them, Lv 4 a 12 s cooldown; Full Moon Dance 9 crosses
 // of 1.75 (phase 2: was 10 of 2, the riskiest form dealt the most), Shattering Dance 7 that fill the stagger meter
 #define FMD_WAVES 9
+#ifndef FMD_DMG
 #define FMD_DMG 1.75f
+#endif
 #define TWIN_SHARE 0.45f            // Twin Moon's second slash (phase 2: was 0.4)
 static inline int skill_lv(int k) { return tower_skill_level(k); }
 static inline int skill_form(int k) { return tower_skill_form(k); }
@@ -1273,8 +1276,11 @@ static inline float halfmoon_end(void) { return HALFMOON_END - (HALFMOON_CHARGE 
 // Cleave Lv 2 +20%, Lv 3 5 hits a blade, Lv 4 a 0.6 s wind-up; Crescent Storm 3 more blades 0.3 s
 // behind the middle three, Long Cleave blades 1.6x as far, 6 hits
 static const float STORM_GAP = 0.3f;
+#ifndef CLEAVE_FORM
+#define CLEAVE_FORM 1.24f      // the Cleave forms' blades (1.0.1: 1.2 -> 1.28: a form +50% over Lv 4 in the skill's own damage)
+#endif
 #ifndef STORM_TRAIL_HIT
-#define STORM_TRAIL_HIT 0.7f    // the trailing blades' damage (full: the Crescent Storm build +10-11% over the builds' mean, with the blades hitting 7 round again)
+#define STORM_TRAIL_HIT 0.55f   // the trailing blades' damage (full: the Crescent Storm build +10-11% over the builds' mean, with the blades hitting 7 round again)
 #endif
 static const float LONG_FAN = 0.6f;     // Long Cleave's fan (its blades stay on a target out at their range)
 static inline float cleave_release(void) { return skill_lv(SKILL_CRESCENT_CLEAVE) >= 4 ? 0.6f : CLEAVE_RELEASE; }
@@ -1355,6 +1361,7 @@ static void try_start_skill(const joypad_buttons_t *buttons)
 
     character_consume_stamina(SKILL_DEFS[s].stamina);
     skillCooldowns[s] = skill_cooldown(s);
+    skillFloorLeft[s] = ((s == SKILL_MOON_BLADE_DANCE && skill_lv(s) >= 4) ? 12.0f : SKILL_DEFS[s].cooldown) * tower_skill_cd_floor();
     tower_on_skill_cast();      // (Waxing Moon)
     activeSkill = s;
     skillTime = 0.0f;
@@ -1415,7 +1422,7 @@ static void skill_fire_moon_blade(void)
     // a sword hit). The levels never stagger less: Lv 2-4 and Full Moon Dance keep that for the first 5
     // crosses (the extra ones fill none); Shattering Dance's crosses fill SHATTER_HIT of a sword hit each
     int lv = skill_lv(SKILL_MOON_BLADE_DANCE), form = skill_form(SKILL_MOON_BLADE_DANCE);
-    float dmg = form == SKILL_FORM_A ? FMD_DMG : form == SKILL_FORM_B ? SHATTER_DMG : lv >= 2 ? 1.5f : 0.8f;
+    float dmg = form == SKILL_FORM_A ? FMD_DMG : form == SKILL_FORM_B ? SHATTER_DMG : lv >= 2 ? 1.2f : 0.8f;     // (1.0.1: Lv 2-4 1.2, was 1.5: the form is the big step)
     if (form == SKILL_FORM_B) skill_fx_next_poise(SHATTER_HIT * 4.0f / POISE_DAMAGE);
     else if (lv >= 2) skill_fx_next_poise(skillStep < 5 ? 0.8f / POISE_DAMAGE : 0.0f);
     skill_fx_spawn_wave(SKILL_WAVE_X, origin, vel, dmg, 1, 0.0f, len / MBD_WAVE_SPEED, skillStep == n - 1);
@@ -1474,7 +1481,7 @@ static void update_skill(float dt)
             skill_fx_next_poise((full ? 2.0f : 1.0f) * HALFMOON_POISE * share);
             if (full) skill_fx_next_arc_half(T3D_PI);       // all round
             skill_fx_spawn_arc((float[3]){ character.pos[0], character.pos[1] + 10.0f, character.pos[2] },
-                               yaw, radius, HALFMOON_DAMAGE * (skill_lv(SKILL_HALFMOON_SLASH) >= 3 ? 1.2f : 1.0f) * (full ? FULL_MOON_HIT : 1.0f) * share);
+                               yaw, radius, HALFMOON_DAMAGE * (skill_lv(SKILL_HALFMOON_SLASH) >= 3 ? (skill_form(SKILL_HALFMOON_SLASH) ? 1.26f : 1.12f) : 1.0f) * (full ? FULL_MOON_HIT : 1.0f) * share);
             screen_shake_set_shake_mag(skillStep ? 8.0f : 14.0f);
             character_play_swing();
             audio_play_scene_sfx_dist(SCENE1_SFX_BLADE_SLASH, skillStep ? 0.7f : 1.0f, 0.0f);
@@ -1518,7 +1525,7 @@ static void update_skill(float dt)
             // more hits only count if they come sooner); Long Cleave 6 at that pace, through its longer flight
             int hits = cleave_long() ? 6 : lv >= 3 ? 5 : 4;
             skill_fx_spawn_wave(SKILL_WAVE_BLADE, origin, (float[3]){ dx * 56.0f, 0.0f, dz * 56.0f },
-                                1.25f * (lv >= 2 ? 1.2f : 1.0f) * (skillStep >= CLEAVE_BLADES ? STORM_TRAIL_HIT : 1.0f), hits, lv >= 3 ? 1.2f / 5 : 0.3f,
+                                1.25f * (lv >= 2 ? (skill_form(SKILL_CRESCENT_CLEAVE) ? CLEAVE_FORM : 1.1f) : 1.0f) * (skillStep >= CLEAVE_BLADES ? STORM_TRAIL_HIT : 1.0f), hits, lv >= 3 ? 1.2f / 5 : 0.3f,
                                 cleave_long() ? 1.6f * 1.6f : 1.6f, false);    // ~8 ticks a cast in reach: 10
             skill_fx_spawn_burst(origin, a);
             audio_play_scene_sfx_dist(SCENE1_SFX_CLEAVE_BEAM, 0.45f, 0.0f);
@@ -3044,7 +3051,8 @@ void character_update(void)
 #endif
 #endif
                     float cut = tower_mod_hit_cooldown_cut();     // Lunar Tide
-                    if (cut > 0.0f) character_cut_skill_cooldowns(cut);
+                    if (cut > 0.0f) for (int k = 0; k < SKILL_COUNT; k++)     // (1.0.1: never under the -40% floor; it ran the cooldowns about twice as fast)
+                        skillCooldowns[k] = fmaxf(skillCooldowns[k] - cut, fminf(skillCooldowns[k], skillFloorLeft[k]));
                     character_call_lightning(tower_on_sword_hit(finisher));     // Storm Blade and the Storm boons: lightning (0 mostly)
 
                     // Spawn blood at the actual sword/boss contact point. The sword tip alone
@@ -3169,6 +3177,7 @@ void character_update(void)
     update_vertical(deltaTime);
     for (int s = 0; s < SKILL_COUNT; s++) {
         skillCooldowns[s] = fmaxf(0.0f, skillCooldowns[s] - deltaTime);
+        skillFloorLeft[s] = fmaxf(0.0f, skillFloorLeft[s] - deltaTime);
     }
 
     character_anim_apply_pose();

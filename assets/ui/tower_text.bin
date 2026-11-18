@@ -5,35 +5,35 @@ Damage taken -15% a level at Lv 1-2, and -10% more at Lv 3 (about -35% in all).
 Potions heal 25% more a level (a potion heals 45% of max health before boons).
 Rolls cost 40% less stamina.
 Stamina refills 40% faster a level, and an empty bar waits less before it refills.
-Skill cooldowns -20% a level to Lv 3 (x0.8 each: x0.51 at Lv 3), and Lv 4 cuts 18% more (x0.42). Offered once a skill is known.
+Skill cooldowns -10% a level, -40% at Lv 4: the only cooldown cut. Offered once a skill is known.
 Each sword hit heals 12% a level of its base damage, and Lv 3 adds 8% (32% in all; a sword hit of 4 heals 1.3 at Lv 3). Skills and lightning don't heal.
 +25 max health a level, and 25 health at once.
 Below 30% health your damage is +40% a level.
 Once a floor, a killing blow leaves you at 1 health instead.
 Perfect dodges are easier: the first 0.28 s of a roll count (0.20 without it; Lv 2: 0.31 s). Each perfect dodge heals 2% of max health.
 A perfect dodge gives +50% damage for 2.5 s (Lv 2: 4 s).
-A staggered boss stays down 50% longer.
-A staggered boss takes +60% damage (Lv 2: +90%). The stagger bonuses add up, +100% at most.
+A staggered boss stays down twice as long.
+A staggered boss takes x3 damage (Lv 2: x4). The stagger bonuses multiply.
 Every 4th sword hit calls a bolt of lightning on the boss (6 damage).
 Your damage +35%, and potions heal 25% less.
 Health a blow takes can be won back by hitting the boss: each hit wins back an eighth of its base damage a level (Lv 3: three eighths, a sword hit 1.5). It waits 1 s (Lv 2-3: 1.5 s), then drains away over 4 s.
 The combo's 3rd hit makes the boss bleed 4 a level over 3 s (a tick every 0.5 s); another finisher adds to it. It heals nothing.
 Drinking a potion gives +25% damage for 6 s.
 +10% damage a level for every full 25% of your health missing.
-With Storm Blade: its bolts +1.5 a level to Lv 4. Without it: every 8th sword hit calls a bolt of its own (6, +1.5 a level above Lv 1, to Lv 4). Lv 5: Storm Blade's and Static's bolts deal +50%.
-The combo's 3rd hit calls a bolt of lightning (6; Lv 2: 9).
+With Storm Blade: its bolts +1 a level to Lv 4. Without it: every 8th sword hit calls a bolt of its own (6, +1 a level above Lv 1, to Lv 4). Lv 5: Storm Blade's and Static's bolts deal +25%.
+The combo's 3rd hit calls a bolt of lightning (6; Lv 2: 7.5).
 Lightning fills the boss's stagger meter as a sword hit does. Offered once something calls lightning.
 When the boss is staggered, your next 5 sword hits each call lightning.
-Each sword hit takes 0.3 s a level off every skill cooldown. Offered once a skill is known.
-A skill's hit on a staggered boss deals +50% (the stagger bonuses add up, +100% at most).
-Each skill cast gives the sword +15% damage for 4 s.
-The combo's 3rd hit fills the stagger meter 20% more a level.
+Each sword hit takes 0.3 s a level off every skill cooldown, up to 13% of a cooldown a level (40% at Lv 3). Offered once a skill is known.
+A skill's hit on a staggered boss deals x3 (the stagger bonuses multiply).
+Each skill cast gives the sword +25% damage for 6 s.
+The combo's 3rd hit fills the stagger meter 40% more a level.
 A blow that would take over 20% of your max health deals 25% less.
 Any roll gives +8% damage a level for 2 s.
 A perfect dodge gives the roll's stamina back.
 After 3 perfect dodges on a floor, the next blow that lands deals nothing (once a floor).
 +20% gold a level, from every source: fights, Skip, chests and the Events.
-Below half health: a blow that doesn't knock you down can't flinch you or break a skill's wind-up; each sword hit in a row +8% damage, up to +40% (a blow taken or 2 s without a hit ends the streak); and no potions.
+Below half health: a blow that doesn't knock you down can't flinch you or break a skill's wind-up; each sword hit in a row +10% damage, up to +50% (a blow taken or 3 s without a hit ends the streak); and no potions.
 Leap and send 5 crosses round you (0.8 each, about 4 a cast; they fill the stagger meter like one sword hit). Cooldown 15 s.
 Charge 2 s, then a wide slash in front (28). A blow during the charge breaks it. Cooldown 45 s.
 5 blades fly out in a fan, each hitting up to 4 times (about 13 a cast). Cooldown 18 s.
@@ -84,7 +84,7 @@ Each boon of the family in full: its tier, its most levels, what it does, its ri
 Each boon of the family in full: its tier, its most levels, what it does, its rival.|@
 Take one, and its rival is locked out for the climb, even if you release it. A skill's two forms are rivals too.|@
 #"+"|A boon at its most can rise once more: its "+". No slot.|#Duos|With a maxed boon of each of two families, their duo can come. It merges both into one slot (both keep working) and opens the other.|%It goes only as a whole, and needs both families' packs.|@
-Learned only in the climb. The Learn card is Lv 1, the same card again the next level, up to Lv 4. Then a draft offers one of its two forms, by chance; pass it by and a later draft may offer either. Take one, lose the other.|Until one is known, every draft leads with a Learn card; then one in three holds a skill card.|%Each skill's second form is bought at the Shrine.
+Learned only in the climb. The Learn card is Lv 1, the same card again the next level, up to Lv 4. Then it can evolve: a draft offers one of its two forms, by chance; pass it by and a later draft may offer either. Take one, lose the other. One evolution a climb: once a skill evolves, the others stop at Lv 4.|Until one is known, every draft leads with a Learn card; then one in three holds a skill card.|%Each skill's second form is bought at the Shrine.
 @
 @
 @

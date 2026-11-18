@@ -198,6 +198,7 @@ float tower_mod_roll_cost(void);
 float tower_mod_stamina_regen(void);
 float tower_mod_stamina_empty(void);    // divides the wait before an empty stamina bar refills (Second Wind)
 float tower_mod_skill_cooldown(void);
+float tower_skill_cd_floor(void);     // the most all cooldown cuts together take off (x of the base)
 float tower_mod_lifesteal(void);
 // Rally (Bloodborne's regain): health lost to a blow can be won back by hitting the boss soon
 // after. tower_on_player_hurt adds to it, tower_on_boss_hurt wins it back, tower_tick drains it

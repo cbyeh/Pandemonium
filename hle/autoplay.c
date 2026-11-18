@@ -45,6 +45,8 @@ int hle_task_log;
 float hle_dummy_damage;
 int hle_dummy_hits;
 int hle_build_breaks;       // (HLE_DUMMY_BUILD) casts broken by a blow
+float hle_skill_dealt;      // (HLE_DUMMY_BUILD) the skills' own damage (skill_fx)
+float hle_dealt_raw;        // (HLE_DUMMY_BUILD) every hit on the boss, whole (boss_apply_hit)
 // Openings (HLE_TEST_DUMMY): time a Bonus boss spends not attacking, and how many such gaps
 float hle_open_time, hle_open_cur, hle_open_dmg;
 int hle_open_gaps;
@@ -2546,12 +2548,12 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
                 extern int tower_test_build(int);
                 extern bool hle_open_now; extern int hle_build_breaks;
                 static const int L[] = { HLE_DUMMY_BUILD };
-                static int w = -1, skill, casts, staggers, b0, k; static float w0, dealt, heal, prevHp, wasStag, took0;
+                static int w = -1, skill, casts, staggers, b0, k; static float w0, dealt, heal, prevHp, wasStag, took0, sk0;
                 if (w < 0 || tm - w0 >= HLE_SWEEP_S) {
-                    if (w >= 0) debugf("[build] boss %d build %d window %d: %.0f s dealt %.1f (%.1f a minute) | staggers %d, casts %d, broken %d | healed %.1f (%.1f a minute) | boss max %.0f | took %.1f\n",
+                    if (w >= 0) debugf("[build] boss %d build %d window %d: %.0f s dealt %.1f (%.1f a minute) | staggers %d, casts %d, broken %d | healed %.1f (%.1f a minute) | boss max %.0f | took %.1f | skills %.1f\n",
                                        HLE_DUMMY_BOSS, L[w % (int)(sizeof L / sizeof L[0])], w, (double)(tm - w0), (double)dealt, (double)(dealt * 60.0f / (tm - w0)), staggers, casts,
-                                       hle_build_breaks - b0, (double)heal, (double)(heal * 60.0f / (tm - w0)), (double)boss->maxHealth, (double)(hle_dummy_damage - took0));
-                    w++; w0 = tm; dealt = heal = 0.0f; casts = staggers = 0; b0 = hle_build_breaks; took0 = hle_dummy_damage;
+                                       hle_build_breaks - b0, (double)heal, (double)(heal * 60.0f / (tm - w0)), (double)boss->maxHealth, (double)(hle_dummy_damage - took0), (double)(hle_skill_dealt - sk0));
+                    w++; w0 = tm; dealt = heal = 0.0f; casts = staggers = 0; b0 = hle_build_breaks; took0 = hle_dummy_damage; sk0 = hle_skill_dealt;
                     skill = tower_test_build(L[w % (int)(sizeof L / sizeof L[0])]);
 #ifdef HLE_ELITE_SWEEP      // (and each window this affix: a list as long as the builds'; with HLE_ELITE_FORCE=0)
                     { extern int hle_elite_force; static const int A[] = { HLE_ELITE_SWEEP }; int a = A[w % (int)(sizeof A / sizeof A[0])];
@@ -2565,13 +2567,17 @@ void hle_autoplay(joypad_inputs_t *in, joypad_buttons_t *pressed)
 #else
                 const float lo = 0.55f, hi = 1.0f;
 #endif
-                dealt += prevHp - boss->health;     // (net: a Vampiric Elite's heals come off it)
+                { extern void tower_tick(float); tower_tick(deltaTime); }     // (the Tower's per-frame part, as a Tower fight runs it: bleeds, queued bolts, Rally's drain)
+                { static float raw0; dealt += hle_dealt_raw - raw0; raw0 = hle_dealt_raw; }     // (every hit whole; a Vampiric Elite's heals no longer come off it)
                 if (boss->health < boss->maxHealth * lo) boss->health = boss->maxHealth * hi;
                 if (boss->health > boss->maxHealth * hi) boss->health = boss->maxHealth * hi;
                 prevHp = boss->health;
                 if (boss->staggerT > 0.0f && wasStag <= 0.0f) staggers++;
                 wasStag = boss->staggerT;
-                float keep = character.maxHealth * 0.4f;
+#ifndef HLE_HOLD_HP
+#define HLE_HOLD_HP 0.4f
+#endif
+                float keep = character.maxHealth * HLE_HOLD_HP;
                 if (character.health > keep) heal += character.health - keep;
                 character.health = keep; character.stamina = character.maxStamina;
                 k++;

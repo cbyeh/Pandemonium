@@ -729,6 +729,29 @@ Frame time by affix (`HLE_TEST_DUMMY HLE_DUMMY_HALF HLE_ELITE_SWEEP HLE_LOG_FPS`
   - Crescent Storm draws 8 blades (5 today).
   - Measure both in Ares at 4 MB and on Delta's core.
 
+## 14e. The 1.0.1 balance pass (the user's calls, 2026-11-17)
+
+Measured on the build bot (`HLE_TEST_DUMMY` + `HLE_DUMMY_BUILD`, bosses 1/3/4/5, 240 s windows, 2-3 a cell): fight cost = the boss's damage on the bot over the bot's damage (lower is cheaper; it counts staggers stopping attacks). Full bars: each build's engine plus damage boons (Ember Edge, Blood Pact, Waxing Moon, Hemorrhage) in its free slots.
+
+| Build (full bar) | damage a minute | staggers / 4 min | cost |
+|---|---|---|---|
+| Crescent Storm | 416 | 8.5 | 0.97 |
+| Twin Moon | 415 | 6.1 | 0.99 |
+| Full Moon / Long Cleave (the round before) | 423 / 412 | 7.5 / 7.6 | 0.97 / 0.99 |
+| Full Moon Dance | 357 | 5.0 | 1.10 |
+| Storm (Storm Blade, Static, Thunderclap, Ember Edge, Blood Pact) | 381 | 4.5 | 1.11 |
+| Shattering Dance + damage boons | 298 | 9.0 | 1.28 |
+| Shattering Dance + stagger boons | 236 | 9.1 | 1.38 |
+
+- Risk order: Halfmoon on top, Cleave, then Moon Blade Dance (lowest risk, lowest reward). Shattering Dance is the stagger form: about twice the staggers, clearly less damage.
+- One evolution (Lv 5 form) a climb. Levels 2-4 smaller (MBD crosses 1.2, Halfmoon Lv 3 +12%, Cleave Lv 2 +10%); each form +48% to +99% over Lv 4 in the skill's own damage.
+- Cooldowns: no dead picks, no diminishing returns. Moon Mastery -10% a level is the only cut; Lunar Tide is its rival (to -40% by sword hits); Skill Mastery and Starfall give skill damage. Waning Light, Iron Tide and Mare Requiem still cut on their events.
+- Stagger bonuses multiply, no cap: Executioner x3 (Lv 2 x4), Eclipse x3, Crushing Blows twice as long. Added and capped at +100%, they paid only in the ~27% of a fight the boss is down: a trap against damage boons.
+- Storm: Storm Blade 6, Static +1 a level, its Lv 5 and Thunderclap Lv 2 x1.25. Its earlier +53% was partly the bench (Hemorrhage's bleed never ticked: the bench now runs tower_tick).
+- Boons: Waxing Moon +25% for 6 s, Heavy Hand +40% a level, Berserker +10% a hit to +50% (3 s streak), Red Thirst +5% a level; Hemorrhage stays 4 a level (+28%, cost -30%).
+- The bench can't judge: damage reduction (its tally is before Iron Skin), perfect-dodge and roll boons, gold, stamina, and Berserker's streaks (the bot swings half a player's rate). Runs with 2-3 skills are unmeasured.
+- Later (not in 1.0.1): damage boons adding instead of multiplying (a full damage bar x3 -> about x2.4), with boss health lowered deep in the Tower to match.
+
 ## 16. Build order (each stage on branch tower-rogue, with a pre-release for the user to play)
 | Stage | What | Test aids |
 |---|---|---|

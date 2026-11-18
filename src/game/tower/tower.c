@@ -56,35 +56,35 @@ static const BoonDef BOONS[BOON_COUNT] = {
     [BOON_KINDLED_FLASK] = { "Kindled Flask", "Potions heal 25% more",        2, TIER_COMMON, FAM_HEARTH },
     [BOON_FLEETFOOT]     = { "Fleetfoot",     "Rolls cost 40% less stamina",  1, TIER_RARE, FAM_SHADOW },
     [BOON_SECOND_WIND]   = { "Second Wind",   "+40% stamina regen",     3, TIER_COMMON, FAM_SHADOW },
-    [BOON_MOON_MASTERY]  = { "Moon Mastery",  "Cooldowns -20% (to -40%)", 4, TIER_RARE, FAM_MOON },
+    [BOON_MOON_MASTERY]  = { "Moon Mastery",  "Skill cooldowns -10%", 4, TIER_RARE, FAM_MOON },
     [BOON_BLOODTHIRST]   = { "Bloodthirst",   "Sword hits heal 12% of base damage", 3, TIER_RARE, FAM_BLOOD },
     [BOON_VIGOR]         = { "Vigor",         "+25 max health",               5, TIER_COMMON, FAM_IRON },
     [BOON_LAST_STAND]    = { "Last Stand",    "+40% damage below 30% health", 2, TIER_RARE, FAM_BLOOD },
     [BOON_UNBROKEN]      = { "Unbroken",      "Survive one killing blow a floor", 1, TIER_LEGENDARY, FAM_IRON },
     [BOON_PHANTOM_STEP]  = { "Phantom Step",  "Easier dodges heal 2%", 2, TIER_RARE, FAM_SHADOW },
     [BOON_RIPOSTE]       = { "Riposte",       "Perfect dodge: +50% damage", 2, TIER_RARE, FAM_SHADOW },
-    [BOON_CRUSHING_BLOWS]= { "Crushing Blows","Staggers last 50% longer",     1, TIER_RARE, FAM_IRON },
-    [BOON_EXECUTIONER]   = { "Executioner",   "Staggered bosses take +60% (Lv 2: +90%)",   2, TIER_LEGENDARY, FAM_IRON },
+    [BOON_CRUSHING_BLOWS]= { "Crushing Blows","Staggers last twice as long",     1, TIER_RARE, FAM_IRON },
+    [BOON_EXECUTIONER]   = { "Executioner",   "Staggered bosses take x3 (Lv 2: x4)",   2, TIER_LEGENDARY, FAM_IRON },
     [BOON_STORM_BLADE]   = { "Storm Blade",   "Every 4th hit calls lightning", 1, TIER_LEGENDARY, FAM_STORM },
     [BOON_BLOOD_PACT]    = { "Blood Pact",    "+35% damage, potions -25%", 1, TIER_LEGENDARY, FAM_BLOOD },
     [BOON_RALLY]         = { "Rally",         "Hit back to win lost health", 3, TIER_RARE, FAM_BLOOD },
     [BOON_HEMORRHAGE]    = { "Hemorrhage",    "Finishers bleed 4 over 3 s", 3, TIER_COMMON, FAM_BLOOD, 1 },
     [BOON_SANGUINE_FLASK]= { "Sanguine Flask","Potion: +25% damage 6 s", 1, TIER_RARE, FAM_BLOOD, 1 },
     [BOON_RED_THIRST]    = { "Red Thirst",    "+10% damage per 25% health lost", 3, TIER_COMMON, FAM_BLOOD, 1 },
-    [BOON_STATIC]        = { "Static",        "Storm Blade +1.5, or a bolt each 8th hit", 5, TIER_COMMON, FAM_STORM, 1 },
+    [BOON_STATIC]        = { "Static",        "Storm Blade +1, or a bolt each 8th hit", 5, TIER_COMMON, FAM_STORM, 1 },
     [BOON_THUNDERCLAP]   = { "Thunderclap",   "Combo finishers call lightning", 2, TIER_RARE, FAM_STORM, 1 },
     [BOON_CONDUCTOR]     = { "Conductor",     "Lightning fills the stagger meter", 1, TIER_RARE, FAM_STORM, 1 },
     [BOON_OVERCHARGE]    = { "Overcharge",    "A stagger: 5 hits call lightning", 1, TIER_LEGENDARY, FAM_STORM, 1 },
     [BOON_LUNAR_TIDE]    = { "Lunar Tide",    "Sword hits: cooldowns -0.3 s", 3, TIER_COMMON, FAM_MOON, 1 },
-    [BOON_ECLIPSE]       = { "Eclipse",       "Skills +50% on staggers", 1, TIER_RARE, FAM_MOON, 1 },
-    [BOON_WAXING_MOON]   = { "Waxing Moon",   "A cast: sword +15% for 4 s", 1, TIER_RARE, FAM_MOON, 1 },
-    [BOON_HEAVY_HAND]    = { "Heavy Hand",    "Finishers: +20% stagger", 3, TIER_COMMON, FAM_IRON, 1 },
+    [BOON_ECLIPSE]       = { "Eclipse",       "Skills x3 on staggers", 1, TIER_RARE, FAM_MOON, 1 },
+    [BOON_WAXING_MOON]   = { "Waxing Moon",   "A cast: sword +25% for 6 s", 1, TIER_RARE, FAM_MOON, 1 },
+    [BOON_HEAVY_HAND]    = { "Heavy Hand",    "Finishers: +40% stagger", 3, TIER_COMMON, FAM_IRON, 1 },
     [BOON_STALWART]      = { "Stalwart",      "Blows over 20% of max health -25%", 1, TIER_RARE, FAM_IRON, 1 },
     [BOON_SHADOW_EDGE]   = { "Shadow Edge",   "+8% damage for 2 s after a roll", 4, TIER_COMMON, FAM_SHADOW, 1 },
     [BOON_EVASION]       = { "Evasion",       "A perfect dodge's roll is free", 1, TIER_RARE, FAM_SHADOW, 1 },
     [BOON_VANISH]        = { "Vanish",        "3 perfect dodges: a blow deals 0", 1, TIER_LEGENDARY, FAM_SHADOW, 1 },
     [BOON_PROSPECTOR]    = { "Prospector",    "+20% gold",                    3, TIER_COMMON, FAM_HEARTH, 1 },   // (Quick Draught is still held back)
-    [BOON_BERSERKER]     = { "Berserker",     "Below half: +8% a hit, no potions", 1, TIER_LEGENDARY, FAM_BLOOD, 1 },
+    [BOON_BERSERKER]     = { "Berserker",     "Below half: +10% a hit, no potions", 1, TIER_LEGENDARY, FAM_BLOOD, 1 },
     // a skill's card: Learn it (Common), then its levels 2-4 (Rare: card_tier), each level's text in SKILL_LV_DESC
     [BOON_LEARN_MOONBLADE] = { "Moon Blade Dance", "Learn it: D-up", 4, TIER_COMMON, FAM_SKILL },
     [BOON_LEARN_HALFMOON]  = { "Halfmoon Slash",   "Learn it: D-right", 4, TIER_COMMON, FAM_SKILL },
@@ -120,14 +120,15 @@ static const uint8_t RIVALS[][2] = {
     { BOON_RIPOSTE, BOON_IRON_SKIN }, { BOON_BLOOD_PACT, BOON_KINDLED_FLASK }, { BOON_STORM_BLADE, BOON_EXECUTIONER },
     { BOON_LAST_STAND, BOON_VIGOR }, { BOON_BLOODTHIRST, BOON_MOON_MASTERY }, { BOON_VANISH, BOON_UNBROKEN },
     { BOON_BERSERKER, BOON_IRON_SKIN },     // (Iron Skin's second: it locks out both)
+    { BOON_LUNAR_TIDE, BOON_MOON_MASTERY },  // (1.0.1: the two cooldown paths; Moon Mastery's second)
     // a skill's two forms: one locks the other out (shown and greyed as rivals are)
     { BOON_FULL_MOON_DANCE, BOON_SHATTERING_DANCE }, { BOON_TWIN_MOON, BOON_FULL_MOON }, { BOON_CRESCENT_STORM, BOON_LONG_CLEAVE },
 };
 // A skill card's next level (Lv 2-4), what it adds
 static const char *const SKILL_LV_DESC[SKILL_COUNT][3] = {
-    { "Crosses deal 1.5", "+2 crosses", "12 s cooldown" },
-    { "Charges in 1.6 s", "+20% damage", "Reach +25%" },
-    { "+20% damage", "Blades hit 5 times", "Wind-up 0.6 s" },
+    { "Crosses deal 1.2", "+2 crosses", "12 s cooldown" },
+    { "Charges in 1.6 s", "+12% damage", "Reach +25%" },
+    { "+10% damage", "Blades hit 5 times", "Wind-up 0.6 s" },
 };
 // The Codex's pages (the Tower menu and the pause menu): each its text in tower_text.bin, and some its tables (codex_gen)
 enum { CX_CLIMB, CX_MAP, CX_FIGHTS, CX_STOPS, CX_SLOTS, CX_FAMILIES, CX_FAM0, CX_RIVALS = CX_FAM0 + FAM_COUNT, CX_PLUS, CX_SKILLS, CX_MBD, CX_HALFMOON, CX_CLEAVE,
@@ -214,9 +215,17 @@ static const struct { const char *name, *desc; } CURSES[PC_COUNT] = {
 #ifndef PACT_CHANCE             // (a test aid may set it)
 #define PACT_CHANCE 4           // % a card is a pact while boons are left (legendary: 6% and up)
 #endif
+#ifndef STORM_BOLT
 #define STORM_BOLT  6.0f        // Storm Blade's lightning (+12 was best in every build: section 14 of the design)
+#endif
+#ifndef CRUSH_LEN
+#define CRUSH_LEN 2.0f         // Crushing Blows: staggers last this much longer
+#endif
 #ifndef STATIC_BOLT
-#define STATIC_BOLT 1.5f        // Static: a level (the Storm build against the builds' mean: +3 +21%, +2 +13%, +1.5 the mean)
+#define STATIC_BOLT 1.0f        // Static: a level (the Storm build against the builds' mean: +3 +21%, +2 +13%, +1.5 the mean)
+#endif
+#ifndef THUNDERCLAP_AMP
+#define THUNDERCLAP_AMP 1.25f   // Thunderclap Lv 2: its bolt x this
 #endif
 #ifndef THUNDERCLAP_BOLT
 #define THUNDERCLAP_BOLT 6.0f   // (8: with Static's +3, the same)
@@ -255,7 +264,7 @@ static const struct { const char *name, *desc; float embers; const char *brief; 
     [NIGHT_NONE]       = { "", "", 1.0f, "" },
     [NIGHT_BLOOD_MOON] = { "Blood Moon", "Bosses hit 12% harder", 1.3f, "blows +12%" },     // (Embers x1.3, was 1.5: the same risk as the others now)
     [NIGHT_IRON]       = { "Iron Night", "Bosses +25% health", 1.3f, "bosses +25% health" },
-    [NIGHT_STARFALL]   = { "Starfall",   "Skills recharge 30% faster; bosses hit 15% harder", 1.2f, "skills 30% faster, blows +15%" },
+    [NIGHT_STARFALL]   = { "Starfall",   "Skills deal 25% more; bosses hit 15% harder", 1.2f, "skills +25%, blows +15%" },
 };
 
 // ---- Relics: two of these effects each ----
@@ -369,12 +378,12 @@ static const struct { const char *name; uint8_t floor; } AFFIXES[AFX_COUNT] = { 
 // Berserker (section 7): below half health; +8% a sword hit in a row up to +40%, a streak ends 2 s after its last hit
 #define BERSERK_HP     0.5f
 #ifndef BERSERK_STEP
-#define BERSERK_STEP   0.08f    // (5% a hit to +30%: +14% on the sword a minute, under its rival Iron Skin's -15% everywhere: dominated)
+#define BERSERK_STEP   0.10f    // (5% a hit to +30%: +14% on the sword a minute, under its rival Iron Skin's -15% everywhere: dominated)
 #endif
 #ifndef BERSERK_HITS
 #define BERSERK_HITS   5        // to +40%
 #endif
-#define BERSERK_GAP    2.0
+#define BERSERK_GAP    3.0     // (1.0.1: +10% a hit to +50%, 3 s: was +8% to +40%, 2 s, no measurable gain)
 #define ELITE_EMBERS  2.0f      // (phase 2: 1.5; the greedy route earned 40% fewer Embers a run)
 #define CHEST_GOLD    50        // an Elite's chest with no level left to give
 #define REST_HEAL     0.40f     // a Rest: heal 40%, Temper +1 level, or +2 potions (and Release a boon, free)
@@ -395,7 +404,7 @@ static const UpgradeDef UPGRADES[UPG_COUNT] = {
     [UPG_FLASK_POTENCY]  = { "Flask Potency",  "Potions heal 8% more" },
     [UPG_HONED_BLADE]    = { "Honed Blade",    "+8% damage" },
     [UPG_VIGOR]          = { "Vigor",          "+10 max health" },
-    [UPG_SKILL_MASTERY]  = { "Skill Mastery",  "Skill cooldowns -8%" },
+    [UPG_SKILL_MASTERY]  = { "Skill Mastery",  "Skills +8% damage" },
 };
 // Everything (the five upgrades to 3, the five relics, the Nightfarer) is 2400 Embers: about 6.5
 // hours of climbing (2.5 min a floor, runs reaching floor 4 at first and 16 with it all), 7.5 with
@@ -1374,9 +1383,12 @@ int  tower_circle(void) { return s.circle; }
 TowerBoss tower_floor_boss(void) { return s.boss; }
 int  tower_run_embers(void) { return s.runEmbers; }
 int  tower_boon_stacks(BoonId b) { return (s.active && b < BOON_COUNT) ? s.stacks[b] : 0; }
-// Static: its bolts +1.5 a level to Lv 4; Lv 5 (the old Static+) its and Storm Blade's bolts x1.5
+// Static: its bolts +STATIC_BOLT a level to Lv 4; Lv 5 (the old Static+) its and Storm Blade's bolts x STATIC_AMP (1.0.1: +0.75 and x1.25, was +1.5 and x1.5: the maxed Storm build was +53%)
 static int static_lv(void) { int n = tower_boon_stacks(BOON_STATIC); return n < 4 ? n : 4; }
-static float static_amp(void) { return tower_boon_stacks(BOON_STATIC) >= 5 ? 1.5f : 1.0f; }
+#ifndef STATIC_AMP
+#define STATIC_AMP 1.25f       // Static Lv 5: its bolts x this
+#endif
+static float static_amp(void) { return tower_boon_stacks(BOON_STATIC) >= 5 ? STATIC_AMP : 1.0f; }
 
 static int floor_embers(void)
 {
@@ -1478,6 +1490,11 @@ void tower_next_floor(void)
 // a draft offers only levels of the slotted boons (and skill cards and pacts)
 // A rival is never offered once its pair is taken; a "+" only with its boon at its max; a duo only
 // with a maxed boon of each of its families slotted (and both families' packs bought)
+static bool evolved(void)       // a skill's form taken this climb
+{
+    for (int k = 0; k < SKILL_COUNT; k++) if (tower_skill_form(k)) return true;
+    return false;
+}
 static bool offerable(BoonId b)
 {
     if (s.stacks[b] >= BOONS[b].maxStacks || s.locked[b]) return false;
@@ -1495,10 +1512,11 @@ static bool offerable(BoonId b)
         return s.stacks[BOON_STORM_BLADE] || s.stacks[BOON_STATIC] || s.stacks[BOON_THUNDERCLAP] || s.stacks[BOON_OVERCHARGE];
     // a Learn card, then the skill's levels (its stacks) to Lv 4; a form at Lv 4, a B form once
     // bought at the Shrine (its rival, the other form, is locked once one is taken)
+    // one evolution a climb (the user's call, 1.0.1): once a skill takes a form, the others stop at Lv 4
     case BOON_FULL_MOON_DANCE: case BOON_TWIN_MOON: case BOON_CRESCENT_STORM:
-        return s.stacks[BOON_LEARN_MOONBLADE + form_skill(b)] >= SKILL_LV_MAX;
+        return s.stacks[BOON_LEARN_MOONBLADE + form_skill(b)] >= SKILL_LV_MAX && !evolved();
     case BOON_SHATTERING_DANCE: case BOON_FULL_MOON: case BOON_LONG_CLEAVE:
-        return s.stacks[BOON_LEARN_MOONBLADE + form_skill(b)] >= SKILL_LV_MAX && ((s.forms >> form_skill(b)) & 1);
+        return s.stacks[BOON_LEARN_MOONBLADE + form_skill(b)] >= SKILL_LV_MAX && ((s.forms >> form_skill(b)) & 1) && !evolved();
     default: return true;
     }
 }
@@ -1549,12 +1567,15 @@ int tower_test_build(int n)
     tower_begin_run(7);
     s.packs = (1 << FAM_COUNT) - 1; s.forms = (1 << SKILL_COUNT) - 1;
     #define MAXB(b) while (s.stacks[b] < BOONS[b].maxStacks) take_boon(b)
-    static const int FORM[32][2] = { [2] = { 1, 1 }, [3] = { 2, 1 }, [4] = { 3, 1 }, [5] = { 1, 2 }, [6] = { 2, 2 }, [7] = { 3, 2 },
+    static const int FORM[40][2] = { [2] = { 1, 1 }, [3] = { 2, 1 }, [4] = { 3, 1 }, [5] = { 1, 2 }, [6] = { 2, 2 }, [7] = { 3, 2 },
                                      [13] = { 1, 2 }, [14] = { 3, 1 }, [15] = { 1, 1 }, [16] = { 2, 1 }, [17] = { 3, 1 }, [18] = { 1, 0 }, [19] = { 2, 0 }, [20] = { 3, 0 },
-                                     [21] = { 1, 2 }, [22] = { 2, 2 }, [23] = { 3, 2 } };
+                                     [21] = { 1, 2 }, [22] = { 2, 2 }, [23] = { 3, 2 }, [29] = { 1, 1 }, [30] = { 1, 2 }, [31] = { 1, 2 }, [32] = { 2, 1 }, [33] = { 2, 2 }, [34] = { 3, 1 }, [35] = { 3, 2 } };
     int skill = FORM[n][0];
     if (skill && FORM[n][1]) { tower_test_skill_lv(skill - 1, 5, FORM[n][1]); take_boon(BOON_MOON_MASTERY); take_boon(BOON_MOON_MASTERY); }
     else if (skill) tower_test_skill_lv(skill - 1, 1, 0);       // (18-20: the skill at Lv 1, no boons: Story's)
+    if (n >= 100) { skill = 1; tower_test_skill_lv(0, 4, 0); if (n != 100 + BOON_LUNAR_TIDE) { take_boon(BOON_MOON_MASTERY); take_boon(BOON_MOON_MASTERY); }     // (Lunar Tide: Moon Mastery's rival)     // 100 + a BoonId: the reference (26) and that boon at its max
+                    BoonId bb = (BoonId)(n - 100); if (bb == BOON_CONDUCTOR || bb == BOON_OVERCHARGE) take_boon(BOON_STORM_BLADE); if (bb != BOON_MOON_MASTERY && n != 199) MAXB(bb); }     // (199: the reference again; Conductor/Overcharge with Storm Blade)
+    if (n >= 26 && n <= 28) { skill = n - 25; tower_test_skill_lv(skill - 1, 4, 0); take_boon(BOON_MOON_MASTERY); take_boon(BOON_MOON_MASTERY); }   // 26-28: each skill at Lv 4, no form, Moon Mastery Lv 2 (as the form builds)
     switch (n) {
     case 1: MAXB(BOON_STORM_BLADE); MAXB(BOON_STATIC); MAXB(BOON_THUNDERCLAP); break;
     case 5: MAXB(BOON_HEAVY_HAND); MAXB(BOON_CRUSHING_BLOWS); MAXB(BOON_EXECUTIONER); MAXB(BOON_ECLIPSE); break;
@@ -1569,6 +1590,9 @@ int tower_test_build(int n)
     case 14: MAXB(BOON_CRUSHING_BLOWS); MAXB(BOON_MOON_MASTERY); take_boon(BOON_IRON_TIDE); break;
     case 15: case 16: case 17: MAXB(BOON_STORM_BLADE); MAXB(BOON_MOON_MASTERY); take_boon(BOON_SKYFALL); break;
     case 21: case 22: case 23: MAXB(BOON_RALLY); MAXB(BOON_MOON_MASTERY); take_boon(BOON_BLOOD_MOON_RITE); break;
+    // 29: Full Moon Dance with damage boons in the stagger build's four slots (Ember Edge, Blood Pact, Waxing Moon, Red Thirst), against 5; 30: Shattering Dance alone
+    case 29: case 31: case 32: case 33: case 34: case 35: MAXB(BOON_EMBER_EDGE); MAXB(BOON_BLOOD_PACT); MAXB(BOON_WAXING_MOON); MAXB(BOON_HEMORRHAGE); break;     // (full bars: 31 Shattering Dance, 32-35 Twin Moon, Full Moon, Crescent Storm, Long Cleave with them)
+    case 36: MAXB(BOON_STORM_BLADE); MAXB(BOON_STATIC); MAXB(BOON_THUNDERCLAP); MAXB(BOON_EMBER_EDGE); MAXB(BOON_BLOOD_PACT); break;     // Storm's full bar
     }
     #undef MAXB
     debugf("[build] %d: slots %d %d %d %d %d, skill %d Lv %d form %d, cooldowns x%.2f\n", n, s.slot[0], s.slot[1], s.slot[2], s.slot[3], s.slot[4], skill,
@@ -2540,7 +2564,7 @@ static const char *const TIER_NAME[3] = { "Common", "Rare", "Legendary" };
 static void event_label(int i, char *out, int n);
 
 // a skill's level track and its two forms (current level and the form taken gold, a locked one grey)
-static void doc_skill(UiDoc *d, int k)
+static void doc_skill(UiDoc *d, int k, bool codex)
 {
     int lv = knows(k) ? s.stacks[BOON_LEARN_MOONBLADE + k] : 0, f = tower_skill_form(k);
     ui_doc_text(d, FONT_STYLE_GREY, "Button: %s. Its levels take no boon slot.", joypad_skill_button(k));
@@ -2549,7 +2573,9 @@ static void doc_skill(UiDoc *d, int k)
     for (int l = 2; l <= SKILL_LV_MAX; l++)
         ui_doc_row(d, lv >= l ? FONT_STYLE_GOLD : FONT_STYLE_WHITE, lv == l && !f ? "now" : NULL, "Lv %d: %s", l, SKILL_LV_DESC[k][l - 2]);
     ui_doc_gap(d);
-    ui_doc_text(d, FONT_STYLE_GREY, "Lv 5: one of two forms (taking one locks the other out for the run)");
+    ui_doc_text(d, FONT_STYLE_GREY, codex ? "Lv 5, its evolution: one of two forms (taking one locks the other out for the run)" : "Lv 5: one of two forms (one locks the other out; one skill a climb)");     // (the Codex says evolution)
+    if (codex) ui_doc_text(d, FONT_STYLE_GREY, "One evolution a climb: once a skill evolves, the others stop at Lv 4.");
+    else if (!f && s.active && evolved()) ui_doc_text(d, FONT_STYLE_GREY, "Stays at Lv 4: another skill has its form this climb.");
     for (int fm = SKILL_FORM_A; fm <= SKILL_FORM_B; fm++) {
         BoonId c = skill_form_card(k, fm);
         bool taken = s.stacks[c], locked = s.locked[c], bought = fm == SKILL_FORM_A || ((s.forms >> k) & 1);
@@ -2581,7 +2607,7 @@ static void doc_boon(UiDoc *d, int b, char *title, int tn, int *tstyle)
         int k = is_learn(b) ? b - BOON_LEARN_MOONBLADE : form_skill(b);
         if (is_form(b)) { ui_doc_text(d, FONT_STYLE_WHITE, "%s", full_text(b)); ui_doc_text(d, FONT_STYLE_RED, "Locks out: %s, %s", BOONS[rival_of(b)].name, lc(BOONS[rival_of(b)].desc)); ui_doc_gap(d); }
         else ui_doc_text(d, FONT_STYLE_WHITE, knows(k) ? "Known: Lv %d of 5 now." : "Not learned yet: this card teaches it at Lv 1.", tower_skill_level(k));
-        doc_skill(d, k);
+        doc_skill(d, k, false);
         return;
     }
     // its level now and its most
@@ -3228,7 +3254,7 @@ static void shop_draw(void)
     if (i <= SHOP_CARD2 && s.shop.card[i] >= 0) {
         int card = s.shop.card[i], sa, sb, r = rival_of(card);
         if (BOONS[card].duo && duo_pair(card, &sa, &sb)) snprintf(line, sizeof line, "Duo: merges %s + %s", BOONS[s.slot[sa] - 1].name, BOONS[s.slot[sb] - 1].name);
-        else if (r >= 0) { char rn[40]; rival_names(card, rn, sizeof rn); snprintf(line, sizeof line, "New: slot %d/%d. Locks out %s", slots_used() + 1, TOWER_SLOTS, rn); }
+        else if (r >= 0) { char rn[40]; rival_names(card, rn, sizeof rn); snprintf(line, sizeof line, "Slot %d/%d. Locks out %s", slots_used() + 1, TOWER_SLOTS, rn); }     // (no "New:": Moon Mastery's two rivals fit)
         else snprintf(line, sizeof line, "New: slot %d/%d", slots_used() < TOWER_SLOTS ? slots_used() + 1 : TOWER_SLOTS, TOWER_SLOTS);
     } else if (i == SHOP_LEVEL) snprintf(line, sizeof line, s.shop.levels ? "+1 level again, %d more each time" : "+1 level on a boon or skill (choose it)", PRICE_LEVEL_UP);
     else if (i == SHOP_PLUS) snprintf(line, sizeof line, "A maxed boon's \"+\", its top level (choose it)");
@@ -3783,7 +3809,7 @@ static void codex_gen(UiDoc *d, int k)
         break;
     case CX_MBD: case CX_HALFMOON: case CX_CLEAVE:
         if (!s.active) { TowerSave t; tower_load(&t); s.forms = (t.unlocks >> FAM_COUNT) & ((1 << SKILL_COUNT) - 1); }   // (outside a climb: the B forms bought)
-        doc_skill(d, k - CX_MBD);
+        doc_skill(d, k - CX_MBD, true);
         break;
     case CX_AFFIXES:
         for (int a = 0; a < AFX_COUNT; a++) {
@@ -3999,6 +4025,9 @@ float tower_mod_damage_dealt(void)
     return m;
 }
 
+#ifndef RED_THIRST
+#define RED_THIRST 0.05f    // a level, per 25% of health missing (1.0.1: was 0.10, +90% at Lv 3 and a quarter health)
+#endif
 float tower_mod_damage_vs(float bossHealthFrac, bool staggered, int kind)
 {
     if (!s.active) return 1.0f;
@@ -4010,13 +4039,14 @@ float tower_mod_damage_vs(float bossHealthFrac, bool staggered, int kind)
     int rt = tower_boon_stacks(BOON_RED_THIRST);
     if (rt && character.maxHealth > 0.0f) {         // +10% a level per full 25% of health missing
         int q = (int)((1.0f - character.health / character.maxHealth) / 0.25f);
-        if (q > 0) { m *= 1.0f + 0.10f * rt * q; BFX("Red Thirst: %.0f%% health, x%.2f\n", (double)(100.0f * character.health / character.maxHealth), (double)(1.0f + 0.10f * rt * q)); }
+        if (q > 0) { m *= 1.0f + RED_THIRST * rt * q; BFX("Red Thirst: %.0f%% health, x%.2f\n", (double)(100.0f * character.health / character.maxHealth), (double)(1.0f + RED_THIRST * rt * q)); }
     }
     if (tower_boon_stacks(BOON_SANGUINE_FLASK) && nowS < s.sanguineUntil) { m *= 1.25f; BFX("Sanguine Flask: x1.25 (%.1f s left)\n", s.sanguineUntil - nowS); }
     int se = tower_boon_stacks(BOON_SHADOW_EDGE);
     if (se && nowS < s.shadowEdgeUntil) { m *= 1.0f + 0.08f * se; BFX("Shadow Edge: x%.2f after a roll\n", (double)(1.0f + 0.08f * se)); }
     bool sword = kind == TOWER_HIT_SWORD || kind == TOWER_HIT_FINISHER;
-    if (sword && tower_boon_stacks(BOON_WAXING_MOON) && nowS < s.waxingUntil) { m *= 1.15f; BFX("Waxing Moon: sword hit x1.15\n"); }
+    if (kind == TOWER_HIT_SKILL) m *= (1.0f + 0.08f * shrine(UPG_SKILL_MASTERY)) * (s.night == NIGHT_STARFALL ? 1.25f : 1.0f);     // Skill Mastery, Starfall (1.0.1: were cooldown cuts)
+    if (sword && tower_boon_stacks(BOON_WAXING_MOON) && nowS < s.waxingUntil) { m *= 1.25f; BFX("Waxing Moon: sword hit x1.25\n"); }
     if (kind == TOWER_HIT_FINISHER && tower_boon_stacks(BOON_EMBER_EDGE_PLUS)) { m *= 1.25f; BFX("Ember Edge+: the finisher x1.25\n"); }
     if (sword && berserk_bonus() > 0.0f) { m *= 1.0f + berserk_bonus(); BFX("Berserker: hit %d in a row x%.2f\n", s.berserkHits + 1, (double)(1.0f + berserk_bonus())); }
     if (kind == TOWER_HIT_SKILL && tower_boon_stacks(BOON_BLOOD_MOON_RITE)) { m *= 1.4f; BFX("Blood Moon Rite: a skill's hit x1.40\n"); }
@@ -4061,18 +4091,28 @@ float tower_mod_stagger_time(void)
 #ifdef HLE_STAGGER_LONG     // test aid: Crushing Blows outside the Tower
     return 1.5f;
 #endif
-    return (tower_boon_stacks(BOON_CRUSHING_BLOWS) ? 1.5f : 1.0f) * (tower_affix(AFX_RELENTLESS) ? RELENTLESS_DOWN : 1.0f)     // (Relentless: up sooner)
+    return (tower_boon_stacks(BOON_CRUSHING_BLOWS) ? CRUSH_LEN : 1.0f) * (tower_affix(AFX_RELENTLESS) ? RELENTLESS_DOWN : 1.0f)     // (Relentless: up sooner)
            + (tower_boon_stacks(BOON_IRON_TIDE) ? IRON_TIDE_DOWN_S / BOSS_STAGGER_S : 0.0f);     // Iron Tide: 1.5 s longer down (phase 2: its reset alone added +1%)
 }
 // A staggered boss's bonuses add (Executioner +60%, +90% with its "+"; Breaker +15% a stack; Eclipse +50%
 // on a skill's hit), capped at +100% (section 6, the stagger build)
-#define STAGGER_BONUS_CAP 1.0f
+// 1.0.1 (the user's call): they multiply, no cap; a stagger build paid only in the ~20% of a fight the boss is down,
+// so +90% there was worth less than a flat damage boon (measured: a trap against damage boons in the same slots)
+#ifndef EXEC_LV1
+#define EXEC_LV1 2.0f
+#endif
+#ifndef EXEC_LV2
+#define EXEC_LV2 3.0f
+#endif
+#ifndef ECLIPSE_ADD
+#define ECLIPSE_ADD 2.0f
+#endif
 float tower_mod_stagger_damage(int kind)
 {
     if (!s.active) return 1.0f;
-    float add = (tower_boon_stacks(BOON_EXECUTIONER) >= 2 ? 0.9f : tower_boon_stacks(BOON_EXECUTIONER) ? 0.6f : 0.0f) + 0.15f * bl(PB_STAGGERED);
-    if (kind == TOWER_HIT_SKILL && tower_boon_stacks(BOON_ECLIPSE)) { add += 0.5f; BFX("Eclipse: skill hit on a staggered boss +50%%\n"); }
-    return 1.0f + fminf(STAGGER_BONUS_CAP, add);
+    float m = (1.0f + (tower_boon_stacks(BOON_EXECUTIONER) >= 2 ? EXEC_LV2 : tower_boon_stacks(BOON_EXECUTIONER) ? EXEC_LV1 : 0.0f)) * (1.0f + 0.15f * bl(PB_STAGGERED));
+    if (kind == TOWER_HIT_SKILL && tower_boon_stacks(BOON_ECLIPSE)) { m *= 1.0f + ECLIPSE_ADD; BFX("Eclipse: skill hit on a staggered boss x%.1f\n", (double)(1.0f + ECLIPSE_ADD)); }
+    return m;
 }
 float tower_mod_perfect_window(void)
 {
@@ -4139,12 +4179,12 @@ float tower_on_sword_hit(bool finisher)
         BFX("Overcharge: lightning on hit %d (%.0f), %d left\n", s.hitCount, (double)storm, s.overcharge);
     }
     if (finisher && tower_boon_stacks(BOON_THUNDERCLAP)) {
-        float tc = THUNDERCLAP_BOLT * (tower_boon_stacks(BOON_THUNDERCLAP) >= 2 ? 1.5f : 1.0f);
+        float tc = THUNDERCLAP_BOLT * (tower_boon_stacks(BOON_THUNDERCLAP) >= 2 ? THUNDERCLAP_AMP : 1.0f);
         bolt += tc; BFX("Thunderclap: the finisher calls lightning (%.0f)\n", (double)tc);
     }
     int hm = tower_boon_stacks(BOON_HEMORRHAGE);
     if (finisher && hm) {       // a bleed of 4 a level over 3 s; a new finisher adds to it and starts the 3 s again
-        s.bleedLeft += 4.0f * hm;
+        s.bleedLeft += 4.0f * hm;     // (1.0.1: 8 measured +64%, the strongest boon: the bench had never ticked its bleed)
         s.bleedRate = s.bleedLeft / 3.0f;
         if (s.bleedTick <= 0.0f) s.bleedTick = 0.5f;
         BFX("Hemorrhage: the finisher bleeds, %.1f to come over 3 s\n", (double)s.bleedLeft);
@@ -4163,7 +4203,7 @@ float tower_mod_finisher_poise(void)
 {
     int hh = tower_boon_stacks(BOON_HEAVY_HAND);
     if (hh) BFX("Heavy Hand: the finisher's stagger x%.2f\n", (double)(1.0f + 0.2f * hh));
-    return 1.0f + 0.2f * hh;
+    return 1.0f + 0.4f * hh;     // (1.0.1: was +20% a level: no measurable gain)
 }
 
 float tower_mod_hit_cooldown_cut(void)
@@ -4187,7 +4227,7 @@ void tower_on_potion(void)
 void tower_on_skill_cast(void)
 {
     extern double nowS;
-    if (tower_boon_stacks(BOON_WAXING_MOON)) { s.waxingUntil = nowS + 4.0; BFX("Waxing Moon: a cast, +15%% sword damage for 4 s\n"); }
+    if (tower_boon_stacks(BOON_WAXING_MOON)) { s.waxingUntil = nowS + 6.0; BFX("Waxing Moon: a cast, +25%% sword damage for 6 s\n"); }     // (1.0.1: was +15% for 4 s)
     s.skyfallUsed = false;
     if (tower_boon_stacks(BOON_BLOOD_MOON_RITE)) {      // 3% of max health a cast, never the last of it
         float h = character.health, cost = 0.03f * character.maxHealth;
@@ -4268,12 +4308,18 @@ float tower_mod_roll_cost(void) { return (tower_boon_stacks(BOON_FLEETFOOT) ? 0.
 float tower_mod_stamina_empty(void) { return 1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND); }   // the wait once the bar is empty: x1/1.4 a stack
 float tower_mod_stamina_regen(void) { return (1.0f + 0.4f * tower_boon_stacks(BOON_SECOND_WIND)) * (has_relic(RELIC_STAMINA) ? 1.2f : 1.0f); }
 #define SKILL_CD_FLOOR 0.6f
+float tower_skill_cd_floor(void)     // what a cast's cooldown keeps at least, of its base: Lunar Tide cuts to 1 - 13.3% a level
+{
+    int lt = tower_boon_stacks(BOON_LUNAR_TIDE);
+    return lt ? 1.0f - 0.4f * (lt < 3 ? lt : 3) / 3.0f : SKILL_CD_FLOOR;
+}
 float tower_mod_skill_cooldown(void)
 {
-    static const float MM[] = { 1.0f, 0.8f, 0.7f, 0.65f, 0.6f };     // Moon Mastery by level: -20%, -30%, -35%, -40%
+    // 1.0.1 (the user's calls): Moon Mastery is the only cut, -10% a level (-40% at Lv 4), and Lunar Tide its rival
+    // (the same -40% by sword hits); the shrine and Starfall add skill damage instead, so no pick is ever wasted
     int mm = tower_boon_stacks(BOON_MOON_MASTERY);
-    float c = (1.0f - 0.08f * shrine(UPG_SKILL_MASTERY)) * MM[mm < 4 ? mm : 4] * ((s.active && s.night == NIGHT_STARFALL) ? 0.7f : 1.0f);
-    return c > SKILL_CD_FLOOR ? c : SKILL_CD_FLOOR;     // all the cuts together: at most -40% (the user's call, 1.0.1)
+    float c = 1.0f - 0.10f * (mm < 4 ? mm : 4);
+    return c > SKILL_CD_FLOOR ? c : SKILL_CD_FLOOR;
 }
 float tower_mod_lifesteal(void) { return (0.12f * (tower_boon_stacks(BOON_BLOODTHIRST) < 2 ? tower_boon_stacks(BOON_BLOODTHIRST) : 2) + (tower_boon_stacks(BOON_BLOODTHIRST) >= 3 ? 0.08f : 0.0f)) + 0.03f * has_relic(RELIC_VAMPIRIC); }   // of a hit before boons: it no longer grows with the damage multiplier
 
@@ -4384,7 +4430,7 @@ int tower_test_slots(void)
     CHECK(fabsf(tower_mod_damage_taken() / t0 - 0.85f * 0.85f * 0.9f) < 0.001f, "Iron Skin Lv 3: x0.650 taken (%.3f)", (double)(tower_mod_damage_taken() / t0));
     take_boon(BOON_STORM_BLADE); take_boon(BOON_STATIC);
     float bolts[4]; for (int i = 0; i < 4; i++) bolts[i] = tower_on_sword_hit(false);
-    CHECK(bolts[0] == 0.0f && bolts[3] == 6.0f + STATIC_BOLT, "Storm Blade + Static Lv 1: hit 4 calls 6 + Static's (%.0f)", (double)bolts[3]);
+    CHECK(bolts[0] == 0.0f && bolts[3] == STORM_BOLT + STATIC_BOLT, "Storm Blade + Static Lv 1: hit 4 calls 6 + Static's (%.0f)", (double)bolts[3]);
     CHECK(slots_used() == 4 && offerable(BOON_VIGOR) && offerable(BOON_HEMORRHAGE), "4 slots: a new boon still offered");
     take_boon(BOON_SHADOW_EDGE);
     CHECK(slots_used() == 5 && s.slot[4] == BOON_SHADOW_EDGE + 1, "the fifth boon in slot 5");
@@ -4555,8 +4601,9 @@ int tower_test_skills(void)
     s.bless[PB_STAGGERED] = 2; float e7 = tower_mod_stagger_damage(TOWER_HIT_SKILL), e8 = tower_mod_damage_vs(1.0f, true, TOWER_HIT_SKILL);
     debugf("[skills] stagger damage: none %.2f, Executioner %.2f, +Breaker %.2f, +3 Breakers %.2f (capped), Executioner+Eclipse a skill %.2f (capped) a sword hit %.2f, Eclipse alone %.2f, Eclipse+2 Breakers %.2f\n",
            (double)e0, (double)e1, (double)e2, (double)e3, (double)e4, (double)e5, (double)e6, (double)e7);
-    CHECK(e0 == 1.0f && fabsf(e1 - 1.6f) < 1e-4f && fabsf(e2 - 1.75f) < 1e-4f && e3 == 2.0f && e4 == 2.0f && fabsf(e5 - 1.6f) < 1e-4f && fabsf(e6 - 1.5f) < 1e-4f && fabsf(e7 - 1.8f) < 1e-4f && e8 == 1.0f,
-          "the bonuses add: 1, 1.6, 1.75, 3 Breakers 2.0, a skill with Executioner and Eclipse 2.0, its sword hit 1.6, Eclipse 1.5, +2 Breakers 1.8; none multiply in damage_vs");
+    { const float x = 1.0f + EXEC_LV1, y = 1.0f + ECLIPSE_ADD;      // (1.0.1: they multiply, no cap)
+      CHECK(e0 == 1.0f && fabsf(e1 - x) < 1e-4f && fabsf(e2 - x * 1.15f) < 1e-4f && fabsf(e3 - x * 1.45f) < 1e-4f && fabsf(e4 - x * y) < 1e-4f && fabsf(e5 - x) < 1e-4f && fabsf(e6 - y) < 1e-4f && fabsf(e7 - y * 1.3f) < 1e-4f && e8 == 1.0f,
+            "the bonuses multiply: Executioner x%.1f, a Breaker x1.15, 3 x1.45, Eclipse x%.1f on a skill, no cap; none in damage_vs", (double)x, (double)y); }
     // the pick math (section 14): a skill build takes every skill card of one skill; a sword build learns
     // one skill and takes nothing else of them: their skill cards by floor 35 (33 drafts), 40 runs each
     for (int build = 0; build < 2; build++) {
@@ -4626,7 +4673,7 @@ int tower_test_stage2(void)
     CHECK(s.stacks[BOON_BLOODTHIRST] == 3 && s.stacks[BOON_STORM_BLADE] == 1 && !offerable(BOON_CRIMSON_STORM) && offerable(BOON_HEMORRHAGE),
           "both stay at their max, the duo once, a new boon fits again");
     { s.hitCount = 0; float b4 = 0; for (int i = 0; i < 4; i++) b4 = tower_on_sword_hit(false);
-      CHECK(b4 == 6.0f, "merged Storm Blade still calls lightning on hit 4 (%.0f)", (double)b4); }
+      CHECK(b4 == STORM_BOLT, "merged Storm Blade still calls lightning on hit 4 (%.0f)", (double)b4); }
     { character.maxHealth = 200.0f; character.health = 100.0f; float d = tower_on_lightning(6.0f, false);
       CHECK(d == 6.0f && fabsf(character.health - 100.0f - 0.5f * 0.32f * 6.0f) < 0.01f, "Crimson Storm: a bolt of 6 heals 0.96 with Bloodthirst Lv 3 (%.2f, bolt %.1f)", (double)(character.health - 100.0f), (double)d); }
     { char l[TOWER_BUILD_ROWS][40], r[TOWER_BUILD_ROWS][12]; int st[TOWER_BUILD_ROWS], cd[TOWER_BUILD_ROWS];
@@ -4685,14 +4732,19 @@ int tower_test_stage2(void)
     { int n = 0; s.hitCount = 0; for (int i = 0; i < 9; i++) n += tower_on_sword_hit(false) > 0.0f;
       CHECK(n == 3, "Storm Blade+: every 3rd hit (%d bolts in 9)", n); }
     RUN(27); MAX(BOON_EXECUTIONER);
-    CHECK(fabsf(tower_mod_stagger_damage(TOWER_HIT_SWORD) - 1.9f) < 0.001f, "Executioner Lv 2: +90%%");
+    CHECK(fabsf(tower_mod_stagger_damage(TOWER_HIT_SWORD) - (1.0f + EXEC_LV2)) < 0.001f, "Executioner Lv 2: x%.1f", (double)(1.0f + EXEC_LV2));
     RUN(27); MAX(BOON_PHANTOM_STEP);
     CHECK(fabsf(tower_mod_perfect_window() - 0.31f) < 0.001f, "Phantom Step Lv 2: 0.31 s");
     RUN(27); s.skills = 1; float cd0 = tower_mod_skill_cooldown(); for (int k = 0; k < 3; k++) take_boon(BOON_MOON_MASTERY); float cd3 = tower_mod_skill_cooldown(); take_boon(BOON_MOON_MASTERY);
-    CHECK(fabsf(cd3 - 0.65f * cd0) < 0.001f && fabsf(tower_mod_skill_cooldown() - fmaxf(0.6f, 0.6f * cd0)) < 0.001f, "Moon Mastery Lv 3 x0.65, Lv 4 x0.6 (%.3f)", (double)(tower_mod_skill_cooldown() / cd0));
+    CHECK(cd0 == 1.0f && fabsf(cd3 - 0.7f) < 0.001f && fabsf(tower_mod_skill_cooldown() - 0.6f) < 0.001f, "Moon Mastery -10%% a level: Lv 3 x0.7, Lv 4 x0.6 (%.3f)", (double)tower_mod_skill_cooldown());
     s.night = NIGHT_STARFALL;
-    CHECK(fabsf(tower_mod_skill_cooldown() - 0.6f) < 0.001f, "the cooldown floor: Moon Mastery Lv 4 and Starfall x0.6 together (%.3f)", (double)tower_mod_skill_cooldown());
+    CHECK(fabsf(tower_mod_skill_cooldown() - 0.6f) < 0.001f && fabsf(tower_mod_damage_vs(1.0f, false, TOWER_HIT_SKILL) - 1.25f) < 0.001f && tower_mod_damage_vs(1.0f, false, TOWER_HIT_SWORD) == 1.0f,
+          "Starfall: skills x1.25 damage, cooldowns as they were (%.3f)", (double)tower_mod_skill_cooldown());
     s.night = 0;
+    RUN(27); s.skills = 1; take_boon(BOON_LUNAR_TIDE);
+    CHECK(s.locked[BOON_MOON_MASTERY] && !offerable(BOON_MOON_MASTERY) && fabsf(tower_skill_cd_floor() - (1.0f - 0.4f / 3.0f)) < 0.001f, "Lunar Tide locks out Moon Mastery; Lv 1 cuts a cast's cooldown 13%% at most");
+    take_boon(BOON_LUNAR_TIDE); take_boon(BOON_LUNAR_TIDE);
+    CHECK(fabsf(tower_skill_cd_floor() - 0.6f) < 0.001f && tower_mod_skill_cooldown() == 1.0f, "Lunar Tide Lv 3: down to 60%% of a cooldown by sword hits");
     RUN(27); MAX(BOON_BLOODTHIRST);
     CHECK(fabsf(tower_mod_lifesteal() - 0.32f) < 0.001f, "Bloodthirst Lv 3: 32%% (%.2f)", (double)tower_mod_lifesteal());
     RUN(27); MAX(BOON_IRON_SKIN); take_boon(BOON_IRON_SKIN_PLUS);
@@ -4702,9 +4754,9 @@ int tower_test_stage2(void)
     CHECK(fabsf(tower_mod_unbroken_heal() - 0.2f * character.maxHealth) < 0.01f, "Unbroken+: heals 20%%");
     RUN(27); MAX(BOON_STATIC);
     { float w = 0; s.hitCount = 0; for (int i = 0; i < 8; i++) w += tower_on_sword_hit(false);
-      CHECK(fabsf(w - 1.5f * (6.0f + STATIC_BOLT * 3)) < 0.01f, "Static Lv 5 (no Storm Blade): the 8th hit's bolt x1.5 (%.1f)", (double)w); }
+      CHECK(fabsf(w - STATIC_AMP * (STORM_BOLT + STATIC_BOLT * 3)) < 0.01f, "Static Lv 5 (no Storm Blade): the 8th hit's bolt x STATIC_AMP (%.1f)", (double)w); }
     RUN(27); MAX(BOON_THUNDERCLAP);
-    CHECK(tower_on_sword_hit(true) == 1.5f * THUNDERCLAP_BOLT, "Thunderclap Lv 2: the finisher's bolt x1.5");
+    CHECK(fabsf(tower_on_sword_hit(true) - THUNDERCLAP_AMP * THUNDERCLAP_BOLT) < 0.01f, "Thunderclap Lv 2: the finisher's bolt x THUNDERCLAP_AMP");
     RUN(28); MAX(BOON_CRUSHING_BLOWS); MAX(BOON_STORM_BLADE); take_boon(BOON_ANVIL_OF_STORMS);
     CHECK(tower_on_lightning(6.0f, true) == 12.0f && tower_on_lightning(6.0f, false) == 6.0f, "Anvil of Storms: x2 on a staggered boss only");
     RUN(29); MAX(BOON_RALLY); s.skills = 1; MAX(BOON_MOON_MASTERY); take_boon(BOON_BLOOD_MOON_RITE);
@@ -4990,7 +5042,7 @@ int tower_test_map(void)
             for (int pb = 0; pb < PB_COUNT; pb++) for (int pc = 0; pc < PC_COUNT; pc++) FIT(272, "Blessing %s, its curse %s", BLESSINGS[pb].name, CURSES[pc].name);
             for (int i = 0; i < SHOP_ITEMS; i++) { s.gold = 0; FIT(272, "%s", shop_block(i)); }
             for (int b = 0; b < BOON_COUNT; b++) {      // the Shop's line under Leave: a card's rivals, a duo's two longest boons
-                if (rival_of(b) >= 0) { char rn[48]; rival_names(b, rn, sizeof rn); FIT(272, "New: slot %d/%d. Locks out %s", 5, 5, rn); }
+                if (rival_of(b) >= 0) { char rn[48]; rival_names(b, rn, sizeof rn); FIT(272, "Slot %d/%d. Locks out %s", 5, 5, rn); }
                 if (!BOONS[b].duo) continue;
                 const char *na = "", *nb = "";
                 for (int k = 0; k < BOON_COUNT; k++) if (takes_slot(k) && !BOONS[k].duo) {
@@ -5069,6 +5121,13 @@ int tower_test_map(void)
       debugf("[map] elite: 500 drafts, %d boon cards, %d Common; Bonus health x%.3f (plain x%.3f), Guardian x%.2f; Embers %d (plain %d)\n", cards, common, (double)h3, (double)n3, (double)h1, e, ne);
       MCHECK(!common && cards > 1000 && fabsf(h3 / n3 - 1.25f) < 0.001f && h1 == tower_boss_health_scale(1) && e == 14 && ne == 7,
              "an Elite: no Common card, x1.25 health on a Bonus boss only, Embers x2 (14 for 7)"); }
+    RUN(45);    // one evolution a climb: a form taken, another skill at Lv 4 offers none
+    { s.forms = (1 << SKILL_COUNT) - 1;
+      for (int l = 0; l < SKILL_LV_MAX; l++) { take_boon(BOON_LEARN_MOONBLADE); take_boon(BOON_LEARN_HALFMOON); }
+      bool before = offerable(BOON_TWIN_MOON) && offerable(BOON_FULL_MOON);
+      take_boon(BOON_FULL_MOON_DANCE);
+      MCHECK(before && !offerable(BOON_TWIN_MOON) && !offerable(BOON_FULL_MOON) && !offerable(BOON_SHATTERING_DANCE),
+             "one evolution a climb: Full Moon Dance taken, Halfmoon at Lv 4 offers no form (before %d)", before); }
     RUN(44);    // a held Common boon still levels in an Elite's draft (a full bar of them left only the minor blessing)
     { static const BoonId C[] = { BOON_SECOND_WIND, BOON_VIGOR, BOON_IRON_SKIN, BOON_EMBER_EDGE, BOON_RALLY }; int lv = 0, minor = 0, n = 0;
       for (int i = 0; i < TOWER_SLOTS; i++) take_boon(C[i]);
@@ -5419,7 +5478,7 @@ int tower_test_affixes(void)
     float st = tower_mod_stagger_time(); s.stacks[BOON_CRUSHING_BLOWS] = 1; float stC = tower_mod_stagger_time(); s.stacks[BOON_CRUSHING_BLOWS] = 0;
     debugf("[affix] Relentless: drain x%.1f, down %.2f s (Crushing Blows %.2f s), breathers x%.2f, footwork x%.2f\n", (double)tower_mod_poise_drain(), (double)(3.5f * st), (double)(3.5f * stC),
            (double)tower_elite_pace(true, 0.9f), (double)tower_elite_pace(false, 0.9f));
-    CHECK(tower_mod_poise_drain() == 2.0f && fabsf(3.5f * st - 2.5f) < 0.01f && fabsf(3.5f * stC - 3.75f) < 0.01f && fabsf(tower_elite_pace(true, 0.9f) - 1.0f / RELENTLESS_BREATHER) < 1e-4f
+    CHECK(tower_mod_poise_drain() == 2.0f && fabsf(3.5f * st - 2.5f) < 0.01f && fabsf(3.5f * stC - 2.5f * CRUSH_LEN) < 0.01f && fabsf(tower_elite_pace(true, 0.9f) - 1.0f / RELENTLESS_BREATHER) < 1e-4f
           && tower_elite_pace(false, 0.9f) == 1.0f, "Relentless: the drain 2x, down 2.5 s (not 3.5), breathers 15%% shorter");
     s.affixes = 1 << AFX_SWIFT;
     CHECK(fabsf(tower_elite_pace(false, 0.9f) - SWIFT_PACE) < 1e-4f && fabsf(tower_elite_pace(true, 0.3f) - SWIFT_PACE) < 1e-4f && tower_elite_blow(0.3f) == 1.0f && tower_elite_pitch() == SWIFT_PITCH,
@@ -5475,12 +5534,12 @@ int tower_test_affixes(void)
     for (int i = 0; i < 8; i++) { nowS = now0 + 0.5 * i; k[nk++] = tower_mod_damage_vs(1.0f, false, TOWER_HIT_SWORD); tower_on_sword_hit(false); }
     float skill = tower_mod_damage_vs(1.0f, false, TOWER_HIT_SKILL);
     tower_on_player_hurt(5.0f); float afterBlow = tower_mod_damage_vs(1.0f, false, TOWER_HIT_SWORD);
-    tower_on_sword_hit(false); tower_on_sword_hit(false); nowS += 2.1; float afterGap = tower_mod_damage_vs(1.0f, false, TOWER_HIT_SWORD);
+    tower_on_sword_hit(false); tower_on_sword_hit(false); nowS += BERSERK_GAP + 0.1; float afterGap = tower_mod_damage_vs(1.0f, false, TOWER_HIT_SWORD);
     debugf("[affix] Berserker's streak: %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f; a skill's hit x%.2f; after a blow x%.2f; after 2.1 s x%.2f\n",
            (double)k[0], (double)k[1], (double)k[2], (double)k[3], (double)k[4], (double)k[5], (double)k[6], (double)k[7], (double)skill, (double)afterBlow, (double)afterGap);
     float top = 1.0f + BERSERK_STEP * BERSERK_HITS;
     CHECK(k[0] == 1.0f && fabsf(k[1] - (1.0f + BERSERK_STEP)) < 1e-4f && fabsf(k[BERSERK_HITS + 1] - top) < 1e-4f && fabsf(k[7] - top) < 1e-4f && skill == 1.0f && afterBlow == 1.0f && afterGap == 1.0f,
-          "Berserker: +%.0f%% a sword hit in a row to +%.0f%%, ended by a blow or 2 s", (double)(100 * BERSERK_STEP), (double)(100 * BERSERK_STEP * BERSERK_HITS));
+          "Berserker: +%.0f%% a sword hit in a row to +%.0f%%, ended by a blow or %.0f s", (double)(100 * BERSERK_STEP), (double)(100 * BERSERK_STEP * BERSERK_HITS), (double)BERSERK_GAP);
     character.health = 0.8f * character.maxHealth; tower_on_sword_hit(false); nowS += 0.5;
     CHECK(tower_mod_damage_vs(1.0f, false, TOWER_HIT_SWORD) == 1.0f, "Berserker: above half, no streak");
     nowS = now0;

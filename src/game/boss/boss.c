@@ -868,6 +868,9 @@ void boss_apply_hit(Boss* boss, float amount, float poise)
 #if defined(HLE_HUMAN_BOT) && (defined(HLE_DUMMY_BUILD) || defined(HB_HOLD))
     if (boss->health < 1.0f) boss->health = 1.0f;     // test aid: the bench's boss never falls (its health is held in a band)
 #endif
+#if defined(HLE_DUMMY_BUILD) && !defined(HLE_HUMAN_BOT)    // test aid: every hit counted whole, and the bench's boss never falls (a full bar's hit outdid its held health)
+    { extern float hle_dealt_raw; hle_dealt_raw += amount; if (boss->health < 1.0f) boss->health = 1.0f; }
+#endif
     if (boss->health < 0.0f) boss->health = 0.0f;
     if (boss->staggerT <= 0.0f) {      // the stagger meter
         // from the blow itself, not the damage: the same hits fill the same share on every floor,
