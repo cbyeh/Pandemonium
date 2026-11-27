@@ -63,7 +63,7 @@ static const bool ANIM_LOOP[FKA_COUNT] = { true, true, true, [FKA_BACKSTEP] = tr
 
 typedef enum {
     FK_INTRO, FK_CHASE, FK_COMBO, FK_ROLL, FK_CLEAVE, FK_HALFMOON, FK_MOONBLADE, FK_RECOVER, FK_STAGGER, FK_DEAD,
-    FK_SPLITTER, FK_UPDOWN, FK_TRISLAM, FK_HOLYSLAM, FK_ROLLCUT, FK_PLUNGE, FK_LUNGE,
+    FK_SPLITTER, FK_UPDOWN, FK_TRISLAM, FK_HOLYSLAM, FK_ROLLCUT, FK_PLUNGE, FK_LUNGE, FK_HOPS,
 } FkState;
 
 // The combo's third blow: the plain overhead, the same held at the top of its rise (a roll
@@ -110,7 +110,7 @@ static struct {
     bool striking;          // inside a swing's damage window this frame
     float groundY, velY;
     float moveX, moveZ;     // roll / jump drift
-    float cdCleave, cdHalfmoon, cdMoonblade, cdRoll, cdSplitter, cdUpdown, cdTri, cdHoly, cdPlunge, cdLunge, cdBackLunge;
+    float cdCleave, cdHalfmoon, cdMoonblade, cdRoll, cdSplitter, cdUpdown, cdTri, cdHoly, cdPlunge, cdLunge, cdBackLunge, cdHops;
     int finisher;           // the combo's third blow (FIN_*)
     float holdT;            // time held in a finisher's pause
     bool counter;           // the roll comes up into a rising cut
@@ -126,8 +126,10 @@ static struct {
     float pickJit;          // this chase's offset to when it picks its next move (+-0.2 s: no metronome)
     int queued;             // a blow it has picked and is closing in to land (-1: none)
     float queuedAt;         // since when (kept off 2 s, it takes a move that reaches instead)
-    float lastUsed[11];     // when each move last came (choose: the longer ago, the likelier)
+    float lastUsed[12];     // when each move last came (choose: the longer ago, the likelier)
     int lungeKind;          // LUNGE_*
+    int hopsLeft;           // side hops still to come (FK_HOPS), and the way this one goes (+1 its left, -1 its right)
+    float hopSide, hopVX, hopVZ;
     float lungeO[2], lungeLen, lungeGone, fireGap, lungeMax, lungeP;     // the skim: its last flame, how far, how far so far, between its flames, the most it may stretch to
     int fireLit;            // fire trail points lit along this skim
     float fireHitT;         // until the trail can hurt again
@@ -1076,6 +1078,13 @@ CLIP(LAND,
     TR(L_SP, 0, 0, 0.08f, 0.25f, 0.4f, 0.05f, 0.7f, 0),
     TR(L_HP, 0, 0, 0.1f, 0.15f, 0.5f, 0),
     TR(L_AR, 0, 0, 0.1f, 0.35f, 0.5f, 0));
+#define HOP_DOWN 0.18f      // the dip before it leaves the floor
+#define HOP_AIR  0.49f      // off the floor
+// A side hop: down into it, up and leaning the way it goes, taken on its knees (HOP_DOWN, HOP_AIR)
+CLIP(HOP,
+    TR(L_WR, 0, 0, 0.07f, -0.18f, 0.17f, 0.04f, 0.29f, -0.16f, 0.5f, 0),
+    TR(L_SP, 0, 0, 0.07f, 0.16f, 0.17f, -0.04f, 0.29f, 0.14f, 0.5f, 0),
+    TR(L_SR, 0, 0, 0.1f, 0.12f, 0.28f, 0.05f, 0.5f, 0));
 // The war cry at half health: a hunch, then reared back roaring, the free arm flung out (from it)
 CLIP(WARCRY,
     TR(L_SP, 0, 0, 0.15f, 0.12f, 0.4f, -0.3f, 1.3f, -0.28f, 1.7f, 0),
@@ -1141,6 +1150,7 @@ static void life_update(Boss *b, float dt)
 #else
     case FK_HOLYSLAM: if (s.step == 1) key_play(&HOLY, s.t, 1.0f, 1.0f, 1.0f); break;
 #endif
+    case FK_HOPS:     key_play(&HOP, s.t, (HOP_DOWN + HOP_AIR) / 0.29f, s.hopSide, 1.0f); break;     // (keyed for a 0.29 s hop)
     case FK_RECOVER:  key_loop(&BREATHER, s.t / 4.2f, clamp01f(s.t / 0.5f)); break;
     case FK_STAGGER: {      // heaving while it kneels; it looks up at you before it rises
         float br = sinf(s.t * 2.0f * T3D_PI * 0.9f);
@@ -1328,9 +1338,9 @@ void fallen_knight_begin(Boss* boss)
     s.groundY = character.pos[1];
     boss->pos[1] = s.groundY + FK_DROP_HEIGHT;
     s.velY = 0.0f;
-    s.cdCleave = 5.0f; s.cdHalfmoon = 12.0f; s.cdMoonblade = 9.0f; s.cdRoll = 0.0f; s.cdSplitter = 6.0f; s.cdUpdown = 3.0f; s.cdTri = 14.0f; s.cdHoly = 20.0f; s.cdPlunge = 8.0f; s.cdLunge = 6.0f; s.cdBackLunge = 10.0f;
+    s.cdCleave = 5.0f; s.cdHalfmoon = 12.0f; s.cdMoonblade = 9.0f; s.cdRoll = 0.0f; s.cdSplitter = 6.0f; s.cdUpdown = 3.0f; s.cdTri = 14.0f; s.cdHoly = 20.0f; s.cdPlunge = 8.0f; s.cdLunge = 6.0f; s.cdBackLunge = 10.0f; s.cdHops = 8.0f;
     s.queued = -1; s.fireHitT = 0.0f;
-    for (int i = 0; i < 11; i++) s.lastUsed[i] = get_ticks_ms() * 0.001f;     // (all equally fresh at the start)
+    for (int i = 0; i < 12; i++) s.lastUsed[i] = get_ticks_ms() * 0.001f;     // (all equally fresh at the start)
     s.enraged = false;
     s.bladeW = 0.0f;
     s.beam2T = -1.0f;
@@ -1926,6 +1936,57 @@ static void lunge_update(Boss *b, float dt)
     }
 }
 
+// Side hops: one to three, quick, each a random way (not into a wall): a dip, a low hop
+// sideways on its strafe clip, landed on its knees. From close it spirals in as it goes and
+// ends in its combo; from further it keeps its distance and ends in the fire lunge
+#define HOP_LEN  42.0f      // sideways, each
+#define HOP_FAR  90.0f      // from this far it keeps away (the lunge after), nearer it closes in (the combo)
+static void hops_update(Boss *b, float dt)
+{
+    const float G = 260.0f;     // (about 8 high)
+    float dx, dz, d = to_player(b, &dx, &dz);
+    face_player(b, dt, 8.0f);
+    if (s.step == 0) {      // down into it, then off
+        if (s.t < HOP_DOWN) return;
+        // round the player on an arc (as far away, or its share of the way in), not off on a tangent
+        float rd = fmaxf(d, 1.0f), rx = -dx, rz = -dz;
+        float r2 = d < HOP_FAR ? rd - fmaxf(0.0f, rd - 20.0f) / (float)s.hopsLeft : rd;
+        float th = fminf(HOP_LEN / rd, 0.9f), side = (rand_custom_u32() & 1) ? 1.0f : -1.0f;
+        for (int k = 0; k < 2; k++, side = -side) {     // a wall that way: the other
+            float c = fm_cosf(th * side), sn = fm_sinf(th * side), k2 = r2 / rd;
+            float vx = (rx * c - rz * sn) * k2 - rx, vz = (rx * sn + rz * c) * k2 - rz;
+            s.hopVX = vx / HOP_AIR; s.hopVZ = vz / HOP_AIR; s.hopSide = side;
+            if (scene_bounds_check_room(b->pos[0] + vx, b->pos[1], b->pos[2] + vz)) break;
+        }
+        play(s.hopSide > 0.0f ? FKA_STRAFE_L : FKA_STRAFE_R, false);     // (the same way again: on in its stride)
+        t3d_anim_set_speed(&s.anims[s.anim], 1.1f);
+        s.velY = G * HOP_AIR * 0.5f;
+        sfx(SCENE1_SFX_FW_STEP1, 0.6f);
+        s.step = 1;
+#ifdef HLE_FK_LOG
+        debugf("[fk] hop %d side %.0f dist %.0f at %d ms\n", s.hopsLeft, (double)s.hopSide, (double)d, (int)get_ticks_ms());
+#ifdef HLE_LOG_MOVE_MS
+        { extern uint32_t dragon_vi_frame(void); debugf("[movems] hop VI %d\n", (int)dragon_vi_frame()); }
+#endif
+#endif
+    }
+    move(b, s.hopVX, s.hopVZ, dt);
+    s.velY -= G * dt;
+    b->pos[1] = fmaxf(s.groundY, b->pos[1] + s.velY * dt);
+    if (b->pos[1] > s.groundY || s.velY > 0.0f) return;
+    sfx(SCENE1_SFX_BOSS_LAND1, 0.45f);
+    t3d_anim_set_speed(&s.anims[s.anim], 1.0f);
+    if (--s.hopsLeft > 0) { s.step = 0; s.t = 0.0f; return; }
+    landT = 0.0f;
+#ifdef HLE_FK_LOG
+    debugf("[fk] hops end dist %.0f\n", (double)d);
+#endif
+    if (d <= FK_MELEE_RANGE + 6.0f) { enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); return; }
+    s.cdLunge = fmaxf(s.cdLunge, 5.0f);
+    if (d < 60.0f) { s.lungeKind = LUNGE_BACK; enter(FK_LUNGE); return; }
+    s.lungeKind = LUNGE_SHORT; enter(FK_LUNGE); s.step = 1; play(FKA_LUNGE, true);
+}
+
 // ---- Decisions ----
 
 static void choose(Boss *b, float dist)
@@ -1942,6 +2003,7 @@ static void choose(Boss *b, float dist)
     if (HLE_FK_FORCE == 6) { enter(FK_TRISLAM); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], DN_FROM); t3d_anim_set_speed(&s.anims[s.anim], 0.1f); debugf("[fk] trislam\n"); return; }
     if (HLE_FK_FORCE == 8) { if (dist < 40.0f) return; s.cdPlunge = 0.0f; enter(FK_PLUNGE); play(FKA_CHARGED, true); t3d_anim_set_time(&s.anims[s.anim], 0.3f); debugf("[fk] plunge\n"); return; }
     if (HLE_FK_FORCE == 10) { if (dist < 70.0f) return; s.lungeKind = dist >= 110.0f ? LUNGE_FULL : LUNGE_SHORT; enter(FK_LUNGE); s.step = 1; play(FKA_LUNGE, true); debugf("[fk] lunge %d dist %.0f\n", s.lungeKind, (double)dist); return; }
+    if (HLE_FK_FORCE == 12) { s.hopsLeft = 1 + rand_custom_u32() % 3; enter(FK_HOPS); debugf("[fk] hops %d dist %.0f\n", s.hopsLeft, (double)dist); return; }   // 12 = the side hops
     if (HLE_FK_FORCE == 11) { s.lungeKind = LUNGE_BACK; enter(FK_LUNGE); debugf("[fk] lunge back dist %.0f\n", (double)dist); return; }   // 10 = the lunge (by range), 11 = the leap back and lunge
     if (HLE_FK_FORCE >= 4 && dist > FK_MELEE_RANGE - 4.0f) return;     // the melee ones: in reach first
     if (HLE_FK_FORCE == 9) { enter(FK_MOONBLADE); debugf("[fk] moonblade\n"); return; }   // 9 = the Moon Blade (the leap and its slashes), at any range
@@ -1953,14 +2015,14 @@ static void choose(Boss *b, float dist)
     // reach (the combo, up-down, cleave, halfmoon, holy slam) picked out of reach: it closes in first.
     // The fire lunge is its gap-closer: off 70, the likelier the further (twice past 110), and again
     // twice when the player has kept away; the leap back and lunge from close in
-    enum { P_HALFMOON, P_MOONBLADE, P_HOLY, P_TRI, P_PLUNGE, P_SPLITTER, P_CLEAVE, P_UPDOWN, P_LUNGE, P_BACKLUNGE, P_COMBO, P_N };
-    static const float REACH[P_N] = { 70.0f, 1e9f, 50.0f, 1e9f, 1e9f, 1e9f, 60.0f, FK_MELEE_RANGE + 8.0f, 1e9f, 1e9f, FK_MELEE_RANGE - 4.0f };
+    enum { P_HALFMOON, P_MOONBLADE, P_HOLY, P_TRI, P_PLUNGE, P_SPLITTER, P_CLEAVE, P_UPDOWN, P_LUNGE, P_BACKLUNGE, P_HOPS, P_COMBO, P_N };
+    static const float REACH[P_N] = { 70.0f, 1e9f, 50.0f, 1e9f, 1e9f, 1e9f, 60.0f, FK_MELEE_RANGE + 8.0f, 1e9f, 1e9f, 1e9f, FK_MELEE_RANGE - 4.0f };
     float now = get_ticks_ms() * 0.001f;
     int m = s.queued;
     bool farOnly = m >= 0 && now - s.queuedAt > 2.0f;     // kept off it 2 s (the player backing away): a move that reaches
     if (farOnly) m = -1;
     if (m < 0) {
-        float *cd[P_N] = { &s.cdHalfmoon, &s.cdMoonblade, &s.cdHoly, &s.cdTri, &s.cdPlunge, &s.cdSplitter, &s.cdCleave, &s.cdUpdown, &s.cdLunge, &s.cdBackLunge, NULL };
+        float *cd[P_N] = { &s.cdHalfmoon, &s.cdMoonblade, &s.cdHoly, &s.cdTri, &s.cdPlunge, &s.cdSplitter, &s.cdCleave, &s.cdUpdown, &s.cdLunge, &s.cdBackLunge, &s.cdHops, NULL };
         float w[P_N], tot = 0.0f;
         for (int i = 0; i < P_N; i++) {
             bool ok = (!cd[i] || *cd[i] <= 0.0f) && (i != P_HOLY || s.enraged) && (i != P_PLUNGE || dist >= 40.0f)    // (the plunge's leap needs room)
@@ -1995,6 +2057,7 @@ static void choose(Boss *b, float dist)
     case P_UPDOWN:    s.cdUpdown = 7.0f; enter(FK_UPDOWN); play(FKA_ATTACK2, true); break;
     case P_LUNGE:     s.cdLunge = 10.0f; s.cdBackLunge = fmaxf(s.cdBackLunge, 5.0f); s.lungeKind = dist >= 110.0f ? LUNGE_FULL : LUNGE_SHORT; enter(FK_LUNGE); s.step = 1; play(FKA_LUNGE, true); break;
     case P_BACKLUNGE: s.cdBackLunge = 16.0f; s.cdLunge = fmaxf(s.cdLunge, 5.0f); s.lungeKind = LUNGE_BACK; enter(FK_LUNGE); break;
+    case P_HOPS:      s.cdHops = 10.0f; s.hopsLeft = 1 + rand_custom_u32() % 3; enter(FK_HOPS); break;
     default:          enter(FK_COMBO); s.step = 1; play(FKA_ATTACK1, true); break;
     }
 }
@@ -2067,7 +2130,7 @@ void fallen_knight_update(Boss* b, float dt)
     s.dtLast = dt;
     {   // (Swift: its moves come round sooner too)
         float c = dt * tower_elite_pace(false, 1.0f);
-        s.cdCleave -= c; s.cdHalfmoon -= c; s.cdMoonblade -= c; s.cdRoll -= c; s.cdSplitter -= c; s.cdUpdown -= c; s.cdTri -= c; s.cdHoly -= c; s.cdPlunge -= c; s.cdLunge -= c; s.cdBackLunge -= c;
+        s.cdCleave -= c; s.cdHalfmoon -= c; s.cdMoonblade -= c; s.cdRoll -= c; s.cdSplitter -= c; s.cdUpdown -= c; s.cdTri -= c; s.cdHoly -= c; s.cdPlunge -= c; s.cdLunge -= c; s.cdBackLunge -= c; s.cdHops -= c;
     }
     s.bladeTgt = 0.0f;      // a move that holds the blade asks again each frame (hold_blade)
 
@@ -2189,6 +2252,7 @@ void fallen_knight_update(Boss* b, float dt)
     case FK_ROLLCUT:   rollcut_update(b, dt); break;
     case FK_PLUNGE:    plunge_update(b, dt);  break;
     case FK_LUNGE:     lunge_update(b, dt);   break;
+    case FK_HOPS:      hops_update(b, dt);    break;
 
     case FK_CLEAVE:    cleave_update(b, dt);   break;
     case FK_HALFMOON:  halfmoon_update(b, dt); break;
